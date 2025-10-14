@@ -53,6 +53,7 @@
     }
   },
   "remoteUser": "vscode",
+  "postCreateCommand": ".devcontainer/post-create.sh",
   "containerEnv": {
     "FLUTTER_ROOT": "/opt/flutter",
     "ANDROID_HOME": "/opt/android-sdk",

@@ -41,9 +41,9 @@ sudo chmod a+r /etc/udev/rules.d/51-android.rules
 sudo usermod -a -G plugdev vscode
 
 # Create sample Flutter project if it doesn't exist
-if [ ! -d "/workspace/my_flutter_app" ]; then
+if [ ! -d "/workspaces/flutter-dev-workspace/my_flutter_app" ]; then
     echo "📦 Creating sample Flutter project..."
-    cd /workspace
+    cd /workspaces/flutter-dev-workspace
     /opt/flutter/bin/flutter create my_flutter_app
     cd my_flutter_app
     
@@ -56,6 +56,9 @@ fi
 # Create useful aliases
 echo "📝 Setting up aliases..."
 cat >> ~/.bashrc << 'EOF'
+
+# Add dev-helper script to PATH
+export PATH="/workspaces/flutter-dev-workspace/scripts:$PATH"
 
 # Flutter aliases
 alias fl='flutter'
