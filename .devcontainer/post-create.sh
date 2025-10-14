@@ -53,6 +53,8 @@ if [ ! -d "/workspaces/flutter-dev-workspace/my_flutter_app" ]; then
     /opt/flutter/bin/flutter pub get
 fi
 
+sudo chown -R vscode:vscode /workspaces
+
 # Create useful aliases
 echo "📝 Setting up aliases..."
 cat >> ~/.bashrc << 'EOF'
