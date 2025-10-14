@@ -1,0 +1,63 @@
+{
+  "name": "Flutter Development",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "runArgs": [
+    "--init",
+    "--rm"
+  ],
+  "forwardPorts": [
+    8080,
+    3000,
+    5000,
+    5001,
+    8000,
+    9000
+  ],
+  "portsAttributes": {
+    "8080": {
+      "label": "Flutter Web Dev Server",
+      "onAutoForward": "notify"
+    },
+    "3000": {
+      "label": "Flutter Web Hot Reload",
+      "onAutoForward": "silent"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Dart-Code.dart-code",
+        "Dart-Code.flutter",
+        "usernamehw.errorlens",
+        "esbenp.prettier-vscode",
+        "ms-vscode.vscode-json"
+      ],
+      "settings": {
+        "dart.flutterSdkPath": "/opt/flutter",
+        "dart.sdkPath": "/opt/flutter/bin/cache/dart-sdk",
+        "dart.checkForSdkUpdates": false,
+        "dart.openDevTools": "flutter",
+        "dart.previewFlutterUiGuides": true,
+        "dart.previewFlutterUiGuidesCustomTracking": true,
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "/bin/bash"
+          }
+        },
+        "java.home": "/usr/lib/jvm/java-17-openjdk-arm64"
+      }
+    }
+  },
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "FLUTTER_ROOT": "/opt/flutter",
+    "ANDROID_HOME": "/opt/android-sdk",
+    "ANDROID_SDK_ROOT": "/opt/android-sdk",
+    "CHROME_EXECUTABLE": "/usr/bin/chromium-browser"
+  },
+  "workspaceFolder": "/workspaces/flutter-dev-workspace"
+}
