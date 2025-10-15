@@ -14,31 +14,31 @@ yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/nul
 echo "🔍 Running Flutter doctor..."
 /opt/flutter/bin/flutter doctor -v
 
-## Enable udev rules for Android devices (if running on Linux host)
-#echo "🔧 Setting up Android device debugging..."
-#sudo tee /etc/udev/rules.d/51-android.rules > /dev/null <<EOF
-## Google
-#SUBSYSTEM=="usb", ATTR{idVendor}=="18d1", MODE="0666", GROUP="plugdev"
-## Samsung
-#SUBSYSTEM=="usb", ATTR{idVendor}=="04e8", MODE="0666", GROUP="plugdev"
-## LG
-#SUBSYSTEM=="usb", ATTR{idVendor}=="1004", MODE="0666", GROUP="plugdev"
-## Motorola
-#SUBSYSTEM=="usb", ATTR{idVendor}=="22b8", MODE="0666", GROUP="plugdev"
-## Sony
-#SUBSYSTEM=="usb", ATTR{idVendor}=="0fce", MODE="0666", GROUP="plugdev"
-## HTC
-#SUBSYSTEM=="usb", ATTR{idVendor}=="0bb4", MODE="0666", GROUP="plugdev"
-## Huawei
-#SUBSYSTEM=="usb", ATTR{idVendor}=="12d1", MODE="0666", GROUP="plugdev"
-## Xiaomi
-#SUBSYSTEM=="usb", ATTR{idVendor}=="2717", MODE="0666", GROUP="plugdev"
-## OnePlus
-#SUBSYSTEM=="usb", ATTR{idVendor}=="2a70", MODE="0666", GROUP="plugdev"
-#EOF
-#
-#sudo chmod a+r /etc/udev/rules.d/51-android.rules
-#sudo usermod -a -G plugdev vscode
+# Enable udev rules for Android devices (if running on Linux host)
+echo "🔧 Setting up Android device debugging..."
+sudo tee /etc/udev/rules.d/51-android.rules > /dev/null <<EOF
+# Google
+SUBSYSTEM=="usb", ATTR{idVendor}=="18d1", MODE="0666", GROUP="plugdev"
+# Samsung
+SUBSYSTEM=="usb", ATTR{idVendor}=="04e8", MODE="0666", GROUP="plugdev"
+# LG
+SUBSYSTEM=="usb", ATTR{idVendor}=="1004", MODE="0666", GROUP="plugdev"
+# Motorola
+SUBSYSTEM=="usb", ATTR{idVendor}=="22b8", MODE="0666", GROUP="plugdev"
+# Sony
+SUBSYSTEM=="usb", ATTR{idVendor}=="0fce", MODE="0666", GROUP="plugdev"
+# HTC
+SUBSYSTEM=="usb", ATTR{idVendor}=="0bb4", MODE="0666", GROUP="plugdev"
+# Huawei
+SUBSYSTEM=="usb", ATTR{idVendor}=="12d1", MODE="0666", GROUP="plugdev"
+# Xiaomi
+SUBSYSTEM=="usb", ATTR{idVendor}=="2717", MODE="0666", GROUP="plugdev"
+# OnePlus
+SUBSYSTEM=="usb", ATTR{idVendor}=="2a70", MODE="0666", GROUP="plugdev"
+EOF
+
+sudo chmod a+r /etc/udev/rules.d/51-android.rules
+sudo usermod -a -G plugdev vscode
 
 # Create sample Flutter project if it doesn't exist
 if [ ! -d "/workspaces/flutter-dev-workspace/my_flutter_app" ]; then

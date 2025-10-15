@@ -5,9 +5,8 @@
     "context": ".."
   },
   "runArgs": [
-    "--privileged",
     "--init",
-    "--rm", 
+    "--rm",
     "--network=host"
   ],
   "forwardPorts": [
@@ -16,8 +15,7 @@
     5000,
     5001,
     8000,
-    9000,
-    5037
+    9000
   ],
   "portsAttributes": {
     "8080": {
@@ -29,14 +27,6 @@
       "onAutoForward": "silent"
     }
   },
-  "privileged": true,
-  "mounts": [
-        {
-            "type": "bind",
-            "source": "/dev/bus/usb",
-            "target": "/dev/bus/usb",
-        }
-  ],
   "customizations": {
     "vscode": {
       "extensions": [
