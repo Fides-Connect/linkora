@@ -53,7 +53,8 @@ if [ ! -d "/workspaces/flutter-dev-workspace/my_flutter_app" ]; then
     /opt/flutter/bin/flutter pub get
 fi
 
-sudo chown -R vscode:vscode /workspaces
+# Give vscode user write permissions to /workspaces
+sudo chmod -R u+w /workspaces/flutter-dev-workspace
 
 # Create useful aliases
 echo "📝 Setting up aliases..."
