@@ -4,6 +4,8 @@ import 'widgets/particle_sphere.dart';
 import 'services/gemini_service.dart';
 import 'services/speech_service.dart';
 
+import 'package:permission_handler/permission_handler.dart';
+
 void main() {
   runApp(const ConnectXApp());
 }
@@ -110,7 +112,8 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   }
   
   void _startListening() async {
-    try {
+    try {// Request microphone permission
+      await Permission.microphone.request();
       await _speechService.startListening();
     } catch (e) {
       setState(() {

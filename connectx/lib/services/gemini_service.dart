@@ -6,7 +6,7 @@ class GeminiService {
   
   GeminiService() {
     _model = GenerativeModel(
-      model: 'gemini-pro',
+      model: 'gemini-flash-latest',
       apiKey: _apiKey,
     );
   }
