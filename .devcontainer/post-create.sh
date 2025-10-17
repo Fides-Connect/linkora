@@ -10,6 +10,10 @@ sudo chown -R vscode:vscode /opt/flutter /opt/android-sdk
 echo "📱 Accepting Android SDK licenses..."
 yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
 
+# Install required Android SDK components
+echo "📦 Installing Android SDK platform-tools, build-tools, and platforms..."
+/opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --install "platform-tools" "build-tools;34.0.0" "platforms;android-34"
+
 # Run Flutter doctor to check setup
 echo "🔍 Running Flutter doctor..."
 /opt/flutter/bin/flutter doctor -v
@@ -40,18 +44,11 @@ EOF
 sudo chmod a+r /etc/udev/rules.d/51-android.rules
 sudo usermod -a -G plugdev vscode
 
-# Create sample Flutter project if it doesn't exist
-if [ ! -d "/workspaces/flutter-dev-workspace/my_flutter_app" ]; then
-    echo "📦 Creating sample Flutter project..."
-    cd /workspaces/flutter-dev-workspace
-    /opt/flutter/bin/flutter create my_flutter_app
-    cd my_flutter_app
-    
-    # Add some useful dev dependencies
-    /opt/flutter/bin/flutter pub add dev:flutter_lints
-    /opt/flutter/bin/flutter pub add dev:test
-    /opt/flutter/bin/flutter pub get
-fi
+# Add some useful dev dependencies
+cd /workspaces/flutter-dev-workspace/connectx
+/opt/flutter/bin/flutter pub add dev:flutter_lints
+/opt/flutter/bin/flutter pub add dev:test
+/opt/flutter/bin/flutter pub get
 
 # Create useful aliases
 echo "📝 Setting up aliases..."
