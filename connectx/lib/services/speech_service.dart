@@ -1,121 +1,153 @@
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'dart:async';
+import 'package:record/record.dart';
 
 class SpeechService {
   late FlutterTts _tts;
-  late SpeechToText _speechToText;
   bool _isListening = false;
   bool _isSpeaking = false;
-  
+  final AudioRecorder _recorder = AudioRecorder();
+
   // Callbacks
   Function()? onSpeechStart;
   Function()? onSpeechEnd;
   Function(String)? onSpeechResult;
   Function()? onTTSStart;
   Function()? onTTSEnd;
-  
+
   SpeechService() {
     _initializeTTS();
-    _initializeSpeechToText();
   }
-  
+
   void _initializeTTS() {
     _tts = FlutterTts();
-    
+
     _tts.setStartHandler(() {
       _isSpeaking = true;
       onTTSStart?.call();
     });
-    
+
     _tts.setCompletionHandler(() {
       _isSpeaking = false;
       onTTSEnd?.call();
     });
-    
+
     _tts.setErrorHandler((msg) {
       _isSpeaking = false;
       onTTSEnd?.call();
     });
-    
+
     // Configure TTS settings
     _tts.setLanguage('en-US');
     _tts.setSpeechRate(0.5);
     _tts.setVolume(1.0);
     _tts.setPitch(1.0);
   }
-  
-  void _initializeSpeechToText() {
-    _speechToText = SpeechToText();
-  }
-  
+
   Future<bool> requestMicrophonePermission() async {
     final status = await Permission.microphone.request();
     return status.isGranted;
   }
-  
-  Future<bool> initializeSpeechToText() async {
-    return await _speechToText.initialize(
-      onError: (error) {
-        // Speech recognition error: $error (removed print for production)
-        _isListening = false;
-        onSpeechEnd?.call();
-      },
-      onStatus: (status) {
-        // Speech recognition status: $status (removed print for production)
-        if (status == 'done' || status == 'notListening') {
-          _isListening = false;
-          onSpeechEnd?.call();
-        }
-      },
-    );
+
+  /// Starts recording and returns a live stream of PCM audio data from the microphone.
+  Future<Stream<List<int>>> _recordAudio() async {
+    final hasPermission = await _recorder.hasPermission();
+    if (!hasPermission) {
+      throw Exception('Microphone permission denied');
+    }
+
+    // Start recording in PCM format (LINEAR16)
+     final Future<Stream<List<int>>> stream = _recorder.startStream(const RecordConfig(
+      encoder: AudioEncoder.pcm16bits, // LINEAR16
+      bitRate: 16000 * 16, // 16kHz, 16bit
+      sampleRate: 16000,
+    ));
+
+    // Return the audio stream
+    return stream;
   }
-  
+
+  /// Streams audio chunks to Google Speech-to-Text and updates live transcription.
   Future<void> startListening() async {
     if (!_isListening && !_isSpeaking) {
       final hasPermission = await requestMicrophonePermission();
       if (!hasPermission) {
         throw Exception('Microphone permission denied');
       }
-      
-      final initialized = await initializeSpeechToText();
-      if (!initialized) {
-        throw Exception('Speech recognition not available');
-      }
-      
+
       _isListening = true;
       onSpeechStart?.call();
-      
-      await _speechToText.listen(
-        onResult: (result) {
-          if (result.finalResult) {
-            onSpeechResult?.call(result.recognizedWords);
-          }
-        },
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 3),
-        listenOptions: SpeechListenOptions(
-          partialResults: false,
-          cancelOnError: true,
-        ),
-      );
+
+      try {
+        final googleApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+        final audioStream = await _recordAudio();
+
+        audioStream.listen(
+          (chunk) async {
+            final audioBase64 = base64Encode(chunk);
+            final url = 'https://speech.googleapis.com/v1/speech:recognize?key=$googleApiKey';
+            final requestBody = {
+              "config": {
+                "encoding": "LINEAR16",
+                "sampleRateHertz": 16000,
+                "languageCode": "en-US",
+                "enableAutomaticPunctuation": true
+              },
+              "audio": {"content": audioBase64}
+            };
+
+            final response = await http.post(
+              Uri.parse(url),
+              headers: {"Content-Type": "application/json"},
+              body: jsonEncode(requestBody),
+            );
+
+
+            //onSpeechResult?.call("test :  ${response.statusCode}");
+            if (response.statusCode == 200) {
+              final data = jsonDecode(response.body);
+              if (data['results'] != null &&
+                  data['results'].isNotEmpty &&
+                  data['results'][0]['alternatives'] != null &&
+                  data['results'][0]['alternatives'].isNotEmpty) {
+                final transcript = data['results'][0]['alternatives'][0]['transcript'] ?? '';
+                onSpeechResult?.call(transcript);
+              }
+            }
+          },
+          onDone: () {
+            _isListening = false;
+            onSpeechEnd?.call();
+          },
+          onError: (e) {
+            _isListening = false;
+            onSpeechEnd?.call();
+          },
+        );
+      } catch (e) {
+        onSpeechEnd?.call();
+        rethrow;
+      }
     }
   }
-  
+
   Future<void> stopListening() async {
     if (_isListening) {
-      await _speechToText.stop();
       _isListening = false;
       onSpeechEnd?.call();
     }
   }
-  
+
   Future<void> speak(String text) async {
     if (!_isSpeaking && text.isNotEmpty) {
       await _tts.speak(text);
     }
   }
-  
+
   Future<void> stopSpeaking() async {
     if (_isSpeaking) {
       await _tts.stop();
@@ -123,12 +155,11 @@ class SpeechService {
       onTTSEnd?.call();
     }
   }
-  
+
   bool get isListening => _isListening;
   bool get isSpeaking => _isSpeaking;
-  
+
   void dispose() {
     _tts.stop();
-    _speechToText.stop();
   }
 }
