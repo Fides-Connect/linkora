@@ -1,3 +1,4 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_speech/google_speech.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -41,7 +42,7 @@ class SpeechService {
     });
 
     // Configure TTS settings
-    _tts.setLanguage('en-US');
+    _tts.setLanguage('de-DE');
     _tts.setSpeechRate(0.5);
     _tts.setVolume(1.0);
     _tts.setPitch(1.0);
@@ -65,6 +66,7 @@ class SpeechService {
         encoder: AudioEncoder.pcm16bits, // LINEAR16
         bitRate: 16000 * 16, // 16kHz, 16bit
         sampleRate: 16000,
+        numChannels: 1
       ),
     );
 
@@ -93,7 +95,7 @@ class SpeechService {
           model: RecognitionModel.basic,
           enableAutomaticPunctuation: true,
           sampleRateHertz: 16000,
-          languageCode: 'en-US',
+          languageCode: 'de-DE',
         );
 
         final streamingConfig = StreamingRecognitionConfig(
@@ -110,26 +112,19 @@ class SpeechService {
 
         responseStream.listen(
           (data) {
-            //onSpeechResult?.call("Received Data responseStream");
-            // Extract transcript from data and call your callback
+            // Extract transcript from data and callback
             final transcript = data.results
                 .map((result) => result.alternatives.first.transcript)
                 .join(' ');
             onSpeechResult?.call(transcript);
           },
-          onDone: () async {
-            //onSpeechResult?.call("Done responseStream: ${await audioStream.length}");
-            //onSpeechEnd?.call();
-          },
           onError: (e) {
-            onSpeechResult?.call("Error responseStream: $e");
-            //onSpeechEnd?.call();
+            onSpeechEnd?.call();
           },
         );
 
       } catch (e) {
-        onSpeechResult?.call("Error test");
-        //onSpeechEnd?.call();
+        onSpeechEnd?.call();
         rethrow;
       }
     }
