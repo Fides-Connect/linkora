@@ -103,8 +103,8 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       });
       
       try {
-        //final response = await _geminiService.generateResponse(spokenText);
-        //await _speechService.speak(response);
+        final response = await _geminiService.generateResponse(spokenText);
+        await _speechService.speak(response);
       } catch (e) {
         setState(() {
           _statusText = 'Error: ${e.toString()}';
