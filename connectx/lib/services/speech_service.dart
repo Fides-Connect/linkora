@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_speech/google_speech.dart';
@@ -60,14 +63,24 @@ class SpeechService {
       throw Exception('Microphone permission denied');
     }
 
+    final androidConfig = AndroidRecordConfig(
+      audioSource: AndroidAudioSource.mic,
+      speakerphone: true,
+      audioManagerMode: AudioManagerMode.modeInCommunication,
+    );
+
     // Start recording in PCM format (LINEAR16)
     final Future<Stream<List<int>>> stream = _recorder.startStream(
-      const RecordConfig(
+      RecordConfig(
         encoder: AudioEncoder.pcm16bits, // LINEAR16
         bitRate: 16000 * 16, // 16kHz, 16bit
         sampleRate: 16000,
-        numChannels: 1
-      ),
+        numChannels: 1,
+        autoGain: true,
+        echoCancel: true,
+        noiseSuppress: true,
+        androidConfig: androidConfig
+      )
     );
 
     // Return the audio stream
@@ -100,7 +113,7 @@ class SpeechService {
 
         final streamingConfig = StreamingRecognitionConfig(
           config: config,
-          interimResults: true,
+          interimResults: false,
         );
 
         final speechToText = SpeechToText.viaApiKey(googleApiKey);
