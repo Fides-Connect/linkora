@@ -1,8 +1,7 @@
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:google_speech/google_speech.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'dart:async';
 import 'package:record/record.dart';
 
@@ -61,11 +60,13 @@ class SpeechService {
     }
 
     // Start recording in PCM format (LINEAR16)
-     final Future<Stream<List<int>>> stream = _recorder.startStream(const RecordConfig(
-      encoder: AudioEncoder.pcm16bits, // LINEAR16
-      bitRate: 16000 * 16, // 16kHz, 16bit
-      sampleRate: 16000,
-    ));
+    final Future<Stream<List<int>>> stream = _recorder.startStream(
+      const RecordConfig(
+        encoder: AudioEncoder.pcm16bits, // LINEAR16
+        bitRate: 16000 * 16, // 16kHz, 16bit
+        sampleRate: 16000,
+      ),
+    );
 
     // Return the audio stream
     return stream;
@@ -86,50 +87,49 @@ class SpeechService {
         final googleApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
         final audioStream = await _recordAudio();
 
-        audioStream.listen(
-          (chunk) async {
-            final audioBase64 = base64Encode(chunk);
-            final url = 'https://speech.googleapis.com/v1/speech:recognize?key=$googleApiKey';
-            final requestBody = {
-              "config": {
-                "encoding": "LINEAR16",
-                "sampleRateHertz": 16000,
-                "languageCode": "en-US",
-                "enableAutomaticPunctuation": true
-              },
-              "audio": {"content": audioBase64}
-            };
+        // Initial config
+        final config = RecognitionConfig(
+          encoding: AudioEncoding.LINEAR16,
+          model: RecognitionModel.basic,
+          enableAutomaticPunctuation: true,
+          sampleRateHertz: 16000,
+          languageCode: 'en-US',
+        );
 
-            final response = await http.post(
-              Uri.parse(url),
-              headers: {"Content-Type": "application/json"},
-              body: jsonEncode(requestBody),
-            );
+        final streamingConfig = StreamingRecognitionConfig(
+          config: config,
+          interimResults: true,
+        );
 
+        final speechToText = SpeechToText.viaApiKey(googleApiKey);
 
-            //onSpeechResult?.call("test :  ${response.statusCode}");
-            if (response.statusCode == 200) {
-              final data = jsonDecode(response.body);
-              if (data['results'] != null &&
-                  data['results'].isNotEmpty &&
-                  data['results'][0]['alternatives'] != null &&
-                  data['results'][0]['alternatives'].isNotEmpty) {
-                final transcript = data['results'][0]['alternatives'][0]['transcript'] ?? '';
-                onSpeechResult?.call(transcript);
-              }
-            }
+        final responseStream = speechToText.streamingRecognize(
+          streamingConfig,
+          audioStream,
+        );
+
+        responseStream.listen(
+          (data) {
+            //onSpeechResult?.call("Received Data responseStream");
+            // Extract transcript from data and call your callback
+            final transcript = data.results
+                .map((result) => result.alternatives.first.transcript)
+                .join(' ');
+            onSpeechResult?.call(transcript);
           },
-          onDone: () {
-            _isListening = false;
-            onSpeechEnd?.call();
+          onDone: () async {
+            //onSpeechResult?.call("Done responseStream: ${await audioStream.length}");
+            //onSpeechEnd?.call();
           },
           onError: (e) {
-            _isListening = false;
-            onSpeechEnd?.call();
+            onSpeechResult?.call("Error responseStream: $e");
+            //onSpeechEnd?.call();
           },
         );
+
       } catch (e) {
-        onSpeechEnd?.call();
+        onSpeechResult?.call("Error test");
+        //onSpeechEnd?.call();
         rethrow;
       }
     }
