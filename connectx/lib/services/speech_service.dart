@@ -7,6 +7,7 @@ import 'package:google_speech/google_speech.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:async';
+import 'package:flutter_voice_engine/flutter_voice_engine.dart';
 import 'package:record/record.dart';
 
 class SpeechService {
@@ -14,6 +15,7 @@ class SpeechService {
   bool _isListening = false;
   bool _isSpeaking = false;
   final AudioRecorder _recorder = AudioRecorder();
+  final FlutterVoiceEngine _voiceEngine = FlutterVoiceEngine();
 
   // Callbacks
   Function()? onSpeechStart;
@@ -56,8 +58,8 @@ class SpeechService {
     return status.isGranted;
   }
 
-  /// Starts recording and returns a live stream of PCM audio data from the microphone.
-  Future<Stream<List<int>>> _recordAudio() async {
+  /// Starts recording and returns a live stream of PCM audio data from the microphone using Voice Engine.
+  Future<Stream<List<int>>> _recordAudioWithRecorder() async {
     final hasPermission = await _recorder.hasPermission();
     if (!hasPermission) {
       throw Exception('Microphone permission denied');
@@ -80,11 +82,40 @@ class SpeechService {
         echoCancel: true,
         noiseSuppress: true,
         androidConfig: androidConfig
-      )
-    );
+      ));
+      return stream;
+  }
 
-    // Return the audio stream
-    return stream;
+  /// Starts recording and returns a live stream of PCM audio data from the microphone using Voice Engine.
+  Future<Stream<List<int>>> _recordAudioWithVoiceEngine() async {
+    try {
+      // Initialize with custom config
+      _voiceEngine.audioConfig = AudioConfig(
+        sampleRate: 16000,
+        channels: 1,
+        bitDepth: 16,
+        bufferSize: 4096,
+        enableAEC: true,
+      );
+
+      _voiceEngine.sessionConfig = AudioSessionConfig(
+        category: AudioCategory.record,
+        mode: AudioMode.voiceChat,
+        options: {
+          AudioOption.defaultToSpeaker
+        },
+      );
+
+      await _voiceEngine.initialize();
+      
+      await _voiceEngine.startRecording();
+
+      // Return the audio stream
+      return _voiceEngine.audioChunkStream;
+    } catch (e) {
+      print('VoiceEngine initialization failed: $e');
+      rethrow;
+    }
   }
 
   /// Streams audio chunks to Google Speech-to-Text and updates live transcription.
@@ -100,7 +131,8 @@ class SpeechService {
 
       try {
         final googleApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
-        final audioStream = await _recordAudio();
+        final audioStream = await _recordAudioWithRecorder();
+        //final audioStream = await _recordAudioWithVoiceEngine();
 
         // Initial config
         final config = RecognitionConfig(
@@ -109,11 +141,12 @@ class SpeechService {
           enableAutomaticPunctuation: true,
           sampleRateHertz: 16000,
           languageCode: 'de-DE',
+          audioChannelCount: 1
         );
 
         final streamingConfig = StreamingRecognitionConfig(
           config: config,
-          interimResults: false,
+          interimResults: true,
         );
 
         final speechToText = SpeechToText.viaApiKey(googleApiKey);
@@ -135,6 +168,11 @@ class SpeechService {
             onSpeechEnd?.call();
           },
         );
+
+        // Listen for errors
+        _voiceEngine.errorStream.listen((error) {
+          print('Error at Voice Engine: $error');
+        });
 
       } catch (e) {
         onSpeechEnd?.call();
