@@ -171,22 +171,13 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_tts:
-    dependency: "direct main"
-    description:
-      name: flutter_tts
-      sha256: bdf2fc4483e74450dc9fc6fe6a9b6a5663e108d4d0dad3324a22c8e26bf48af4
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.2.3"
   flutter_voice_engine:
     dependency: "direct main"
     description:
-      path: "."
-      ref: "repair/aec_issue_in_android"
-      resolved-ref: "454178ccd102a175fc7f3b49f64e7b05c81ca063"
-      url: "https://github.com/MohamedFouad99/flutter_voice_engine.git"
-    source: git
+      name: flutter_voice_engine
+      sha256: a5e972ee01051a0f88ad88b9a0584a9eb4885a2ac31f157753fa7eeeb34e762c
+      url: "https://pub.dev"
+    source: hosted
     version: "0.0.1"
   flutter_web_plugins:
     dependency: transitive
@@ -250,7 +241,7 @@ packages:
     source: hosted
     version: "3.2.4"
   http:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: http
       sha256: bb2ce4590bc2667c96f318d68cac1b5a7987ec819351d32b1c987239a815e007

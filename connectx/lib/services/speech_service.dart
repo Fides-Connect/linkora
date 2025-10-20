@@ -1,20 +1,15 @@
 import 'dart:convert';
 
-import 'package:flutter/material.dart';
-import 'package:flutter/widgets.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_speech/google_speech.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:async';
 import 'package:flutter_voice_engine/flutter_voice_engine.dart';
-import 'package:record/record.dart';
+import 'package:http/http.dart';
 
 class SpeechService {
-  late FlutterTts _tts;
   bool _isListening = false;
   bool _isSpeaking = false;
-  final AudioRecorder _recorder = AudioRecorder();
   final FlutterVoiceEngine _voiceEngine = FlutterVoiceEngine();
 
   // Callbacks
@@ -24,66 +19,11 @@ class SpeechService {
   Function()? onTTSStart;
   Function()? onTTSEnd;
 
-  SpeechService() {
-    _initializeTTS();
-  }
-
-  void _initializeTTS() {
-    _tts = FlutterTts();
-
-    _tts.setStartHandler(() {
-      _isSpeaking = true;
-      onTTSStart?.call();
-    });
-
-    _tts.setCompletionHandler(() {
-      _isSpeaking = false;
-      onTTSEnd?.call();
-    });
-
-    _tts.setErrorHandler((msg) {
-      _isSpeaking = false;
-      onTTSEnd?.call();
-    });
-
-    // Configure TTS settings
-    _tts.setLanguage('de-DE');
-    _tts.setSpeechRate(0.5);
-    _tts.setVolume(1.0);
-    _tts.setPitch(1.0);
-  }
+  SpeechService();
 
   Future<bool> requestMicrophonePermission() async {
     final status = await Permission.microphone.request();
     return status.isGranted;
-  }
-
-  /// Starts recording and returns a live stream of PCM audio data from the microphone using Voice Engine.
-  Future<Stream<List<int>>> _recordAudioWithRecorder() async {
-    final hasPermission = await _recorder.hasPermission();
-    if (!hasPermission) {
-      throw Exception('Microphone permission denied');
-    }
-
-    final androidConfig = AndroidRecordConfig(
-      audioSource: AndroidAudioSource.mic,
-      speakerphone: true,
-      audioManagerMode: AudioManagerMode.modeInCommunication,
-    );
-
-    // Start recording in PCM format (LINEAR16)
-    final Future<Stream<List<int>>> stream = _recorder.startStream(
-      RecordConfig(
-        encoder: AudioEncoder.pcm16bits, // LINEAR16
-        bitRate: 16000 * 16, // 16kHz, 16bit
-        sampleRate: 16000,
-        numChannels: 1,
-        autoGain: true,
-        echoCancel: true,
-        noiseSuppress: true,
-        androidConfig: androidConfig
-      ));
-      return stream;
   }
 
   /// Starts recording and returns a live stream of PCM audio data from the microphone using Voice Engine.
@@ -99,16 +39,12 @@ class SpeechService {
       );
 
       _voiceEngine.sessionConfig = AudioSessionConfig(
-        category: AudioCategory.record,
+        category: AudioCategory.playAndRecord,
         mode: AudioMode.voiceChat,
-        options: {
-          AudioOption.defaultToSpeaker
-        },
+        options: {AudioOption.defaultToSpeaker},
       );
 
       await _voiceEngine.initialize();
-      
-      await _voiceEngine.startRecording();
 
       // Return the audio stream
       return _voiceEngine.audioChunkStream;
@@ -131,8 +67,7 @@ class SpeechService {
 
       try {
         final googleApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
-        final audioStream = await _recordAudioWithRecorder();
-        //final audioStream = await _recordAudioWithVoiceEngine();
+        final audioStream = await _recordAudioWithVoiceEngine();
 
         // Initial config
         final config = RecognitionConfig(
@@ -141,12 +76,12 @@ class SpeechService {
           enableAutomaticPunctuation: true,
           sampleRateHertz: 16000,
           languageCode: 'de-DE',
-          audioChannelCount: 1
+          audioChannelCount: 1,
         );
 
         final streamingConfig = StreamingRecognitionConfig(
           config: config,
-          interimResults: true,
+          interimResults: false,
         );
 
         final speechToText = SpeechToText.viaApiKey(googleApiKey);
@@ -169,11 +104,12 @@ class SpeechService {
           },
         );
 
+        await _voiceEngine.startRecording();
+
         // Listen for errors
         _voiceEngine.errorStream.listen((error) {
           print('Error at Voice Engine: $error');
         });
-
       } catch (e) {
         onSpeechEnd?.call();
         rethrow;
@@ -189,14 +125,40 @@ class SpeechService {
   }
 
   Future<void> speak(String text) async {
+    print('TTS speak called with text: $text');
     if (!_isSpeaking && text.isNotEmpty) {
-      await _tts.speak(text);
+      _isSpeaking = true;
+      final googleApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+      final url =
+          'https://texttospeech.googleapis.com/v1/text:synthesize?key=$googleApiKey';
+      final body = {
+        "input": {"text": text},
+        "voice": {"languageCode": "de-DE", "name": "de-DE-Chirp-HD-F"},
+        'audioConfig': {'audioEncoding': 'LINEAR16', 'sampleRateHertz': 24000},
+      };
+
+      final response = await post(
+        Uri.parse(url),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final audioContent = data['audioContent'];
+        final bytes = base64.decode(audioContent);
+
+        // Play the audio bytes
+        await _voiceEngine.playAudioChunk(bytes);
+      } else {
+        print('Error: ${response.body}');
+      }
+      _isSpeaking = false;
     }
   }
 
   Future<void> stopSpeaking() async {
     if (_isSpeaking) {
-      await _tts.stop();
       _isSpeaking = false;
       onTTSEnd?.call();
     }
@@ -205,7 +167,5 @@ class SpeechService {
   bool get isListening => _isListening;
   bool get isSpeaking => _isSpeaking;
 
-  void dispose() {
-    _tts.stop();
-  }
+  void dispose() {}
 }

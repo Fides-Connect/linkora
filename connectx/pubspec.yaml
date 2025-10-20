@@ -37,9 +37,6 @@ dependencies:
   
   # Google Generative AI SDK for Gemini integration
   google_generative_ai: ^0.4.6
-  
-  # Text-to-speech functionality
-  flutter_tts: ^4.0.2
 
   # Google Speech-to-Text API client
   google_speech: ^5.3.0
@@ -51,15 +48,18 @@ dependencies:
   flutter_dotenv: ^6.0.0
 
   # Record audio functionality with Voice Engine package
-  flutter_voice_engine:
-    git:
+  flutter_voice_engine: ^0.0.1
+    #git:
       #url: https://github.com/AdnanKhan45/flutter_voice_engine.git
       #ref: main
-      url: https://github.com/MohamedFouad99/flutter_voice_engine.git
-      ref: repair/aec_issue_in_android
+      #url: https://github.com/MohamedFouad99/flutter_voice_engine.git
+      #ref: repair/aec_issue_in_android
 
   # Record audio functionality with record package
   record: ^6.1.2
+
+  # http package for making network requests
+  http: ^1.5.0
 
 dev_dependencies:
   flutter_test:
