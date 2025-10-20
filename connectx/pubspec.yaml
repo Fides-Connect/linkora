@@ -40,9 +40,6 @@ dependencies:
   
   # Text-to-speech functionality
   flutter_tts: ^4.0.2
-  
-  # Speech-to-text functionality
-  speech_to_text: ^7.0.0
 
   # Google Speech-to-Text API client
   google_speech: ^5.3.0
@@ -50,19 +47,18 @@ dependencies:
   # Permission handling for microphone access
   permission_handler: ^12.0.1
 
-  # gRPC support
-  grpc: ^3.2.4
-
-  # Protocol Buffers support
-  protobuf: ^3.1.0
-
-  # HTTP client for API calls
-  http: ^1.2.2
-
   # Environment variable management
   flutter_dotenv: ^6.0.0
 
-  # Record audio functionality
+  # Record audio functionality with Voice Engine package
+  flutter_voice_engine:
+    git:
+      #url: https://github.com/AdnanKhan45/flutter_voice_engine.git
+      #ref: main
+      url: https://github.com/MohamedFouad99/flutter_voice_engine.git
+      ref: repair/aec_issue_in_android
+
+  # Record audio functionality with record package
   record: ^6.1.2
 
 dev_dependencies:
