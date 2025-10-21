@@ -61,6 +61,12 @@ dependencies:
   # http package for making network requests
   http: ^1.5.0
 
+  # gRPC package
+  grpc: ^3.2.4
+
+  # Google API Auth package
+  googleapis_auth: ^1.4.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

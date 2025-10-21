@@ -1,11 +1,15 @@
-import 'dart:convert';
+import 'dart:core';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:google_speech/google_speech.dart';
+import 'package:googleapis_auth/auth_io.dart';
+import 'package:googleapis_auth/googleapis_auth.dart';
+import 'package:grpc/grpc.dart';
+import 'package:connectx/generated/cloud_tts.pbgrpc.dart' as cloud_tts;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'dart:async';
 import 'package:flutter_voice_engine/flutter_voice_engine.dart';
-import 'package:http/http.dart';
 
 class SpeechService {
   bool _isListening = false;
@@ -62,13 +66,13 @@ class SpeechService {
         throw Exception('Microphone permission denied');
       }
 
-      _isListening = true;
+       _isListening = true;
       onSpeechStart?.call();
 
       try {
         final googleApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
         final audioStream = await _recordAudioWithVoiceEngine();
-
+        
         // Initial config
         final config = RecognitionConfig(
           encoding: AudioEncoding.LINEAR16,
@@ -128,32 +132,60 @@ class SpeechService {
     print('TTS speak called with text: $text');
     if (!_isSpeaking && text.isNotEmpty) {
       _isSpeaking = true;
-      final googleApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
-      final url =
-          'https://texttospeech.googleapis.com/v1/text:synthesize?key=$googleApiKey';
-      final body = {
-        "input": {"text": text},
-        "voice": {"languageCode": "de-DE", "name": "de-DE-Chirp-HD-F"},
-        'audioConfig': {'audioEncoding': 'LINEAR16', 'sampleRateHertz': 24000},
-      };
 
-      final response = await post(
-        Uri.parse(url),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(body),
+      final String accessToken = dotenv.env['TTS_ACCESS_TOKEN'] ?? '';
+
+      final channel = ClientChannel(
+        'texttospeech.googleapis.com',
+        port: 443,
+        options: const ChannelOptions(credentials: ChannelCredentials.secure()),
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final audioContent = data['audioContent'];
-        final bytes = base64.decode(audioContent);
+      final stub = cloud_tts.TextToSpeechClient(
+        channel,
+        options: CallOptions(
+          metadata: {'Authorization': 'Bearer $accessToken'},
+        ),
+      );
 
-        // Play the audio bytes
-        await _voiceEngine.playAudioChunk(bytes);
-      } else {
-        print('Error: ${response.body}');
+      final streamingSynthesizeConfig = cloud_tts.StreamingSynthesizeConfig(
+        voice: cloud_tts.VoiceSelectionParams(
+          languageCode: "de-DE",
+          name: "de-DE-Chirp-HD-F",
+        ),
+        streamingAudioConfig: cloud_tts.StreamingAudioConfig(
+          audioEncoding: cloud_tts.AudioEncoding.PCM,
+          sampleRateHertz: 24000,
+        ),
+      );
+
+      final streamingSynthesisInput = cloud_tts.StreamingSynthesisInput(
+        text: text,
+      );
+
+      final requestConfig = cloud_tts.StreamingSynthesizeRequest(
+        streamingConfig: streamingSynthesizeConfig,
+      );
+
+      final requestText = cloud_tts.StreamingSynthesizeRequest(
+        input: streamingSynthesisInput,
+      );
+
+      final requestStream =
+          Stream<cloud_tts.StreamingSynthesizeRequest>.fromIterable([requestConfig, requestText]);
+
+      final responseStream = stub.streamingSynthesize(requestStream);
+
+      await for (var response in responseStream) {
+        // Each response.audioChunk contains a chunk of audio bytes
+        final audioChunk = Uint8List.fromList(response.audioContent);
+        // Play audioChunk
+        _voiceEngine.playAudioChunk(audioChunk);
       }
+
       _isSpeaking = false;
+
+      await channel.shutdown();
     }
   }
 
