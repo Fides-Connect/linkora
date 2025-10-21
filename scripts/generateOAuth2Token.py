@@ -1,8 +1,26 @@
+"""
+Usage:
+    python generateOAuth2Token.py <service_account_json_path>
+
+Description:
+    This script generates an OAuth 2 access token using a Google Cloud service account JSON key file.
+    The token will have the 'cloud-platform' scope by default.
+
+Arguments:
+    <service_account_json_path> : Path to your Google Cloud service account JSON key file.
+
+Example:
+    python generateOAuth2Token.py /path/to/service-account.json
+
+Output:
+    Prints the generated OAuth 2 access token to stdout.
+"""
+
 import json
 from google.oauth2 import service_account
 import google.auth.transport.requests
 
-def get_access_token(json_path, scopes):
+def get_access_token(json_path, scopes, json_file_path):
     credentials = service_account.Credentials.from_service_account_file(
         json_path,
         scopes=scopes
@@ -12,7 +30,6 @@ def get_access_token(json_path, scopes):
     return credentials.token
 
 if __name__ == "__main__":
-    json_file = "./gen-lang-client-0859968110-7e4295cc002e.json"
     scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-    token = get_access_token(json_file, scopes)
+    token = get_access_token(json_file_path, scopes)
     print(token)

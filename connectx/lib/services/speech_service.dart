@@ -1,10 +1,7 @@
 import 'dart:core';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:google_speech/google_speech.dart';
-import 'package:googleapis_auth/auth_io.dart';
-import 'package:googleapis_auth/googleapis_auth.dart';
 import 'package:grpc/grpc.dart';
 import 'package:connectx/generated/cloud_tts.pbgrpc.dart' as cloud_tts;
 import 'package:permission_handler/permission_handler.dart';
@@ -70,7 +67,7 @@ class SpeechService {
       onSpeechStart?.call();
 
       try {
-        final googleApiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
+        final accessToken = dotenv.env['OAUTH_ACCESS_TOKEN'] ?? '';
         final audioStream = await _recordAudioWithVoiceEngine();
         
         // Initial config
@@ -88,7 +85,7 @@ class SpeechService {
           interimResults: false,
         );
 
-        final speechToText = SpeechToText.viaApiKey(googleApiKey);
+        final speechToText = SpeechToText.viaToken('Bearer', accessToken);
 
         final responseStream = speechToText.streamingRecognize(
           streamingConfig,
@@ -131,9 +128,7 @@ class SpeechService {
   Future<void> speak(String text) async {
     print('TTS speak called with text: $text');
     if (!_isSpeaking && text.isNotEmpty) {
-      _isSpeaking = true;
-
-      final String accessToken = dotenv.env['TTS_ACCESS_TOKEN'] ?? '';
+      final String accessToken = dotenv.env['OAUTH_ACCESS_TOKEN'] ?? '';
 
       final channel = ClientChannel(
         'texttospeech.googleapis.com',
@@ -182,9 +177,6 @@ class SpeechService {
         // Play audioChunk
         _voiceEngine.playAudioChunk(audioChunk);
       }
-
-      _isSpeaking = false;
-
       await channel.shutdown();
     }
   }
