@@ -43,22 +43,22 @@ class ConnectXHomePage extends StatefulWidget {
 class _ConnectXHomePageState extends State<ConnectXHomePage> {
   late GeminiService _geminiService;
   late SpeechService _speechService;
-  
+
   bool _isAnimating = false;
   bool _isListening = false;
   String _currentMessage = '';
   String _statusText = 'Tap the microphone to start speaking';
-  
+
   @override
   void initState() {
     super.initState();
     _initializeServices();
   }
-  
+
   void _initializeServices() {
     _geminiService = GeminiService();
     _speechService = SpeechService();
-    
+
     // Set up speech service callbacks
     _speechService.onSpeechStart = () {
       setState(() {
@@ -67,7 +67,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
         _statusText = 'Listening...';
       });
     };
-    
+
     _speechService.onSpeechEnd = () {
       setState(() {
         _isListening = false;
@@ -75,33 +75,19 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
         _statusText = 'Processing...';
       });
     };
-    
+
     _speechService.onSpeechResult = (String result) {
       _handleSpeechResult(result);
     };
-    
-    _speechService.onTTSStart = () {
-      setState(() {
-        _isAnimating = true;
-        _statusText = 'Speaking...';
-      });
-    };
-    
-    _speechService.onTTSEnd = () {
-      setState(() {
-        _isAnimating = false;
-        _statusText = 'Tap the microphone to start speaking';
-      });
-    };
   }
-  
+
   void _handleSpeechResult(String spokenText) async {
     if (spokenText.isNotEmpty) {
       setState(() {
         _currentMessage = spokenText;
         _statusText = 'Getting response from Gemini...';
       });
-      
+
       try {
         final response = await _geminiService.generateResponse(spokenText);
         await _speechService.speak(response);
@@ -112,7 +98,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       }
     }
   }
-  
+
   void _startListening() async {
     try {
       await Permission.microphone.request(); // Request microphone permission
@@ -123,25 +109,21 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       });
     }
   }
-  
+
   void _stopChat() async {
-    await _speechService.stopListening();
-    await _speechService.stopSpeaking();
-    
     setState(() {
       _isListening = false;
       _isAnimating = false;
       _currentMessage = '';
       _statusText = 'Chat stopped. Tap the microphone to start again.';
     });
-    
+
     // Provide haptic feedback
     HapticFeedback.mediumImpact();
   }
-  
+
   @override
   void dispose() {
-    _speechService.dispose();
     super.dispose();
   }
 
@@ -157,14 +139,11 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                 gradient: RadialGradient(
                   center: Alignment.center,
                   radius: 1.5,
-                  colors: [
-                    Color(0xFF1A1A2E),
-                    Color(0xFF0A0A0A),
-                  ],
+                  colors: [Color(0xFF1A1A2E), Color(0xFF0A0A0A)],
                 ),
               ),
             ),
-            
+
             // Main content
             Column(
               children: [
@@ -176,23 +155,24 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                     children: [
                       Text(
                         'ConnectX',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: const Color(0xFF6C63FF),
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: Theme.of(context).textTheme.headlineMedium
+                            ?.copyWith(
+                              color: const Color(0xFF6C63FF),
+                              fontWeight: FontWeight.bold,
+                            ),
                       ),
                       const SizedBox(height: 10),
                       Text(
                         _statusText,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Colors.white70,
-                        ),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
                         textAlign: TextAlign.center,
                       ),
                     ],
                   ),
                 ),
-                
+
                 // Particle sphere in the center
                 Expanded(
                   child: Center(
@@ -205,7 +185,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                     ),
                   ),
                 ),
-                
+
                 // Current message display
                 if (_currentMessage.isNotEmpty)
                   Container(
@@ -221,15 +201,15 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                     ),
                     child: Text(
                       _currentMessage,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Colors.white,
-                      ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyMedium?.copyWith(color: Colors.white),
                       textAlign: TextAlign.center,
                     ),
                   ),
               ],
             ),
-            
+
             // Bottom action buttons
             Positioned(
               bottom: 40,
@@ -238,19 +218,16 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                 onPressed: _stopChat,
                 backgroundColor: Colors.red.withValues(alpha: 0.8),
                 heroTag: 'stop_button',
-                child: const Icon(
-                  Icons.stop,
-                  color: Colors.white,
-                ),
+                child: const Icon(Icons.stop, color: Colors.white),
               ),
             ),
-            
+
             Positioned(
               bottom: 40,
               right: 40,
               child: FloatingActionButton.large(
                 onPressed: _isListening ? null : _startListening,
-                backgroundColor: _isListening 
+                backgroundColor: _isListening
                     ? const Color(0xFF6C63FF).withValues(alpha: 0.5)
                     : const Color(0xFF6C63FF),
                 heroTag: 'mic_button',

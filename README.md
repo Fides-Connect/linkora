@@ -64,20 +64,22 @@ Edit `.env` to set your values as needed.
 
 ### Generating an OAuth 2 Access Token
 
-To generate an OAuth 2 access token using a Google Cloud service account JSON key file, run:
+To generate an OAuth 2 access token using a Google Cloud service account JSON key file and write it directly to your `.env` file, run:
 
 ```sh
-python scripts/generateOAuth2Token.py <service_account_json_path>
+python scripts/generateOAuth2Token.py <service_account_json_path> <env_file_path>
 ```
 
+**Required parameters:**
 - `<service_account_json_path>`: Path to your Google Cloud service account JSON key file.
+- `<env_file_path>`: Path to the `.env` file to update.
 
-The script will set the `OAUTH_ACCESS_TOKEN` environment variable for your current shell session and print the token to stdout.
+The script will write the generated token to the specified `.env` file as `OAUTH_ACCESS_TOKEN=<token>`.
 
 Example:
 
 ```sh
-python scripts/generateOAuth2Token.py /path/to/service-account.json
+python scripts/generateOAuth2Token.py /path/to/service-account.json connectx/.env
 ```
 
 ### Running on Different Platforms

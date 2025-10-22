@@ -9,16 +9,12 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_voice_engine/flutter_voice_engine.dart';
 
 class SpeechService {
-  bool _isListening = false;
-  bool _isSpeaking = false;
   final FlutterVoiceEngine _voiceEngine = FlutterVoiceEngine();
 
   // Callbacks
   Function()? onSpeechStart;
   Function()? onSpeechEnd;
   Function(String)? onSpeechResult;
-  Function()? onTTSStart;
-  Function()? onTTSEnd;
 
   SpeechService();
 
@@ -57,78 +53,74 @@ class SpeechService {
 
   /// Streams audio chunks to Google Speech-to-Text and updates live transcription.
   Future<void> startListening() async {
-    if (!_isListening && !_isSpeaking) {
-      final hasPermission = await requestMicrophonePermission();
-      if (!hasPermission) {
-        throw Exception('Microphone permission denied');
-      }
-
-       _isListening = true;
-      onSpeechStart?.call();
-
-      try {
-        final accessToken = dotenv.env['OAUTH_ACCESS_TOKEN'] ?? '';
-        final audioStream = await _recordAudioWithVoiceEngine();
-        
-        // Initial config
-        final config = RecognitionConfig(
-          encoding: AudioEncoding.LINEAR16,
-          model: RecognitionModel.basic,
-          enableAutomaticPunctuation: true,
-          sampleRateHertz: 16000,
-          languageCode: 'de-DE',
-          audioChannelCount: 1,
-        );
-
-        final streamingConfig = StreamingRecognitionConfig(
-          config: config,
-          interimResults: false,
-        );
-
-        final speechToText = SpeechToText.viaToken('Bearer', accessToken);
-
-        final responseStream = speechToText.streamingRecognize(
-          streamingConfig,
-          audioStream,
-        );
-
-        responseStream.listen(
-          (data) {
-            // Extract transcript from data and callback
-            final transcript = data.results
-                .map((result) => result.alternatives.first.transcript)
-                .join(' ');
-            onSpeechResult?.call(transcript);
-          },
-          onError: (e) {
-            onSpeechEnd?.call();
-          },
-        );
-
-        await _voiceEngine.startRecording();
-
-        // Listen for errors
-        _voiceEngine.errorStream.listen((error) {
-          print('Error at Voice Engine: $error');
-        });
-      } catch (e) {
-        onSpeechEnd?.call();
-        rethrow;
-      }
+    final hasPermission = await requestMicrophonePermission();
+    if (!hasPermission) {
+      throw Exception('Microphone permission denied');
     }
-  }
 
-  Future<void> stopListening() async {
-    if (_isListening) {
-      _isListening = false;
+    onSpeechStart?.call();
+
+    try {
+      final accessToken = dotenv.env['OAUTH_ACCESS_TOKEN'] ?? '';
+      final audioStream = await _recordAudioWithVoiceEngine();
+
+      print("Access Token: $accessToken");
+
+      // Initial config
+      final config = RecognitionConfig(
+        encoding: AudioEncoding.LINEAR16,
+        model: RecognitionModel.basic,
+        enableAutomaticPunctuation: true,
+        sampleRateHertz: 16000,
+        languageCode: 'de-DE',
+        audioChannelCount: 1,
+      );
+
+      final streamingConfig = StreamingRecognitionConfig(
+        config: config,
+        interimResults: false,
+      );
+
+      final speechToText = SpeechToText.viaToken('Bearer', accessToken);
+
+      final responseStream = speechToText.streamingRecognize(
+        streamingConfig,
+        audioStream,
+      );
+
+      responseStream.listen(
+        (data) {
+          // Extract transcript from data and callback
+          final transcript = data.results
+              .map((result) => result.alternatives.first.transcript)
+              .join(' ');
+          onSpeechResult?.call(transcript);
+        },
+        onError: (e) {
+          print( 'Error during speech recognition: $e');
+          onSpeechEnd?.call();
+        },
+      );
+
+      await _voiceEngine.startRecording();
+
+      // Listen for errors
+      _voiceEngine.errorStream.listen((error) {
+        print('Error at Voice Engine: $error');
+      });
+    } catch (e) {
+      print('Error in startListening: $e');
       onSpeechEnd?.call();
+      rethrow;
     }
   }
 
   Future<void> speak(String text) async {
     print('TTS speak called with text: $text');
-    if (!_isSpeaking && text.isNotEmpty) {
+    if (text.isNotEmpty) {
       final String accessToken = dotenv.env['OAUTH_ACCESS_TOKEN'] ?? '';
+
+      print("Access Token: $accessToken");
 
       final channel = ClientChannel(
         'texttospeech.googleapis.com',
@@ -167,7 +159,10 @@ class SpeechService {
       );
 
       final requestStream =
-          Stream<cloud_tts.StreamingSynthesizeRequest>.fromIterable([requestConfig, requestText]);
+          Stream<cloud_tts.StreamingSynthesizeRequest>.fromIterable([
+            requestConfig,
+            requestText,
+          ]);
 
       final responseStream = stub.streamingSynthesize(requestStream);
 
@@ -180,16 +175,4 @@ class SpeechService {
       await channel.shutdown();
     }
   }
-
-  Future<void> stopSpeaking() async {
-    if (_isSpeaking) {
-      _isSpeaking = false;
-      onTTSEnd?.call();
-    }
-  }
-
-  bool get isListening => _isListening;
-  bool get isSpeaking => _isSpeaking;
-
-  void dispose() {}
 }
