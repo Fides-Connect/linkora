@@ -61,5 +61,8 @@ app.*.symbols
 !**/ios/**/default.pbxuser
 !**/ios/**/default.perspectivev3
 
+# Environment variables file
+.env
+
 # Service Account Json File
 gen-lang-client*.json

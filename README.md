@@ -52,12 +52,32 @@ You should see all checkmarks ✅ for Flutter, Android toolchain, and other comp
 
 ## 📱 Development Workflows
 
-### Creating a New Flutter Project
+### ⚙️ Environment Variables
 
-```bash
-flutter create my_awesome_app
-cd my_awesome_app
-flutter pub get
+Before running the project, copy and rename `template.env` to `.env` and add your actual environment variables:
+
+```sh
+cp connectx/template.env connectx/.env
+```
+
+Edit `.env` to set your values as needed.
+
+### Generating an OAuth 2 Access Token
+
+To generate an OAuth 2 access token using a Google Cloud service account JSON key file, run:
+
+```sh
+python scripts/generateOAuth2Token.py <service_account_json_path>
+```
+
+- `<service_account_json_path>`: Path to your Google Cloud service account JSON key file.
+
+The script will set the `OAUTH_ACCESS_TOKEN` environment variable for your current shell session and print the token to stdout.
+
+Example:
+
+```sh
+python scripts/generateOAuth2Token.py /path/to/service-account.json
 ```
 
 ### Running on Different Platforms
@@ -268,3 +288,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ---
 
 **Happy Flutter Development! 🎉**
+
