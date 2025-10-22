@@ -65,6 +65,8 @@ RUN apt-get update && apt-get install -y \
     usbutils \
     android-tools-adb \
     android-tools-fastboot \
+    python3-requests \
+    python3-google-auth \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Chromium for Flutter web development (ARM64 compatible)

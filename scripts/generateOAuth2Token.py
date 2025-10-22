@@ -19,8 +19,9 @@ Output:
 import json
 from google.oauth2 import service_account
 import google.auth.transport.requests
+import sys
 
-def get_access_token(json_path, scopes, json_file_path):
+def get_access_token(json_path, scopes):
     credentials = service_account.Credentials.from_service_account_file(
         json_path,
         scopes=scopes
@@ -30,6 +31,10 @@ def get_access_token(json_path, scopes, json_file_path):
     return credentials.token
 
 if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("Usage: python generateOAuth2Token.py <service_account_json_path>")
+        sys.exit(1)
+    json_file_path = sys.argv[1]
     scopes = ["https://www.googleapis.com/auth/cloud-platform"]
     token = get_access_token(json_file_path, scopes)
     print(token)
