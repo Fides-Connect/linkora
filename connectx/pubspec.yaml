@@ -48,15 +48,11 @@ dependencies:
   flutter_dotenv: ^6.0.0
 
   # Record audio functionality with Voice Engine package
-  flutter_voice_engine: ^0.0.1
-    #git:
-      #url: https://github.com/AdnanKhan45/flutter_voice_engine.git
-      #ref: main
-      #url: https://github.com/MohamedFouad99/flutter_voice_engine.git
-      #ref: repair/aec_issue_in_android
-
-  # Record audio functionality with record package
-  record: ^6.1.2
+  # At the moment we need to use a forked version to fix AEC issues on Android
+  flutter_voice_engine:
+    git:
+      url: https://github.com/MohamedFouad99/flutter_voice_engine.git
+      ref: repair/aec_issue_in_android
 
   # http package for making network requests
   http: ^1.5.0
