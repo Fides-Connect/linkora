@@ -102,7 +102,8 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   void _startListening() async {
     try {
       await Permission.microphone.request(); // Request microphone permission
-      await _speechService.startListening();
+      await _speechService.initialize();
+      await _speechService.startSpeech();
     } catch (e) {
       setState(() {
         _statusText = 'Error: ${e.toString()}';
@@ -110,7 +111,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     }
   }
 
-  void _stopChat() async {
+  Future<void> _stopChat() async {
     setState(() {
       _isListening = false;
       _isAnimating = false;
@@ -120,6 +121,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
     // Provide haptic feedback
     HapticFeedback.mediumImpact();
+    await _speechService.dispose();
   }
 
   @override
