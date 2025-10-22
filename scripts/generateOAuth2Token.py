@@ -1,24 +1,22 @@
 """
 Usage:
-    python generateOAuth2Token.py <service_account_json_path> [env_file_path]
+    python generateOAuth2Token.py <service_account_json_path>
 
 Description:
     This script generates an OAuth 2 access token using a Google Cloud service account JSON key file.
+    and sets it as an environment variable named OAUTH_ACCESS_TOKEN.
     The token will have the 'cloud-platform' scope by default.
 
 Arguments:
     <service_account_json_path> : Path to your Google Cloud service account JSON key file.
-    [env_file_path]            : Optional path to the .env file to update. Defaults to '.env'.
 
 Example:
     python generateOAuth2Token.py /path/to/service-account.json
-    python generateOAuth2Token.py /path/to/service-account.json /path/to/.env
 
 Output:
-    Prints the generated OAuth 2 access token to stdout.
+    Prints the generated OAuth 2 access token to stdout and sets the OAUTH_ACCESS_TOKEN environment variable.
 """
 
-import json
 from google.oauth2 import service_account
 import google.auth.transport.requests
 import sys
