@@ -45,7 +45,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   late SpeechService _speechService;
 
   bool _isAnimating = false;
-  bool _isListening = false;
+  bool _isChatting = false;
   String _currentMessage = '';
   String _statusText = 'Tap the microphone to start speaking';
 
@@ -62,7 +62,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     // Set up speech service callbacks
     _speechService.onSpeechStart = () {
       setState(() {
-        _isListening = true;
+        _isChatting = true;
         _isAnimating = true;
         _statusText = 'Listening...';
       });
@@ -70,7 +70,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
     _speechService.onSpeechEnd = () {
       setState(() {
-        _isListening = false;
+        _isChatting = false;
         _isAnimating = false;
         _statusText = 'Processing...';
       });
@@ -90,7 +90,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
       try {
         final response = await _geminiService.generateResponse(spokenText);
-        await _speechService.speak(response);
+        _speechService.synthesizeSpeech(response);
       } catch (e) {
         setState(() {
           _statusText = 'Error: ${e.toString()}';
@@ -99,11 +99,9 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     }
   }
 
-  void _startListening() async {
+  void _startChat() async {
     try {
-      await Permission.microphone.request(); // Request microphone permission
-      await _speechService.initialize();
-      await _speechService.startSpeech();
+      _speechService.startSpeech();
     } catch (e) {
       setState(() {
         _statusText = 'Error: ${e.toString()}';
@@ -112,16 +110,20 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   }
 
   Future<void> _stopChat() async {
+    // Provide haptic feedback
+    HapticFeedback.mediumImpact();
+    try {
+      _speechService.stopSpeech();
+    } catch (e) {
+        _statusText = 'Error: ${e.toString()}';
+    }
+
     setState(() {
-      _isListening = false;
+      _isChatting = false;
       _isAnimating = false;
       _currentMessage = '';
       _statusText = 'Chat stopped. Tap the microphone to start again.';
     });
-
-    // Provide haptic feedback
-    HapticFeedback.mediumImpact();
-    await _speechService.dispose();
   }
 
   @override
@@ -228,13 +230,13 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
               bottom: 40,
               right: 40,
               child: FloatingActionButton.large(
-                onPressed: _isListening ? null : _startListening,
-                backgroundColor: _isListening
+                onPressed: _isChatting ? null : _startChat,
+                backgroundColor: _isChatting
                     ? const Color(0xFF6C63FF).withValues(alpha: 0.5)
                     : const Color(0xFF6C63FF),
                 heroTag: 'mic_button',
                 child: Icon(
-                  _isListening ? Icons.mic : Icons.mic_none,
+                  _isChatting ? Icons.mic : Icons.mic_none,
                   color: Colors.white,
                   size: 32,
                 ),

@@ -76,6 +76,8 @@ python scripts/generateOAuth2Token.py <service_account_json_path> <env_file_path
 
 The script will write the generated token to the specified `.env` file as `OAUTH_ACCESS_TOKEN=<token>`.
 
+> **Note:** The OAuth 2 token is only valid for 1 hour due to Google security guidelines. You will need to refresh/regenerate the token periodically.
+
 Example:
 
 ```sh
