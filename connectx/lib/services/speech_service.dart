@@ -10,7 +10,8 @@ import 'package:flutter_voice_engine/flutter_voice_engine.dart';
 
 class SpeechService {
   FlutterVoiceEngine? _voiceEngine;
-  cloud_tts.TextToSpeechClient? _ttsClient;
+  SpeechToText? _speechToText;
+  cloud_tts.TextToSpeechClient? _textToSpeech;
   ClientChannel? _clientChannel;
 
   // Callbacks
@@ -20,15 +21,39 @@ class SpeechService {
 
   SpeechService();
 
-  Future<void> initialize() async {
+  Future<void> stopSpeech() async {
+    // Shutdown resources
+    await _voiceEngine?.stopRecording();
+    await _voiceEngine?.stopPlayback();
+    _speechToText?.dispose();
+    await _clientChannel?.terminate();
+
+    _speechToText = null;
+    _textToSpeech = null;
+    _clientChannel = null;
+  }
+
+  /// Streams audio chunks to Google Speech-to-Text and updates live transcription.
+  Future<void> startSpeech() async {
+    onSpeechStart?.call();
+    try {
+      await _initialize();
+      _voiceEngine?.startRecording();
+    } catch (e) {
+      print('Error in startSpeech: $e');
+      onSpeechEnd?.call();
+      rethrow;
+    }
+  }
+
+  Future<void> _initialize() async {
     // Get OAuth Access Token from environment
     final accessToken = dotenv.env['OAUTH_ACCESS_TOKEN'] ?? '';
-    print("Access Token: $accessToken");
 
     // Initialize Speech Service Components
-    await _initializeVoiceEngine();
-    _initializeSpeechToText(accessToken);
-    _initializeTextToSpeech(accessToken);
+    if (_voiceEngine == null) await _initializeVoiceEngine();
+    if (_speechToText == null) _initializeSpeechToText(accessToken);
+    if (_textToSpeech == null) _initializeTextToSpeech(accessToken);
   }
 
   Future<void> _initializeVoiceEngine() async {
@@ -45,13 +70,15 @@ class SpeechService {
         channels: 1,
         bitDepth: 16,
         bufferSize: 4096,
+        amplitudeThreshold: 0.05,
         enableAEC: true,
       );
 
       _voiceEngine?.sessionConfig = AudioSessionConfig(
         category: AudioCategory.playAndRecord,
-        mode: AudioMode.spokenAudio,
+        mode: AudioMode.voiceChat,
         options: {AudioOption.defaultToSpeaker},
+        preferredBufferDuration: 0.005,
       );
       // Listen for errors
       _voiceEngine?.errorStream.listen((error) {
@@ -80,9 +107,9 @@ class SpeechService {
         interimResults: false,
       );
 
-      final speechToText = SpeechToText.viaToken('Bearer', accessToken);
+      _speechToText = SpeechToText.viaToken('Bearer', accessToken);
 
-      final responseStream = speechToText.streamingRecognize(
+      final responseStream = _speechToText!.streamingRecognize(
         streamingConfig,
         _voiceEngine!.audioChunkStream,
       );
@@ -114,37 +141,14 @@ class SpeechService {
       options: const ChannelOptions(credentials: ChannelCredentials.secure()),
     );
 
-    _ttsClient = cloud_tts.TextToSpeechClient(
+    _textToSpeech = cloud_tts.TextToSpeechClient(
       _clientChannel!,
       options: CallOptions(metadata: {'Authorization': 'Bearer $accessToken'}),
     );
   }
 
-  Future<void> dispose() async {
-    // Shutdoown resources
-    await _voiceEngine?.shutdownAll();
-    await _clientChannel?.shutdown();
-
-    // Clear references
-    _voiceEngine = null;
-    _ttsClient = null;
-    _clientChannel = null;
-  }
-
-  /// Streams audio chunks to Google Speech-to-Text and updates live transcription.
-  Future<void> startSpeech() async {
-    onSpeechStart?.call();
-    try {
-      await _voiceEngine?.startRecording();
-    } catch (e) {
-      print('Error in startListening: $e');
-      onSpeechEnd?.call();
-      rethrow;
-    }
-  }
-
-  Future<void> speak(String text) async {
-    print('TTS speak called with text: $text');
+  void synthesizeSpeech(String text) {
+    print('synthesizeSpeech called with text: $text');
     if (text.isNotEmpty) {
       final streamingSynthesizeConfig = cloud_tts.StreamingSynthesizeConfig(
         voice: cloud_tts.VoiceSelectionParams(
@@ -169,20 +173,24 @@ class SpeechService {
         input: streamingSynthesisInput,
       );
 
-      final requestStreamText =
+      final requestStream =
           Stream<cloud_tts.StreamingSynthesizeRequest>.fromIterable([
             requestConfig,
             requestText,
           ]);
 
-      final responseStream = _ttsClient!.streamingSynthesize(requestStreamText);
+      final responseStream = _textToSpeech?.streamingSynthesize(requestStream);
 
-      await for (var response in responseStream) {
-        // Each response.audioChunk contains a chunk of audio bytes
-        final audioChunk = Uint8List.fromList(response.audioContent);
-        // Play audioChunk
-        _voiceEngine?.playAudioChunk(audioChunk);
-      }
+      responseStream?.listen(
+        (data) {
+          // Handle each audio chunk as it arrives
+          final audioChunk = Uint8List.fromList(data.audioContent);
+          _voiceEngine?.playAudioChunk(audioChunk);
+        },
+        onError: (e) {
+          print('Error during TTS streaming: $e');
+        },
+      );
     }
   }
 }
