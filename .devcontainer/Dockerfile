@@ -18,8 +18,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Set environment variables
 ENV FLUTTER_ROOT="/opt/flutter"
-ENV ANDROID_HOME="/opt/android-sdk"
-ENV ANDROID_SDK_ROOT="/opt/android-sdk"
+ENV ANDROID_HOME="/usr/lib/android-sdk"
+ENV ANDROID_SDK_ROOT="/usr/lib/android-sdk"
 ENV PATH="$FLUTTER_ROOT/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 ENV CHROME_EXECUTABLE="/usr/bin/chromium-browser"
 
@@ -65,6 +65,8 @@ RUN apt-get update && apt-get install -y \
     usbutils \
     android-tools-adb \
     android-tools-fastboot \
+    android-sdk \
+    google-android-platform-34-installer \
     python3-requests \
     python3-google-auth \
     python3-dotenv \

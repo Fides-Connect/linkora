@@ -7,12 +7,8 @@ echo "🚀 Setting up Flutter development environment..."
 sudo chown -R vscode:vscode /opt/flutter /opt/android-sdk
 
 # Accept Android licenses
-echo "📱 Accepting Android SDK licenses..."
-yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
-
-# Install required Android SDK components
-echo "📦 Installing Android SDK platform-tools, build-tools, and platforms..."
-/opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --install "platform-tools" "build-tools;34.0.0" "platforms;android-34"
+#echo "📱 Accepting Android SDK licenses..."
+#yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
 
 # Run Flutter doctor to check setup
 echo "🔍 Running Flutter doctor..."
