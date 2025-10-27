@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'widgets/particle_sphere.dart';
 import 'services/gemini_service.dart';
 import 'services/speech_service.dart';
 
-void main() {
+import 'package:permission_handler/permission_handler.dart';
+
+void main() async {
+  await dotenv.load(); // Load environment variables from .env file
   runApp(const ConnectXApp());
 }
 
@@ -111,6 +115,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   
   void _startListening() async {
     try {
+      await Permission.microphone.request(); // Request microphone permission
       await _speechService.startListening();
     } catch (e) {
       setState(() {

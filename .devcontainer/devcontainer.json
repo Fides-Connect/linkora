@@ -6,7 +6,8 @@
   },
   "runArgs": [
     "--init",
-    "--rm"
+    "--rm",
+    "--network=host"
   ],
   "forwardPorts": [
     8080,
@@ -62,3 +63,5 @@
   },
   "workspaceFolder": "/workspaces/flutter-dev-workspace"
 }
+
+
