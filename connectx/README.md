@@ -18,7 +18,7 @@ samples, guidance on mobile development, and a full API reference.
 ## Environment Variables
 
 ConnectX supports configuration via a `.env` file.  
-This file should be placed in the project root (`/workspaces/flutter-dev-workspace/connectx/.env`) and is used to store sensitive or environment-specific settings.
+This file should be placed in the project root (`/workspaces/Fides/connectx/.env`) and is used to store sensitive or environment-specific settings.
 
 > **Note:**  
 > A `template.env` file is provided in the project root as an example.  

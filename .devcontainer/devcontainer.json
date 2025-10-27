@@ -61,7 +61,5 @@
     "ANDROID_SDK_ROOT": "/opt/android-sdk",
     "CHROME_EXECUTABLE": "/usr/bin/chromium-browser"
   },
-  "workspaceFolder": "/workspaces/flutter-dev-workspace"
+  "workspaceFolder": "/workspaces/Fides"
 }
-
-
