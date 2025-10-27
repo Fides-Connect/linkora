@@ -45,7 +45,7 @@ sudo chmod a+r /etc/udev/rules.d/51-android.rules
 sudo usermod -a -G plugdev vscode
 
 # Add some useful dev dependencies
-cd /workspaces/flutter-dev-workspace/connectx
+cd /workspaces/Fides/connectx
 /opt/flutter/bin/flutter pub add dev:flutter_lints
 /opt/flutter/bin/flutter pub add dev:test
 /opt/flutter/bin/flutter pub get
@@ -55,7 +55,7 @@ echo "📝 Setting up aliases..."
 cat >> ~/.bashrc << 'EOF'
 
 # Add dev-helper script to PATH
-export PATH="/workspaces/flutter-dev-workspace/scripts:$PATH"
+export PATH="/workspaces/Fides/scripts:$PATH"
 
 # Flutter aliases
 alias fl='flutter'

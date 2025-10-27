@@ -24,8 +24,8 @@ A complete Flutter development environment using Docker and VS Code Dev Containe
 ### 1. Clone/Download this Repository
 
 ```bash
-git clone <your-repo> flutter-dev-workspace
-cd flutter-dev-workspace
+git clone <Fides-repo>
+cd Fides
 ```
 
 ### 2. Open in VS Code
