@@ -1,15 +1,5 @@
 #!/bin/bash
 
-# Post-create script for Flutter dev container
-echo "🚀 Setting up Flutter development environment..."
-
-# Ensure proper permissions
-sudo chown -R vscode:vscode /opt/flutter /opt/android-sdk
-
-# Accept Android licenses
-#echo "📱 Accepting Android SDK licenses..."
-#yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
-
 # Run Flutter doctor to check setup
 echo "🔍 Running Flutter doctor..."
 /opt/flutter/bin/flutter doctor -v
@@ -79,7 +69,7 @@ EOF
 
 # Create AVD (Android Virtual Device) for testing
 echo "📱 Creating Android Virtual Device..."
-echo "no" | /opt/android-sdk/cmdline-tools/latest/bin/avdmanager create avd \
+echo "no" | /usr/lib/android-sdk/cmdline-tools/latest/bin/avdmanager create avd \
     -n "Flutter_Emulator" \
     -k "system-images;android-34;google_apis_playstore;arm64-v8a" \
     -d "pixel_7_pro" \

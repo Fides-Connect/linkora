@@ -57,8 +57,8 @@
   "postCreateCommand": ".devcontainer/post-create.sh",
   "containerEnv": {
     "FLUTTER_ROOT": "/opt/flutter",
-    "ANDROID_HOME": "/opt/android-sdk",
-    "ANDROID_SDK_ROOT": "/opt/android-sdk",
+    "ANDROID_HOME": "/usr/lib/android-sdk",
+    "ANDROID_SDK_ROOT": "/usr/lib/android-sdk",
     "CHROME_EXECUTABLE": "/usr/bin/chromium-browser"
   },
   "workspaceFolder": "/workspaces/Fides"

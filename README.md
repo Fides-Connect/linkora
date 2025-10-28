@@ -94,7 +94,6 @@ flutter run
 flutter run -d chrome
 
 #or
-
 flutter run -d web-server
 
 # Linux Desktop (within container)

@@ -1,17 +1,4 @@
-# Use Ubuntu 24.04 as base image for ARM64 (Apple Silicon compatibility)
 FROM ubuntu:24.04
-
-# Configure proxy settings for corporate network
-# ENV HTTP_PROXY=http://fixccaq:HongLuu1003@10.252.76.110:8080
-# ENV HTTPS_PROXY=http://fixccaq:HongLuu1003@10.252.76.110:8080
-# ENV http_proxy=http://fixccaq:HongLuu1003@10.252.76.110:8080
-# ENV https_proxy=http://fixccaq:HongLuu1003@10.252.76.110:8080
-# ENV NO_PROXY=localhost,127.0.0.1,::1
-# ENV no_proxy=localhost,127.0.0.1,::1
-
-# Configure APT proxy settings
-# RUN echo 'Acquire::http::Proxy "http://fixccaq:HongLuu1003@10.252.76.110:8080";' > /etc/apt/apt.conf.d/proxy.conf \
-#     && echo 'Acquire::https::Proxy "http://fixccaq:HongLuu1003@10.252.76.110:8080";' >> /etc/apt/apt.conf.d/proxy.conf
 
 # Avoid prompts from apt
 ENV DEBIAN_FRONTEND=noninteractive
@@ -70,12 +57,18 @@ RUN apt-get update && apt-get install -y \
     python3-requests \
     python3-google-auth \
     python3-dotenv \
+    libc6-amd64-cross \
+    libstdc++6-amd64-cross \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Chromium for Flutter web development (ARM64 compatible)
 RUN apt-get update \
     && apt-get install -y chromium-browser \
     && rm -rf /var/lib/apt/lists/*
+
+# Create symlinks for x86_64 libs where the x86 loader looks
+RUN ln -sf /usr/x86_64-linux-gnu/lib64 /lib64 \
+    && ln -sf /usr/x86_64-linux-gnu/lib /lib/x86_64-linux-gnu
 
 # Create directories
 RUN mkdir -p $FLUTTER_ROOT $ANDROID_HOME
