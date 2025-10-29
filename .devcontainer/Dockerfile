@@ -57,18 +57,12 @@ RUN apt-get update && apt-get install -y \
     python3-requests \
     python3-google-auth \
     python3-dotenv \
-    libc6-amd64-cross \
-    libstdc++6-amd64-cross \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Chromium for Flutter web development (ARM64 compatible)
 RUN apt-get update \
     && apt-get install -y chromium-browser \
     && rm -rf /var/lib/apt/lists/*
-
-# Create symlinks for x86_64 libs where the x86 loader looks
-RUN ln -sf /usr/x86_64-linux-gnu/lib64 /lib64 \
-    && ln -sf /usr/x86_64-linux-gnu/lib /lib/x86_64-linux-gnu
 
 # Create directories
 RUN mkdir -p $FLUTTER_ROOT $ANDROID_HOME
