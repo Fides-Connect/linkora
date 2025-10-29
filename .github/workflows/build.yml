@@ -1,0 +1,20 @@
+name: Build APK in Dev Container
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run in Dev Container
+        uses: devcontainers/ci@v0.3
+        with:
+          runCmd: |
+            cd ./connectx
+            flutter build apk
