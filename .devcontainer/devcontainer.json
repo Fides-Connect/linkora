@@ -48,8 +48,7 @@
           "bash": {
             "path": "/bin/bash"
           }
-        },
-        "java.home": "/usr/lib/jvm/java-17-openjdk-arm64"
+        }
       }
     }
   },
