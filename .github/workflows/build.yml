@@ -17,4 +17,5 @@ jobs:
         with:
           runCmd: |
             cd ./connectx
+            cp ./template.env .env
             flutter build apk
