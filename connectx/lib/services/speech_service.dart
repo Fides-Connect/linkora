@@ -1,5 +1,6 @@
 import 'dart:core';
 import 'dart:typed_data';
+import 'dart:io';
 
 import 'package:google_speech/google_speech.dart';
 import 'package:grpc/grpc.dart';
@@ -26,7 +27,7 @@ class SpeechService {
     await _voiceEngine?.stopRecording();
     await _voiceEngine?.stopPlayback();
     _speechToText?.dispose();
-    await _clientChannel?.terminate();
+    await _clientChannel?.shutdown();
 
     _speechToText = null;
     _textToSpeech = null;
@@ -49,6 +50,9 @@ class SpeechService {
   Future<void> _initialize() async {
     // Get OAuth Access Token from environment
     final accessToken = dotenv.env['OAUTH_ACCESS_TOKEN'] ?? '';
+    if (accessToken.isEmpty) {
+      throw Exception('Missing OAUTH_ACCESS_TOKEN environment variable');
+    }
 
     // Initialize Speech Service Components
     if (_voiceEngine == null) await _initializeVoiceEngine();
@@ -73,18 +77,18 @@ class SpeechService {
         amplitudeThreshold: 0.05,
         enableAEC: true,
       );
-
       _voiceEngine?.sessionConfig = AudioSessionConfig(
         category: AudioCategory.playAndRecord,
         mode: AudioMode.voiceChat,
         options: {AudioOption.defaultToSpeaker},
         preferredBufferDuration: 0.005,
       );
+      await _voiceEngine?.initialize();
+
       // Listen for errors
       _voiceEngine?.errorStream.listen((error) {
         print('Error at Voice Engine: $error');
       });
-      await _voiceEngine?.initialize();
     } catch (e) {
       print('VoiceEngine initialization failed: $e');
       rethrow;
