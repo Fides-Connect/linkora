@@ -84,6 +84,25 @@ Example:
 python scripts/generateOAuth2Token.py /path/to/service-account.json connectx/.env
 ```
 
+### Setting up a Python virtual environment (recommended)
+
+Before running the script, create and activate a virtual environment and install dependencies from `requirements.txt`:
+
+```bash
+# from repo root
+python3 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+# Run the token generator
+python scripts/generateOAuth2Token.py /path/to/service-account.json connectx/.env
+
+# When finished
+deactivate
+```
+
 ### Running on Different Platforms
 
 ```bash
