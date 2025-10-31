@@ -121,15 +121,15 @@ class SpeechService {
 
       responseStream.listen(
         (data) {
+          // Cancel current audio synthesis if new speech is detected
+          _audioSynthesisSubscription?.cancel();
+          _voiceEngine?.stopPlayback();
+
           // Extract transcript from data and callback
           final transcript = data.results
               .map((result) => result.alternatives.first.transcript)
               .join(' ');
           onSpeechResult?.call(transcript);
-
-          // Cancel current audio synthesis if new speech is detected
-          _audioSynthesisSubscription?.cancel();
-          _voiceEngine?.stopPlayback();
         },
         onError: (e) {
           print('Error during speech recognition: $e');
