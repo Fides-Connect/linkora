@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'dart:core';
 import 'dart:typed_data';
-import 'dart:io';
 
 import 'package:google_speech/google_speech.dart';
 import 'package:grpc/grpc.dart';
@@ -14,6 +14,7 @@ class SpeechService {
   SpeechToText? _speechToText;
   cloud_tts.TextToSpeechClient? _textToSpeech;
   ClientChannel? _clientChannel;
+  StreamSubscription<cloud_tts.StreamingSynthesizeResponse>? _audioSynthesisSubscription;
 
   // Callbacks
   Function()? onSpeechStart;
@@ -125,6 +126,10 @@ class SpeechService {
               .map((result) => result.alternatives.first.transcript)
               .join(' ');
           onSpeechResult?.call(transcript);
+
+          // Cancel current audio synthesis if new speech is detected
+          _audioSynthesisSubscription?.cancel();
+          _voiceEngine?.stopPlayback();
         },
         onError: (e) {
           print('Error during speech recognition: $e');
@@ -185,7 +190,7 @@ class SpeechService {
 
       final responseStream = _textToSpeech?.streamingSynthesize(requestStream);
 
-      responseStream?.listen(
+      _audioSynthesisSubscription = responseStream?.listen(
         (data) {
           // Handle each audio chunk as it arrives
           final audioChunk = Uint8List.fromList(data.audioContent);
