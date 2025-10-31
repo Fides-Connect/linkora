@@ -5,8 +5,6 @@ import 'widgets/particle_sphere.dart';
 import 'services/gemini_service.dart';
 import 'services/speech_service.dart';
 
-import 'package:permission_handler/permission_handler.dart';
-
 void main() async {
   await dotenv.load(); // Load environment variables from .env file
   runApp(const ConnectXApp());
