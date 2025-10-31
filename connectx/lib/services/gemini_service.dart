@@ -3,13 +3,15 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 
 class GeminiService {
   static final String _apiKey = dotenv.env['GEMINI_API_KEY'] ?? '';
-  late GenerativeModel _model;
+  late final GenerativeModel _model;
+  late final ChatSession _chatSession;
   
   GeminiService() {
     _model = GenerativeModel(
       model: 'gemini-flash-latest',
       apiKey: _apiKey,
     );
+    _chatSession = _model.startChat();
   }
   
   Future<String> generateResponse(String prompt) async {
@@ -18,8 +20,8 @@ class GeminiService {
         return 'Please set your Google Gemini API key in lib/services/gemini_service.dart';
       }
       
-      final content = [Content.text(prompt)];
-      final response = await _model.generateContent(content);
+      final content = Content.text(prompt);
+      final response = await _chatSession.sendMessage(content);
       
       return response.text ?? 'Sorry, I could not generate a response.';
     } catch (e) {
@@ -34,8 +36,8 @@ class GeminiService {
         return;
       }
       
-      final content = [Content.text(prompt)];
-      final response = _model.generateContentStream(content);
+      final content = Content.text(prompt);
+      final response = _chatSession.sendMessageStream(content);
       
       await for (final chunk in response) {
         yield chunk.text ?? '';
