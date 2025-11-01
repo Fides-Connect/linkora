@@ -47,12 +47,8 @@ dependencies:
   # Environment variable management
   flutter_dotenv: ^6.0.0
 
-  # Record audio functionality with Voice Engine package
-  # At the moment we need to use a forked version to fix AEC issues on Android
-  flutter_voice_engine:
-    git:
-      url: https://github.com/MohamedFouad99/flutter_voice_engine.git
-      ref: repair/aec_issue_in_android
+  # Use 'record' package for capturing audio streams
+  record: ^6.1.2
 
   # http package for making network requests
   http: ^1.5.0
@@ -62,6 +58,9 @@ dependencies:
 
   # Google API Auth package
   googleapis_auth: ^1.4.1
+
+  # sound_stream package for audio streaming
+  sound_stream: ^0.4.2
 
 dev_dependencies:
   flutter_test:

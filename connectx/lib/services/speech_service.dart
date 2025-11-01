@@ -7,14 +7,20 @@ import 'package:grpc/grpc.dart';
 import 'package:connectx/generated/cloud_tts.pbgrpc.dart' as cloud_tts;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:flutter_voice_engine/flutter_voice_engine.dart';
+import 'package:record/record.dart';
+import 'package:sound_stream/sound_stream.dart';
 
 class SpeechService {
-  FlutterVoiceEngine? _voiceEngine;
+  AudioRecorder? _recorder;
+  Stream<Uint8List>? _recorderStream;
+  StreamSubscription? _speechRecognitionSubscription;
   SpeechToText? _speechToText;
   cloud_tts.TextToSpeechClient? _textToSpeech;
   ClientChannel? _clientChannel;
-  StreamSubscription<cloud_tts.StreamingSynthesizeResponse>? _audioSynthesisSubscription;
+  StreamSubscription<cloud_tts.StreamingSynthesizeResponse>?
+  _audioSynthesisSubscription;
+  StreamingRecognitionConfig? _streamingConfig;
+  PlayerStream? _player;
 
   // Callbacks
   Function()? onSpeechStart;
@@ -25,14 +31,21 @@ class SpeechService {
 
   Future<void> stopSpeech() async {
     // Shutdown resources
-    await _voiceEngine?.stopRecording();
-    await _voiceEngine?.stopPlayback();
+    await _recorder?.stop();
+    _recorderStream = null;
+    // Cancel recognition subscription
+    await _speechRecognitionSubscription?.cancel();
+    _speechRecognitionSubscription = null;
     _speechToText?.dispose();
     await _clientChannel?.shutdown();
+
+    // stop sound_stream player if started
+    await _player?.stop();
 
     _speechToText = null;
     _textToSpeech = null;
     _clientChannel = null;
+    _player = null;
   }
 
   /// Streams audio chunks to Google Speech-to-Text and updates live transcription.
@@ -40,7 +53,39 @@ class SpeechService {
     onSpeechStart?.call();
     try {
       await _initialize();
-      _voiceEngine?.startRecording();
+      // Start recording stream using `record` and connect to Google Speech
+      final recordConfig = RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: 16000,
+        numChannels: 1,
+        autoGain: true,
+        echoCancel: true,
+        noiseSuppress: true,
+      );
+      _recorderStream = await _recorder!.startStream(recordConfig);
+
+      final responseStream = _speechToText!.streamingRecognize(
+        _streamingConfig!,
+        _recorderStream!,
+      );
+
+      _speechRecognitionSubscription = responseStream.listen(
+        (data) {
+          // Cancel current audio synthesis if new speech is detected
+          _audioSynthesisSubscription?.cancel();
+          //_player?.stop();
+
+          // Extract transcript from data and callback
+          final transcript = data.results
+              .map((result) => result.alternatives.first.transcript)
+              .join(' ');
+          onSpeechResult?.call(transcript);
+        },
+        onError: (e) {
+          print('Error during speech recognition: $e');
+          onSpeechEnd?.call();
+        },
+      );
     } catch (e) {
       print('Error in startSpeech: $e');
       onSpeechEnd?.call();
@@ -56,42 +101,23 @@ class SpeechService {
     }
 
     // Initialize Speech Service Components
-    if (_voiceEngine == null) await _initializeVoiceEngine();
+    if (_recorder == null) await _initializeRecorder();
     if (_speechToText == null) _initializeSpeechToText(accessToken);
     if (_textToSpeech == null) _initializeTextToSpeech(accessToken);
+    if (_player == null) await _initializePlayer();
   }
 
-  Future<void> _initializeVoiceEngine() async {
+  Future<void> _initializeRecorder() async {
     try {
       final microphoneRequest = await Permission.microphone.request();
       if (!microphoneRequest.isGranted) {
         throw Exception('Microphone permission denied');
       }
 
-      // Initialize with custom config
-      _voiceEngine = FlutterVoiceEngine();
-      _voiceEngine?.audioConfig = AudioConfig(
-        sampleRate: 16000,
-        channels: 1,
-        bitDepth: 16,
-        bufferSize: 4096,
-        amplitudeThreshold: 0.05,
-        enableAEC: true,
-      );
-      _voiceEngine?.sessionConfig = AudioSessionConfig(
-        category: AudioCategory.playAndRecord,
-        mode: AudioMode.voiceChat,
-        options: {AudioOption.defaultToSpeaker},
-        preferredBufferDuration: 0.005,
-      );
-      await _voiceEngine?.initialize();
-
-      // Listen for errors
-      _voiceEngine?.errorStream.listen((error) {
-        print('Error at Voice Engine: $error');
-      });
+      _recorder = AudioRecorder();
+      // No additional audio config here — Record.startStream() provides PCM bytes.
     } catch (e) {
-      print('VoiceEngine initialization failed: $e');
+      print('Recorder initialization failed: $e');
       rethrow;
     }
   }
@@ -107,37 +133,15 @@ class SpeechService {
         audioChannelCount: 1,
       );
 
-      final streamingConfig = StreamingRecognitionConfig(
+      _streamingConfig = StreamingRecognitionConfig(
         config: config,
         interimResults: false,
       );
 
       _speechToText = SpeechToText.viaToken('Bearer', accessToken);
-
-      final responseStream = _speechToText!.streamingRecognize(
-        streamingConfig,
-        _voiceEngine!.audioChunkStream,
-      );
-
-      responseStream.listen(
-        (data) {
-          // Cancel current audio synthesis if new speech is detected
-          _audioSynthesisSubscription?.cancel();
-          _voiceEngine?.stopPlayback();
-
-          // Extract transcript from data and callback
-          final transcript = data.results
-              .map((result) => result.alternatives.first.transcript)
-              .join(' ');
-          onSpeechResult?.call(transcript);
-        },
-        onError: (e) {
-          print('Error during speech recognition: $e');
-          onSpeechEnd?.call();
-        },
-      );
+      // streamingRecognize will be started when the recorder stream is available
     } catch (e) {
-      print('Error in startListening: $e');
+      print('Error initializing SpeechToText: $e');
       onSpeechEnd?.call();
       rethrow;
     }
@@ -156,6 +160,14 @@ class SpeechService {
     );
   }
 
+  Future<void> _initializePlayer() async {
+    // Ensure sound_stream player is initialized and started for PCM playback.
+    _player = PlayerStream();
+    await _player!.initialize(sampleRate: 16000);
+    await _player!.start();
+    await _player!.usePhoneSpeaker(true);
+  }
+
   void synthesizeSpeech(String text) {
     print('synthesizeSpeech called with text: $text');
     if (text.isNotEmpty) {
@@ -166,7 +178,7 @@ class SpeechService {
         ),
         streamingAudioConfig: cloud_tts.StreamingAudioConfig(
           audioEncoding: cloud_tts.AudioEncoding.PCM,
-          sampleRateHertz: 24000,
+          sampleRateHertz: 16000,
         ),
       );
 
@@ -194,7 +206,8 @@ class SpeechService {
         (data) {
           // Handle each audio chunk as it arrives
           final audioChunk = Uint8List.fromList(data.audioContent);
-          _voiceEngine?.playAudioChunk(audioChunk);
+          // Feed raw PCM bytes into sound_stream player
+          _player!.writeChunk(audioChunk);
         },
         onError: (e) {
           print('Error during TTS streaming: $e');
