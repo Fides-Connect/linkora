@@ -166,6 +166,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.0"
+  flutter_sound_platform_interface:
+    dependency: transitive
+    description:
+      name: flutter_sound_platform_interface
+      sha256: c0d261be2bf0b6a45cbb9570f095fbf48286d1b5b4f94564072fdebc9d59cb5c
+      url: "https://pub.dev"
+    source: hosted
+    version: "10.3.8"
+  flutter_sound_web:
+    dependency: transitive
+    description:
+      name: flutter_sound_web
+      sha256: e4405a235924fd757a206066f176c251a8bc664549762720cd3b154bf81719f9
+      url: "https://pub.dev"
+    source: hosted
+    version: "10.3.8"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -312,6 +328,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "6.0.0"
+  logger:
+    dependency: transitive
+    description:
+      name: logger
+      sha256: a7967e31b703831a893bbc3c3dd11db08126fe5f369b5c648a36f821979f5be3
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.6.2"
   logging:
     dependency: transitive
     description:
@@ -621,14 +645,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  sound_stream:
-    dependency: "direct main"
-    description:
-      name: sound_stream
-      sha256: "534abce3531eaba52f04ea4c0808ec60da1b9db8a5f644042f14fa784343b540"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.4.2"
   source_map_stack_trace:
     dependency: transitive
     description:
@@ -685,6 +701,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
+  synchronized:
+    dependency: transitive
+    description:
+      name: synchronized
+      sha256: c254ade258ec8282947a0acbbc90b9575b4f19673533ee46f2f6e9b3aeefd7c0
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.4.0"
+  taudio:
+    dependency: "direct main"
+    description:
+      name: taudio
+      sha256: b8176afa649d2f447f313a50b6c5c332e35b1e32f3583d36b0c07e08666d8953
+      url: "https://pub.dev"
+    source: hosted
+    version: "10.3.8"
   term_glyph:
     dependency: transitive
     description:

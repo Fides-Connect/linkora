@@ -59,8 +59,8 @@ dependencies:
   # Google API Auth package
   googleapis_auth: ^1.4.1
 
-  # sound_stream package for audio streaming
-  sound_stream: ^0.4.2
+  # Playback of audio
+  taudio: ^10.3.8
 
 dev_dependencies:
   flutter_test:
