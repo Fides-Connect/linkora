@@ -47,9 +47,6 @@ dependencies:
   # Environment variable management
   flutter_dotenv: ^6.0.0
 
-  # Use 'record' package for capturing audio streams
-  record: ^6.1.2
-
   # http package for making network requests
   http: ^1.5.0
 
@@ -59,8 +56,10 @@ dependencies:
   # Google API Auth package
   googleapis_auth: ^1.4.1
 
-  # Playback of audio
+  # Use taudio for recording/playback
   taudio: ^10.3.8
+
+  audio_session: ^0.2.2
 
 dev_dependencies:
   flutter_test:
