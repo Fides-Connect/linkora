@@ -3,12 +3,12 @@ import 'dart:core';
 import 'dart:typed_data';
 
 import 'package:google_speech/google_speech.dart';
-import 'package:grpc/grpc.dart';
+import 'package:grpc/grpc.dart' hide Codec;
 import 'package:connectx/generated/cloud_tts.pbgrpc.dart' as cloud_tts;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:record/record.dart';
-import 'package:sound_stream/sound_stream.dart';
+import 'package:taudio/taudio.dart' as ta;
 
 class SpeechService {
   AudioRecorder? _recorder;
@@ -20,7 +20,8 @@ class SpeechService {
   StreamSubscription<cloud_tts.StreamingSynthesizeResponse>?
   _audioSynthesisSubscription;
   StreamingRecognitionConfig? _streamingConfig;
-  PlayerStream? _player;
+  ta.FlutterSoundPlayer? _player;
+  final BytesBuilder _ttsBuffer = BytesBuilder(copy: false);
 
   // Callbacks
   Function()? onSpeechStart;
@@ -39,13 +40,14 @@ class SpeechService {
     _speechToText?.dispose();
     await _clientChannel?.shutdown();
 
-    // stop sound_stream player if started
-    await _player?.stop();
+    // stop taudio player if started
+    try { await _player?.stopPlayer(); } catch (_) {}
+    try { await _player?.closePlayer(); } catch (_) {}
+    _player = null;
 
     _speechToText = null;
     _textToSpeech = null;
     _clientChannel = null;
-    _player = null;
   }
 
   /// Streams audio chunks to Google Speech-to-Text and updates live transcription.
@@ -71,9 +73,9 @@ class SpeechService {
 
       _speechRecognitionSubscription = responseStream.listen(
         (data) {
-          // Cancel current audio synthesis if new speech is detected
-          _audioSynthesisSubscription?.cancel();
-          //_player?.stop();
+          // Cancel current audio synthesis and stop playback if new speech is detected
+          try { _audioSynthesisSubscription?.cancel(); } catch (_) {}
+          try { _player?.stopPlayer(); } catch (_) {}
 
           // Extract transcript from data and callback
           final transcript = data.results
@@ -161,11 +163,36 @@ class SpeechService {
   }
 
   Future<void> _initializePlayer() async {
-    // Ensure sound_stream player is initialized and started for PCM playback.
-    _player = PlayerStream();
-    await _player!.initialize(sampleRate: 16000);
-    await _player!.start();
-    await _player!.usePhoneSpeaker(true);
+    // Open taudio player once; we'll use fromDataBuffer for playback
+    _player = ta.FlutterSoundPlayer();
+    await _player!.openPlayer();
+  }
+
+  // WAV wrapper for raw PCM16 mono
+  Uint8List _pcmToWav(Uint8List pcm, {required int sampleRate}) {
+    const channels = 1;
+    const bitsPerSample = 16;
+    final byteRate = sampleRate * channels * (bitsPerSample ~/ 8);
+    final blockAlign = channels * (bitsPerSample ~/ 8);
+    final dataLength = pcm.lengthInBytes;
+    final header = ByteData(44);
+    header.setUint32(0, 0x52494646, Endian.big); // 'RIFF'
+    header.setUint32(4, 36 + dataLength, Endian.little);
+    header.setUint32(8, 0x57415645, Endian.big); // 'WAVE'
+    header.setUint32(12, 0x666d7420, Endian.big); // 'fmt '
+    header.setUint32(16, 16, Endian.little); // PCM chunk size
+    header.setUint16(20, 1, Endian.little); // PCM format
+    header.setUint16(22, channels, Endian.little);
+    header.setUint32(24, sampleRate, Endian.little);
+    header.setUint32(28, byteRate, Endian.little);
+    header.setUint16(32, blockAlign, Endian.little);
+    header.setUint16(34, bitsPerSample, Endian.little);
+    header.setUint32(36, 0x64617461, Endian.big); // 'data'
+    header.setUint32(40, dataLength, Endian.little);
+    final bytes = BytesBuilder(copy: false)
+      ..add(header.buffer.asUint8List())
+      ..add(pcm);
+    return bytes.takeBytes();
   }
 
   void synthesizeSpeech(String text) {
@@ -202,15 +229,36 @@ class SpeechService {
 
       final responseStream = _textToSpeech?.streamingSynthesize(requestStream);
 
+      // reset buffer and any ongoing playback/subscription
+      try { _audioSynthesisSubscription?.cancel(); } catch (_) {}
+      _audioSynthesisSubscription = null;
+      _ttsBuffer.clear();
+
       _audioSynthesisSubscription = responseStream?.listen(
         (data) {
-          // Handle each audio chunk as it arrives
           final audioChunk = Uint8List.fromList(data.audioContent);
-          // Feed raw PCM bytes into sound_stream player
-          _player!.writeChunk(audioChunk);
+          if (audioChunk.isNotEmpty) {
+            _ttsBuffer.add(audioChunk);
+          }
         },
         onError: (e) {
+          // ignore: avoid_print
           print('Error during TTS streaming: $e');
+        },
+        onDone: () async {
+          final pcm = _ttsBuffer.takeBytes();
+          if (pcm.isEmpty) return;
+          final wav = _pcmToWav(pcm, sampleRate: 16000);
+          try { await _player?.stopPlayer(); } catch (_) {}
+          try {
+            await _player?.startPlayer(
+              fromDataBuffer: wav,
+              codec: ta.Codec.pcm16WAV,
+            );
+          } catch (e) {
+            // ignore: avoid_print
+            print('taudio startPlayer error: $e');
+          }
         },
       );
     }
