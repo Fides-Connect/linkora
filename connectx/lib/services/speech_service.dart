@@ -81,7 +81,7 @@ class SpeechService {
       await _recorder!.startRecorder(
         codec: ta.Codec.pcm16,
         numChannels: 1,
-        sampleRate: 16000,
+        sampleRate: 8000,
         toStream: _recorderController!.sink,
         enableEchoCancellation: true,
       );
@@ -175,9 +175,9 @@ class SpeechService {
       _streamingConfig = StreamingRecognitionConfig(
         config: RecognitionConfig(
           encoding: AudioEncoding.LINEAR16,
-          model: RecognitionModel.basic,
+          model: RecognitionModel.phone_call,
           enableAutomaticPunctuation: true,
-          sampleRateHertz: 16000,
+          sampleRateHertz: 8000,
           languageCode: 'de-DE',
           audioChannelCount: 1,
         ),
@@ -221,7 +221,7 @@ class SpeechService {
     await _player!.openPlayer();
     await _player!.startPlayerFromStream(
       codec: ta.Codec.pcm16,
-      sampleRate: 16000,
+      sampleRate: 8000,
       interleaved: true,
       bufferSize: 8192,
       numChannels: 1,
@@ -238,7 +238,7 @@ class SpeechService {
         ),
         streamingAudioConfig: cloud_tts.StreamingAudioConfig(
           audioEncoding: cloud_tts.AudioEncoding.PCM,
-          sampleRateHertz: 16000,
+          sampleRateHertz: 8000,
         ),
       );
 
