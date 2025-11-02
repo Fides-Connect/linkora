@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:core';
-import 'dart:typed_data';
 import 'dart:io' show Platform;
 import 'package:flutter/services.dart';
 
@@ -10,7 +9,6 @@ import 'package:connectx/generated/cloud_tts.pbgrpc.dart' as cloud_tts;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:taudio/taudio.dart' as ta;
-import 'package:audio_session/audio_session.dart';
 
 class SpeechService {
   // Replace 'record' with taudio recorder + stream controller
@@ -39,14 +37,18 @@ class SpeechService {
   SpeechService();
 
   Future<void> stopSpeech() async {
+    // stop taudio player if started
+    _audioSynthesisSubscription?.cancel();
+    await _player?.stopPlayer();
+    await _player?.closePlayer();
+    _audioSynthesisSubscription = null;
+    _player = null;
+
     // Shutdown resources
-    try {
-      await _recorder?.stopRecorder();
-    } catch (_) {}
-    try {
-      await _recorder?.closeRecorder();
-    } catch (_) {}
+    await _recorder?.stopRecorder();
+    await _recorder?.closeRecorder();
     await _recorderController?.close();
+    _recorder = null;
     _recorderController = null;
     _recorderStream = null;
 
@@ -55,15 +57,6 @@ class SpeechService {
     _speechRecognitionSubscription = null;
     _speechToText?.dispose();
     await _clientChannel?.shutdown();
-
-    // stop taudio player if started
-    try {
-      await _player?.stopPlayer();
-    } catch (_) {}
-    try {
-      await _player?.closePlayer();
-    } catch (_) {}
-    _player = null;
 
     _speechToText = null;
     _textToSpeech = null;
@@ -76,18 +69,14 @@ class SpeechService {
     try {
       await _initialize();
 
-      // Inspect before starting recorder
-      await _logActiveRecordingConfigs('beforeStart');
-
       // Create a controller; pass its sink to taudio
-      _recorderController?.close();
       _recorderController = StreamController<Uint8List>.broadcast();
       _recorderStream = _recorderController!.stream;
 
       await _recorder!.startRecorder(
         codec: ta.Codec.pcm16,
         numChannels: 1,
-        sampleRate: 48000,
+        sampleRate: 16000,
         toStream: _recorderController!.sink,
         enableEchoCancellation: true,
         enableNoiseSuppression: true,
@@ -105,13 +94,14 @@ class SpeechService {
       );
 
       _speechRecognitionSubscription = responseStream.listen(
-        (data) {
+        (data) async {
           // Cancel current audio synthesis and stop playback if new speech is detected
           try {
             print('New speech detected, stopping TTS playback if any.');
             _audioSynthesisSubscription?.cancel();
             if (_player != null) {
-              _player?.stopPlayer();
+              await _player?.stopPlayer();
+              await _initializePlayer();
               print("Stopped TTS playback.");
             }
           } catch (e) {
@@ -143,31 +133,10 @@ class SpeechService {
       throw Exception('Missing OAUTH_ACCESS_TOKEN environment variable');
     }
 
-    // Configure Audio Session
-        // Ensure MODE_IN_COMMUNICATION on Android
+    // Android-specific audio mode setup
     if (Platform.isAndroid) {
       await _ensureAndroidCommMode();
     }
-    final session = await AudioSession.instance;
-    await session.configure(
-      AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-        avAudioSessionCategoryOptions:
-            AVAudioSessionCategoryOptions.defaultToSpeaker,
-        avAudioSessionMode: AVAudioSessionMode.voiceChat,
-        avAudioSessionRouteSharingPolicy:
-            AVAudioSessionRouteSharingPolicy.defaultPolicy,
-        avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
-        androidAudioAttributes: const AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.speech,
-          flags: AndroidAudioFlags.none,
-          usage: AndroidAudioUsage.voiceCommunication,
-        ),
-        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-        androidWillPauseWhenDucked: true,
-      ),
-    );
-    await session.setActive(true);
 
     // Initialize Speech Service Components
     if (_recorder == null) await _initializeRecorder();
@@ -223,7 +192,7 @@ class SpeechService {
         encoding: AudioEncoding.LINEAR16,
         model: RecognitionModel.basic,
         enableAutomaticPunctuation: true,
-        sampleRateHertz: 48000,
+        sampleRateHertz: 16000,
         languageCode: 'de-DE',
         audioChannelCount: 1,
       );
@@ -257,19 +226,21 @@ class SpeechService {
 
   Future<void> _initializePlayer() async {
     // Open taudio player once; we'll use fromDataBuffer for playback
-    _player = ta.FlutterSoundPlayer(voiceProcessing: false);
-    await _player!.openPlayer();
+    if (_player == null) {
+      _player = ta.FlutterSoundPlayer(voiceProcessing: false);
+      await _player!.openPlayer();
+    }
 
     await _player!.startPlayerFromStream(
       codec: ta.Codec.pcm16,
-      sampleRate: 48000,
+      sampleRate: 16000,
       interleaved: true,
-      bufferSize: 480,
+      bufferSize: 512,
       numChannels: 1,
     );
   }
 
-  Future<void> synthesizeSpeech(String text) async {
+  void synthesizeSpeech(String text) {
     print('synthesizeSpeech called with text: $text');
     if (text.isNotEmpty) {
       final streamingSynthesizeConfig = cloud_tts.StreamingSynthesizeConfig(
@@ -279,7 +250,7 @@ class SpeechService {
         ),
         streamingAudioConfig: cloud_tts.StreamingAudioConfig(
           audioEncoding: cloud_tts.AudioEncoding.PCM,
-          sampleRateHertz: 48000,
+          sampleRateHertz: 16000,
         ),
       );
 
@@ -302,19 +273,6 @@ class SpeechService {
           ]);
 
       final responseStream = _textToSpeech?.streamingSynthesize(requestStream);
-
-      // reset buffer and any ongoing playback/subscription
-      try {
-        _audioSynthesisSubscription?.cancel();
-      } catch (_) {}
-
-      await _player!.startPlayerFromStream(
-        codec: ta.Codec.pcm16,
-        sampleRate: 48000,
-        interleaved: true,
-        bufferSize: 480,
-        numChannels: 1,
-      );
 
       _audioSynthesisSubscription = responseStream?.listen(
         (data) {
