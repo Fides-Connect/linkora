@@ -11,18 +11,22 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:taudio/taudio.dart' as ta;
 
 class SpeechService {
-  // Replace 'record' with taudio recorder + stream controller
+  // Recorder Services
   ta.FlutterSoundRecorder? _recorder;
   StreamController<Uint8List>? _recorderController;
   Stream<Uint8List>? _recorderStream;
+
+  // Speech-to-Text components
   StreamSubscription? _speechRecognitionSubscription;
   SpeechToText? _speechToText;
-  cloud_tts.TextToSpeechClient? _textToSpeech;
   ClientChannel? _clientChannel;
+  StreamingRecognitionConfig? _streamingConfig;
+
+  // Text-to-Speech components
+  ta.FlutterSoundPlayer? _player;
   StreamSubscription<cloud_tts.StreamingSynthesizeResponse>?
   _audioSynthesisSubscription;
-  StreamingRecognitionConfig? _streamingConfig;
-  ta.FlutterSoundPlayer? _player;
+  cloud_tts.TextToSpeechClient? _textToSpeech;
 
   // Callbacks
   Function()? onSpeechStart;
@@ -37,30 +41,31 @@ class SpeechService {
   SpeechService();
 
   Future<void> stopSpeech() async {
-    // stop taudio player if started
-    _audioSynthesisSubscription?.cancel();
-    await _player?.stopPlayer();
-    await _player?.closePlayer();
-    _audioSynthesisSubscription = null;
-    _player = null;
-
-    // Shutdown resources
+    // Stop and clear recorder components
     await _recorder?.stopRecorder();
     await _recorder?.closeRecorder();
     await _recorderController?.close();
+    await _recorderStream?.drain();
     _recorder = null;
     _recorderController = null;
     _recorderStream = null;
 
-    // Cancel recognition subscription
+    // Stop and clear Speech-to-Text components
     await _speechRecognitionSubscription?.cancel();
-    _speechRecognitionSubscription = null;
     _speechToText?.dispose();
     await _clientChannel?.shutdown();
-
+    _speechRecognitionSubscription = null;
     _speechToText = null;
-    _textToSpeech = null;
     _clientChannel = null;
+    _streamingConfig = null;
+
+    // Stop and clear Text-to-Speech compnonents
+    await _player?.stopPlayer();
+    await _player?.closePlayer();
+    await _audioSynthesisSubscription?.cancel();
+    _player = null;
+    _audioSynthesisSubscription = null;
+    _textToSpeech = null;
   }
 
   /// Streams audio chunks to Google Speech-to-Text and updates live transcription.
@@ -78,15 +83,8 @@ class SpeechService {
         numChannels: 1,
         sampleRate: 16000,
         toStream: _recorderController!.sink,
-        enableEchoCancellation: true,
-        enableNoiseSuppression: true,
+        enableEchoCancellation: true
       );
-
-      // Inspect after starting recorder
-      // Small delay to allow the system to reflect active configs
-      Future.delayed(const Duration(milliseconds: 150), () {
-        _logActiveRecordingConfigs('afterStart');
-      });
 
       final responseStream = _speechToText!.streamingRecognize(
         _streamingConfig!,
@@ -98,12 +96,8 @@ class SpeechService {
           // Cancel current audio synthesis and stop playback if new speech is detected
           try {
             print('New speech detected, stopping TTS playback if any.');
-            _audioSynthesisSubscription?.cancel();
-            if (_player != null) {
-              await _player?.stopPlayer();
-              await _initializePlayer();
-              print("Stopped TTS playback.");
-            }
+            //_audioSynthesisSubscription?.cancel();
+            //_initializePlayer();
           } catch (e) {
             print('Error stopping TTS playback: $e');
           }
@@ -143,6 +137,7 @@ class SpeechService {
     if (_speechToText == null) _initializeSpeechToText(accessToken);
     if (_textToSpeech == null) _initializeTextToSpeech(accessToken);
     if (_player == null) await _initializePlayer();
+
   }
 
   Future<void> _initializeRecorder() async {
@@ -164,25 +159,9 @@ class SpeechService {
       final res = await _audioModeChannel.invokeMethod<Map>(
         'forceModeInCommunication',
       );
-      // ignore: avoid_print
       print('Android audio mode set: $res');
     } catch (e) {
-      // ignore: avoid_print
       print('Failed to set MODE_IN_COMMUNICATION: $e');
-    }
-  }
-
-  Future<void> _logActiveRecordingConfigs([String tag = '']) async {
-    if (!Platform.isAndroid) return;
-    try {
-      final configs = await _audioModeChannel.invokeMethod<List>(
-        'getActiveRecordingConfigurations',
-      );
-      // ignore: avoid_print
-      print('ActiveRecordingConfigurations $tag: ${configs ?? []}');
-    } catch (e) {
-      // ignore: avoid_print
-      print('Error fetching recording configs: $e');
     }
   }
 
@@ -203,7 +182,6 @@ class SpeechService {
       );
 
       _speechToText = SpeechToText.viaToken('Bearer', accessToken);
-      // streamingRecognize will be started when the recorder stream is available
     } catch (e) {
       print('Error initializing SpeechToText: $e');
       onSpeechEnd?.call();
@@ -225,17 +203,13 @@ class SpeechService {
   }
 
   Future<void> _initializePlayer() async {
-    // Open taudio player once; we'll use fromDataBuffer for playback
-    if (_player == null) {
-      _player = ta.FlutterSoundPlayer(voiceProcessing: false);
-      await _player!.openPlayer();
-    }
-
+    _player = ta.FlutterSoundPlayer(voiceProcessing: false);
+    await _player!.openPlayer();
     await _player!.startPlayerFromStream(
       codec: ta.Codec.pcm16,
       sampleRate: 16000,
       interleaved: true,
-      bufferSize: 512,
+      bufferSize: 8192,
       numChannels: 1,
     );
   }
@@ -277,12 +251,9 @@ class SpeechService {
       _audioSynthesisSubscription = responseStream?.listen(
         (data) {
           final audioChunk = Uint8List.fromList(data.audioContent);
-          if (audioChunk.isNotEmpty) {
-            _player?.uint8ListSink?.add(audioChunk);
-          }
+          _player?.uint8ListSink?.add(audioChunk);
         },
         onError: (e) {
-          // ignore: avoid_print
           print('Error during TTS streaming: $e');
         },
         onDone: () {
