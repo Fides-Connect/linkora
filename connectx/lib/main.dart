@@ -87,8 +87,20 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       });
 
       try {
-        final response = await _geminiService.generateResponse(spokenText);
-        _speechService.synthesizeSpeech(response);
+        // Use streaming to get faster initial response
+        String fullResponse = '';
+        await for (final chunk in _geminiService.generateResponseStream(spokenText)) {
+          fullResponse += chunk;
+          // Start synthesizing as soon as we have a complete sentence
+          if (fullResponse.endsWith('.') || fullResponse.endsWith('!') || fullResponse.endsWith('?')) {
+            _speechService.synthesizeSpeech(fullResponse);
+            fullResponse = ''; // Reset for next sentence
+          }
+        }
+        // Synthesize any remaining text
+        if (fullResponse.isNotEmpty) {
+          _speechService.synthesizeSpeech(fullResponse);
+        }
       } catch (e) {
         setState(() {
           _statusText = 'Error: ${e.toString()}';
