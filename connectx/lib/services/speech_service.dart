@@ -83,7 +83,7 @@ class SpeechService {
         numChannels: 1,
         sampleRate: 16000,
         toStream: _recorderController!.sink,
-        enableEchoCancellation: true
+        enableEchoCancellation: true,
       );
 
       final responseStream = _speechToText!.streamingRecognize(
@@ -96,8 +96,8 @@ class SpeechService {
           // Cancel current audio synthesis and stop playback if new speech is detected
           try {
             print('New speech detected, stopping TTS playback if any.');
-            //_audioSynthesisSubscription?.cancel();
-            //_initializePlayer();
+            await _audioSynthesisSubscription?.cancel();
+            await _initializePlayer();
           } catch (e) {
             print('Error stopping TTS playback: $e');
           }
@@ -129,7 +129,7 @@ class SpeechService {
 
     // Android-specific audio mode setup
     if (Platform.isAndroid) {
-      await _ensureAndroidCommMode();
+      await _setAndroidCommunicationMode();
     }
 
     // Initialize Speech Service Components
@@ -137,24 +137,9 @@ class SpeechService {
     if (_speechToText == null) _initializeSpeechToText(accessToken);
     if (_textToSpeech == null) _initializeTextToSpeech(accessToken);
     if (_player == null) await _initializePlayer();
-
   }
 
-  Future<void> _initializeRecorder() async {
-    try {
-      final microphoneRequest = await Permission.microphone.request();
-      if (!microphoneRequest.isGranted) {
-        throw Exception('Microphone permission denied');
-      }
-      _recorder = ta.FlutterSoundRecorder();
-      await _recorder!.openRecorder();
-    } catch (e) {
-      print('Recorder initialization failed: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> _ensureAndroidCommMode() async {
+  Future<void> _setAndroidCommunicationMode() async {
     try {
       final res = await _audioModeChannel.invokeMethod<Map>(
         'forceModeInCommunication',
@@ -165,22 +150,39 @@ class SpeechService {
     }
   }
 
+  Future<void> _initializeRecorder() async {
+    try {
+      final microphoneRequest = await Permission.microphone.request();
+      if (!microphoneRequest.isGranted) {
+        throw Exception('Microphone permission denied');
+      }
+
+      if (_recorder == null) {
+        _recorder = ta.FlutterSoundRecorder();
+      } else {
+        await _recorder!.stopRecorder();
+        await _recorder!.closeRecorder();
+      }
+      await _recorder!.openRecorder();
+    } catch (e) {
+      print('Recorder initialization failed: $e');
+      rethrow;
+    }
+  }
+
   void _initializeSpeechToText(String accessToken) {
     try {
-      final config = RecognitionConfig(
-        encoding: AudioEncoding.LINEAR16,
-        model: RecognitionModel.basic,
-        enableAutomaticPunctuation: true,
-        sampleRateHertz: 16000,
-        languageCode: 'de-DE',
-        audioChannelCount: 1,
-      );
-
       _streamingConfig = StreamingRecognitionConfig(
-        config: config,
+        config: RecognitionConfig(
+          encoding: AudioEncoding.LINEAR16,
+          model: RecognitionModel.basic,
+          enableAutomaticPunctuation: true,
+          sampleRateHertz: 16000,
+          languageCode: 'de-DE',
+          audioChannelCount: 1,
+        ),
         interimResults: false,
       );
-
       _speechToText = SpeechToText.viaToken('Bearer', accessToken);
     } catch (e) {
       print('Error initializing SpeechToText: $e');
@@ -193,7 +195,14 @@ class SpeechService {
     _clientChannel = ClientChannel(
       'texttospeech.googleapis.com',
       port: 443,
-      options: const ChannelOptions(credentials: ChannelCredentials.secure()),
+      options: const ChannelOptions(
+        credentials: ChannelCredentials.secure(),
+        keepAlive: ClientKeepAliveOptions(
+          pingInterval: Duration(seconds: 60),
+          timeout: Duration(seconds: 20),
+          permitWithoutCalls: true,
+        ),
+      ),
     );
 
     _textToSpeech = cloud_tts.TextToSpeechClient(
@@ -203,7 +212,12 @@ class SpeechService {
   }
 
   Future<void> _initializePlayer() async {
-    _player = ta.FlutterSoundPlayer(voiceProcessing: false);
+    if (_player == null) {
+      _player = ta.FlutterSoundPlayer(voiceProcessing: false);
+    } else {
+      await _player!.stopPlayer();
+      await _player!.closePlayer();
+    }
     await _player!.openPlayer();
     await _player!.startPlayerFromStream(
       codec: ta.Codec.pcm16,

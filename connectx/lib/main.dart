@@ -100,10 +100,6 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   void _startChat() async {
     try {
       _speechService.startSpeech();
-      _handleSpeechResult("Bitte begrüße kurz in einem Satz mit wenigen Worten "
-      "meinen Freund im Namen von Helferline und frage ihn freundlich bei welchem "
-      "Anliegen du ihm helfen kannst. Nimm dabei eine herzliche Tonalität an. "
-      "Wähle dabei möglichst zufällige Formulierungen.");
     } catch (e) {
       setState(() {
         _statusText = 'Error: ${e.toString()}';
