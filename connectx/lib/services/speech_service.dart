@@ -24,6 +24,7 @@ class SpeechService {
 
   // Text-to-Speech components
   ta.FlutterSoundPlayer? _player;
+  bool _isPlaying = false; // Flag to track if TTS is currently playing (I didn't find a robust way to check player state)
   StreamSubscription<cloud_tts.StreamingSynthesizeResponse>?
   _audioSynthesisSubscription;
   cloud_tts.TextToSpeechClient? _textToSpeech;
@@ -40,29 +41,29 @@ class SpeechService {
 
   SpeechService();
 
-  Future<void> stopSpeech() async {
+  void stopSpeech() {
     // Stop and clear recorder components
-    await _recorder?.stopRecorder();
-    await _recorder?.closeRecorder();
-    await _recorderController?.close();
-    await _recorderStream?.drain();
+    _recorder?.stopRecorder();
+    _recorder?.closeRecorder();
+    _recorderController?.close();
+    _recorderStream?.drain();
     _recorder = null;
     _recorderController = null;
     _recorderStream = null;
 
     // Stop and clear Speech-to-Text components
-    await _speechRecognitionSubscription?.cancel();
+    _speechRecognitionSubscription?.cancel();
     _speechToText?.dispose();
-    await _clientChannel?.shutdown();
+    _clientChannel?.shutdown();
     _speechRecognitionSubscription = null;
     _speechToText = null;
     _clientChannel = null;
     _streamingConfig = null;
 
     // Stop and clear Text-to-Speech compnonents
-    await _player?.stopPlayer();
-    await _player?.closePlayer();
-    await _audioSynthesisSubscription?.cancel();
+    _player?.stopPlayer();
+    _player?.closePlayer();
+    _audioSynthesisSubscription?.cancel();
     _player = null;
     _audioSynthesisSubscription = null;
     _textToSpeech = null;
@@ -93,20 +94,22 @@ class SpeechService {
 
       _speechRecognitionSubscription = responseStream.listen(
         (data) async {
-          // Cancel current audio synthesis and stop playback if new speech is detected
-          try {
-            print('New speech detected, stopping TTS playback if any.');
-            await _audioSynthesisSubscription?.cancel();
-            await _initializePlayer();
-          } catch (e) {
-            print('Error stopping TTS playback: $e');
+          // Process only final results
+          for (final result in data.results) {
+            if (result.isFinal && result.alternatives.isNotEmpty) {
+              // Only call back with final transcript
+              onSpeechResult?.call(result.alternatives.first.transcript);
+            } else if (_isPlaying && result.alternatives.isNotEmpty) {
+              // Cancel current audio synthesis and stop playback if new speech is detected
+              try {
+                print('New speech detected, stopping TTS playback if any.');
+                await _audioSynthesisSubscription?.cancel();
+                await _initializePlayer();
+              } catch (e) {
+                print('Error stopping TTS playback: $e');
+              }
+            }
           }
-
-          // Extract transcript from data and callback
-          final transcript = data.results
-              .map((result) => result.alternatives.first.transcript)
-              .join(' ');
-          onSpeechResult?.call(transcript);
         },
         onError: (e) {
           print('Error during speech recognition: $e');
@@ -181,7 +184,7 @@ class SpeechService {
           languageCode: 'de-DE',
           audioChannelCount: 1,
         ),
-        interimResults: false,
+        interimResults: true,
       );
       _speechToText = SpeechToText.viaToken('Bearer', accessToken);
     } catch (e) {
@@ -226,6 +229,7 @@ class SpeechService {
       bufferSize: 8192,
       numChannels: 1,
     );
+    _isPlaying = false;
   }
 
   void synthesizeSpeech(String text) {
@@ -261,6 +265,8 @@ class SpeechService {
           ]);
 
       final responseStream = _textToSpeech?.streamingSynthesize(requestStream);
+
+      _isPlaying = true;
 
       _audioSynthesisSubscription = responseStream?.listen(
         (data) {
