@@ -59,8 +59,6 @@ dependencies:
   # Use taudio for recording/playback
   taudio: ^10.3.8
 
-  audio_session: ^0.2.2
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

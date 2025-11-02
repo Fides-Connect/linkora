@@ -20,11 +20,13 @@ class MainActivity : FlutterActivity() {
                             val am = getSystemService(AUDIO_SERVICE) as AudioManager
                             am.mode = AudioManager.MODE_IN_COMMUNICATION
                             am.isSpeakerphoneOn = true
+                            am.isMicrophoneMute = false
 
                             result.success(
                                 hashMapOf(
                                     "mode" to am.mode,
-                                    "speakerphoneOn" to am.isSpeakerphoneOn
+                                    "speakerphoneOn" to am.isSpeakerphoneOn,
+                                    "microphoneMuted" to am.isMicrophoneMute
                                 )
                             )
                         } catch (e: Exception) {
