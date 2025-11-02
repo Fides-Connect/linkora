@@ -8,8 +8,14 @@ class GeminiService {
   
   GeminiService() {
     _model = GenerativeModel(
-      model: 'gemini-flash-latest',
+      model: 'gemini-2.0-flash-exp', // Use the faster flash model
       apiKey: _apiKey,
+      generationConfig: GenerationConfig(
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 1024, // Limit response length for faster generation
+      ),
     );
     _chatSession = _model.startChat();
   }

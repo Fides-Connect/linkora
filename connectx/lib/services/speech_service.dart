@@ -82,7 +82,7 @@ class SpeechService {
       await _recorder!.startRecorder(
         codec: ta.Codec.pcm16,
         numChannels: 1,
-        sampleRate: 8000,
+        sampleRate: 16000,
         toStream: _recorderController!.sink,
         enableEchoCancellation: true,
       );
@@ -178,13 +178,14 @@ class SpeechService {
       _streamingConfig = StreamingRecognitionConfig(
         config: RecognitionConfig(
           encoding: AudioEncoding.LINEAR16,
-          model: RecognitionModel.phone_call,
+          model: RecognitionModel.command_and_search,
           enableAutomaticPunctuation: true,
-          sampleRateHertz: 8000,
+          sampleRateHertz: 16000,
           languageCode: 'de-DE',
           audioChannelCount: 1,
         ),
         interimResults: true,
+        singleUtterance: false, // Keep listening continuously
       );
       _speechToText = SpeechToText.viaToken('Bearer', accessToken);
     } catch (e) {
@@ -202,7 +203,7 @@ class SpeechService {
         credentials: ChannelCredentials.secure(),
         keepAlive: ClientKeepAliveOptions(
           pingInterval: Duration(seconds: 60),
-          timeout: Duration(seconds: 20),
+          timeout: Duration(seconds: 10),
           permitWithoutCalls: true,
         ),
       ),
@@ -210,7 +211,10 @@ class SpeechService {
 
     _textToSpeech = cloud_tts.TextToSpeechClient(
       _clientChannel!,
-      options: CallOptions(metadata: {'Authorization': 'Bearer $accessToken'}),
+      options: CallOptions(
+        metadata: {'Authorization': 'Bearer $accessToken'},
+        timeout: Duration(seconds: 10),
+      ),
     );
   }
 
@@ -224,7 +228,7 @@ class SpeechService {
     await _player!.openPlayer();
     await _player!.startPlayerFromStream(
       codec: ta.Codec.pcm16,
-      sampleRate: 8000,
+      sampleRate: 16000,
       interleaved: true,
       bufferSize: 8192,
       numChannels: 1,
@@ -242,7 +246,7 @@ class SpeechService {
         ),
         streamingAudioConfig: cloud_tts.StreamingAudioConfig(
           audioEncoding: cloud_tts.AudioEncoding.PCM,
-          sampleRateHertz: 8000,
+          sampleRateHertz: 16000,
         ),
       );
 
@@ -264,7 +268,10 @@ class SpeechService {
             requestText,
           ]);
 
-      final responseStream = _textToSpeech?.streamingSynthesize(requestStream);
+      final responseStream = _textToSpeech?.streamingSynthesize(
+        requestStream,
+        options: CallOptions(timeout: Duration(seconds: 10)), // Add explicit timeout
+      );
 
       _isPlaying = true;
 
