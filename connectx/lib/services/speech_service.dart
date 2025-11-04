@@ -1,134 +1,292 @@
-import 'package:flutter_tts/flutter_tts.dart';
-import 'package:speech_to_text/speech_to_text.dart';
+import 'dart:async';
+import 'dart:core';
+import 'dart:io' show Platform;
+import 'package:flutter/services.dart';
+
+import 'package:google_speech/google_speech.dart';
+import 'package:grpc/grpc.dart' hide Codec;
+import 'package:connectx/generated/cloud_tts.pbgrpc.dart' as cloud_tts;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:taudio/taudio.dart' as ta;
 
 class SpeechService {
-  late FlutterTts _tts;
-  late SpeechToText _speechToText;
-  bool _isListening = false;
-  bool _isSpeaking = false;
-  
+  // Recorder Services
+  ta.FlutterSoundRecorder? _recorder;
+  StreamController<Uint8List>? _recorderController;
+  Stream<Uint8List>? _recorderStream;
+
+  // Speech-to-Text components
+  StreamSubscription? _speechRecognitionSubscription;
+  SpeechToText? _speechToText;
+  ClientChannel? _clientChannel;
+  StreamingRecognitionConfig? _streamingConfig;
+
+  // Text-to-Speech components
+  ta.FlutterSoundPlayer? _player;
+  bool _isPlaying = false; // Flag to track if TTS is currently playing (I didn't find a robust way to check player state)
+  StreamSubscription<cloud_tts.StreamingSynthesizeResponse>?
+  _audioSynthesisSubscription;
+  cloud_tts.TextToSpeechClient? _textToSpeech;
+
   // Callbacks
   Function()? onSpeechStart;
   Function()? onSpeechEnd;
   Function(String)? onSpeechResult;
-  Function()? onTTSStart;
-  Function()? onTTSEnd;
-  
-  SpeechService() {
-    _initializeTTS();
-    _initializeSpeechToText();
+
+  // Android audio-mode channel
+  static const MethodChannel _audioModeChannel = MethodChannel(
+    'connectx/audio_mode',
+  );
+
+  SpeechService();
+
+  void stopSpeech() {
+    // Stop and clear recorder components
+    _recorder?.stopRecorder();
+    _recorder?.closeRecorder();
+    _recorderController?.close();
+    _recorderStream?.drain();
+    _recorder = null;
+    _recorderController = null;
+    _recorderStream = null;
+
+    // Stop and clear Speech-to-Text components
+    _speechRecognitionSubscription?.cancel();
+    _speechToText?.dispose();
+    _clientChannel?.shutdown();
+    _speechRecognitionSubscription = null;
+    _speechToText = null;
+    _clientChannel = null;
+    _streamingConfig = null;
+
+    // Stop and clear Text-to-Speech compnonents
+    _player?.stopPlayer();
+    _player?.closePlayer();
+    _audioSynthesisSubscription?.cancel();
+    _player = null;
+    _audioSynthesisSubscription = null;
+    _textToSpeech = null;
   }
-  
-  void _initializeTTS() {
-    _tts = FlutterTts();
-    
-    _tts.setStartHandler(() {
-      _isSpeaking = true;
-      onTTSStart?.call();
-    });
-    
-    _tts.setCompletionHandler(() {
-      _isSpeaking = false;
-      onTTSEnd?.call();
-    });
-    
-    _tts.setErrorHandler((msg) {
-      _isSpeaking = false;
-      onTTSEnd?.call();
-    });
-    
-    // Configure TTS settings
-    _tts.setLanguage('en-US');
-    _tts.setSpeechRate(0.5);
-    _tts.setVolume(1.0);
-    _tts.setPitch(1.0);
-  }
-  
-  void _initializeSpeechToText() {
-    _speechToText = SpeechToText();
-  }
-  
-  Future<bool> requestMicrophonePermission() async {
-    final status = await Permission.microphone.request();
-    return status.isGranted;
-  }
-  
-  Future<bool> initializeSpeechToText() async {
-    return await _speechToText.initialize(
-      onError: (error) {
-        // Speech recognition error: $error (removed print for production)
-        _isListening = false;
-        onSpeechEnd?.call();
-      },
-      onStatus: (status) {
-        // Speech recognition status: $status (removed print for production)
-        if (status == 'done' || status == 'notListening') {
-          _isListening = false;
-          onSpeechEnd?.call();
-        }
-      },
-    );
-  }
-  
-  Future<void> startListening() async {
-    if (!_isListening && !_isSpeaking) {
-      final hasPermission = await requestMicrophonePermission();
-      if (!hasPermission) {
-        throw Exception('Microphone permission denied');
-      }
-      
-      final initialized = await initializeSpeechToText();
-      if (!initialized) {
-        throw Exception('Speech recognition not available');
-      }
-      
-      _isListening = true;
-      onSpeechStart?.call();
-      
-      await _speechToText.listen(
-        onResult: (result) {
-          if (result.finalResult) {
-            onSpeechResult?.call(result.recognizedWords);
+
+  /// Streams audio chunks to Google Speech-to-Text and updates live transcription.
+  Future<void> startSpeech() async {
+    onSpeechStart?.call();
+    try {
+      await _initialize();
+
+      // Create a controller; pass its sink to taudio
+      _recorderController = StreamController<Uint8List>.broadcast();
+      _recorderStream = _recorderController!.stream;
+
+      await _recorder!.startRecorder(
+        codec: ta.Codec.pcm16,
+        numChannels: 1,
+        sampleRate: 16000,
+        toStream: _recorderController!.sink,
+        enableEchoCancellation: true,
+      );
+
+      final responseStream = _speechToText!.streamingRecognize(
+        _streamingConfig!,
+        _recorderStream!,
+      );
+
+      _speechRecognitionSubscription = responseStream.listen(
+        (data) async {
+          // Process only final results
+          for (final result in data.results) {
+            if (result.isFinal && result.alternatives.isNotEmpty) {
+              // Only call back with final transcript
+              onSpeechResult?.call(result.alternatives.first.transcript);
+            } else if (_isPlaying && result.alternatives.isNotEmpty) {
+              // Cancel current audio synthesis and stop playback if new speech is detected
+              try {
+                print('New speech detected, stopping TTS playback if any.');
+                await _audioSynthesisSubscription?.cancel();
+                await _initializePlayer();
+              } catch (e) {
+                print('Error stopping TTS playback: $e');
+              }
+            }
           }
         },
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 3),
-        listenOptions: SpeechListenOptions(
-          partialResults: false,
-          cancelOnError: true,
+        onError: (e) {
+          print('Error during speech recognition: $e');
+          onSpeechEnd?.call();
+        },
+      );
+    } catch (e) {
+      print('Error in startSpeech: $e');
+      onSpeechEnd?.call();
+      rethrow;
+    }
+  }
+
+  Future<void> _initialize() async {
+    // Get OAuth Access Token from environment
+    final accessToken = dotenv.env['OAUTH_ACCESS_TOKEN'] ?? '';
+    if (accessToken.isEmpty) {
+      throw Exception('Missing OAUTH_ACCESS_TOKEN environment variable');
+    }
+
+    // Android-specific audio mode setup
+    if (Platform.isAndroid) {
+      await _setAndroidCommunicationMode();
+    }
+
+    // Initialize Speech Service Components
+    if (_recorder == null) await _initializeRecorder();
+    if (_speechToText == null) _initializeSpeechToText(accessToken);
+    if (_textToSpeech == null) _initializeTextToSpeech(accessToken);
+    if (_player == null) await _initializePlayer();
+  }
+
+  Future<void> _setAndroidCommunicationMode() async {
+    try {
+      final res = await _audioModeChannel.invokeMethod<Map>(
+        'forceModeInCommunication',
+      );
+      print('Android audio mode set: $res');
+    } catch (e) {
+      print('Failed to set MODE_IN_COMMUNICATION: $e');
+    }
+  }
+
+  Future<void> _initializeRecorder() async {
+    try {
+      final microphoneRequest = await Permission.microphone.request();
+      if (!microphoneRequest.isGranted) {
+        throw Exception('Microphone permission denied');
+      }
+
+      if (_recorder == null) {
+        _recorder = ta.FlutterSoundRecorder();
+      } else {
+        await _recorder!.stopRecorder();
+        await _recorder!.closeRecorder();
+      }
+      await _recorder!.openRecorder();
+    } catch (e) {
+      print('Recorder initialization failed: $e');
+      rethrow;
+    }
+  }
+
+  void _initializeSpeechToText(String accessToken) {
+    try {
+      _streamingConfig = StreamingRecognitionConfig(
+        config: RecognitionConfig(
+          encoding: AudioEncoding.LINEAR16,
+          model: RecognitionModel.command_and_search,
+          enableAutomaticPunctuation: true,
+          sampleRateHertz: 16000,
+          languageCode: 'de-DE',
+          audioChannelCount: 1,
+        ),
+        interimResults: true,
+        singleUtterance: false, // Keep listening continuously
+      );
+      _speechToText = SpeechToText.viaToken('Bearer', accessToken);
+    } catch (e) {
+      print('Error initializing SpeechToText: $e');
+      onSpeechEnd?.call();
+      rethrow;
+    }
+  }
+
+  void _initializeTextToSpeech(String accessToken) {
+    _clientChannel = ClientChannel(
+      'texttospeech.googleapis.com',
+      port: 443,
+      options: const ChannelOptions(
+        credentials: ChannelCredentials.secure(),
+        keepAlive: ClientKeepAliveOptions(
+          pingInterval: Duration(seconds: 60),
+          timeout: Duration(seconds: 10),
+          permitWithoutCalls: true,
+        ),
+      ),
+    );
+
+    _textToSpeech = cloud_tts.TextToSpeechClient(
+      _clientChannel!,
+      options: CallOptions(
+        metadata: {'Authorization': 'Bearer $accessToken'},
+        timeout: Duration(seconds: 10),
+      ),
+    );
+  }
+
+  Future<void> _initializePlayer() async {
+    if (_player == null) {
+      _player = ta.FlutterSoundPlayer(voiceProcessing: false);
+    } else {
+      await _player!.stopPlayer();
+      await _player!.closePlayer();
+    }
+    await _player!.openPlayer();
+    await _player!.startPlayerFromStream(
+      codec: ta.Codec.pcm16,
+      sampleRate: 16000,
+      interleaved: true,
+      bufferSize: 8192,
+      numChannels: 1,
+    );
+    _isPlaying = false;
+  }
+
+  void synthesizeSpeech(String text) {
+    print('synthesizeSpeech called with text: $text');
+    if (text.isNotEmpty) {
+      final streamingSynthesizeConfig = cloud_tts.StreamingSynthesizeConfig(
+        voice: cloud_tts.VoiceSelectionParams(
+          languageCode: "de-DE",
+          name: "de-DE-Chirp-HD-F",
+        ),
+        streamingAudioConfig: cloud_tts.StreamingAudioConfig(
+          audioEncoding: cloud_tts.AudioEncoding.PCM,
+          sampleRateHertz: 16000,
         ),
       );
+
+      final requestConfig = cloud_tts.StreamingSynthesizeRequest(
+        streamingConfig: streamingSynthesizeConfig,
+      );
+
+      final streamingSynthesisInput = cloud_tts.StreamingSynthesisInput(
+        text: text,
+      );
+
+      final requestText = cloud_tts.StreamingSynthesizeRequest(
+        input: streamingSynthesisInput,
+      );
+
+      final requestStream =
+          Stream<cloud_tts.StreamingSynthesizeRequest>.fromIterable([
+            requestConfig,
+            requestText,
+          ]);
+
+      final responseStream = _textToSpeech?.streamingSynthesize(
+        requestStream,
+        options: CallOptions(timeout: Duration(seconds: 10)), // Add explicit timeout
+      );
+
+      _isPlaying = true;
+
+      _audioSynthesisSubscription = responseStream?.listen(
+        (data) {
+          final audioChunk = Uint8List.fromList(data.audioContent);
+          _player?.uint8ListSink?.add(audioChunk);
+        },
+        onError: (e) {
+          print('Error during TTS streaming: $e');
+        },
+        onDone: () {
+          print('TTS streaming completed.');
+        },
+      );
     }
-  }
-  
-  Future<void> stopListening() async {
-    if (_isListening) {
-      await _speechToText.stop();
-      _isListening = false;
-      onSpeechEnd?.call();
-    }
-  }
-  
-  Future<void> speak(String text) async {
-    if (!_isSpeaking && text.isNotEmpty) {
-      await _tts.speak(text);
-    }
-  }
-  
-  Future<void> stopSpeaking() async {
-    if (_isSpeaking) {
-      await _tts.stop();
-      _isSpeaking = false;
-      onTTSEnd?.call();
-    }
-  }
-  
-  bool get isListening => _isListening;
-  bool get isSpeaking => _isSpeaking;
-  
-  void dispose() {
-    _tts.stop();
-    _speechToText.stop();
   }
 }

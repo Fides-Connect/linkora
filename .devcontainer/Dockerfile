@@ -1,25 +1,12 @@
-# Use Ubuntu 24.04 as base image for ARM64 (Apple Silicon compatibility)
 FROM ubuntu:24.04
-
-# Configure proxy settings for corporate network
-# ENV HTTP_PROXY=http://fixccaq:HongLuu1003@10.252.76.110:8080
-# ENV HTTPS_PROXY=http://fixccaq:HongLuu1003@10.252.76.110:8080
-# ENV http_proxy=http://fixccaq:HongLuu1003@10.252.76.110:8080
-# ENV https_proxy=http://fixccaq:HongLuu1003@10.252.76.110:8080
-# ENV NO_PROXY=localhost,127.0.0.1,::1
-# ENV no_proxy=localhost,127.0.0.1,::1
-
-# Configure APT proxy settings
-# RUN echo 'Acquire::http::Proxy "http://fixccaq:HongLuu1003@10.252.76.110:8080";' > /etc/apt/apt.conf.d/proxy.conf \
-#     && echo 'Acquire::https::Proxy "http://fixccaq:HongLuu1003@10.252.76.110:8080";' >> /etc/apt/apt.conf.d/proxy.conf
 
 # Avoid prompts from apt
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Set environment variables
 ENV FLUTTER_ROOT="/opt/flutter"
-ENV ANDROID_HOME="/opt/android-sdk"
-ENV ANDROID_SDK_ROOT="/opt/android-sdk"
+ENV ANDROID_HOME="/usr/lib/android-sdk"
+ENV ANDROID_SDK_ROOT="/usr/lib/android-sdk"
 ENV PATH="$FLUTTER_ROOT/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 ENV CHROME_EXECUTABLE="/usr/bin/chromium-browser"
 
@@ -65,6 +52,11 @@ RUN apt-get update && apt-get install -y \
     usbutils \
     android-tools-adb \
     android-tools-fastboot \
+    android-sdk \
+    google-android-platform-34-installer \
+    python3-requests \
+    python3-google-auth \
+    python3-dotenv \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Chromium for Flutter web development (ARM64 compatible)

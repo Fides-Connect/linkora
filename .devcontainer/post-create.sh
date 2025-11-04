@@ -1,15 +1,5 @@
 #!/bin/bash
 
-# Post-create script for Flutter dev container
-echo "🚀 Setting up Flutter development environment..."
-
-# Ensure proper permissions
-sudo chown -R vscode:vscode /opt/flutter /opt/android-sdk
-
-# Accept Android licenses
-echo "📱 Accepting Android SDK licenses..."
-yes | /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
-
 # Run Flutter doctor to check setup
 echo "🔍 Running Flutter doctor..."
 /opt/flutter/bin/flutter doctor -v
@@ -40,25 +30,18 @@ EOF
 sudo chmod a+r /etc/udev/rules.d/51-android.rules
 sudo usermod -a -G plugdev vscode
 
-# Create sample Flutter project if it doesn't exist
-if [ ! -d "/workspaces/flutter-dev-workspace/my_flutter_app" ]; then
-    echo "📦 Creating sample Flutter project..."
-    cd /workspaces/flutter-dev-workspace
-    /opt/flutter/bin/flutter create my_flutter_app
-    cd my_flutter_app
-    
-    # Add some useful dev dependencies
-    /opt/flutter/bin/flutter pub add dev:flutter_lints
-    /opt/flutter/bin/flutter pub add dev:test
-    /opt/flutter/bin/flutter pub get
-fi
+# Add some useful dev dependencies
+cd /workspaces/Fides/connectx
+/opt/flutter/bin/flutter pub add dev:flutter_lints
+/opt/flutter/bin/flutter pub add dev:test
+/opt/flutter/bin/flutter pub get
 
 # Create useful aliases
 echo "📝 Setting up aliases..."
 cat >> ~/.bashrc << 'EOF'
 
 # Add dev-helper script to PATH
-export PATH="/workspaces/flutter-dev-workspace/scripts:$PATH"
+export PATH="/workspaces/Fides/scripts:$PATH"
 
 # Flutter aliases
 alias fl='flutter'
@@ -86,7 +69,7 @@ EOF
 
 # Create AVD (Android Virtual Device) for testing
 echo "📱 Creating Android Virtual Device..."
-echo "no" | /opt/android-sdk/cmdline-tools/latest/bin/avdmanager create avd \
+echo "no" | /usr/lib/android-sdk/cmdline-tools/latest/bin/avdmanager create avd \
     -n "Flutter_Emulator" \
     -k "system-images;android-34;google_apis_playstore;arm64-v8a" \
     -d "pixel_7_pro" \
