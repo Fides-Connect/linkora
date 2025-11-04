@@ -4,10 +4,6 @@
             "path": "."
         }
     ],
-    "settings": {
-        "dart.flutterSdkPath": "/opt/flutter",
-        "dart.sdkPath": "/opt/flutter/bin/cache/dart-sdk"
-    },
     "extensions": {
         "recommendations": [
             "dart-code.dart-code",

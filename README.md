@@ -24,8 +24,8 @@ A complete Flutter development environment using Docker and VS Code Dev Containe
 ### 1. Clone/Download this Repository
 
 ```bash
-git clone <your-repo> flutter-dev-workspace
-cd flutter-dev-workspace
+git clone <Fides-repo>
+cd Fides
 ```
 
 ### 2. Open in VS Code
@@ -52,12 +52,55 @@ You should see all checkmarks ✅ for Flutter, Android toolchain, and other comp
 
 ## 📱 Development Workflows
 
-### Creating a New Flutter Project
+### ⚙️ Environment Variables
+
+Before running the project, copy and rename `template.env` to `.env` and add your actual environment variables:
+
+```sh
+cp connectx/template.env connectx/.env
+```
+
+Edit `.env` to set your values as needed.
+
+### Generating an OAuth 2 Access Token
+
+To generate an OAuth 2 access token using a Google Cloud service account JSON key file and write it directly to your `.env` file, run:
+
+```sh
+python scripts/generateOAuth2Token.py <service_account_json_path> <env_file_path>
+```
+
+**Required parameters:**
+- `<service_account_json_path>`: Path to your Google Cloud service account JSON key file.
+- `<env_file_path>`: Path to the `.env` file to update.
+
+The script will write the generated token to the specified `.env` file as `OAUTH_ACCESS_TOKEN=<token>`.
+
+> **Note:** The OAuth 2 token is only valid for 1 hour due to Google security guidelines. You will need to refresh/regenerate the token periodically.
+
+Example:
+
+```sh
+python scripts/generateOAuth2Token.py /path/to/service-account.json connectx/.env
+```
+
+### Setting up a Python virtual environment (recommended)
+
+Before running the script, create and activate a virtual environment and install dependencies from `requirements.txt`:
 
 ```bash
-flutter create my_awesome_app
-cd my_awesome_app
-flutter pub get
+# from repo root
+python3 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+
+# Run the token generator
+python scripts/generateOAuth2Token.py /path/to/service-account.json connectx/.env
+
+# When finished
+deactivate
 ```
 
 ### Running on Different Platforms
@@ -68,6 +111,9 @@ flutter run
 
 # Web Browser
 flutter run -d chrome
+
+#or
+flutter run -d web-server
 
 # Linux Desktop (within container)
 flutter run -d linux
@@ -264,3 +310,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ---
 
 **Happy Flutter Development! 🎉**
+
