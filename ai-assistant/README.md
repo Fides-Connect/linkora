@@ -592,14 +592,26 @@ gcloud run deploy ai-assistant \
 
 ### Latency Breakdown
 
+**Deployment: Google Cloud (same region as APIs, no silence detection)**
+
 | Stage | Typical Latency | Notes |
 |-------|----------------|-------|
-| Voice Detection | 1.0-2.0s | Configurable via `SILENCE_DURATION` |
-| Speech-to-Text | 0.5-1.5s | Depends on audio length |
-| Gemini LLM | 0.5-2.0s | Depends on response complexity |
-| Text-to-Speech | 0.5-1.0s | Depends on text length |
-| Network | 0.1-0.5s | Round-trip time |
-| **Total** | **3-7 seconds** | End-to-end response time |
+| Network RTT | 10-50ms | Client to server round-trip |
+| Speech-to-Text | 300-800ms | Google Cloud Speech API (streaming) |
+| Gemini LLM | 400-1200ms | Response generation time |
+| Text-to-Speech | 200-600ms | Google Cloud TTS synthesis |
+| Audio Streaming | 50-150ms | WebRTC buffer + network |
+| **Total** | **~1-3 seconds** | End-to-end response time |
+
+**Note:** With Voice Activity Detection (VAD) enabled (default):
+- Add 1.0-2.0s for silence detection (configurable via `SILENCE_DURATION`)
+- Total latency: ~2-5 seconds
+
+**Optimization recommendations:**
+- Deploy service in same GCP region as Cloud APIs (e.g., `us-central1`)
+- Use Google Cloud's internal network for API calls
+- Disable VAD for real-time streaming (set `SILENCE_DURATION=0`)
+- Enable HTTP/2 keepalive for persistent connections
 
 ### Resource Usage
 
@@ -1002,7 +1014,3 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> {
    - Implement authentication if needed
    - Validate server certificates
    - Don't expose credentials in client code
-
-## License
-
-...existing code...
