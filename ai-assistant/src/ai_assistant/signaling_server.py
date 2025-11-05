@@ -10,7 +10,7 @@ from aiohttp import web, WSMsgType
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaStreamTrack
 
-from peer_connection_handler import PeerConnectionHandler
+from .peer_connection_handler import PeerConnectionHandler
 
 logger = logging.getLogger(__name__)
 

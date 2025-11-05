@@ -13,7 +13,7 @@ from aiortc import (
 )
 from aiortc.contrib.media import MediaRelay
 
-from audio_processor import AudioProcessor
+from .audio_processor import AudioProcessor
 
 logger = logging.getLogger(__name__)
 
