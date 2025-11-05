@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""
+Simple WebRTC Client Test
+This script tests the AI Assistant service by establishing a WebRTC connection
+and sending a test audio file.
+"""
+import asyncio
+import json
+import wave
+import logging
+from pathlib import Path
+
+import websockets
+from aiortc import (
+    RTCPeerConnection,
+    RTCSessionDescription,
+    RTCIceCandidate,
+    MediaStreamTrack
+)
+from aiortc.contrib.media import MediaPlayer, MediaRecorder
+from av import AudioFrame
+import numpy as np
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class AudioFileTrack(MediaStreamTrack):
+    """
+    A media track that reads audio from a WAV file.
+    """
+    kind = "audio"
+
+    def __init__(self, file_path: str):
+        super().__init__()
+        self.file_path = file_path
+        self.samples_per_frame = 480  # 30ms at 16kHz
+        self.sample_rate = 16000
+        self._timestamp = 0
+        self._wav_file = None
+        self._load_audio()
+
+    def _load_audio(self):
+        """Load audio from WAV file."""
+        with wave.open(self.file_path, 'rb') as wav_file:
+            # Verify format
+            assert wav_file.getnchannels() == 1, "Audio must be mono"
+            assert wav_file.getsampwidth() == 2, "Audio must be 16-bit"
+            assert wav_file.getframerate() == 16000, "Sample rate must be 16kHz"
+            
+            # Read all frames
+            frames = wav_file.readframes(wav_file.getnframes())
+            self.audio_data = np.frombuffer(frames, dtype=np.int16)
+            self.position = 0
+
+    async def recv(self) -> AudioFrame:
+        """Receive next audio frame."""
+        # Check if we've reached the end
+        if self.position >= len(self.audio_data):
+            # Loop back to start or send silence
+            self.position = 0
+        
+        # Get next chunk
+        end_pos = min(self.position + self.samples_per_frame, len(self.audio_data))
+        chunk = self.audio_data[self.position:end_pos]
+        
+        # Pad with silence if needed
+        if len(chunk) < self.samples_per_frame:
+            chunk = np.pad(chunk, (0, self.samples_per_frame - len(chunk)), mode='constant')
+        
+        # Create audio frame
+        frame = AudioFrame(
+            format='s16',
+            layout='mono',
+            samples=self.samples_per_frame
+        )
+        frame.planes[0].update(chunk.tobytes())
+        frame.sample_rate = self.sample_rate
+        frame.pts = self._timestamp
+        frame.time_base = f"1/{self.sample_rate}"
+        
+        self._timestamp += self.samples_per_frame
+        self.position = end_pos
+        
+        # Small delay to simulate real-time streaming
+        await asyncio.sleep(0.03)  # 30ms
+        
+        return frame
+
+
+class TestClient:
+    """Test client for AI Assistant service."""
+    
+    def __init__(self, server_url: str = "ws://localhost:8080/ws"):
+        self.server_url = server_url
+        self.pc = None
+        self.websocket = None
+        self.audio_track = None
+        
+    async def connect(self):
+        """Connect to the signaling server."""
+        logger.info(f"Connecting to {self.server_url}")
+        self.websocket = await websockets.connect(self.server_url)
+        logger.info("Connected to signaling server")
+        
+    async def setup_peer_connection(self, audio_file: str = None):
+        """Set up WebRTC peer connection."""
+        self.pc = RTCPeerConnection()
+        
+        # Set up event handlers
+        @self.pc.on("icecandidate")
+        async def on_icecandidate(candidate):
+            if candidate:
+                await self._send_message({
+                    'type': 'ice-candidate',
+                    'candidate': {
+                        'candidate': candidate.candidate,
+                        'sdpMid': candidate.sdpMid,
+                        'sdpMLineIndex': candidate.sdpMLineIndex
+                    }
+                })
+        
+        @self.pc.on("track")
+        async def on_track(track):
+            logger.info(f"Received {track.kind} track from server")
+            
+            if track.kind == "audio":
+                # Record received audio
+                recorder = MediaRecorder("output.wav")
+                recorder.addTrack(track)
+                await recorder.start()
+                
+                # Keep recording for a while
+                await asyncio.sleep(30)
+                await recorder.stop()
+                logger.info("Recorded audio to output.wav")
+        
+        # Add audio track
+        if audio_file and Path(audio_file).exists():
+            logger.info(f"Adding audio track from {audio_file}")
+            self.audio_track = AudioFileTrack(audio_file)
+            self.pc.addTrack(self.audio_track)
+        else:
+            logger.warning("No audio file specified, using microphone")
+            # You could add microphone input here
+        
+    async def start_call(self):
+        """Initiate WebRTC call."""
+        # Create offer
+        offer = await self.pc.createOffer()
+        await self.pc.setLocalDescription(offer)
+        
+        # Send offer to server
+        await self._send_message({
+            'type': 'offer',
+            'sdp': self.pc.localDescription.sdp
+        })
+        
+        logger.info("Sent offer to server")
+        
+        # Wait for answer
+        message = await self._receive_message()
+        
+        if message['type'] == 'answer':
+            answer = RTCSessionDescription(
+                sdp=message['sdp'],
+                type='answer'
+            )
+            await self.pc.setRemoteDescription(answer)
+            logger.info("Received answer from server")
+        
+    async def _send_message(self, message: dict):
+        """Send message to server."""
+        await self.websocket.send(json.dumps(message))
+        
+    async def _receive_message(self) -> dict:
+        """Receive message from server."""
+        message = await self.websocket.recv()
+        return json.loads(message)
+    
+    async def run(self, audio_file: str = None, duration: int = 30):
+        """Run the test client."""
+        try:
+            await self.connect()
+            await self.setup_peer_connection(audio_file)
+            await self.start_call()
+            
+            logger.info(f"Call established, running for {duration} seconds...")
+            await asyncio.sleep(duration)
+            
+        except Exception as e:
+            logger.error(f"Error: {e}", exc_info=True)
+        finally:
+            await self.close()
+    
+    async def close(self):
+        """Close connections."""
+        if self.pc:
+            await self.pc.close()
+        if self.websocket:
+            await self.websocket.close()
+        logger.info("Closed connections")
+
+
+async def main():
+    """Main test function."""
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Test AI Assistant WebRTC service')
+    parser.add_argument('--server', default='ws://localhost:8080/ws',
+                        help='WebSocket server URL')
+    parser.add_argument('--audio-file', help='Path to WAV file (16kHz, mono, 16-bit)')
+    parser.add_argument('--duration', type=int, default=30,
+                        help='Test duration in seconds')
+    
+    args = parser.parse_args()
+    
+    client = TestClient(args.server)
+    await client.run(args.audio_file, args.duration)
+
+
+if __name__ == '__main__':
+    asyncio.run(main())
