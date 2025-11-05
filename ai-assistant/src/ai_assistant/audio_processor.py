@@ -9,7 +9,7 @@ from typing import Optional
 from aiortc import MediaStreamTrack
 from av import AudioFrame
 
-from audio_track import AudioOutputTrack
+from .audio_track import AudioOutputTrack
 
 logger = logging.getLogger(__name__)
 

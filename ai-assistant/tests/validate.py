@@ -260,15 +260,24 @@ def check_files():
     print("\n7. Checking required files...")
     
     required_files = [
-        ('main.py', 'Main application'),
-        ('signaling_server.py', 'Signaling server'),
-        ('peer_connection_handler.py', 'Peer connection handler'),
-        ('audio_processor.py', 'Audio processor'),
-        ('audio_track.py', 'Audio track'),
-        ('ai_assistant.py', 'AI assistant'),
+        ('main.py', 'Main application entry point'),
+        ('src/ai_assistant/__init__.py', 'Package init'),
+        ('src/ai_assistant/__main__.py', 'Package main'),
+        ('src/ai_assistant/signaling_server.py', 'Signaling server'),
+        ('src/ai_assistant/peer_connection_handler.py', 'Peer connection handler'),
+        ('src/ai_assistant/audio_processor.py', 'Audio processor'),
+        ('src/ai_assistant/audio_track.py', 'Audio track'),
+        ('src/ai_assistant/ai_assistant.py', 'AI assistant'),
         ('Containerfile', 'Container definition'),
         ('requirements.txt', 'Dependencies'),
+        ('setup.py', 'Setup configuration'),
+        ('pyproject.toml', 'Project configuration'),
     ]
+    
+    # Change to parent directory if running from tests/
+    import os
+    if Path.cwd().name == 'tests':
+        os.chdir('..')
     
     all_ok = True
     for filename, description in required_files:
