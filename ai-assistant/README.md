@@ -113,11 +113,10 @@ curl http://localhost:8080/health
 
 ```bash
 # Run test client with a 16kHz audio file
-# Note: WebRTC will upsample to 48kHz automatically
 python tests/test_client.py --audio-file test_audio.wav
 
-# Server receives at 48kHz and saves debug recording at 48kHz
-# Output TTS will be saved to output.wav at 24kHz
+# Audio pipeline: 16kHz → WebRTC upsamples to 48kHz → Server processes at 48kHz → TTS at 48kHz
+# Output saved to output.wav at 48kHz
 ```
 
 ## Architecture
