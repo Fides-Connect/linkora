@@ -49,10 +49,12 @@ python tests/test_client.py --audio-file test.wav --duration 60
 #### Audio File Requirements
 
 The test client requires a WAV file with:
-- **Sample Rate**: 16000 Hz (16 kHz)
+- **Sample Rate**: 16000 Hz (16 kHz) - Note: WebRTC will automatically upsample to 48 kHz for transmission
 - **Channels**: 1 (mono)
 - **Sample Width**: 16-bit (2 bytes)
 - **Format**: PCM
+
+**Important:** Even though you provide a 16kHz file, WebRTC automatically resamples all audio to 48kHz for transmission. The server receives 48kHz audio and saves debug recordings at 48kHz. This is normal WebRTC behavior.
 
 Convert audio to the correct format:
 
@@ -60,7 +62,7 @@ Convert audio to the correct format:
 # Using ffmpeg
 ffmpeg -i input.mp3 -ar 16000 -ac 1 -sample_fmt s16 output.wav
 
-# Using sox
+# Using sox  
 sox input.mp3 -r 16000 -c 1 -b 16 output.wav
 ```
 

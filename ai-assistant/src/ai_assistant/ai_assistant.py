@@ -48,7 +48,7 @@ class AIAssistant:
             # Configure recognition
             config = speech.RecognitionConfig(
                 encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=16000,
+                sample_rate_hertz=48000,  # Changed to match WebRTC's actual rate
                 language_code=self.language_code,
                 audio_channel_count=1,
                 enable_automatic_punctuation=True,

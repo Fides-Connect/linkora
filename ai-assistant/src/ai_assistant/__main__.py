@@ -50,6 +50,7 @@ async def main():
     logger.info(f"  Host: {os.getenv('HOST', '0.0.0.0')}")
     logger.info(f"  Port: {os.getenv('PORT', 8080)}")
     logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
+    logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
     logger.debug(f"  Credentials: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
     
     # Initialize AI Assistant

@@ -112,10 +112,12 @@ curl http://localhost:8080/health
 ### 4. Test with Client
 
 ```bash
-# Run test client (requires audio file at 16kHz for input)
+# Run test client with a 16kHz audio file
+# Note: WebRTC will upsample to 48kHz automatically
 python tests/test_client.py --audio-file test_audio.wav
 
-# Output will be saved to output.wav at 24kHz
+# Server receives at 48kHz and saves debug recording at 48kHz
+# Output TTS will be saved to output.wav at 24kHz
 ```
 
 ## Architecture
@@ -178,6 +180,7 @@ python tests/test_client.py --audio-file test_audio.wav
    - Client sends audio stream via WebRTC
    - Audio processor receives PCM audio frames
    - Voice Activity Detection (VAD) filters silence
+   - (Optional) Debug recording saves all received frames to WAV file
 
 3. **Speech Processing**
    - Buffer accumulates audio during speech
