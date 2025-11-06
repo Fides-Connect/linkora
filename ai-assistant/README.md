@@ -296,14 +296,14 @@ python main.py
 ./run.sh stop
 ```
 
-#### Using Docker
+#### Using Podman
 
 ```bash
 # Build image
-docker build -t ai-assistant -f Containerfile .
+podman build -t ai-assistant -f Containerfile .
 
 # Run container
-docker run -d \
+podman run -d \
   --name ai-assistant \
   -p 8080:8080 \
   --env-file .env \
@@ -311,17 +311,17 @@ docker run -d \
   ai-assistant
 ```
 
-#### Using Docker Compose
+#### Using Podman Compose
 
 ```bash
 # Start all services
-docker-compose up -d
+podman-compose up -d
 
 # View logs
-docker-compose logs -f
+podman-compose logs -f
 
 # Stop services
-docker-compose down
+podman-compose down
 ```
 
 ## Configuration
@@ -510,9 +510,6 @@ LOG_LEVEL=DEBUG
 ```bash
 # Podman
 podman logs -f ai-assistant
-
-# Docker
-docker logs -f ai-assistant
 
 # Local
 python main.py 2>&1 | tee debug.log
