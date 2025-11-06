@@ -5,6 +5,9 @@ Handles the audio processing pipeline: STT -> LLM -> TTS
 import asyncio
 import logging
 import numpy as np
+import wave
+import os
+from datetime import datetime
 from typing import Optional
 from aiortc import MediaStreamTrack
 from aiortc.mediastreams import MediaStreamError
@@ -28,10 +31,23 @@ class AudioProcessor:
         
         # Audio buffer for STT
         self.audio_buffer = []
-        self.sample_rate = 16000  # Input is still 16kHz for Google Cloud STT
-        self.silence_threshold = 23400  # Amplitude threshold for silence detection
+        self.sample_rate = 48000  # WebRTC sends 48kHz - match it exactly
+        self.silence_threshold = 500  # Amplitude threshold for silence detection
         self.silence_duration = 1.5  # Seconds of silence to trigger processing
         self.min_speech_duration = 0.5  # Minimum speech duration in seconds
+        
+        # Debug: WAV file recording
+        self.debug_recording = os.getenv('DEBUG_RECORD_AUDIO', 'false').lower() == 'true'
+        self.debug_wav_file = None
+        self.debug_all_frames = []  # Store all frames for complete recording
+        if self.debug_recording:
+            # Create debug directory if it doesn't exist
+            debug_dir = 'debug_audio'
+            os.makedirs(debug_dir, exist_ok=True)
+            # Create unique filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.debug_wav_path = os.path.join(debug_dir, f'received_audio_{connection_id}_{timestamp}.wav')
+            logger.info(f"Debug audio recording enabled: {self.debug_wav_path}")
         
     def get_output_track(self) -> MediaStreamTrack:
         """Get the output audio track."""
@@ -55,7 +71,50 @@ class AudioProcessor:
             except asyncio.CancelledError:
                 logger.debug("Audio processing task cancelled successfully")
                 pass
+        
+        # Save debug recording if enabled
+        if self.debug_recording and len(self.debug_all_frames) > 0:
+            self._save_debug_recording()
+        
         logger.info(f"Audio processor stopped for connection {self.connection_id}")
+    
+    def _save_debug_recording(self):
+        """Save all received audio frames to a WAV file."""
+        try:
+            logger.info(f"Saving debug recording: {self.debug_wav_path}")
+            
+            if len(self.debug_all_frames) == 0:
+                logger.warning("No frames to save!")
+                return
+            
+            # Log statistics about the frames
+            frame_count = len(self.debug_all_frames)
+            frame_lengths = [len(f) for f in self.debug_all_frames]
+            logger.info(f"Recording {frame_count} frames, lengths: min={min(frame_lengths)}, max={max(frame_lengths)}, avg={sum(frame_lengths)/len(frame_lengths):.1f}")
+            
+            # Concatenate all frames
+            all_audio = np.concatenate(self.debug_all_frames)
+            
+            # Log audio statistics
+            audio_min, audio_max = all_audio.min(), all_audio.max()
+            audio_rms = np.sqrt(np.mean(all_audio.astype(float) ** 2))
+            logger.info(f"Audio statistics: min={audio_min}, max={audio_max}, RMS={audio_rms:.2f}")
+            
+            if audio_rms < 100:
+                logger.warning(f"WARNING: Audio has very low RMS ({audio_rms:.2f}) - recording might be silence or corrupted")
+            
+            # Write to WAV file
+            with wave.open(self.debug_wav_path, 'wb') as wav_file:
+                wav_file.setnchannels(1)  # Mono
+                wav_file.setsampwidth(2)  # 16-bit
+                wav_file.setframerate(self.sample_rate)
+                wav_file.writeframes(all_audio.tobytes())
+            
+            duration = len(all_audio) / self.sample_rate
+            logger.info(f"Debug recording saved: {self.debug_wav_path} ({duration:.2f}s, {len(all_audio)} samples)")
+            
+        except Exception as e:
+            logger.error(f"Error saving debug recording: {e}", exc_info=True)
     
     async def _process_audio(self):
         """Main audio processing loop."""
@@ -96,9 +155,12 @@ class AudioProcessor:
                     audio_data = self._frame_to_numpy(frame)
                     logger.debug(f"[Frame {frame_count}] Converted to numpy: shape={audio_data.shape}, dtype={audio_data.dtype}")
                     
+                    # Store frame for debug recording
+                    if self.debug_recording:
+                        self.debug_all_frames.append(audio_data.copy())
+                    
                     # Detect speech vs silence
-                    #is_silence = self._is_silence(audio_data)
-                    is_silence = frame_count > 10 and frame_count < 50
+                    is_silence = self._is_silence(audio_data)
                     rms = np.sqrt(np.mean(audio_data.astype(float) ** 2))
                     logger.debug(f"[Frame {frame_count}] Audio level: RMS={rms:.2f}, is_silence={is_silence}")
                     
@@ -161,21 +223,61 @@ class AudioProcessor:
         """Convert audio frame to numpy array."""
         logger.debug(f"Converting frame to numpy: format={frame.format}, layout={frame.layout}")
         
-        # Convert to numpy array and ensure it's in the correct format
+        # Log raw frame properties
+        logger.debug(f"Frame properties: sample_rate={frame.sample_rate}, samples={frame.samples}, format={frame.format.name}")
+        
+        # Convert to numpy array
         array = frame.to_ndarray()
         logger.debug(f"Frame.to_ndarray() result: shape={array.shape}, dtype={array.dtype}")
         
-        # If stereo, convert to mono
+        # Handle stereo to mono conversion
         if len(array.shape) > 1:
-            logger.debug(f"Converting stereo to mono (original shape: {array.shape})")
-            array = array.mean(axis=0)
+            if array.shape[0] == 1:
+                # Shape is (1, N*2) - single channel with interleaved stereo
+                # Reshape to (N, 2) to properly separate left/right channels
+                logger.debug(f"Reshaping interleaved stereo: {array.shape} -> (-1, 2)")
+                array = array.reshape(-1, 2)
+            
+            # Now convert to mono by averaging channels
+            logger.debug(f"Converting stereo to mono (shape: {array.shape})")
+            array = array.mean(axis=1).astype(array.dtype)  # Keep original dtype!
+            logger.debug(f"After mono conversion: shape={array.shape}, dtype={array.dtype}")
         
-        # Convert to int16 format for Google Cloud
+        # NO RESAMPLING - just handle different sample rates in STT config
+        # The resampling 48->16->48 is causing quality issues
+        
+        # Ensure int16 format
         if array.dtype != np.int16:
-            logger.debug(f"Converting from {array.dtype} to int16")
-            array = (array * 32767).astype(np.int16)
+            logger.warning(f"Converting from {array.dtype} to int16")
+            # Check the range of values
+            array_min, array_max = array.min(), array.max()
+            logger.debug(f"Array range before conversion: min={array_min}, max={array_max}")
+            
+            if array.dtype in (np.float32, np.float64):
+                # Normalize float audio (-1.0 to 1.0 range)
+                if -1.0 <= array_min and array_max <= 1.0:
+                    logger.debug("Float audio in normalized range [-1.0, 1.0]")
+                    array = (array * 32767).astype(np.int16)
+                else:
+                    logger.warning(f"Float audio out of expected range: [{array_min}, {array_max}]")
+                    array = array / max(abs(array_min), abs(array_max))
+                    array = (array * 32767).astype(np.int16)
+            else:
+                array = array.astype(np.int16)
         
-        logger.debug(f"Final numpy array: shape={array.shape}, dtype={array.dtype}, min={array.min()}, max={array.max()}")
+        # Validate the output
+        if len(array) == 0:
+            logger.error("Conversion resulted in empty array!")
+            return np.zeros(480, dtype=np.int16)
+        
+        final_min, final_max = array.min(), array.max()
+        rms = np.sqrt(np.mean(array.astype(float) ** 2))
+        logger.debug(f"Final numpy array: shape={array.shape}, dtype={array.dtype}, min={final_min}, max={final_max}, RMS={rms:.2f}")
+        
+        # Warn if audio seems to be all silence
+        if rms < 10:
+            logger.warning(f"Audio frame has very low RMS ({rms:.2f}) - might be silence or incorrect conversion")
+        
         return array
     
     def _is_silence(self, audio_data: np.ndarray) -> bool:
@@ -199,7 +301,6 @@ class AudioProcessor:
             logger.info("Step 1/3: Performing speech-to-text...")
             logger.debug(f"Sending {len(audio_bytes)} bytes to STT")
             transcript = await self.ai_assistant.speech_to_text(audio_bytes)
-            transcript = "Hallo! Wie geht es dir?"
             
             if not transcript or transcript.strip() == "":
                 logger.info("No speech detected in segment (empty transcript)")
@@ -227,7 +328,7 @@ class AudioProcessor:
                 
                 # Queue audio immediately without delay
                 await self.output_track.queue_audio(audio_chunk)
-            
+
             logger.info(f"Speech segment processed successfully ({chunk_count} audio chunks, {total_bytes} total bytes)")
             
         except Exception as e:

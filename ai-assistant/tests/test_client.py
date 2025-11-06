@@ -35,7 +35,7 @@ class AudioFileTrack(MediaStreamTrack):
     def __init__(self, file_path: str):
         super().__init__()
         self.file_path = file_path
-        self.samples_per_frame = 480  # 30ms at 16kHz
+        self.samples_per_frame = 320  # 20ms at 16kHz
         self.sample_rate = 16000
         self._timestamp = 0
         self._wav_file = None
@@ -69,6 +69,12 @@ class AudioFileTrack(MediaStreamTrack):
         if len(chunk) < self.samples_per_frame:
             chunk = np.pad(chunk, (0, self.samples_per_frame - len(chunk)), mode='constant')
         
+        # Log every 50th frame to avoid spam
+        if self.position % (self.samples_per_frame * 50) == 0:
+            chunk_min, chunk_max = chunk.min(), chunk.max()
+            chunk_rms = np.sqrt(np.mean(chunk.astype(float) ** 2))
+            logger.debug(f"Sending frame at position {self.position}: min={chunk_min}, max={chunk_max}, RMS={chunk_rms:.2f}")
+        
         # Create audio frame
         frame = AudioFrame(
             format='s16',
@@ -83,8 +89,8 @@ class AudioFileTrack(MediaStreamTrack):
         self._timestamp += self.samples_per_frame
         self.position = end_pos
         
-        # Small delay to simulate real-time streaming
-        await asyncio.sleep(0.03)  # 30ms
+        # Delay for exactly 20ms to match WebRTC frame timing
+        await asyncio.sleep(0.02) 
         
         return frame
 
