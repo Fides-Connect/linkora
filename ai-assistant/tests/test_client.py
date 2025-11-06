@@ -8,6 +8,7 @@ import asyncio
 import json
 import wave
 import logging
+from fractions import Fraction
 from pathlib import Path
 
 import websockets
@@ -77,7 +78,7 @@ class AudioFileTrack(MediaStreamTrack):
         frame.planes[0].update(chunk.tobytes())
         frame.sample_rate = self.sample_rate
         frame.pts = self._timestamp
-        frame.time_base = f"1/{self.sample_rate}"
+        frame.time_base = Fraction(1, self.sample_rate)
         
         self._timestamp += self.samples_per_frame
         self.position = end_pos
@@ -96,6 +97,7 @@ class TestClient:
         self.pc = None
         self.websocket = None
         self.audio_track = None
+        self.recorder = None
         
     async def connect(self):
         """Connect to the signaling server."""
@@ -126,14 +128,11 @@ class TestClient:
             
             if track.kind == "audio":
                 # Record received audio
-                recorder = MediaRecorder("output.wav")
-                recorder.addTrack(track)
-                await recorder.start()
-                
-                # Keep recording for a while
-                await asyncio.sleep(30)
-                await recorder.stop()
-                logger.info("Recorded audio to output.wav")
+                logger.info("Starting recorder for received audio")
+                self.recorder = MediaRecorder("output.wav")
+                self.recorder.addTrack(track)
+                await self.recorder.start()
+                logger.info("Recorder started - saving to output.wav")
         
         # Add audio track
         if audio_file and Path(audio_file).exists():
@@ -195,6 +194,12 @@ class TestClient:
     
     async def close(self):
         """Close connections."""
+        # Stop recorder first
+        if self.recorder:
+            logger.info("Stopping recorder...")
+            await self.recorder.stop()
+            logger.info("Recording saved to output.wav")
+
         if self.pc:
             await self.pc.close()
         if self.websocket:

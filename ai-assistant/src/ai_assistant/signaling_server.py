@@ -28,43 +28,57 @@ class SignalingServer:
         await ws.prepare(request)
         
         connection_id = id(ws)
-        logger.info(f"New WebSocket connection: {connection_id}")
+        client_ip = request.remote
+        logger.info(f"New WebSocket connection: {connection_id} from {client_ip}")
         
         # Create peer connection handler
+        logger.debug(f"Creating PeerConnectionHandler for {connection_id}")
         handler = PeerConnectionHandler(
             connection_id=str(connection_id),
             ai_assistant=self.ai_assistant,
             websocket=ws
         )
         self.active_connections[str(connection_id)] = handler
+        logger.debug(f"Active connections: {len(self.active_connections)}")
         
         try:
+            logger.debug(f"Starting message loop for connection {connection_id}")
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
                     try:
+                        logger.debug(f"Received text message from {connection_id}: {msg.data[:100]}...")
                         data = json.loads(msg.data)
+                        logger.debug(f"Parsed message type: {data.get('type')}")
                         await self._handle_message(handler, data)
-                    except json.JSONDecodeError:
-                        logger.error(f"Invalid JSON received: {msg.data}")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Invalid JSON received from {connection_id}: {e}")
+                        logger.debug(f"Raw data: {msg.data}")
                     except Exception as e:
-                        logger.error(f"Error handling message: {e}", exc_info=True)
+                        logger.error(f"Error handling message from {connection_id}: {e}", exc_info=True)
                         
                 elif msg.type == WSMsgType.ERROR:
-                    logger.error(f"WebSocket error: {ws.exception()}")
+                    logger.error(f"WebSocket error for {connection_id}: {ws.exception()}")
+                    
+                elif msg.type == WSMsgType.CLOSE:
+                    logger.info(f"Client {connection_id} initiated close")
                     
         finally:
             # Cleanup
             logger.info(f"WebSocket connection closed: {connection_id}")
+            logger.debug(f"Cleaning up connection {connection_id}")
             await handler.close()
             del self.active_connections[str(connection_id)]
+            logger.debug(f"Active connections after cleanup: {len(self.active_connections)}")
             
         return ws
     
     async def _handle_message(self, handler: PeerConnectionHandler, data: dict):
         """Handle signaling messages."""
         msg_type = data.get('type')
+        logger.debug(f"Handling message type '{msg_type}' for connection {handler.connection_id}")
         
         if msg_type == 'offer':
+            logger.debug(f"Processing offer (SDP length: {len(data.get('sdp', ''))})")
             # Receive WebRTC offer from client
             offer = RTCSessionDescription(
                 sdp=data['sdp'],
@@ -76,7 +90,10 @@ class SignalingServer:
             # Receive ICE candidate from client
             candidate = data.get('candidate')
             if candidate:
+                logger.debug(f"Processing ICE candidate")
                 await handler.handle_ice_candidate(candidate)
+            else:
+                logger.warning(f"Received ice-candidate message without candidate data")
                 
         else:
             logger.warning(f"Unknown message type: {msg_type}")

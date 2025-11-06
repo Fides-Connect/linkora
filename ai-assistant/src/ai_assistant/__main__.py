@@ -24,6 +24,13 @@ async def main():
     """Main application entry point."""
     # Load environment variables
     load_dotenv()
+
+    # Set log level from environment
+    logging.getLogger().setLevel(os.getenv('LOG_LEVEL', 'INFO').upper())
+    
+    logger.info("=" * 60)
+    logger.info("AI Assistant Service Starting")
+    logger.info("=" * 60)
     
     # Verify required environment variables
     required_vars = [
@@ -36,7 +43,17 @@ async def main():
         logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
         return
     
+    # Log configuration
+    logger.info("Configuration:")
+    logger.info(f"  Language: {os.getenv('LANGUAGE_CODE', 'de-DE')}")
+    logger.info(f"  Voice: {os.getenv('VOICE_NAME', 'de-DE-Wavenet-F')}")
+    logger.info(f"  Host: {os.getenv('HOST', '0.0.0.0')}")
+    logger.info(f"  Port: {os.getenv('PORT', 8080)}")
+    logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
+    logger.debug(f"  Credentials: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
+    
     # Initialize AI Assistant
+    logger.info("Initializing AI Assistant...")
     ai_assistant = AIAssistant(
         gemini_api_key=os.getenv('GEMINI_API_KEY'),
         language_code=os.getenv('LANGUAGE_CODE', 'de-DE'),
@@ -44,6 +61,7 @@ async def main():
     )
     
     # Initialize signaling server
+    logger.info("Initializing signaling server...")
     signaling_server = SignalingServer(ai_assistant)
     
     # Create web application
@@ -56,13 +74,17 @@ async def main():
     port = int(os.getenv('PORT', 8080))
     
     logger.info(f"Starting AI Assistant server on {host}:{port}")
+    logger.info(f"WebSocket endpoint: ws://{host}:{port}/ws")
+    logger.info(f"Health check: http://{host}:{port}/health")
     
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host, port)
     await site.start()
     
+    logger.info("=" * 60)
     logger.info("AI Assistant server is running")
+    logger.info("=" * 60)
     
     # Keep running
     try:
@@ -70,7 +92,9 @@ async def main():
     except KeyboardInterrupt:
         logger.info("Shutting down...")
     finally:
+        logger.info("Cleanup started")
         await runner.cleanup()
+        logger.info("Shutdown complete")
 
 
 if __name__ == '__main__':
