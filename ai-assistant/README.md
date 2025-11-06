@@ -112,8 +112,10 @@ curl http://localhost:8080/health
 ### 4. Test with Client
 
 ```bash
-# Run test client (requires audio file)
-python test_client.py --audio-file test_audio.wav
+# Run test client (requires audio file at 16kHz for input)
+python tests/test_client.py --audio-file test_audio.wav
+
+# Output will be saved to output.wav at 24kHz
 ```
 
 ## Architecture

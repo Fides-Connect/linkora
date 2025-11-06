@@ -28,7 +28,7 @@ class AudioProcessor:
         
         # Audio buffer for STT
         self.audio_buffer = []
-        self.sample_rate = 16000  # Google Cloud requires 16kHz
+        self.sample_rate = 16000  # Input is still 16kHz for Google Cloud STT
         self.silence_threshold = 23400  # Amplitude threshold for silence detection
         self.silence_duration = 1.5  # Seconds of silence to trigger processing
         self.min_speech_duration = 0.5  # Minimum speech duration in seconds
@@ -218,14 +218,17 @@ class AudioProcessor:
             logger.debug(f"Sending to TTS: '{llm_response}'")
             
             chunk_count = 0
+            total_bytes = 0
             async for audio_chunk in self.ai_assistant.text_to_speech_stream(llm_response):
                 chunk_count += 1
                 chunk_size = len(audio_chunk)
+                total_bytes += chunk_size
                 logger.debug(f"TTS chunk {chunk_count}: {chunk_size} bytes")
-                # Send audio chunks to output track
+                
+                # Queue audio immediately without delay
                 await self.output_track.queue_audio(audio_chunk)
             
-            logger.info(f"Speech segment processed successfully ({chunk_count} audio chunks)")
+            logger.info(f"Speech segment processed successfully ({chunk_count} audio chunks, {total_bytes} total bytes)")
             
         except Exception as e:
             logger.error(f"Error processing speech segment: {e}", exc_info=True)

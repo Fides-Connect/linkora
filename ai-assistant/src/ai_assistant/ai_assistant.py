@@ -98,19 +98,19 @@ class AIAssistant:
             return "Entschuldigung, ich konnte keine Antwort generieren."
     
     async def text_to_speech_stream(self, text: str) -> AsyncIterator[bytes]:
-        """Convert text to speech audio using Google Cloud Text-to-Speech."""
+        """Convert text to speech using Google Cloud TTS streaming API."""
         try:
-            # Configure synthesis
+            # Configure TTS request
             synthesis_input = tts.SynthesisInput(text=text)
             
             voice = tts.VoiceSelectionParams(
                 language_code=self.language_code,
-                name=self.voice_name
+                name=self.voice_name,
             )
             
             audio_config = tts.AudioConfig(
                 audio_encoding=tts.AudioEncoding.LINEAR16,
-                sample_rate_hertz=16000,
+                sample_rate_hertz=24000,
             )
             
             # Perform synthesis

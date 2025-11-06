@@ -127,7 +127,7 @@ class TestClient:
             logger.info(f"Received {track.kind} track from server")
             
             if track.kind == "audio":
-                # Record received audio
+                # Record received audio - MediaRecorder will use the track's native sample rate
                 logger.info("Starting recorder for received audio")
                 self.recorder = MediaRecorder("output.wav")
                 self.recorder.addTrack(track)
