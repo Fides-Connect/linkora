@@ -1,22 +1,22 @@
 # WebRTC and networking
-aiortc>=1.6.0
-aiohttp>=3.9.1
-websockets>=12.0
+aiortc>=1.14.0
+aiohttp>=3.13.2
+websockets>=15.0.1
 
 # Google Cloud APIs
-google-cloud-speech>=2.26.0
-google-cloud-texttospeech>=2.16.3
-google-generativeai>=0.3.2
+google-cloud-speech>=2.34.0
+google-cloud-texttospeech>=2.33.0
+google-generativeai>=0.8.5
 
 # Audio processing
-numpy>=1.26.2
-scipy>=1.11.4
+numpy>=2.3.4
+scipy>=1.16.3
 
 # Async utilities
 asyncio-mqtt>=0.16.2
 
 # Environment variables
-python-dotenv>=1.0.0
+python-dotenv>=1.2.1
 
 # Logging
-structlog>=24.1.0
+structlog>=25.3.0
