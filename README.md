@@ -1,6 +1,6 @@
 # Flutter Development Container
 
-A complete Flutter development environment using Docker and VS Code Dev Containers, optimized for Apple Silicon Macs.
+A complete Flutter development environment using Podman / Docker and VS Code Dev Containers
 
 ## 🚀 Features
 
@@ -15,7 +15,7 @@ A complete Flutter development environment using Docker and VS Code Dev Containe
 ## 📋 Prerequisites
 
 - **macOS** (preferably with Apple Silicon)
-- **Docker Desktop** (latest version)
+- **Podman of Docker** (latest version)
 - **VS Code** with Dev Containers extension
 - **8GB+ RAM** recommended (16GB+ for smooth emulator performance)
 
@@ -187,11 +187,11 @@ adb logcat                  # View device logs
 
 ### Container Management
 ```bash
-# Rebuild container (if you modify Dockerfile)
+# Rebuild container (if you modify Containerfile)
 # Use Command Palette: "Dev Containers: Rebuild Container"
 
 # View container logs
-docker logs <container-id>
+podman logs <container-id>
 ```
 
 ## 🛠️ Customization
@@ -210,7 +210,7 @@ Edit `.devcontainer/devcontainer.json` and add extension IDs to the `extensions`
 
 ### Installing Additional Tools
 
-Edit `.devcontainer/Dockerfile` to add more packages:
+Edit `.devcontainer/Containerfile` to add more packages:
 
 ```dockerfile
 RUN apt-get update && apt-get install -y \
@@ -234,12 +234,12 @@ Modify `.devcontainer/devcontainer.json` `containerEnv` section:
 
 1. **Permission Errors**:
    ```bash
-   # Reset Docker Desktop
+   # Reset Podman / Docker
    # Or run with --privileged flag (already included)
    ```
 
 2. **Slow Build**:
-   - Ensure Docker Desktop has enough RAM allocated (8GB+)
+   - Ensure Podman Machine has enough RAM allocated (8GB+)
    - Close other resource-intensive applications
 
 ### Flutter Doctor Issues
@@ -278,7 +278,7 @@ Modify `.devcontainer/devcontainer.json` `containerEnv` section:
 ### Performance Issues
 
 1. **Slow Emulator**:
-   - Increase Docker Desktop memory allocation
+   - Increase Podman / Docker memory allocation
    - Use physical device for better performance
    - Consider using Genymotion or other lightweight emulators
 
