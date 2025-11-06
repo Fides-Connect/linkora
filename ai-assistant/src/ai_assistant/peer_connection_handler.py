@@ -68,11 +68,6 @@ class PeerConnectionHandler:
                     ai_assistant=self.ai_assistant,
                     input_track=track
                 )
-                
-                # Add output track to peer connection
-                #output_track = self.audio_processor.get_output_track()
-                #logger.debug(f"Adding output track to peer connection: {output_track.id}")
-                #self.pc.addTrack(output_track)
 
                 # Signal that the track is ready
                 self.track_ready.set()
@@ -104,10 +99,10 @@ class PeerConnectionHandler:
 
             # Wait for audio processor to be ready
             logger.debug("Waiting for audio track to be ready...")
-            await asyncio.wait_for(self.track_ready.wait(), timeout=5.0)  # ← ADD THIS
+            await asyncio.wait_for(self.track_ready.wait(), timeout=5.0)
             logger.debug("Audio track is ready")
 
-            # ⚠️ ADD THIS: Add output track BEFORE creating answer
+            # Add output track before creating answer
             if self.audio_processor:
                 output_track = self.audio_processor.get_output_track()
                 logger.info(f"Adding output track to peer connection: {output_track.id}")

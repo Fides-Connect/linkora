@@ -35,7 +35,7 @@ class AudioOutputTrack(MediaStreamTrack):
     async def recv(self) -> AudioFrame:
         """Receive audio frame."""
         try:
-            logger.info(f"recv() called - queue size: {self.audio_queue.qsize()}")
+            logger.debug(f"recv() called - queue size: {self.audio_queue.qsize()}")
             
             # Get audio data from queue
             audio_data = await asyncio.wait_for(
