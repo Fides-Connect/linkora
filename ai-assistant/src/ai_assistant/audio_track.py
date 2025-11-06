@@ -22,25 +22,19 @@ class AudioOutputTrack(MediaStreamTrack):
     def __init__(self):
         super().__init__()
         self.audio_queue = asyncio.Queue()
-        self.sample_rate = 48000  # 48kHz to match WebRTC standard
-        self.channels = 1
+        self.sample_rate = 48000  # Match TTS output and WebRTC
+        self.channels = 1  
         self.samples_per_frame = 960  # 20ms at 48kHz
         self._timestamp = 0
         self._start = None
         self._next_frame_time = None
-        self._buffer = np.array([], dtype=np.int16)  # Buffer for partial frames
+        self._buffer = np.array([], dtype=np.int16)
         
     async def queue_audio(self, audio_data: bytes):
-        """Queue audio data for playback, resampling from 24kHz to 48kHz if needed."""
-        # Convert bytes to numpy array
-        audio_array = np.frombuffer(audio_data, dtype=np.int16)
-        
-        # Resample from 24kHz to 48kHz (2x upsampling)
-        # Simple linear interpolation for 2x upsampling
-        upsampled = np.repeat(audio_array, 2)  # Simple repeat method
-        
-        logger.debug(f"Queueing {len(audio_data)} bytes of audio (resampled to {len(upsampled)*2} bytes), queue size before: {self.audio_queue.qsize()}")
-        await self.audio_queue.put(upsampled.tobytes())
+        """Queue audio data for playback."""
+        # Don't upsample - just queue the 24kHz audio directly
+        logger.debug(f"Queueing {len(audio_data)} bytes of audio, queue size before: {self.audio_queue.qsize()}")
+        await self.audio_queue.put(audio_data)
     
     async def recv(self) -> AudioFrame:
         """Receive audio frame."""

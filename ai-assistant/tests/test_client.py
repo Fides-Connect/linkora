@@ -133,12 +133,15 @@ class TestClient:
             logger.info(f"Received {track.kind} track from server")
             
             if track.kind == "audio":
-                # Record received audio - MediaRecorder will use the track's native sample rate
+                # Record received audio
                 logger.info("Starting recorder for received audio")
-                self.recorder = MediaRecorder("output.wav")
+                # MediaRecorder should auto-detect the sample rate from the track
+                # But we can also wrap it to ensure correct format
+                self.recorder = MediaRecorder("output.wav", format="wav")
                 self.recorder.addTrack(track)
                 await self.recorder.start()
-                logger.info("Recorder started - saving to output.wav")
+                logger.info("Recorder started - saving to output.wav at track's native sample rate")
+                logger.info(f"Track sample rate will be: {track.kind} track (24kHz expected from TTS)")
         
         # Add audio track
         if audio_file and Path(audio_file).exists():
@@ -205,6 +208,21 @@ class TestClient:
             logger.info("Stopping recorder...")
             await self.recorder.stop()
             logger.info("Recording saved to output.wav")
+            
+            # Verify the output file
+            try:
+                with wave.open("output.wav", 'rb') as wav:
+                    logger.info(f"Output WAV file info:")
+                    logger.info(f"  Sample rate: {wav.getframerate()} Hz")
+                    logger.info(f"  Channels: {wav.getnchannels()}")
+                    logger.info(f"  Sample width: {wav.getsampwidth()} bytes")
+                    logger.info(f"  Duration: {wav.getnframes() / wav.getframerate():.2f} seconds")
+                    
+                    if wav.getframerate() != 48000:
+                        logger.warning(f"WARNING: Expected 48kHz but got {wav.getframerate()} Hz!")
+                        logger.warning("This will cause playback speed issues!")
+            except Exception as e:
+                logger.error(f"Could not verify output file: {e}")
 
         if self.pc:
             await self.pc.close()
