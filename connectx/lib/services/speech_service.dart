@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -74,8 +74,8 @@ class SpeechService {
       throw Exception('Microphone permission denied');
     }
 
-    // Android-specific audio mode setup
-    if (Platform.isAndroid) {
+    // Android-specific audio mode setup (only on mobile platforms)
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       await _setAndroidCommunicationMode();
     }
 
@@ -177,7 +177,8 @@ class SpeechService {
   /// Enable speaker output for audio playback on mobile devices
   Future<void> _enableSpeakerOutput() async {
     try {
-      if (Platform.isIOS || Platform.isAndroid) {
+      if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || 
+                     defaultTargetPlatform == TargetPlatform.android)) {
         print('SpeechService: Enabling speaker output for mobile platform');
         await Helper.setSpeakerphoneOn(true);
         print('SpeechService: Speaker output enabled');
