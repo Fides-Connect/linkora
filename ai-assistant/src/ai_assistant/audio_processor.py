@@ -366,9 +366,41 @@ class AudioProcessor:
                     
                     # Now queue all our audio chunks atomically (hold playback_lock to prevent interleaving)
                     async with playback_lock:
+                        # Add initial silence before first sentence to prevent cutoff
+                        if sentence_num == 1:
+                            initial_silence = np.zeros(4800, dtype=np.int16)  # 100ms buffer
+                            await self.output_track.queue_audio(initial_silence.tobytes())
+                            logger.debug("Added 100ms initial silence before first sentence")
+                        
                         logger.info(f"Playing sentence {sentence_num} ({len(audio_chunks)} chunks)")
-                        for chunk in audio_chunks:
-                            await self.output_track.queue_audio(chunk)
+                        
+                        # Combine all audio chunks into a single array for processing
+                        combined_audio = b''.join(audio_chunks)
+                        # Make a writable copy of the array
+                        audio_samples = np.frombuffer(combined_audio, dtype=np.int16).copy()
+                        
+                        # Apply smooth fade-in at start (10ms) and fade-out at end (10ms) to prevent clicks
+                        # Using cosine curve for smoother transitions
+                        fade_samples = min(480, len(audio_samples) // 2)  # 10ms at 48kHz
+                        if fade_samples > 0:
+                            # Fade-in at start (except for first sentence which already has silence)
+                            if sentence_num > 1:
+                                # Cosine fade-in: 0 to 1 (smoother than linear)
+                                fade_in = (1.0 - np.cos(np.linspace(0, np.pi, fade_samples))) / 2.0
+                                audio_samples[:fade_samples] = (audio_samples[:fade_samples] * fade_in).astype(np.int16)
+                            
+                            # Cosine fade-out: 1 to 0 (smoother than linear)
+                            fade_out = (1.0 + np.cos(np.linspace(0, np.pi, fade_samples))) / 2.0
+                            audio_samples[-fade_samples:] = (audio_samples[-fade_samples:] * fade_out).astype(np.int16)
+                        
+                        # Queue the processed audio
+                        await self.output_track.queue_audio(audio_samples.tobytes())
+                        
+                        # Add silence gap after each sentence (100ms for natural pause)
+                        silence_gap = np.zeros(4800, dtype=np.int16)  # 100ms at 48kHz
+                        await self.output_track.queue_audio(silence_gap.tobytes())
+                        logger.debug(f"Added 100ms silence gap after sentence {sentence_num}")
+                        
                         logger.debug(f"Sentence {sentence_num} playback complete")
                         
                         # Signal next sentence can play BEFORE releasing the lock
