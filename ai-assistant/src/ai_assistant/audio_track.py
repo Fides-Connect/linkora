@@ -30,13 +30,44 @@ class AudioOutputTrack(MediaStreamTrack):
         self._next_frame_time = None
         self._buffer = np.array([], dtype=np.int16)
         
+        # Comfort noise parameters
+        self._comfort_noise_amplitude = 20  # Very low amplitude for subtle background noise
+        self._last_frame_was_silence = False
+        
     async def queue_audio(self, audio_data: bytes):
         """Queue audio data for playback."""
         logger.debug(f"Queueing {len(audio_data)} bytes of audio, queue size before: {self.audio_queue.qsize()}")
         await self.audio_queue.put(audio_data)
     
+    def _generate_comfort_noise(self, num_samples: int) -> np.ndarray:
+        """Generate comfort noise to keep the audio stream alive.
+        
+        Uses pink noise (1/f noise) which is more natural sounding than white noise.
+        Pink noise has more energy at lower frequencies, similar to natural ambient sound.
+        """
+        # Generate white noise
+        white_noise = np.random.normal(0, 1, num_samples)
+        
+        # Apply simple pink noise filter (1/f characteristic)
+        # Using a simple IIR filter approximation
+        pink_noise = np.zeros(num_samples)
+        b0, b1, b2 = 0.99886, 0.0555179, -0.0750759
+        pink_noise[0] = white_noise[0]
+        pink_noise[1] = b0 * white_noise[1] + b1 * white_noise[0]
+        for i in range(2, num_samples):
+            pink_noise[i] = b0 * white_noise[i] + b1 * white_noise[i-1] + b2 * white_noise[i-2]
+        
+        # Normalize and scale to desired amplitude
+        pink_noise = pink_noise / np.max(np.abs(pink_noise)) * self._comfort_noise_amplitude
+        
+        return pink_noise.astype(np.int16)
+    
     async def recv(self) -> AudioFrame:
-        """Receive audio frame."""
+        """Receive audio frame.
+        
+        This method ALWAYS returns an audio frame, either with real audio data
+        or comfort noise to keep the WebRTC connection alive.
+        """
         try:
             # Initialize timing on first frame
             if self._start is None:
@@ -53,23 +84,24 @@ class AudioOutputTrack(MediaStreamTrack):
             
             logger.debug(f"recv() called - queue size: {self.audio_queue.qsize()}, buffer size: {len(self._buffer)} samples")
             
-            # Fill buffer until we have enough samples for a frame
-            while len(self._buffer) < self.samples_per_frame:
-                try:
-                    audio_data = await asyncio.wait_for(
-                        self.audio_queue.get(),
-                        timeout=0.05
-                    )
-                    logger.debug(f"Got {len(audio_data)} bytes from queue")
-                    
-                    # Convert bytes to numpy array and append to buffer
-                    new_samples = np.frombuffer(audio_data, dtype=np.int16)
-                    self._buffer = np.concatenate([self._buffer, new_samples])
-                    logger.debug(f"Buffer now has {len(self._buffer)} samples")
-                    
-                except asyncio.TimeoutError:
-                    logger.debug("Queue timeout - checking if we have enough samples")
-                    break
+            # Try to get audio from queue (non-blocking with short timeout)
+            has_new_audio = False
+            try:
+                audio_data = await asyncio.wait_for(
+                    self.audio_queue.get(),
+                    timeout=0.001  # Very short timeout - don't wait long
+                )
+                logger.debug(f"Got {len(audio_data)} bytes from queue")
+                
+                # Convert bytes to numpy array and append to buffer
+                new_samples = np.frombuffer(audio_data, dtype=np.int16)
+                self._buffer = np.concatenate([self._buffer, new_samples])
+                logger.debug(f"Buffer now has {len(self._buffer)} samples")
+                has_new_audio = True
+                
+            except asyncio.TimeoutError:
+                # No audio available - we'll send comfort noise
+                pass
             
             # Check if we have enough samples for a frame
             if len(self._buffer) >= self.samples_per_frame:
@@ -78,21 +110,23 @@ class AudioOutputTrack(MediaStreamTrack):
                 # Keep the rest in the buffer for next frame
                 self._buffer = self._buffer[self.samples_per_frame:]
                 logger.debug(f"Extracted {len(audio_array)} samples, {len(self._buffer)} samples remain in buffer")
+                self._last_frame_was_silence = False
                 
             elif len(self._buffer) > 0:
-                # Not enough for a full frame, but we have some - pad with silence
+                # Not enough for a full frame, but we have some - pad with comfort noise
                 logger.debug(f"Padding: {len(self._buffer)} -> {self.samples_per_frame} samples")
-                audio_array = np.pad(
-                    self._buffer,
-                    (0, self.samples_per_frame - len(self._buffer)),
-                    mode='constant'
-                )
+                padding_size = self.samples_per_frame - len(self._buffer)
+                comfort_noise = self._generate_comfort_noise(padding_size)
+                audio_array = np.concatenate([self._buffer, comfort_noise])
                 self._buffer = np.array([], dtype=np.int16)
+                self._last_frame_was_silence = False
                 
             else:
-                # No audio available, return silence
-                logger.debug("No audio in buffer - returning silence frame")
-                audio_array = np.zeros(self.samples_per_frame, dtype=np.int16)
+                # No audio available, generate comfort noise
+                if not self._last_frame_was_silence:
+                    logger.debug("No audio in buffer - generating comfort noise")
+                    self._last_frame_was_silence = True
+                audio_array = self._generate_comfort_noise(self.samples_per_frame)
             
             # Create audio frame
             frame = AudioFrame(
@@ -117,15 +151,15 @@ class AudioOutputTrack(MediaStreamTrack):
             
         except Exception as e:
             logger.error(f"Error in recv(): {e}", exc_info=True)
-            # Return silence on error
-            silence = np.zeros(self.samples_per_frame, dtype=np.int16)
+            # Return comfort noise on error to keep stream alive
+            comfort_noise = self._generate_comfort_noise(self.samples_per_frame)
             
             frame = AudioFrame(
                 format='s16',
                 layout='mono',
                 samples=self.samples_per_frame
             )
-            frame.planes[0].update(silence.tobytes())
+            frame.planes[0].update(comfort_noise.tobytes())
             frame.sample_rate = self.sample_rate
             frame.pts = self._timestamp
             frame.time_base = Fraction(1, self.sample_rate)
