@@ -78,6 +78,57 @@ class AIAssistant:
             logger.error(f"Speech-to-text error: {e}", exc_info=True)
             return ""
     
+    async def speech_to_text_stream(self, audio_data: bytes) -> AsyncIterator[str]:
+        """Convert speech audio to text using streaming API for low latency."""
+        try:
+            # Configure streaming recognition
+            config = speech.RecognitionConfig(
+                encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+                sample_rate_hertz=48000,
+                language_code=self.language_code,
+                audio_channel_count=1,
+                enable_automatic_punctuation=True,
+            )
+            
+            streaming_config = speech.StreamingRecognitionConfig(
+                config=config,
+                interim_results=False,  # Only final results for lower latency
+            )
+            
+            # Create audio chunks generator
+            def audio_generator():
+                chunk_size = 4096
+                for i in range(0, len(audio_data), chunk_size):
+                    chunk = audio_data[i:i + chunk_size]
+                    yield speech.StreamingRecognizeRequest(audio_content=chunk)
+            
+            # Create requests iterator
+            def requests_generator():
+                yield speech.StreamingRecognizeRequest(streaming_config=streaming_config)
+                yield from audio_generator()
+            
+            # Perform streaming recognition in executor
+            loop = asyncio.get_event_loop()
+            
+            def do_streaming_recognize():
+                return self.speech_client.streaming_recognize(
+                    requests=requests_generator()
+                )
+            
+            responses = await loop.run_in_executor(None, do_streaming_recognize)
+            
+            # Yield transcript chunks as they arrive
+            for response in responses:
+                for result in response.results:
+                    if result.is_final and result.alternatives:
+                        transcript = result.alternatives[0].transcript
+                        logger.debug(f"STT stream chunk: '{transcript}'")
+                        yield transcript
+            
+        except Exception as e:
+            logger.error(f"Streaming speech-to-text error: {e}", exc_info=True)
+            yield ""
+    
     async def generate_llm_response(self, prompt: str) -> str:
         """Generate response using Gemini LLM."""
         try:
@@ -96,6 +147,30 @@ class AIAssistant:
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)
             return "Entschuldigung, ich konnte keine Antwort generieren."
+    
+    async def generate_llm_response_stream(self, prompt: str) -> AsyncIterator[str]:
+        """Generate streaming response using Gemini LLM for low latency."""
+        try:
+            # Send message with streaming enabled
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.chat_session.send_message(
+                    prompt,
+                    generation_config=self.generation_config,
+                    stream=True
+                )
+            )
+            
+            # Yield text chunks as they arrive
+            for chunk in response:
+                if chunk.text:
+                    logger.debug(f"LLM stream chunk: '{chunk.text}'")
+                    yield chunk.text
+            
+        except Exception as e:
+            logger.error(f"Streaming LLM generation error: {e}", exc_info=True)
+            yield "Entschuldigung, ich konnte keine Antwort generieren."
     
     async def text_to_speech_stream(self, text: str) -> AsyncIterator[bytes]:
         """Convert text to speech using Google Cloud TTS streaming API."""

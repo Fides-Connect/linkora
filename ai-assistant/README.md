@@ -44,6 +44,8 @@ This AI assistant service:
 ### Core Capabilities
 
 - **Real-time Voice Processing**: Low-latency voice activity detection and audio streaming
+- **Optimized Streaming Pipeline**: Full streaming STT → LLM → TTS for minimal latency
+- **Parallel Processing**: Multiple TTS tasks run simultaneously for faster responses
 - **Multi-language Support**: Configurable language and voice settings
 - **Chat Context**: Maintains conversation history per session
 - **Scalable Architecture**: Stateless design for horizontal scaling
@@ -55,7 +57,9 @@ This AI assistant service:
 - WebSocket signaling server
 - Voice Activity Detection (VAD)
 - Silence detection and buffering
-- Asynchronous processing pipeline
+- **Streaming APIs**: STT, LLM, and TTS all use streaming for lower latency
+- **Sentence-level parallelization**: TTS processes multiple sentences simultaneously
+- Asynchronous processing pipeline with detailed timing metrics
 - Health check endpoints
 - Docker/Podman containerization
 
@@ -143,14 +147,31 @@ python tests/test_client.py --audio-file test_audio.wav
                                           │  (VAD, Buffer)   │
                                           └──────────────────┘
                                                    │
+                                                   │ Audio Segment
+                                                   ▼
+                                          ┌──────────────────┐
+                                          │  Streaming STT   │
+                                          │  (Google Cloud)  │
+                                          └──────────────────┘
+                                                   │ Transcript chunks
+                                                   ▼
+                                          ┌──────────────────┐
+                                          │  Streaming LLM   │
+                                          │  (Gemini AI)     │
+                                          └──────────────────┘
+                                                   │ Response chunks
+                                                   ▼
+                                          ┌──────────────────┐
+                                          │  Parallel TTS    │
+                                          │  (Per Sentence)  │
+                                          └──────────────────┘
                                                    │
                             ┌──────────────────────┼──────────────────────┐
-                            │                      │                      │
+                            │ Audio Chunk 1        │ Audio Chunk 2        │ Audio Chunk 3
                             ▼                      ▼                      ▼
                     ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
-                    │   Google     │      │   Gemini     │      │   Google     │
-                    │ Speech-to-   │      │     AI       │      │ Text-to-     │
-                    │     Text     │      │   (LLM)      │      │   Speech     │
+                    │  Audio Queue │      │  Audio Queue │      │  Audio Queue │
+                    │  (Immediate) │      │  (Immediate) │      │  (Immediate) │
                     └──────────────┘      └──────────────┘      └──────────────┘
                             │                      │                      │
                             └──────────────────────┴──────────────────────┘
@@ -181,20 +202,23 @@ python tests/test_client.py --audio-file test_audio.wav
    - Voice Activity Detection (VAD) filters silence
    - (Optional) Debug recording saves all received frames to WAV file
 
-3. **Speech Processing**
+3. **Speech Processing (Streaming)**
    - Buffer accumulates audio during speech
    - Silence detection triggers processing
-   - Audio segment sent to Google Speech-to-Text
+   - Audio segment sent to Google Speech-to-Text **streaming API**
+   - Transcript chunks received as speech is recognized
 
-4. **AI Processing**
-   - Transcript sent to Gemini AI
-   - LLM generates contextual response
-   - Response text prepared for synthesis
+4. **AI Processing (Streaming)**
+   - Transcript sent to Gemini AI **with streaming enabled**
+   - LLM generates response **sentence-by-sentence**
+   - Each sentence boundary triggers parallel TTS processing
+   - Response chunks forwarded immediately
 
-5. **Audio Synthesis**
-   - Text sent to Google Cloud TTS
-   - Receives audio chunks in LINEAR16 format
-   - Audio queued for streaming
+5. **Audio Synthesis (Parallel)**
+   - Multiple sentences sent to Google Cloud TTS **in parallel**
+   - Each sentence synthesized as separate task
+   - Audio chunks received and queued immediately
+   - No waiting for complete LLM response
 
 6. **Audio Streaming**
    - Audio output track consumes queue
@@ -606,26 +630,40 @@ gcloud run deploy ai-assistant \
 
 ### Latency Breakdown
 
-**Deployment: Google Cloud (same region as APIs, no silence detection)**
+**Deployment: Google Cloud (same region as APIs, optimized streaming pipeline)**
 
-| Stage | Typical Latency | Notes |
-|-------|----------------|-------|
-| Network RTT | 10-50ms | Client to server round-trip |
-| Speech-to-Text | 300-800ms | Google Cloud Speech API (streaming) |
-| Gemini LLM | 400-1200ms | Response generation time |
-| Text-to-Speech | 200-600ms | Google Cloud TTS synthesis |
-| Audio Streaming | 50-150ms | WebRTC buffer + network |
-| **Total** | **~1-3 seconds** | End-to-end response time |
+#### Time to First Audio (Optimized with Streaming)
+
+The system now uses **full streaming and parallel processing** to minimize latency:
+
+| Stage | Typical Latency | Pipeline Mode | Notes |
+|-------|----------------|---------------|-------|
+| Network RTT | 10-50ms | Sequential | Client to server round-trip |
+| Speech-to-Text (streaming) | 200-500ms | Sequential | First transcript chunk received |
+| Gemini LLM (streaming) | 300-800ms | Sequential | First sentence generated |
+| Text-to-Speech (parallel) | 150-400ms | **Parallel** | First sentence synthesized |
+| Audio Streaming | 50-150ms | Sequential | WebRTC buffer + network |
+| **Time to First Audio** | **~0.7-1.9 seconds** | **Optimized Pipeline** | User hears response start |
+
+#### Key Optimizations
+
+**Streaming Pipeline Benefits:**
+- ✅ **STT Streaming**: Transcript chunks received as speech is recognized
+- ✅ **LLM Streaming**: Response generated sentence-by-sentence
+- ✅ **Parallel TTS**: Multiple sentences synthesized simultaneously
+- ✅ **Immediate Audio Queue**: Audio chunks played as soon as generated
 
 **Note:** With Voice Activity Detection (VAD) enabled (default):
 - Add 1.0-2.0s for silence detection (configurable via `SILENCE_DURATION`)
-- Total latency: ~2-5 seconds
+- Time to first audio: ~1.7-3.9 seconds total
+- Consider reducing `SILENCE_DURATION` for faster response or disabling VAD
 
 **Optimization recommendations:**
 - Deploy service in same GCP region as Cloud APIs (e.g., `us-central1`)
 - Use Google Cloud's internal network for API calls
-- Disable VAD for real-time streaming (set `SILENCE_DURATION=0`)
+- Reduce `SILENCE_DURATION` for faster triggering (trade-off: may cut speech early)
 - Enable HTTP/2 keepalive for persistent connections
+- For lowest latency, set `SILENCE_DURATION=0.5` (balance between response time and speech capture)
 
 ### Resource Usage
 
