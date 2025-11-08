@@ -95,27 +95,24 @@ class AIAssistant:
                 interim_results=False,  # Only final results for lower latency
             )
             
-            # Create audio chunks generator
+            # Create audio chunks generator (only audio, not config)
             def audio_generator():
                 chunk_size = 4096
                 for i in range(0, len(audio_data), chunk_size):
                     chunk = audio_data[i:i + chunk_size]
                     yield speech.StreamingRecognizeRequest(audio_content=chunk)
             
-            # Create requests iterator
-            def requests_generator():
-                yield speech.StreamingRecognizeRequest(streaming_config=streaming_config)
-                yield from audio_generator()
-            
             # Perform streaming recognition in executor
             loop = asyncio.get_event_loop()
             
-            def do_streaming_recognize():
-                return self.speech_client.streaming_recognize(
-                    requests=requests_generator()
-                )
-            
-            responses = await loop.run_in_executor(None, do_streaming_recognize)
+            # SpeechClient.streaming_recognize is a helper that takes config and requests separately
+            responses = await loop.run_in_executor(
+                None,
+                lambda: list(self.speech_client.streaming_recognize(
+                    config=streaming_config,
+                    requests=audio_generator()
+                ))
+            )
             
             # Yield transcript chunks as they arrive
             for response in responses:

@@ -12,6 +12,7 @@ from aiortc import (
     MediaStreamTrack
 )
 from aiortc.contrib.media import MediaRelay
+from aiortc.sdp import candidate_from_sdp
 
 from .audio_processor import AudioProcessor
 
@@ -136,13 +137,14 @@ class PeerConnectionHandler:
             logger.debug(f"Handling ICE candidate from client {self.connection_id}")
             logger.debug(f"Candidate: {candidate_data.get('candidate', '')[:100]}...")
             
-            candidate = RTCIceCandidate(
-                candidate=candidate_data.get('candidate', ''),
-                sdpMid=candidate_data.get('sdpMid'),
-                sdpMLineIndex=candidate_data.get('sdpMLineIndex')
-            )
-            await self.pc.addIceCandidate(candidate)
-            logger.debug("ICE candidate added successfully")
+            # Parse the SDP candidate string into an RTCIceCandidate object
+            candidate_str = candidate_data.get('candidate', '')
+            if candidate_str:
+                candidate = candidate_from_sdp(candidate_str)
+                candidate.sdpMid = candidate_data.get('sdpMid')
+                candidate.sdpMLineIndex = candidate_data.get('sdpMLineIndex')
+                await self.pc.addIceCandidate(candidate)
+                logger.debug("ICE candidate added successfully")
             
         except Exception as e:
             logger.error(f"Error adding ICE candidate: {e}", exc_info=True)

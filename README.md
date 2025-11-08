@@ -186,9 +186,12 @@ AI_ASSISTANT_SERVER_URL=ws://localhost:8080/ws
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 GEMINI_API_KEY=your_gemini_api_key_here
 LANGUAGE_CODE=de-DE
-VOICE_NAME=de-DE-Wavenet-F
+VOICE_NAME=de-DE-Chirp-HD-F
 PORT=8080
 LOG_LEVEL=INFO
+
+# Optional: Record received audio for debugging (creates debug_audio/*.wav files)
+DEBUG_RECORD_AUDIO=false
 ```
 
 ## 🧪 Testing
@@ -198,12 +201,24 @@ LOG_LEVEL=INFO
 ```bash
 cd ai-assistant
 
-# Test with sample audio
+# Test with sample audio (16kHz mono WAV file)
 python tests/test_client.py --audio-file test.wav
+
+# The test will:
+# - Connect via WebRTC
+# - Stream your audio file to the server
+# - Receive and save the AI response to output.wav
+# - Display timing metrics
 
 # Check health endpoint
 curl http://localhost:8080/health
 ```
+
+**Note on Audio Format:**
+- Input: 16kHz mono WAV → automatically upsampled by WebRTC to 48kHz
+- Processing: Server handles all audio at 48kHz native rate
+- Output: 48kHz mono WAV saved as output.wav
+- Debug: Set `DEBUG_RECORD_AUDIO=true` to save received audio in `debug_audio/` folder
 
 ### Test ConnectX App
 
@@ -216,6 +231,11 @@ flutter test
 # Run on device for manual testing
 flutter run
 ```
+
+**Troubleshooting Low Audio:**
+- Ensure you're speaking clearly into the microphone during testing
+- Check that microphone permissions are granted
+- Audio levels below RMS 10 are considered silence
 
 ## 📦 Deployment
 
