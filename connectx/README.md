@@ -78,22 +78,32 @@ flutter run
 1. **Launch the app** on your device or emulator
 2. **Tap the microphone button** (bottom right) to start a conversation
 3. **Speak your question or message** - audio is streamed to the AI-Assistant server
-4. **Listen to the AI response** - the server processes your speech and streams back audio
+4. **Listen to the AI response** - audio plays automatically through the device
 5. **Tap the stop button** (bottom left) to end the conversation
+
+### Audio Routing
+
+**ConnectX uses WebRTC's automatic audio routing:**
+- 📱 **Phone held naturally** - Audio plays through earpiece (default)
+- 🎧 **Headphones connected** - Audio automatically routes to headphones
+- 📢 **Bluetooth device** - Audio automatically routes to Bluetooth
+- 🔇 **Echo cancellation** - Built-in WebRTC audio processing prevents feedback
+
+> **No manual configuration needed!** WebRTC handles all audio routing intelligently, just like phone calls.
 
 ### How It Works
 
 1. **Connection**: When you tap the microphone, the app establishes a WebRTC connection with the AI-Assistant server
-2. **Audio Streaming**: Your voice is captured and streamed in real-time to the server
+2. **Audio Streaming**: Your voice is captured and streamed in real-time to the server (48kHz, mono)
 3. **Server Processing**: The server performs STT → LLM → TTS processing
-4. **Response Playback**: The AI-generated audio response streams back and plays automatically
+4. **Response Playback**: The AI-generated audio response streams back (48kHz) and plays automatically
 5. **Cleanup**: When you stop, the WebRTC connection closes cleanly
 
 ## Key Technologies
 
 ### Dependencies
 
-- **`flutter_webrtc`** - WebRTC peer-to-peer audio streaming
+- **`flutter_webrtc`** - WebRTC peer-to-peer audio streaming with built-in audio processing
 - **`web_socket_channel`** - WebSocket signaling for WebRTC
 - **`permission_handler`** - Microphone permission management
 - **`flutter_dotenv`** - Environment variable configuration
@@ -102,8 +112,23 @@ flutter run
 
 - **`webrtc_service.dart`** - Manages WebRTC connection, signaling, and media streams
 - **`speech_service.dart`** - High-level interface for speech interactions
-- **`gemini_service.dart`** - Deprecated (kept for compatibility, LLM now on server)
 - **`main.dart`** - UI and user interaction handling
+
+### Audio Configuration
+
+ConnectX uses **WebRTC's native audio processing** which includes:
+- ✅ **Echo Cancellation** - Prevents audio feedback (`echoCancellation: true`)
+- ✅ **Noise Suppression** - Reduces background noise (`noiseSuppression: true`)
+- ✅ **Auto Gain Control** - Normalizes audio levels (`autoGainControl: true`)
+- ✅ **Native Sample Rate** - Uses 48kHz (WebRTC standard, no resampling)
+- ✅ **Google Constraints** - Android-specific optimizations (`googEchoCancellation`, etc.)
+
+**Audio Pipeline:**
+```
+Microphone → WebRTC (48kHz) → Server → Google STT → Gemini LLM → Google TTS → WebRTC (48kHz) → Device Audio
+```
+
+**This is the standard WebRTC approach** used by apps like Google Meet, Discord, and Zoom.
 
 ## Environment Variables
 
@@ -160,17 +185,30 @@ SpeechService: Remote audio stream is now playing through speakers
 
 ### Common Issues
 
-1. **Echo or Feedback**: Echo cancellation is enabled by default, but if you experience issues, try using headphones
+1. **Echo or Feedback**: 
+   - **WebRTC handles this automatically** with built-in echo cancellation
+   - Should not occur with default configuration
+   - If persistent, try using headphones
+   - Check that `echoCancellation: true` is set in `webrtc_service.dart`
 
-2. **Choppy Audio**: 
-   - Check network quality
-   - Move closer to WiFi router
-   - Close other bandwidth-intensive applications
+2. **Can't hear the AI response**:
+   - Check device volume
+   - Verify audio routing (try headphones to test)
+   - Check server logs for TTS errors
+   - Ensure remote audio track is enabled
 
-3. **Delayed Response**:
-   - Normal delay is 1-3 seconds for processing
-   - Longer delays may indicate server performance issues
-   - Check server logs for processing times
+3. **Audio quality issues**:
+   - Check network quality/bandwidth
+   - Verify 48kHz sample rate is maintained throughout
+   - Review WebRTC constraints in `webrtc_service.dart`
+   - Check server TTS configuration
+
+4. **Audio routing unexpected**:
+   - **This is normal WebRTC behavior**
+   - Plugging in headphones switches automatically
+   - Bluetooth connects automatically
+   - Proximity sensor may affect routing
+   - Same behavior as phone calls
 
 ## Benefits of WebRTC Architecture
 

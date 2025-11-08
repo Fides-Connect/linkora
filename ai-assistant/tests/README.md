@@ -54,25 +54,28 @@ The test client requires a WAV file with:
 - **Sample Width**: 16-bit (2 bytes)
 - **Format**: PCM
 
-**Important Audio Pipeline:**
-1. Client sends 16kHz audio (your input file)
+**Audio Pipeline:**
+1. Client sends 16kHz audio from your input file
 2. WebRTC automatically upsamples to 48kHz for transmission (WebRTC standard)
 3. Server receives 48kHz audio (WebRTC native rate)
-4. Server processes at 48kHz (STT accepts 48kHz)
-5. TTS generates 48kHz audio (configured to match WebRTC)
-6. Client receives 48kHz audio
-7. Debug recordings are saved at 48kHz
+4. Server processes at 48kHz (Google STT accepts 48kHz natively)
+5. Google TTS generates 48kHz audio
+6. Server sends 48kHz to client via WebRTC
+7. Client receives 48kHz audio
+8. Debug recordings (if enabled) save received audio at 48kHz
 
-**No resampling occurs on the server** - audio stays at 48kHz throughout the server pipeline, which is the most efficient approach.
+**Key point:** No resampling occurs on the server. Audio arrives at 48kHz from WebRTC and stays at 48kHz throughout the entire pipeline for optimal quality.
 
-Convert audio to the correct format:
+Convert audio to the correct input format:
 
 ```bash
-# Using ffmpeg
+# Using ffmpeg (input file → 16kHz mono for test client)
 ffmpeg -i input.mp3 -ar 16000 -ac 1 -sample_fmt s16 output.wav
 
 # Using sox  
 sox input.mp3 -r 16000 -c 1 -b 16 output.wav
+
+# Note: WebRTC will upsample to 48kHz automatically
 ```
 
 ## Test Workflow

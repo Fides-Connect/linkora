@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -125,8 +126,16 @@ class WebRTCService {
           'echoCancellation': true,
           'noiseSuppression': true,
           'autoGainControl': true,
-          'sampleRate': 16000,
+          'sampleRate': 48000,
           'channelCount': 1,
+          // Android-specific constraints
+          'googEchoCancellation': true,
+          'googAutoGainControl': true,
+          'googNoiseSuppression': true,
+          'googHighpassFilter': true,
+          'googTypingNoiseDetection': true,
+          'googEchoCancellation2': true,
+          'googAutoGainControl2': true,
         },
         'video': false,
       };
@@ -191,6 +200,17 @@ class WebRTCService {
       
       _peerConnection = await createPeerConnection(configuration);
       
+      // Force earpiece mode immediately after peer connection creation
+      if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || 
+                      defaultTargetPlatform == TargetPlatform.iOS)) {
+        try {
+          await Helper.setSpeakerphoneOn(false);
+          print('WebRTC: Forced earpiece mode');
+        } catch (e) {
+          print('WebRTC: Could not force earpiece: $e');
+        }
+      }
+      
       // Add local audio track to peer connection
       if (_audioTrack != null) {
         await _peerConnection!.addTrack(_audioTrack!, _localStream!);
@@ -211,12 +231,24 @@ class WebRTCService {
       };
       
       // Handle connection state changes
-      _peerConnection!.onConnectionState = (RTCPeerConnectionState state) {
+      _peerConnection!.onConnectionState = (RTCPeerConnectionState state) async {
         print('WebRTC: Connection state: $state');
         
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _isConnected = true;
           _isConnecting = false;
+          
+          // Re-enforce earpiece when connection is fully established
+          if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || 
+                          defaultTargetPlatform == TargetPlatform.iOS)) {
+            try {
+              await Helper.setSpeakerphoneOn(false);
+              print('WebRTC: Re-enforced earpiece after connection established');
+            } catch (e) {
+              print('WebRTC: Could not re-enforce earpiece: $e');
+            }
+          }
+          
           onConnected?.call();
         } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
                    state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
@@ -228,7 +260,7 @@ class WebRTCService {
       };
       
       // Handle remote stream
-      _peerConnection!.onTrack = (RTCTrackEvent event) {
+      _peerConnection!.onTrack = (RTCTrackEvent event) async {
         print('WebRTC: Received remote track: ${event.track.kind}');
         
         if (event.track.kind == 'audio') {
@@ -236,6 +268,17 @@ class WebRTCService {
             _remoteStream = event.streams[0];
             onRemoteStream?.call(_remoteStream!);
             print('WebRTC: Remote audio stream received');
+            
+            // Re-enforce earpiece when remote audio arrives
+            if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || 
+                            defaultTargetPlatform == TargetPlatform.iOS)) {
+              try {
+                await Helper.setSpeakerphoneOn(false);
+                print('WebRTC: Re-enforced earpiece after remote track received');
+              } catch (e) {
+                print('WebRTC: Could not re-enforce earpiece: $e');
+              }
+            }
           }
         }
       };

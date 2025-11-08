@@ -95,6 +95,8 @@ cp template.env .env
 flutter run
 ```
 
+**Usage:** Simply tap the microphone and speak naturally. WebRTC handles all audio routing automatically - no special configuration needed!
+
 See [ConnectX README](connectx/README.md) for detailed setup instructions.
 
 ## 🏗️ Architecture
@@ -125,13 +127,13 @@ See [ConnectX README](connectx/README.md) for detailed setup instructions.
 
 2. **Voice Interaction**
    - User speaks into device microphone
-   - Audio streams in real-time to server via WebRTC
+   - Audio streams in real-time to server via WebRTC (48kHz native)
    - Server processes audio through AI pipeline:
-     - **STT**: Converts speech to text
+     - **STT**: Converts speech to text (accepts 48kHz natively)
      - **LLM**: Generates intelligent response using Gemini
-     - **TTS**: Synthesizes response into natural speech
-   - Audio response streams back to client
-   - Client plays audio automatically
+     - **TTS**: Synthesizes response into natural speech (48kHz output)
+   - Audio response streams back to client (48kHz via WebRTC)
+   - Client plays audio automatically through optimal device (earpiece/headphones/speaker)
 
 3. **Session Management**
    - User can stop/start conversations at any time

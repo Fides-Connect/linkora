@@ -372,17 +372,30 @@ podman-compose down
 
 ### Audio Configuration
 
-**Input Requirements:**
-- Sample Rate: 16000 Hz
+**WebRTC Audio Pipeline:**
+```
+Client (48kHz) → WebRTC → Server (48kHz) → STT (accepts any rate) → LLM → TTS (48kHz output) → Server (48kHz) → WebRTC → Client (48kHz)
+```
+
+**No resampling occurs** - audio stays at 48kHz throughout the pipeline for optimal quality.
+
+**Input (from Client):**
+- Sample Rate: 48000 Hz (WebRTC native)
 - Channels: 1 (mono)
 - Format: LINEAR16 PCM
 - Bit Depth: 16-bit
+- Frame Size: 20ms (960 samples)
 
-**Output Format:**
-- Sample Rate: 24000 Hz
+**Output (to Client):**
+- Sample Rate: 48000 Hz (WebRTC native)
 - Channels: 1 (mono)
 - Format: LINEAR16 PCM
-- Frame Duration: 20ms
+- Frame Size: 20ms (960 samples)
+
+**Processing:**
+- Google Cloud STT accepts 48kHz natively
+- Google Cloud TTS configured for 48kHz output
+- No resampling = better quality + lower latency
 
 ## Usage & API
 
@@ -447,15 +460,15 @@ GET http://localhost:8080/health
 
 #### Input Track (Client → Server)
 - **Media Type:** `audio`
-- **Sample Rate:** 16000 Hz
+- **Sample Rate:** 48000 Hz (WebRTC native)
 - **Channels:** Mono
-- **Frame Size:** 20ms (320 samples)
+- **Frame Size:** 20ms (960 samples)
 
 #### Output Track (Server → Client)
 - **Media Type:** `audio`
-- **Sample Rate:** 24000 Hz
+- **Sample Rate:** 48000 Hz (WebRTC native)
 - **Channels:** Mono
-- **Frame Size:** 20ms (480 samples)
+- **Frame Size:** 20ms (960 samples)
 
 ## Testing
 
@@ -620,10 +633,10 @@ gcloud run deploy ai-assistant \
 
 | Resource | Usage | Notes |
 |----------|-------|-------|
-| Memory | 200-500 MB | Includes audio buffers |
+| Memory | 200-500 MB | Includes audio buffers (48kHz) |
 | CPU | 10-30% | Mostly I/O bound |
-| Network | ~64 kbps | Bi-directional audio |
-| Disk | Minimal | Logs only |
+| Network | ~128 kbps | Bi-directional 48kHz audio |
+| Disk | Minimal | Logs only (optional debug WAV at 48kHz) |
 
 #### System Requirements
 
