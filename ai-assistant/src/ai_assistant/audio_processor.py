@@ -288,11 +288,13 @@ class AudioProcessor:
     async def _process_speech_segment(self):
         """Process a complete speech segment through STT -> LLM -> TTS with full streaming for minimal latency.
         
-        Pipeline design for maximum parallelism:
+        Pipeline design for low latency with ordered playback:
         1. STT streams transcript chunks as they're recognized
         2. Once STT completes, immediately start LLM streaming
-        3. As LLM produces text chunks, buffer them and synthesize in batches
-        4. Stream audio back to user as soon as TTS produces chunks
+        3. As LLM produces text chunks, detect sentence boundaries
+        4. Start TTS for each sentence immediately (parallel processing for speed)
+        5. Use ordering mechanism to ensure audio chunks play in sequence
+        6. First sentence starts playing as soon as its TTS completes
         """
         try:
             logger.info(f"Processing speech segment ({len(self.audio_buffer)} frames)")
@@ -331,24 +333,63 @@ class AudioProcessor:
             
             llm_parts = []
             sentence_buffer = ""
-            tts_tasks = []
+            
+            # Mechanism to ensure sentences are played in order
+            next_sentence_to_play = 1
+            sentence_events = {}  # Dict mapping sentence_num to asyncio.Event
+            playback_lock = asyncio.Lock()
             
             async def process_sentence_to_audio(sentence: str, sentence_num: int):
-                """Process a complete sentence through TTS and queue audio."""
+                """Process a complete sentence through TTS and queue audio in order."""
                 try:
                     logger.info(f"TTS for sentence {sentence_num}: '{sentence}'")
-                    chunk_count = 0
+                    
+                    # Create event for this sentence
+                    nonlocal next_sentence_to_play, sentence_events
+                    my_event = asyncio.Event()
+                    sentence_events[sentence_num] = my_event
+                    
+                    # If we're sentence 1, set our event immediately
+                    if sentence_num == 1:
+                        my_event.set()
+                    
+                    # Process TTS to get all audio chunks for this sentence
+                    audio_chunks = []
                     async for audio_chunk in self.ai_assistant.text_to_speech_stream(sentence):
                         if audio_chunk:
-                            chunk_count += 1
-                            await self.output_track.queue_audio(audio_chunk)
-                    logger.debug(f"TTS sentence {sentence_num} complete: {chunk_count} chunks")
+                            audio_chunks.append(audio_chunk)
+                    
+                    logger.debug(f"TTS sentence {sentence_num} complete: {len(audio_chunks)} chunks, waiting for turn to play...")
+                    
+                    # Wait for our turn to play
+                    await my_event.wait()
+                    
+                    # Now queue all our audio chunks atomically (hold playback_lock to prevent interleaving)
+                    async with playback_lock:
+                        logger.info(f"Playing sentence {sentence_num} ({len(audio_chunks)} chunks)")
+                        for chunk in audio_chunks:
+                            await self.output_track.queue_audio(chunk)
+                        logger.debug(f"Sentence {sentence_num} playback complete")
+                        
+                        # Signal next sentence can play BEFORE releasing the lock
+                        # This ensures next sentence can't start queueing until we're completely done
+                        next_sentence = sentence_num + 1
+                        if next_sentence in sentence_events:
+                            sentence_events[next_sentence].set()
+                    
                 except Exception as e:
                     logger.error(f"Error in TTS for sentence {sentence_num}: {e}", exc_info=True)
+                    # On error, still signal next sentence to prevent deadlock
+                    # Acquire lock to ensure proper ordering even in error case
+                    async with playback_lock:
+                        next_sentence = sentence_num + 1
+                        if next_sentence in sentence_events:
+                            sentence_events[next_sentence].set()
             
             sentence_num = 0
+            tts_tasks = []
             
-            # Stream LLM response and process sentences in parallel
+            # Stream LLM response and process sentences in parallel (with ordered playback)
             async for llm_chunk in self.ai_assistant.generate_llm_response_stream(full_transcript):
                 if llm_chunk:
                     logger.debug(f"LLM chunk: '{llm_chunk}'")
@@ -377,7 +418,7 @@ class AudioProcessor:
                         
                         if sentence:
                             sentence_num += 1
-                            # Start TTS for this sentence in parallel
+                            # Start TTS task immediately (don't await - process in parallel)
                             task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
                             tts_tasks.append(task)
             
@@ -401,7 +442,7 @@ class AudioProcessor:
             logger.info(
                 f"Pipeline complete in {total_time:.2f}s "
                 f"(STT: {stt_duration:.2f}s, LLM: {llm_duration:.2f}s, "
-                f"TTS: {sentence_num} sentences processed in parallel)"
+                f"TTS: {len(tts_tasks)} sentences with ordered playback)"
             )
             
         except Exception as e:
