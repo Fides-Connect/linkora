@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
-import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'webrtc_service.dart';
@@ -22,11 +20,6 @@ class SpeechService {
   Function()? onSpeechEnd;
   Function()? onConnected;
   Function()? onDisconnected;
-
-  // Android audio-mode channel
-  static const MethodChannel _audioModeChannel = MethodChannel(
-    'connectx/audio_mode',
-  );
 
   SpeechService();
 
@@ -74,25 +67,9 @@ class SpeechService {
       throw Exception('Microphone permission denied');
     }
 
-    // Android-specific audio mode setup (only on mobile platforms)
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      await _setAndroidCommunicationMode();
-    }
-
     // Initialize WebRTC service
     if (_webrtcService == null) {
       _initializeWebRTC();
-    }
-  }
-
-  Future<void> _setAndroidCommunicationMode() async {
-    try {
-      final res = await _audioModeChannel.invokeMethod<Map>(
-        'forceModeInCommunication',
-      );
-      print('Android audio mode set: $res');
-    } catch (e) {
-      print('Failed to set MODE_IN_COMMUNICATION: $e');
     }
   }
 
@@ -102,7 +79,7 @@ class SpeechService {
     _webrtcService = WebRTCService();
     
     // Set up WebRTC callbacks
-    _webrtcService!.onConnected = () {
+    _webrtcService!.onConnected = () async {
       print('SpeechService: WebRTC connected');
       onConnected?.call();
     };
@@ -115,7 +92,6 @@ class SpeechService {
     
     _webrtcService!.onRemoteStream = (MediaStream stream) {
       print('SpeechService: Received remote audio stream');
-      // Make the call async by wrapping in Future
       Future.microtask(() => _handleRemoteStream(stream));
     };
     
@@ -149,7 +125,6 @@ class SpeechService {
       }
       
       // Create and initialize an RTCVideoRenderer to handle the audio stream
-      // flutter_webrtc uses RTCVideoRenderer for both audio and video playback
       print('SpeechService: Creating new RTCVideoRenderer');
       _remoteRenderer = RTCVideoRenderer();
       await _remoteRenderer!.initialize();
@@ -162,30 +137,9 @@ class SpeechService {
       // Ensure the audio track is enabled and not muted
       audioTrack.enabled = true;
       
-      // Enable speaker output on mobile devices
-      await _enableSpeakerOutput();
-      
-      print('SpeechService: Remote audio stream is now playing through speakers');
-      print('SpeechService: Audio track state - enabled: ${audioTrack.enabled}, muted: ${audioTrack.muted}');
-      
     } catch (e) {
       print('SpeechService: Error handling remote stream: $e');
       print('SpeechService: Stack trace: ${StackTrace.current}');
-    }
-  }
-  
-  /// Enable speaker output for audio playback on mobile devices
-  Future<void> _enableSpeakerOutput() async {
-    try {
-      if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.iOS || 
-                     defaultTargetPlatform == TargetPlatform.android)) {
-        print('SpeechService: Enabling speaker output for mobile platform');
-        await Helper.setSpeakerphoneOn(true);
-        print('SpeechService: Speaker output enabled');
-      }
-    } catch (e) {
-      print('SpeechService: Error enabling speaker output: $e');
-      // Continue anyway as this is not critical
     }
   }
 }
