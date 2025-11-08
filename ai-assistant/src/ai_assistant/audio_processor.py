@@ -28,13 +28,14 @@ class AudioProcessor:
         self.output_track = AudioOutputTrack()
         self.running = False
         self.processing_task = None
+        self.stt_task = None
         
-        # Audio buffer for STT
-        self.audio_buffer = []
+        # Audio streaming for continuous STT
+        self.audio_queue = asyncio.Queue()
         self.sample_rate = 48000  # WebRTC sends 48kHz - match it exactly
-        self.silence_threshold = 500  # Amplitude threshold for silence detection
-        self.silence_duration = 1.5  # Seconds of silence to trigger processing
-        self.min_speech_duration = 0.5  # Minimum speech duration in seconds
+        
+        # Transcript accumulation
+        self.current_transcript = ""
         
         # Debug: WAV file recording
         self.debug_recording = os.getenv('DEBUG_RECORD_AUDIO', 'false').lower() == 'true'
@@ -57,13 +58,26 @@ class AudioProcessor:
         """Start processing audio."""
         self.running = True
         self.processing_task = asyncio.create_task(self._process_audio())
+        self.stt_task = asyncio.create_task(self._continuous_stt())
         logger.info(f"Audio processor started for connection {self.connection_id}")
-        logger.debug(f"VAD settings - silence_threshold={self.silence_threshold}, silence_duration={self.silence_duration}s")
+        logger.debug("Continuous STT streaming enabled")
     
     async def stop(self):
         """Stop processing audio."""
         logger.debug(f"Stopping audio processor for connection {self.connection_id}")
         self.running = False
+        
+        # Signal end of audio stream
+        await self.audio_queue.put(None)
+        
+        if self.stt_task:
+            self.stt_task.cancel()
+            try:
+                await self.stt_task
+            except asyncio.CancelledError:
+                logger.debug("STT task cancelled successfully")
+                pass
+        
         if self.processing_task:
             self.processing_task.cancel()
             try:
@@ -117,10 +131,8 @@ class AudioProcessor:
             logger.error(f"Error saving debug recording: {e}", exc_info=True)
     
     async def _process_audio(self):
-        """Main audio processing loop."""
+        """Main audio processing loop - receives frames and queues them for STT."""
         try:
-            silence_frames = 0
-            speech_frames = 0
             frame_count = 0
             
             logger.debug(f"Starting audio processing loop for connection {self.connection_id}")
@@ -159,54 +171,18 @@ class AudioProcessor:
                     if self.debug_recording:
                         self.debug_all_frames.append(audio_data.copy())
                     
-                    # Detect speech vs silence
-                    is_silence = self._is_silence(audio_data)
+                    # Queue audio data for continuous STT streaming
                     rms = np.sqrt(np.mean(audio_data.astype(float) ** 2))
-                    logger.debug(f"[Frame {frame_count}] Audio level: RMS={rms:.2f}, is_silence={is_silence}")
+                    logger.debug(f"[Frame {frame_count}] Audio level: RMS={rms:.2f}")
                     
-                    if not is_silence:
-                        # Speech detected
-                        speech_frames += 1
-                        silence_frames = 0
-                        self.audio_buffer.append(audio_data)
-                        logger.debug(f"[Frame {frame_count}] Speech detected! Total speech frames: {speech_frames}, buffer size: {len(self.audio_buffer)}")
-                    else:
-                        # Silence detected
-                        if len(self.audio_buffer) > 0:
-                            silence_frames += 1
-                            self.audio_buffer.append(audio_data)
-                            
-                            # Check if we have enough silence to process
-                            silence_duration = silence_frames / (self.sample_rate / frame.samples)
-                            speech_duration = speech_frames / (self.sample_rate / frame.samples)
-                            
-                            logger.debug(
-                                f"[Frame {frame_count}] Silence in buffer: {silence_frames} frames, "
-                                f"duration={silence_duration:.2f}s, speech_duration={speech_duration:.2f}s"
-                            )
-                            
-                            if silence_duration >= self.silence_duration:
-                                if speech_duration >= self.min_speech_duration:
-                                    logger.info(
-                                        f"[Frame {frame_count}] Processing speech segment: "
-                                        f"speech={speech_duration:.2f}s, silence={silence_duration:.2f}s, "
-                                        f"buffer_frames={len(self.audio_buffer)}"
-                                    )
-                                    # Process the accumulated audio
-                                    await self._process_speech_segment()
-                                else:
-                                    logger.debug(
-                                        f"[Frame {frame_count}] Discarding short speech segment: "
-                                        f"duration={speech_duration:.2f}s < {self.min_speech_duration}s"
-                                    )
-                                
-                                # Reset buffers
-                                self.audio_buffer = []
-                                silence_frames = 0
-                                speech_frames = 0
-                                logger.debug(f"[Frame {frame_count}] Buffer reset")
-                        else:
-                            logger.debug(f"[Frame {frame_count}] Silence detected (no buffer)")
+                    # Convert to bytes and queue for STT
+                    audio_bytes = audio_data.tobytes()
+                    await self.audio_queue.put(audio_bytes)
+                    
+                    # Log every 50 frames at INFO level to track progress
+                    if frame_count % 50 == 0:
+                        logger.info(f"[Frame {frame_count}] Queued {len(audio_bytes)} bytes for STT (RMS={rms:.2f})")
+                    logger.debug(f"[Frame {frame_count}] Queued {len(audio_bytes)} bytes for STT")
                     
                 except asyncio.TimeoutError:
                     logger.warning(f"Audio receive timeout after frame {frame_count}")
@@ -280,55 +256,61 @@ class AudioProcessor:
         
         return array
     
-    def _is_silence(self, audio_data: np.ndarray) -> bool:
-        """Detect if audio data is silence."""
-        rms = np.sqrt(np.mean(audio_data.astype(float) ** 2))
-        return rms < self.silence_threshold
-    
-    async def _process_speech_segment(self):
-        """Process a complete speech segment through STT -> LLM -> TTS with full streaming for minimal latency.
-        
-        Pipeline design for low latency with ordered playback:
-        1. STT streams transcript chunks as they're recognized
-        2. Once STT completes, immediately start LLM streaming
-        3. As LLM produces text chunks, detect sentence boundaries
-        4. Start TTS for each sentence immediately (parallel processing for speed)
-        5. Use ordering mechanism to ensure audio chunks play in sequence
-        6. First sentence starts playing as soon as its TTS completes
-        """
+    async def _continuous_stt(self):
+        """Continuously stream audio to STT and process final transcripts."""
         try:
-            logger.info(f"Processing speech segment ({len(self.audio_buffer)} frames)")
-            logger.debug(f"Buffer details: total_frames={len(self.audio_buffer)}")
+            logger.info("Starting continuous STT streaming...")
             
-            # Concatenate audio buffer
-            audio_data = np.concatenate(self.audio_buffer)
-            audio_bytes = audio_data.tobytes()
+            # Create async generator for audio chunks
+            async def audio_generator():
+                chunk_count = 0
+                while self.running:
+                    try:
+                        audio_chunk = await asyncio.wait_for(
+                            self.audio_queue.get(),
+                            timeout=1.0
+                        )
+                        if audio_chunk is None:  # Sentinel value to stop
+                            logger.debug("STT audio generator received stop signal")
+                            break
+                        chunk_count += 1
+                        if chunk_count % 50 == 0:
+                            logger.info(f"STT audio generator: yielding chunk {chunk_count} ({len(audio_chunk)} bytes)")
+                        yield audio_chunk
+                    except asyncio.TimeoutError:
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error in audio generator: {e}", exc_info=True)
+                        break
             
-            logger.debug(f"Concatenated audio: samples={len(audio_data)}, bytes={len(audio_bytes)}, duration={len(audio_data)/self.sample_rate:.2f}s")
+            # Stream to STT and process results
+            async for transcript, is_final in self.ai_assistant.speech_to_text_continuous_stream(
+                audio_generator()
+            ):
+                if transcript:
+                    if is_final:
+                        logger.info(f"Final transcript: '{transcript}'")
+                        # Process complete transcript through LLM
+                        await self._process_final_transcript(transcript)
+                    else:
+                        logger.debug(f"Interim transcript: '{transcript}'")
+                        # Could update UI with interim results if needed
             
+            logger.info("Continuous STT streaming ended")
+            
+        except asyncio.CancelledError:
+            logger.info("Continuous STT cancelled")
+        except Exception as e:
+            logger.error(f"Error in continuous STT: {e}", exc_info=True)
+    
+    async def _process_final_transcript(self, transcript: str):
+        """Process a final transcript through LLM -> TTS pipeline."""
+        try:
+            logger.info(f"Processing final transcript: '{transcript}'")
             start_time = asyncio.get_event_loop().time()
             
-            # Stage 1: Speech-to-Text (Streaming)
-            logger.info("Stage 1: Starting streaming STT...")
-            stt_start = asyncio.get_event_loop().time()
-            
-            transcript_parts = []
-            async for transcript_chunk in self.ai_assistant.speech_to_text_stream(audio_bytes):
-                if transcript_chunk and transcript_chunk.strip():
-                    logger.info(f"STT chunk: '{transcript_chunk}'")
-                    transcript_parts.append(transcript_chunk)
-            
-            full_transcript = " ".join(transcript_parts).strip()
-            stt_duration = asyncio.get_event_loop().time() - stt_start
-            
-            if not full_transcript:
-                logger.info("No speech detected in segment (empty transcript)")
-                return
-            
-            logger.info(f"STT complete in {stt_duration:.2f}s: '{full_transcript}'")
-            
-            # Stage 2: LLM Processing (Streaming)
-            logger.info("Stage 2: Starting streaming LLM...")
+            # Stage 1: LLM Processing (Streaming)
+            logger.info("Stage 1: Starting streaming LLM...")
             llm_start = asyncio.get_event_loop().time()
             
             llm_parts = []
@@ -422,7 +404,7 @@ class AudioProcessor:
             tts_tasks = []
             
             # Stream LLM response and process sentences in parallel (with ordered playback)
-            async for llm_chunk in self.ai_assistant.generate_llm_response_stream(full_transcript):
+            async for llm_chunk in self.ai_assistant.generate_llm_response_stream(transcript):
                 if llm_chunk:
                     logger.debug(f"LLM chunk: '{llm_chunk}'")
                     llm_parts.append(llm_chunk)
@@ -458,7 +440,7 @@ class AudioProcessor:
             full_llm_response = "".join(llm_parts)
             logger.info(f"LLM complete in {llm_duration:.2f}s: '{full_llm_response}'")
             
-            # Stage 3: Process any remaining text in the buffer
+            # Stage 2: Process any remaining text in the buffer
             if sentence_buffer.strip():
                 sentence_num += 1
                 logger.info(f"Processing final text fragment as sentence {sentence_num}")
@@ -473,9 +455,8 @@ class AudioProcessor:
             total_time = asyncio.get_event_loop().time() - start_time
             logger.info(
                 f"Pipeline complete in {total_time:.2f}s "
-                f"(STT: {stt_duration:.2f}s, LLM: {llm_duration:.2f}s, "
-                f"TTS: {len(tts_tasks)} sentences with ordered playback)"
+                f"(LLM: {llm_duration:.2f}s, TTS: {len(tts_tasks)} sentences with ordered playback)"
             )
             
         except Exception as e:
-            logger.error(f"Error in speech segment processing pipeline: {e}", exc_info=True)
+            logger.error(f"Error processing final transcript: {e}", exc_info=True)

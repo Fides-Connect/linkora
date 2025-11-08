@@ -42,44 +42,15 @@ class AIAssistant:
         
         logger.info("AI Assistant initialized")
     
-    async def speech_to_text(self, audio_data: bytes) -> str:
-        """Convert speech audio to text using Google Cloud Speech-to-Text."""
-        try:
-            # Configure recognition
-            config = speech.RecognitionConfig(
-                encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=48000,
-                language_code=self.language_code,
-                audio_channel_count=1,
-                enable_automatic_punctuation=True,
-            )
-            
-            audio = speech.RecognitionAudio(content=audio_data)
-            
-            # Perform synchronous recognition
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.speech_client.recognize(
-                    config=config,
-                    audio=audio
-                )
-            )
-            
-            # Extract transcript
-            transcript = ""
-            for result in response.results:
-                if result.alternatives:
-                    transcript += result.alternatives[0].transcript
-            
-            return transcript.strip()
-            
-        except Exception as e:
-            logger.error(f"Speech-to-text error: {e}", exc_info=True)
-            return ""
-    
-    async def speech_to_text_stream(self, audio_data: bytes) -> AsyncIterator[str]:
-        """Convert speech audio to text using streaming API for low latency."""
+    async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, bool]]:
+        """
+        Continuously stream audio to STT and yield (transcript, is_final) tuples.
+        This method accepts an async generator that yields audio chunks.
+        Returns tuples of (transcript, is_final) where is_final indicates if the result is final.
+        """
+        import queue
+        import threading
+        
         try:
             # Configure streaming recognition
             config = speech.RecognitionConfig(
@@ -88,43 +59,123 @@ class AIAssistant:
                 language_code=self.language_code,
                 audio_channel_count=1,
                 enable_automatic_punctuation=True,
+                model='latest_long',  # Optimized for conversations and longer utterances
             )
             
             streaming_config = speech.StreamingRecognitionConfig(
                 config=config,
-                interim_results=False,  # Only final results for lower latency
+                interim_results=True,  # Enable interim results to show progress
+                single_utterance=False,  # Keep listening continuously
             )
             
-            # Create audio chunks generator (only audio, not config)
-            def audio_generator():
-                chunk_size = 4096
-                for i in range(0, len(audio_data), chunk_size):
-                    chunk = audio_data[i:i + chunk_size]
-                    yield speech.StreamingRecognizeRequest(audio_content=chunk)
+            # Use thread-safe queue to bridge async and sync worlds
+            request_queue = queue.Queue()
+            stop_flag = threading.Event()
+            
+            # Background thread to populate the sync queue from async generator
+            async def populate_queue():
+                """Populate queue from async generator."""
+                try:
+                    # Stream audio chunks only - config is passed separately to streaming_recognize()
+                    chunk_count = 0
+                    async for audio_chunk in audio_generator:
+                        if audio_chunk:
+                            request_queue.put(speech.StreamingRecognizeRequest(audio_content=audio_chunk))
+                            chunk_count += 1
+                            if chunk_count == 1:
+                                logger.info(f"Sent first audio chunk to STT ({len(audio_chunk)} bytes)")
+                            elif chunk_count % 50 == 0:
+                                logger.info(f"Sent {chunk_count} audio chunks to STT")
+                    
+                except Exception as e:
+                    logger.error(f"Error populating request queue: {e}", exc_info=True)
+                finally:
+                    logger.info(f"populate_queue finished after {chunk_count} chunks")
+                    request_queue.put(None)  # Sentinel to signal end
+                    stop_flag.set()
+            
+            def sync_request_generator():
+                """Sync generator that pulls from queue."""
+                while True:
+                    try:
+                        # Block waiting for next request, with timeout to check stop flag
+                        request = request_queue.get(timeout=0.1)
+                        
+                        if request is None:  # Sentinel
+                            logger.debug("STT request generator received stop signal")
+                            break
+                        
+                        yield request
+                        
+                    except queue.Empty:
+                        # Timeout - check if we should stop
+                        if stop_flag.is_set() and request_queue.empty():
+                            break
+                        continue
+            
+            # Start queue population task
+            populate_task = asyncio.create_task(populate_queue())
             
             # Perform streaming recognition in executor
             loop = asyncio.get_event_loop()
             
-            # SpeechClient.streaming_recognize is a helper that takes config and requests separately
-            responses = await loop.run_in_executor(
-                None,
-                lambda: list(self.speech_client.streaming_recognize(
-                    config=streaming_config,
-                    requests=audio_generator()
-                ))
-            )
+            # Queue to pass results from sync thread to async context
+            result_queue = asyncio.Queue()
             
-            # Yield transcript chunks as they arrive
-            for response in responses:
-                for result in response.results:
-                    if result.is_final and result.alternatives:
-                        transcript = result.alternatives[0].transcript
-                        logger.debug(f"STT stream chunk: '{transcript}'")
-                        yield transcript
+            try:
+                # Function to run in thread pool - iterates over responses and queues results
+                def stream_recognize_and_queue():
+                    try:
+                        responses = self.speech_client.streaming_recognize(
+                            config=streaming_config,
+                            requests=sync_request_generator()
+                        )
+                        
+                        for response in responses:
+                            for result in response.results:
+                                if result.alternatives:
+                                    transcript = result.alternatives[0].transcript
+                                    is_final = result.is_final
+                                    logger.debug(f"STT continuous: '{transcript}' (final={is_final})")
+                                    # Put result in queue (use thread-safe put_nowait via call_soon_threadsafe)
+                                    loop.call_soon_threadsafe(result_queue.put_nowait, (transcript, is_final))
+                    except Exception as e:
+                        logger.error(f"Error in streaming recognition thread: {e}", exc_info=True)
+                        loop.call_soon_threadsafe(result_queue.put_nowait, None)  # Signal error
+                    finally:
+                        loop.call_soon_threadsafe(result_queue.put_nowait, None)  # Signal completion
+                
+                # Start streaming in a thread pool (don't await - it will run in background)
+                recognition_future = loop.run_in_executor(None, stream_recognize_and_queue)
+                
+                # Yield results as they arrive from the queue
+                while True:
+                    result = await result_queue.get()
+                    if result is None:  # Completion or error signal
+                        break
+                    transcript, is_final = result
+                    yield (transcript, is_final)
+                
+            finally:
+                # Clean up
+                stop_flag.set()
+                populate_task.cancel()
+                try:
+                    await populate_task
+                except asyncio.CancelledError:
+                    pass
+                
+                # Wait for recognition thread to finish (with timeout)
+                try:
+                    await asyncio.wait_for(recognition_future, timeout=2.0)
+                except asyncio.TimeoutError:
+                    logger.warning("Recognition thread did not finish within timeout")
+                except Exception as e:
+                    logger.error(f"Error waiting for recognition thread: {e}")
             
         except Exception as e:
-            logger.error(f"Streaming speech-to-text error: {e}", exc_info=True)
-            yield ""
+            logger.error(f"Continuous streaming speech-to-text error: {e}", exc_info=True)
+            yield ("", False)
     
     async def generate_llm_response(self, prompt: str) -> str:
         """Generate response using Gemini LLM."""
