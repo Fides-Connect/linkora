@@ -286,7 +286,14 @@ class AudioProcessor:
         return rms < self.silence_threshold
     
     async def _process_speech_segment(self):
-        """Process a complete speech segment through STT -> LLM -> TTS."""
+        """Process a complete speech segment through STT -> LLM -> TTS with full streaming for minimal latency.
+        
+        Pipeline design for maximum parallelism:
+        1. STT streams transcript chunks as they're recognized
+        2. Once STT completes, immediately start LLM streaming
+        3. As LLM produces text chunks, buffer them and synthesize in batches
+        4. Stream audio back to user as soon as TTS produces chunks
+        """
         try:
             logger.info(f"Processing speech segment ({len(self.audio_buffer)} frames)")
             logger.debug(f"Buffer details: total_frames={len(self.audio_buffer)}")
@@ -297,39 +304,105 @@ class AudioProcessor:
             
             logger.debug(f"Concatenated audio: samples={len(audio_data)}, bytes={len(audio_bytes)}, duration={len(audio_data)/self.sample_rate:.2f}s")
             
-            # Step 1: Speech-to-Text
-            logger.info("Step 1/3: Performing speech-to-text...")
-            logger.debug(f"Sending {len(audio_bytes)} bytes to STT")
-            transcript = await self.ai_assistant.speech_to_text(audio_bytes)
+            start_time = asyncio.get_event_loop().time()
             
-            if not transcript or transcript.strip() == "":
+            # Stage 1: Speech-to-Text (Streaming)
+            logger.info("Stage 1: Starting streaming STT...")
+            stt_start = asyncio.get_event_loop().time()
+            
+            transcript_parts = []
+            async for transcript_chunk in self.ai_assistant.speech_to_text_stream(audio_bytes):
+                if transcript_chunk and transcript_chunk.strip():
+                    logger.info(f"STT chunk: '{transcript_chunk}'")
+                    transcript_parts.append(transcript_chunk)
+            
+            full_transcript = " ".join(transcript_parts).strip()
+            stt_duration = asyncio.get_event_loop().time() - stt_start
+            
+            if not full_transcript:
                 logger.info("No speech detected in segment (empty transcript)")
                 return
             
-            logger.info(f"Transcript received: '{transcript}' (length: {len(transcript)} chars)")
+            logger.info(f"STT complete in {stt_duration:.2f}s: '{full_transcript}'")
             
-            # Step 2: LLM Processing
-            logger.info("Step 2/3: Generating LLM response...")
-            logger.debug(f"Sending transcript to LLM: '{transcript}'")
-            llm_response = await self.ai_assistant.generate_llm_response(transcript)
-            logger.info(f"LLM Response received: '{llm_response}' (length: {len(llm_response)} chars)")
+            # Stage 2: LLM Processing (Streaming)
+            logger.info("Stage 2: Starting streaming LLM...")
+            llm_start = asyncio.get_event_loop().time()
             
-            # Step 3: Text-to-Speech
-            logger.info("Step 3/3: Converting to speech...")
-            logger.debug(f"Sending to TTS: '{llm_response}'")
+            llm_parts = []
+            sentence_buffer = ""
+            tts_tasks = []
             
-            chunk_count = 0
-            total_bytes = 0
-            async for audio_chunk in self.ai_assistant.text_to_speech_stream(llm_response):
-                chunk_count += 1
-                chunk_size = len(audio_chunk)
-                total_bytes += chunk_size
-                logger.debug(f"TTS chunk {chunk_count}: {chunk_size} bytes")
-                
-                # Queue audio immediately without delay
-                await self.output_track.queue_audio(audio_chunk)
-
-            logger.info(f"Speech segment processed successfully ({chunk_count} audio chunks, {total_bytes} total bytes)")
+            async def process_sentence_to_audio(sentence: str, sentence_num: int):
+                """Process a complete sentence through TTS and queue audio."""
+                try:
+                    logger.info(f"TTS for sentence {sentence_num}: '{sentence}'")
+                    chunk_count = 0
+                    async for audio_chunk in self.ai_assistant.text_to_speech_stream(sentence):
+                        if audio_chunk:
+                            chunk_count += 1
+                            await self.output_track.queue_audio(audio_chunk)
+                    logger.debug(f"TTS sentence {sentence_num} complete: {chunk_count} chunks")
+                except Exception as e:
+                    logger.error(f"Error in TTS for sentence {sentence_num}: {e}", exc_info=True)
+            
+            sentence_num = 0
+            
+            # Stream LLM response and process sentences in parallel
+            async for llm_chunk in self.ai_assistant.generate_llm_response_stream(full_transcript):
+                if llm_chunk:
+                    logger.debug(f"LLM chunk: '{llm_chunk}'")
+                    llm_parts.append(llm_chunk)
+                    sentence_buffer += llm_chunk
+                    
+                    # Check for sentence boundaries (., !, ?)
+                    while True:
+                        # Find the earliest sentence boundary
+                        boundaries = [
+                            (sentence_buffer.find('. '), '. '),
+                            (sentence_buffer.find('! '), '! '),
+                            (sentence_buffer.find('? '), '? '),
+                        ]
+                        boundaries = [(pos, sep) for pos, sep in boundaries if pos >= 0]
+                        
+                        if not boundaries:
+                            break
+                        
+                        # Get the earliest boundary
+                        boundary_pos, separator = min(boundaries, key=lambda x: x[0])
+                        
+                        # Extract the sentence
+                        sentence = sentence_buffer[:boundary_pos + len(separator)].strip()
+                        sentence_buffer = sentence_buffer[boundary_pos + len(separator):]
+                        
+                        if sentence:
+                            sentence_num += 1
+                            # Start TTS for this sentence in parallel
+                            task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
+                            tts_tasks.append(task)
+            
+            llm_duration = asyncio.get_event_loop().time() - llm_start
+            full_llm_response = "".join(llm_parts)
+            logger.info(f"LLM complete in {llm_duration:.2f}s: '{full_llm_response}'")
+            
+            # Stage 3: Process any remaining text in the buffer
+            if sentence_buffer.strip():
+                sentence_num += 1
+                logger.info(f"Processing final text fragment as sentence {sentence_num}")
+                task = asyncio.create_task(process_sentence_to_audio(sentence_buffer.strip(), sentence_num))
+                tts_tasks.append(task)
+            
+            # Wait for all TTS tasks to complete
+            if tts_tasks:
+                logger.info(f"Waiting for {len(tts_tasks)} TTS tasks to complete...")
+                await asyncio.gather(*tts_tasks, return_exceptions=True)
+            
+            total_time = asyncio.get_event_loop().time() - start_time
+            logger.info(
+                f"Pipeline complete in {total_time:.2f}s "
+                f"(STT: {stt_duration:.2f}s, LLM: {llm_duration:.2f}s, "
+                f"TTS: {sentence_num} sentences processed in parallel)"
+            )
             
         except Exception as e:
-            logger.error(f"Error processing speech segment: {e}", exc_info=True)
+            logger.error(f"Error in speech segment processing pipeline: {e}", exc_info=True)
