@@ -276,7 +276,7 @@ class AudioProcessor:
         
         # Warn if audio seems to be all silence
         if rms < 10:
-            logger.warning(f"Audio frame has very low RMS ({rms:.2f}) - might be silence or incorrect conversion")
+            logger.debug(f"Audio frame has very low RMS ({rms:.2f}) - might be silence or incorrect conversion")
         
         return array
     
