@@ -184,25 +184,6 @@ class AIAssistant:
             logger.error(f"Continuous streaming speech-to-text error: {e}", exc_info=True)
             yield ("", False)
     
-    async def generate_llm_response(self, prompt: str) -> str:
-        """Generate response using Gemini LLM."""
-        try:
-            # Send message to chat session
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.chat_session.send_message(
-                    prompt,
-                    generation_config=self.generation_config
-                )
-            )
-            
-            return response.text.strip()
-            
-        except Exception as e:
-            logger.error(f"LLM generation error: {e}", exc_info=True)
-            return "Entschuldigung, ich konnte keine Antwort generieren."
-    
     async def generate_llm_response_stream(self, prompt: str) -> AsyncIterator[str]:
         """Generate streaming response using Gemini LLM for low latency."""
         try:

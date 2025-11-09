@@ -2,13 +2,11 @@
 WebRTC Signaling Server
 Handles WebSocket connections and WebRTC signaling between client and AI assistant.
 """
-import asyncio
 import json
 import logging
-from typing import Dict, Set
+from typing import Dict
 from aiohttp import web, WSMsgType
-from aiortc import RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaStreamTrack
+from aiortc import RTCSessionDescription
 
 from .peer_connection_handler import PeerConnectionHandler
 
