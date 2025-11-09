@@ -5,6 +5,7 @@ Handles the audio processing pipeline: STT -> LLM -> TTS
 import asyncio
 import logging
 import numpy as np
+import re
 import wave
 import os
 from datetime import datetime
@@ -433,44 +434,59 @@ class AudioProcessor:
                     llm_parts.append(llm_chunk)
                     sentence_buffer += llm_chunk
                     
-                    # Check for phrase boundaries - trigger on punctuation with minimum word count
+                    # Check for sentence boundaries - trigger on punctuation (with or without space/newline)
+                    # Process multiple sentences if they exist in the buffer
                     while True:
-                        # Find the earliest phrase boundary
-                        boundaries = [
-                            (sentence_buffer.find('. '), '. '),
-                            (sentence_buffer.find('! '), '! '),
-                            (sentence_buffer.find('? '), '? '),
-                            (sentence_buffer.find(', '), ', '),
-                            (sentence_buffer.find('; '), '; '),
-                            (sentence_buffer.find('-'), '-'),
-                            (sentence_buffer.find('('), '('),
-                            (sentence_buffer.find(')'), ')'),
-                        ]
-                        boundaries = [(pos, sep) for pos, sep in boundaries if pos >= 0]
+                        # Find sentence-ending punctuation (. ! ?) followed by space, newline, or end of text
+                        # Also handle mid-sentence splits for long text
                         
-                        if not boundaries:
-                            # No punctuation found - wait for more text
-                            break
+                        # Match sentence endings: . ! ? followed by whitespace or end of string
+                        # Also match : followed by newline (for intro lines like "here is a story:")
+                        sentence_end_pattern = r'([.!?][\s\n]+|:\n)'
+                        match = re.search(sentence_end_pattern, sentence_buffer)
                         
-                        # Get the earliest boundary
-                        boundary_pos, separator = min(boundaries, key=lambda x: x[0])
-                        
-                        # Extract the phrase/sentence
-                        sentence = sentence_buffer[:boundary_pos + len(separator)].strip()
-                        
-                        # Only split if we have at least 5 words
-                        word_count = len(sentence.split())
-                        if word_count >= 5:
-                            sentence_buffer = sentence_buffer[boundary_pos + len(separator):]
+                        if match:
+                            end_pos = match.end()
+                            sentence = sentence_buffer[:end_pos].strip()
                             
-                            if sentence:
-                                sentence_num += 1
-                                # Start TTS task immediately (don't await - process in parallel)
-                                task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
-                                tts_tasks.append(task)
+                            # Only split if we have meaningful content (at least 3 words)
+                            word_count = len(sentence.split())
+                            if word_count >= 3:
+                                sentence_buffer = sentence_buffer[end_pos:]
+                                
+                                if sentence:
+                                    sentence_num += 1
+                                    logger.debug(f"Sentence {sentence_num} extracted ({word_count} words): '{sentence[:50]}...'")
+                                    # Start TTS task immediately (don't await - process in parallel)
+                                    task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
+                                    tts_tasks.append(task)
+                            else:
+                                # Not enough words yet, wait for more text
+                                break
                         else:
-                            # Not enough words yet, wait for more text
-                            break
+                            # No sentence boundary found - check if buffer is getting too long
+                            # If we have 20+ words, split at a comma or dash to start streaming earlier
+                            word_count = len(sentence_buffer.split())
+                            if word_count >= 20:
+                                # Find a good break point (comma, dash, semicolon)
+                                break_pattern = r'([,;—–-]\s+)'
+                                break_match = re.search(break_pattern, sentence_buffer)
+                                if break_match:
+                                    end_pos = break_match.end()
+                                    sentence = sentence_buffer[:end_pos].strip()
+                                    sentence_buffer = sentence_buffer[end_pos:]
+                                    
+                                    if sentence:
+                                        sentence_num += 1
+                                        logger.debug(f"Sentence {sentence_num} extracted at break ({word_count} words): '{sentence[:50]}...'")
+                                        task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
+                                        tts_tasks.append(task)
+                                else:
+                                    # No good break point, wait for punctuation
+                                    break
+                            else:
+                                # Not enough text yet, wait for more
+                                break
             
             llm_duration = asyncio.get_event_loop().time() - llm_start
             perf_times['llm_complete'] = asyncio.get_event_loop().time()
