@@ -397,9 +397,4 @@ class WebRTCService {
       print('WebRTC: Cannot send message, signaling is null');
     }
   }
-  
-  /// Get the remote audio stream
-  MediaStream? getRemoteStream() {
-    return _remoteStream;
-  }
 }

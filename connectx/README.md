@@ -60,7 +60,13 @@ Before running ConnectX, ensure the AI-Assistant server is running:
 
 ```bash
 cd ../ai-assistant
-python -m ai_assistant
+
+# Using run script (recommended)
+./scripts/run.sh start
+
+# Or directly with Python
+python main.py
+
 # Server starts on ws://localhost:8080/ws
 ```
 
@@ -235,13 +241,14 @@ connectx/
 │   ├── main.dart                    # App entry point and UI
 │   ├── services/
 │   │   ├── webrtc_service.dart     # WebRTC connection management
-│   │   ├── speech_service.dart     # Speech interaction wrapper
-│   │   └── gemini_service.dart     # Deprecated (kept for compatibility)
+│   │   └── speech_service.dart     # Speech interaction wrapper
 │   └── widgets/
 │       └── particle_sphere.dart    # Animated UI component
 ├── .env                            # Environment configuration (not in git)
 ├── template.env                    # Environment template
 ├── pubspec.yaml                    # Dependencies
+└── README.md                       # This file
+```
 └── README.md                       # This file
 ```
 
