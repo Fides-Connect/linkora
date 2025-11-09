@@ -309,6 +309,15 @@ class AudioProcessor:
             logger.info(f"Processing final transcript: '{transcript}'")
             start_time = asyncio.get_event_loop().time()
             
+            # Performance tracking
+            perf_times = {
+                'start': start_time,
+                'llm_first_token': None,
+                'llm_complete': None,
+                'tts_first_chunk': None,
+                'tts_complete': None
+            }
+            
             # Stage 1: LLM Processing (Streaming)
             logger.info("Stage 1: Starting streaming LLM...")
             llm_start = asyncio.get_event_loop().time()
@@ -325,6 +334,7 @@ class AudioProcessor:
                 """Process a complete sentence through TTS and queue audio in order."""
                 try:
                     logger.info(f"TTS for sentence {sentence_num}: '{sentence}'")
+                    tts_start = asyncio.get_event_loop().time()
                     
                     # Create event for this sentence
                     nonlocal next_sentence_to_play, sentence_events
@@ -337,11 +347,17 @@ class AudioProcessor:
                     
                     # Process TTS to get all audio chunks for this sentence
                     audio_chunks = []
+                    first_chunk = True
                     async for audio_chunk in self.ai_assistant.text_to_speech_stream(sentence):
                         if audio_chunk:
+                            if first_chunk and sentence_num == 1:
+                                # Track time to first TTS audio chunk (only for first sentence)
+                                perf_times['tts_first_chunk'] = asyncio.get_event_loop().time()
+                                first_chunk = False
                             audio_chunks.append(audio_chunk)
                     
-                    logger.debug(f"TTS sentence {sentence_num} complete: {len(audio_chunks)} chunks, waiting for turn to play...")
+                    tts_duration = asyncio.get_event_loop().time() - tts_start
+                    logger.debug(f"TTS sentence {sentence_num} complete in {tts_duration:.3f}s: {len(audio_chunks)} chunks, waiting for turn to play...")
                     
                     # Wait for our turn to play
                     await my_event.wait()
@@ -350,9 +366,9 @@ class AudioProcessor:
                     async with playback_lock:
                         # Add initial silence before first sentence to prevent cutoff
                         if sentence_num == 1:
-                            initial_silence = np.zeros(4800, dtype=np.int16)  # 100ms buffer
+                            initial_silence = np.zeros(1200, dtype=np.int16)  # 25ms buffer (optimized for speed)
                             await self.output_track.queue_audio(initial_silence.tobytes())
-                            logger.debug("Added 100ms initial silence before first sentence")
+                            logger.debug("Added 25ms initial silence before first sentence")
                         
                         logger.info(f"Playing sentence {sentence_num} ({len(audio_chunks)} chunks)")
                         
@@ -361,9 +377,9 @@ class AudioProcessor:
                         # Make a writable copy of the array
                         audio_samples = np.frombuffer(combined_audio, dtype=np.int16).copy()
                         
-                        # Apply smooth fade-in at start (10ms) and fade-out at end (10ms) to prevent clicks
-                        # Using cosine curve for smoother transitions
-                        fade_samples = min(480, len(audio_samples) // 2)  # 10ms at 48kHz
+                        # Apply smooth fade-in at start (3ms) and fade-out at end (3ms) to prevent clicks
+                        # Using cosine curve for smoother transitions (optimized for minimal processing)
+                        fade_samples = min(144, len(audio_samples) // 2)  # 3ms at 48kHz
                         if fade_samples > 0:
                             # Fade-in at start (except for first sentence which already has silence)
                             if sentence_num > 1:
@@ -378,10 +394,10 @@ class AudioProcessor:
                         # Queue the processed audio
                         await self.output_track.queue_audio(audio_samples.tobytes())
                         
-                        # Add silence gap after each sentence (100ms for natural pause)
-                        silence_gap = np.zeros(4800, dtype=np.int16)  # 100ms at 48kHz
+                        # Add silence gap after each sentence (25ms for natural pause, optimized for speed)
+                        silence_gap = np.zeros(1200, dtype=np.int16)  # 25ms at 48kHz
                         await self.output_track.queue_audio(silence_gap.tobytes())
-                        logger.debug(f"Added 100ms silence gap after sentence {sentence_num}")
+                        logger.debug(f"Added 25ms silence gap after sentence {sentence_num}")
                         
                         logger.debug(f"Sentence {sentence_num} playback complete")
                         
@@ -404,41 +420,62 @@ class AudioProcessor:
             tts_tasks = []
             
             # Stream LLM response and process sentences in parallel (with ordered playback)
+            first_llm_chunk = True
             async for llm_chunk in self.ai_assistant.generate_llm_response_stream(transcript):
                 if llm_chunk:
+                    if first_llm_chunk:
+                        # Track time to first LLM token
+                        perf_times['llm_first_token'] = asyncio.get_event_loop().time()
+                        logger.info(f"LLM first token received in {perf_times['llm_first_token'] - llm_start:.3f}s")
+                        first_llm_chunk = False
+                    
                     logger.debug(f"LLM chunk: '{llm_chunk}'")
                     llm_parts.append(llm_chunk)
                     sentence_buffer += llm_chunk
                     
-                    # Check for sentence boundaries (., !, ?)
+                    # Check for phrase boundaries - trigger on punctuation with minimum word count
                     while True:
-                        # Find the earliest sentence boundary
+                        # Find the earliest phrase boundary
                         boundaries = [
                             (sentence_buffer.find('. '), '. '),
                             (sentence_buffer.find('! '), '! '),
                             (sentence_buffer.find('? '), '? '),
+                            (sentence_buffer.find(', '), ', '),
+                            (sentence_buffer.find('; '), '; '),
+                            (sentence_buffer.find('-'), '-'),
+                            (sentence_buffer.find('('), '('),
+                            (sentence_buffer.find(')'), ')'),
                         ]
                         boundaries = [(pos, sep) for pos, sep in boundaries if pos >= 0]
                         
                         if not boundaries:
+                            # No punctuation found - wait for more text
                             break
                         
                         # Get the earliest boundary
                         boundary_pos, separator = min(boundaries, key=lambda x: x[0])
                         
-                        # Extract the sentence
+                        # Extract the phrase/sentence
                         sentence = sentence_buffer[:boundary_pos + len(separator)].strip()
-                        sentence_buffer = sentence_buffer[boundary_pos + len(separator):]
                         
-                        if sentence:
-                            sentence_num += 1
-                            # Start TTS task immediately (don't await - process in parallel)
-                            task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
-                            tts_tasks.append(task)
+                        # Only split if we have at least 5 words
+                        word_count = len(sentence.split())
+                        if word_count >= 5:
+                            sentence_buffer = sentence_buffer[boundary_pos + len(separator):]
+                            
+                            if sentence:
+                                sentence_num += 1
+                                # Start TTS task immediately (don't await - process in parallel)
+                                task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
+                                tts_tasks.append(task)
+                        else:
+                            # Not enough words yet, wait for more text
+                            break
             
             llm_duration = asyncio.get_event_loop().time() - llm_start
+            perf_times['llm_complete'] = asyncio.get_event_loop().time()
             full_llm_response = "".join(llm_parts)
-            logger.info(f"LLM complete in {llm_duration:.2f}s: '{full_llm_response}'")
+            logger.info(f"LLM complete in {llm_duration:.3f}s: '{full_llm_response}'")
             
             # Stage 2: Process any remaining text in the buffer
             if sentence_buffer.strip():
@@ -451,11 +488,22 @@ class AudioProcessor:
             if tts_tasks:
                 logger.info(f"Waiting for {len(tts_tasks)} TTS tasks to complete...")
                 await asyncio.gather(*tts_tasks, return_exceptions=True)
+                perf_times['tts_complete'] = asyncio.get_event_loop().time()
             
             total_time = asyncio.get_event_loop().time() - start_time
+            
+            # Log detailed performance metrics
+            if perf_times['llm_first_token']:
+                time_to_first_token = perf_times['llm_first_token'] - start_time
+                logger.info(f"⚡ Time to first LLM token: {time_to_first_token:.3f}s")
+            
+            if perf_times['tts_first_chunk']:
+                time_to_first_audio = perf_times['tts_first_chunk'] - start_time
+                logger.info(f"🔊 Time to first audio chunk: {time_to_first_audio:.3f}s")
+            
             logger.info(
-                f"Pipeline complete in {total_time:.2f}s "
-                f"(LLM: {llm_duration:.2f}s, TTS: {len(tts_tasks)} sentences with ordered playback)"
+                f"✅ Pipeline complete in {total_time:.3f}s "
+                f"(LLM: {llm_duration:.3f}s, TTS: {len(tts_tasks)} sentences with ordered playback)"
             )
             
         except Exception as e:
