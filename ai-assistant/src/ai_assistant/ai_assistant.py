@@ -39,12 +39,12 @@ class AIAssistant:
         self.llm_model = genai.GenerativeModel('gemini-2.0-flash-exp')
         self.chat_session = self.llm_model.start_chat(history=[])
         
-        # Configure generation
+        # Configure generation - AGGRESSIVE optimization for ultra-low latency
         self.generation_config = genai.types.GenerationConfig(
-            temperature=0.7,
-            top_k=40,
+            temperature=0.9,  # Higher for faster, more varied sampling
+            top_k=10,  # Much lower for fastest token selection
             top_p=0.95,
-            max_output_tokens=1024
+            max_output_tokens=256  # Reduced for very fast response times
         )
         
         logger.info("AI Assistant initialized")
@@ -66,7 +66,8 @@ class AIAssistant:
                 language_code=self.language_code,
                 audio_channel_count=1,
                 enable_automatic_punctuation=True,
-                model='latest_long',  # Optimized for conversations and longer utterances
+                model='latest_long',
+                use_enhanced=True
             )
             
             streaming_config = speech.StreamingRecognitionConfig(
@@ -235,15 +236,14 @@ class AIAssistant:
                 )
             )
             
-            # Stream audio in chunks
-            chunk_size = 4096
+            # Stream audio in chunks (larger chunks = fewer iterations = lower overhead)
+            chunk_size = 8192  # Increased from 4096 for better performance
             audio_content = response.audio_content
             
             for i in range(0, len(audio_content), chunk_size):
                 chunk = audio_content[i:i + chunk_size]
                 yield chunk
-                # Small delay to prevent overwhelming the stream
-                await asyncio.sleep(0.01)
+                # No artificial delay - stream as fast as possible for lowest latency
                 
         except Exception as e:
             logger.error(f"Text-to-speech error: {e}", exc_info=True)
