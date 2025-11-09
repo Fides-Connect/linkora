@@ -427,12 +427,6 @@ class AudioProcessor:
                     
                     # Now queue all our audio chunks atomically (hold playback_lock to prevent interleaving)
                     async with playback_lock:
-                        # Add initial silence before first sentence to prevent cutoff
-                        if sentence_num == 1:
-                            initial_silence = np.zeros(1200, dtype=np.int16)  # 25ms buffer (optimized for speed)
-                            await self.output_track.queue_audio(initial_silence.tobytes())
-                            logger.debug("Added 25ms initial silence before first sentence")
-                        
                         logger.info(f"Playing sentence {sentence_num} ({len(audio_chunks)} chunks)")
                         
                         # Combine all audio chunks into a single array for processing
@@ -458,11 +452,6 @@ class AudioProcessor:
                         
                         # Queue the processed audio
                         await self.output_track.queue_audio(audio_samples.tobytes())
-                        
-                        # Add silence gap after each sentence (25ms for natural pause, optimized for speed)
-                        silence_gap = np.zeros(1200, dtype=np.int16)  # 25ms at 48kHz
-                        await self.output_track.queue_audio(silence_gap.tobytes())
-                        logger.debug(f"Added 25ms silence gap after sentence {sentence_num}")
                         
                         logger.debug(f"Sentence {sentence_num} playback complete")
                         
