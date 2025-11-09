@@ -11,9 +11,6 @@ class SpeechService {
   
   // Remote audio renderer for WebRTC audio playback
   RTCVideoRenderer? _remoteRenderer;
-  
-  // Remote audio stream subscription
-  StreamSubscription<dynamic>? _remoteAudioSubscription;
 
   // Callbacks
   Function()? onSpeechStart;
@@ -34,9 +31,6 @@ class SpeechService {
       _remoteRenderer!.dispose();
       _remoteRenderer = null;
     }
-    
-    _remoteAudioSubscription?.cancel();
-    _remoteAudioSubscription = null;
   }
 
   /// Start speech session by connecting to AI-Assistant server via WebRTC

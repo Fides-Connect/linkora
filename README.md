@@ -71,8 +71,11 @@ cd ai-assistant
 cp .env.template .env
 # Edit .env with your Google Cloud credentials and Gemini API key
 
-# Start server
-./quickstart.sh
+# Start server (using run script)
+./scripts/run.sh start
+
+# Or start directly with Python
+python main.py
 
 # Server starts on ws://localhost:8080/ws
 ```
