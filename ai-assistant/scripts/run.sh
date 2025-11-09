@@ -61,7 +61,7 @@ run() {
         -e GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json \
         -e GEMINI_API_KEY="$GEMINI_API_KEY" \
         -e LANGUAGE_CODE="${LANGUAGE_CODE:-de-DE}" \
-        -e VOICE_NAME="${VOICE_NAME:-de-DE-Wavenet-F}" \
+        -e VOICE_NAME="${VOICE_NAME:-de-DE-Chirp-HD-F}" \
         -e HOST="${HOST:-0.0.0.0}" \
         -e PORT="${PORT:-8080}" \
         -e LOG_LEVEL="${LOG_LEVEL:-INFO}" \
