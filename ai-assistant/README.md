@@ -43,8 +43,9 @@ This AI assistant service:
 
 ### Core Capabilities
 
-- **Real-time Voice Processing**: Low-latency voice activity detection and audio streaming
+- **Real-time Voice Processing**: Low-latency continuous speech recognition and audio streaming
 - **Optimized Streaming Pipeline**: Full streaming STT → LLM → TTS for minimal latency
+- **Interrupt Support**: User can interrupt AI responses by speaking
 - **Parallel Processing**: Multiple TTS tasks run simultaneously for faster responses
 - **Multi-language Support**: Configurable language and voice settings
 - **Chat Context**: Maintains conversation history per session
@@ -55,8 +56,8 @@ This AI assistant service:
 
 - WebRTC peer-to-peer connections
 - WebSocket signaling server
-- Voice Activity Detection (VAD)
-- Silence detection and buffering
+- Continuous speech-to-text streaming
+- Transcript-based interrupt detection
 - **Streaming APIs**: STT, LLM, and TTS all use streaming for lower latency
 - **Sentence-level parallelization**: TTS processes multiple sentences simultaneously
 - Asynchronous processing pipeline with detailed timing metrics
@@ -141,10 +142,10 @@ python tests/test_client.py --audio-file test_audio.wav
                                                    ▼
                                           ┌──────────────────┐
                                           │ Audio Processor  │
-                                          │  (VAD, Buffer)   │
+                                          │ (STT Streaming)  │
                                           └──────────────────┘
                                                    │
-                                                   │ Audio Segment
+                                                   │ Continuous Audio
                                                    ▼
                                           ┌──────────────────┐
                                           │  Streaming STT   │
@@ -195,15 +196,15 @@ python tests/test_client.py --audio-file test_audio.wav
 
 2. **Audio Capture**
    - Client sends audio stream via WebRTC
-   - Audio processor receives PCM audio frames
-   - Voice Activity Detection (VAD) filters silence
+   - Audio processor receives PCM audio frames (48kHz)
+   - Audio continuously streamed to Google Speech-to-Text
    - (Optional) Debug recording saves all received frames to WAV file
 
-3. **Speech Processing (Streaming)**
-   - Buffer accumulates audio during speech
-   - Silence detection triggers processing
-   - Audio segment sent to Google Speech-to-Text **streaming API**
-   - Transcript chunks received as speech is recognized
+3. **Speech Processing (Continuous Streaming)**
+   - Audio continuously sent to Google Speech-to-Text **streaming API**
+   - Transcript chunks (interim and final) received in real-time
+   - Final transcripts trigger AI processing
+   - Interim transcripts enable interrupt detection
 
 4. **AI Processing (Streaming)**
    - Transcript sent to Gemini AI **with streaming enabled**
@@ -240,7 +241,7 @@ ai-assistant/
 │       ├── __init__.py          # Package initialization
 │       ├── __main__.py          # Application entry point
 │       ├── ai_assistant.py      # Core AI logic (STT, LLM, TTS)
-│       ├── audio_processor.py   # Audio processing pipeline (VAD, STT→LLM→TTS)
+│       ├── audio_processor.py   # Audio processing pipeline (Continuous STT→LLM→TTS)
 │       ├── audio_track.py       # Custom audio output track
 │       ├── peer_connection_handler.py  # WebRTC peer connection management
 │       └── signaling_server.py  # WebSocket signaling server
@@ -581,8 +582,12 @@ import unittest
 from ai_assistant.audio_processor import AudioProcessor
 
 class TestAudioProcessor(unittest.TestCase):
-    def test_silence_detection(self):
-        # Your test here
+    def test_continuous_streaming(self):
+        # Test continuous STT streaming
+        pass
+    
+    def test_interrupt_detection(self):
+        # Test interrupt when user speaks during AI response
         pass
 ```
 
@@ -984,22 +989,21 @@ The system now uses **full streaming and parallel processing** to minimize laten
 #### Key Optimizations
 
 **Streaming Pipeline Benefits:**
-- ✅ **STT Streaming**: Transcript chunks received as speech is recognized
+- ✅ **STT Streaming**: Transcript chunks received continuously in real-time
 - ✅ **LLM Streaming**: Response generated sentence-by-sentence
 - ✅ **Parallel TTS**: Multiple sentences synthesized simultaneously
 - ✅ **Immediate Audio Queue**: Audio chunks played as soon as generated
+- ✅ **Interrupt Detection**: User can interrupt AI by speaking
 
-**Note:** With Voice Activity Detection (VAD) enabled (default):
-- Add 1.0-2.0s for silence detection (configurable via `SILENCE_DURATION`)
-- Time to first audio: ~1.7-3.9 seconds total
-- Consider reducing `SILENCE_DURATION` for faster response or disabling VAD
+**Note:** Response timing:
+- Time to first audio: **~0.7-1.9 seconds** from when user stops speaking
+- Continuous STT processes audio immediately (no silence detection delay)
+- Interruption detected within ~100-200ms via interim transcripts
 
 **Optimization recommendations:**
 - Deploy service in same GCP region as Cloud APIs (e.g., `us-central1`)
 - Use Google Cloud's internal network for API calls
-- Reduce `SILENCE_DURATION` for faster triggering (trade-off: may cut speech early)
 - Enable HTTP/2 keepalive for persistent connections
-- For lowest latency, set `SILENCE_DURATION=0.5` (balance between response time and speech capture)
 
 ### Resource Usage
 
@@ -1023,13 +1027,11 @@ The system now uses **full streaming and parallel processing** to minimize laten
 ### Optimization Tips
 
 1. **Reduce Latency**
-   - Lower `SILENCE_DURATION` (trade-off: may cut off speech)
    - Use regional API endpoints
    - Enable HTTP/2 for Google APIs
    - Cache common responses
 
 2. **Improve Quality**
-   - Increase `SILENCE_DURATION` for complete sentences
    - Use higher quality TTS voices
    - Implement noise suppression
    - Add audio normalization
@@ -1132,7 +1134,6 @@ time curl -X POST https://speech.googleapis.com/v1/...
 
 **Solution:**
 - Use regional API endpoints
-- Reduce `SILENCE_DURATION`
 - Increase container resources
 - Check network bandwidth
 - Monitor Google Cloud quotas
@@ -1145,16 +1146,13 @@ time curl -X POST https://speech.googleapis.com/v1/...
 - Incorrect sample rate
 - Network packet loss
 - Buffer underruns
-- VAD threshold too low
 
 **Solution:**
 ```bash
-# Adjust silence threshold in .env
-SILENCE_THRESHOLD=800  # Increase for better detection
-
 # Verify audio format
-# Input should be: 16kHz, mono, LINEAR16
-# Output will be: 24kHz, mono, LINEAR16
+# Input: WebRTC sends 48kHz, mono audio
+# Processing: Server processes at 48kHz
+# Output: TTS generates 48kHz, mono, LINEAR16
 ```
 
 ### Debug Checklist
@@ -1162,8 +1160,8 @@ SILENCE_THRESHOLD=800  # Increase for better detection
 - [ ] Health endpoint returns 200
 - [ ] WebSocket connection establishes
 - [ ] Audio track added to peer connection
-- [ ] VAD detecting voice activity
-- [ ] STT returning transcripts
+- [ ] Continuous STT receiving audio
+- [ ] STT returning transcripts (interim and final)
 - [ ] LLM generating responses
 - [ ] TTS synthesizing audio
 - [ ] Audio queue has frames
