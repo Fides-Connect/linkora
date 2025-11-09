@@ -39,6 +39,19 @@ class AudioOutputTrack(MediaStreamTrack):
         logger.debug(f"Queueing {len(audio_data)} bytes of audio, queue size before: {self.audio_queue.qsize()}")
         await self.audio_queue.put(audio_data)
     
+    async def clear_queue(self):
+        """Clear all pending audio from the queue and buffer."""
+        # Clear the queue
+        while not self.audio_queue.empty():
+            try:
+                self.audio_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        
+        # Clear the buffer
+        self._buffer = np.array([], dtype=np.int16)
+        logger.info("Audio queue and buffer cleared for interrupt")
+    
     def _generate_comfort_noise(self, num_samples: int) -> np.ndarray:
         """Generate comfort noise to keep the audio stream alive.
         
