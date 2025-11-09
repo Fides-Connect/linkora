@@ -36,7 +36,7 @@ class AIAssistant:
         
         # Initialize Gemini AI
         genai.configure(api_key=gemini_api_key)
-        self.llm_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        self.llm_model = genai.GenerativeModel('gemini-2.0-flash')
         self.chat_session = self.llm_model.start_chat(history=[])
         
         # Configure generation - AGGRESSIVE optimization for ultra-low latency
