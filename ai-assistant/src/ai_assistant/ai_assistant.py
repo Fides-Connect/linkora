@@ -17,15 +17,22 @@ class AIAssistant:
     """AI Assistant using Google Cloud services."""
     
     def __init__(self, gemini_api_key: str, language_code: str = 'de-DE', 
-                 voice_name: str = 'de-DE-Wavenet-F'):
+                 voice_name: str = 'de-DE-Chirp-HD-F'):
         self.language_code = language_code
         self.voice_name = voice_name
         
-        # Initialize Google Cloud Speech client
-        self.speech_client = speech.SpeechClient()
-        
-        # Initialize Google Cloud Text-to-Speech client
-        self.tts_client = tts.TextToSpeechClient()
+        # Initialize Google Cloud clients
+        # Use default credentials in Cloud Run (via service account)
+        # Use explicit credentials locally (via GOOGLE_APPLICATION_CREDENTIALS)
+        credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+        if credentials_path and os.path.exists(credentials_path):
+            logger.info(f"Using credentials from: {credentials_path}")
+            self.speech_client = speech.SpeechClient.from_service_account_json(credentials_path)
+            self.tts_client = tts.TextToSpeechClient.from_service_account_json(credentials_path)
+        else:
+            logger.info("Using default credentials (Cloud Run environment)")
+            self.speech_client = speech.SpeechClient()
+            self.tts_client = tts.TextToSpeechClient()
         
         # Initialize Gemini AI
         genai.configure(api_key=gemini_api_key)

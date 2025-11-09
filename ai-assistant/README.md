@@ -96,11 +96,8 @@ GEMINI_API_KEY=your_gemini_api_key_here
 ### 2. Start the Service
 
 ```bash
-# Using the quickstart script
-./quickstart.sh
-
-# Or using the run script
-./run.sh start
+# Using the run script
+./scripts/run.sh start
 ```
 
 ### 3. Verify It's Running
@@ -230,19 +227,26 @@ python tests/test_client.py --audio-file test_audio.wav
 ```
 ai-assistant/
 ├── main.py                      # Application entry point
-├── signaling_server.py          # WebSocket signaling server
-├── peer_connection_handler.py   # WebRTC peer connection management
-├── audio_processor.py           # Audio processing pipeline (VAD, STT→LLM→TTS)
-├── audio_track.py               # Custom audio output track
-├── ai_assistant.py              # Core AI logic (STT, LLM, TTS)
 ├── Containerfile                # Container image definition
-├── requirements.txt             # Python dependencies
 ├── docker-compose.yml           # Docker Compose configuration
+├── requirements.txt             # Python dependencies
 ├── .env.template                # Environment variable template
 ├── .gitignore                   # Git ignore rules
-├── run.sh                       # Container management script
-├── quickstart.sh                # Quick start script
-├── test_client.py               # Test client for validation
+├── scripts/
+│   ├── run.sh                   # Container management script
+│   └── cloud-deploy.sh          # Cloud deployment script
+├── src/
+│   └── ai_assistant/
+│       ├── __init__.py          # Package initialization
+│       ├── __main__.py          # Application entry point
+│       ├── ai_assistant.py      # Core AI logic (STT, LLM, TTS)
+│       ├── audio_processor.py   # Audio processing pipeline (VAD, STT→LLM→TTS)
+│       ├── audio_track.py       # Custom audio output track
+│       ├── peer_connection_handler.py  # WebRTC peer connection management
+│       └── signaling_server.py  # WebSocket signaling server
+├── tests/
+│   ├── __init__.py              # Test package marker
+│   └── test_client.py           # WebRTC test client
 └── README.md                    # This file
 ```
 
@@ -294,7 +298,7 @@ cp .env.template .env
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 GEMINI_API_KEY=your_api_key_here
 LANGUAGE_CODE=de-DE
-VOICE_NAME=de-DE-Wavenet-F
+VOICE_NAME=de-DE-Chirp-HD-F
 ```
 
 #### 5. Run Locally
@@ -308,23 +312,23 @@ python main.py
 
 ### Container Setup
 
-#### Using Podman (Recommended)
+#### Using run.sh Script (Recommended)
 
 ```bash
 # Build container
-./run.sh build
+./scripts/run.sh build
 
 # Start service
-./run.sh start
+./scripts/run.sh start
 
 # View logs
-./run.sh logs
+./scripts/run.sh logs
 
 # Stop service
-./run.sh stop
+./scripts/run.sh stop
 ```
 
-#### Using Podman
+#### Using Podman Directly
 
 ```bash
 # Build image
@@ -339,7 +343,7 @@ podman run -d \
   ai-assistant
 ```
 
-#### Using Podman Compose
+#### Using Docker Compose / Podman Compose
 
 ```bash
 # Start all services
@@ -368,11 +372,11 @@ podman-compose down
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LANGUAGE_CODE` | Language for STT/TTS | `de-DE` |
-| `VOICE_NAME` | TTS voice model | `de-DE-Wavenet-F` |
+| `VOICE_NAME` | TTS voice model | `de-DE-Chirp-HD-F` |
+| `HOST` | Server host | `0.0.0.0` |
 | `PORT` | Server port | `8080` |
 | `LOG_LEVEL` | Logging level | `INFO` |
-| `SILENCE_DURATION` | Silence threshold (seconds) | `1.5` |
-| `SILENCE_THRESHOLD` | Audio level threshold | `500` |
+| `DEBUG_RECORD_AUDIO` | Record received audio to WAV files | `false` |
 
 ### Available Languages & Voices
 
@@ -383,6 +387,7 @@ podman-compose down
 - `de-DE-Wavenet-D` (Male)
 - `de-DE-Wavenet-E` (Male)
 - `de-DE-Wavenet-F` (Female)
+- `de-DE-Chirp-HD-F` (Female, High Quality) - **Default**
 
 #### English US (en-US)
 - `en-US-Wavenet-A` (Male)
@@ -496,47 +501,153 @@ GET http://localhost:8080/health
 
 ## Testing
 
-### Using Test Client
+### Test WebRTC Connection
+
+Test the WebRTC connection with a sample audio file:
 
 ```bash
-# Basic test
-python test_client.py
-
-# With specific audio file
-python test_client.py --audio-file recording.wav
+# From project root
+python tests/test_client.py --audio-file path/to/audio.wav
 
 # With custom server URL
-python test_client.py --server ws://192.168.1.100:8080/ws
+python tests/test_client.py --server ws://192.168.1.100:8080/ws --audio-file test.wav
+
+# Specify test duration
+python tests/test_client.py --audio-file test.wav --duration 60
 ```
+
+### Audio File Requirements
+
+The test client requires a WAV file with:
+- **Sample Rate**: 16000 Hz (16 kHz)
+- **Channels**: 1 (mono)
+- **Sample Width**: 16-bit (2 bytes)
+- **Format**: PCM
+
+**Audio Pipeline:**
+1. Client sends 16kHz audio from your input file
+2. WebRTC automatically upsamples to 48kHz for transmission (WebRTC standard)
+3. Server receives 48kHz audio (WebRTC native rate)
+4. Server processes at 48kHz (Google STT accepts 48kHz natively)
+5. Google TTS generates 48kHz audio
+6. Server sends 48kHz to client via WebRTC
+7. Client receives 48kHz audio
+8. Debug recordings (if enabled) save received audio at 48kHz
+
+**Key point:** No resampling occurs on the server. Audio arrives at 48kHz from WebRTC and stays at 48kHz throughout the entire pipeline for optimal quality.
+
+Convert audio to the correct input format:
+
+```bash
+# Using ffmpeg (input file → 16kHz mono for test client)
+ffmpeg -i input.mp3 -ar 16000 -ac 1 -sample_fmt s16 output.wav
+
+# Using sox  
+sox input.mp3 -r 16000 -c 1 -b 16 output.wav
+
+# Note: WebRTC will upsample to 48kHz automatically
+```
+
+### Test Workflow
+
+1. **Start the Service**
+   ```bash
+   # Local
+   python main.py
+   
+   # Or container
+   ./scripts/run.sh start
+   ```
+
+2. **Run Test Client**
+   ```bash
+   python tests/test_client.py --audio-file test.wav
+   ```
+
+3. **Check Output**
+   - Test client will connect via WebRTC
+   - Send audio from the WAV file
+   - Receive and save response to `output.wav`
+
+### Writing New Tests
+
+#### Unit Tests
+
+Place unit tests in the `tests/` directory with `test_` prefix:
+
+```python
+# tests/test_audio_processor.py
+import unittest
+from ai_assistant.audio_processor import AudioProcessor
+
+class TestAudioProcessor(unittest.TestCase):
+    def test_silence_detection(self):
+        # Your test here
+        pass
+```
+
+Run with:
+```bash
+python -m unittest discover tests/
+```
+
+#### Integration Tests
+
+For integration tests, use the test client as a template:
+
+```python
+# tests/test_integration.py
+from test_client import TestClient
+import asyncio
+
+async def test_full_pipeline():
+    client = TestClient()
+    await client.run("test_audio.wav", duration=10)
+```
+
+### Troubleshooting Tests
+
+#### Import Errors
+
+If you get import errors when running tests:
+
+```bash
+# Install package in development mode
+pip install -e .
+```
+
+#### Connection Errors
+
+If test client can't connect:
+
+1. Check service is running: `curl http://localhost:8080/health`
+2. Verify WebSocket URL is correct
+3. Check firewall settings
+4. Review service logs: `./scripts/run.sh logs`
+
+#### Audio Issues
+
+If audio test fails:
+
+1. Verify audio file format (16kHz, mono, 16-bit)
+2. Check Google Cloud credentials
+3. Ensure APIs are enabled
+4. Review service logs for errors
 
 ### Manual Testing
 
-#### 1. Test Health Endpoint
+#### Test Health Endpoint
 ```bash
 curl http://localhost:8080/health
 ```
 
-#### 2. Test WebSocket Connection
+#### Test WebSocket Connection
 ```bash
 # Using websocat
 websocat ws://localhost:8080/ws
 
 # Send test message
 {"type": "ping"}
-```
-
-#### 3. Test with Browser Client
-```html
-<!DOCTYPE html>
-<html>
-<head>
-    <title>AI Assistant Test</title>
-</head>
-<body>
-    <button id="start">Start Call</button>
-    <script src="test-client.js"></script>
-</body>
-</html>
 ```
 
 ### Debugging
@@ -556,31 +667,256 @@ podman logs -f ai-assistant
 python main.py 2>&1 | tee debug.log
 ```
 
-#### Common Test Scenarios
+### Continuous Integration
+
+For CI/CD pipelines:
+
+```yaml
+# .github/workflows/test.yml (example)
+- name: Run Unit Tests
+  run: python -m unittest discover tests/
+
+- name: Test Container Build
+  run: ./scripts/run.sh build
+```
+
+### Common Test Scenarios
 
 | Scenario | Command | Expected Result |
 |----------|---------|-----------------|
 | Health check | `curl http://localhost:8080/health` | Status 200, JSON response |
 | WebSocket connect | `websocat ws://localhost:8080/ws` | Connection established |
-| Audio processing | `python test_client.py --audio-file test.wav` | Response audio generated |
+| Audio processing | `python tests/test_client.py --audio-file test.wav` | Response audio generated |
+
+### Future Test Considerations
+
+Consider adding:
+- Unit tests for each module
+- Integration tests for full pipeline
+- Load testing for concurrent connections
+- Audio quality tests
+- Latency benchmarks
+- Error handling tests
+- Mock tests for Google Cloud APIs
 
 ## Deployment
 
-### Production Deployment
+### Cloud Deployment to Google Cloud Platform
 
-#### Google Cloud Run
+The AI Assistant includes an automated deployment script for Google Cloud Platform that handles all configuration and deployment steps.
+
+#### Quick Start
 
 ```bash
-# Build and push image
-gcloud builds submit --tag gcr.io/PROJECT_ID/ai-assistant
+# One-command deployment to Compute Engine
+./scripts/cloud-deploy.sh deploy
 
-# Deploy to Cloud Run
-gcloud run deploy ai-assistant \
-  --image gcr.io/PROJECT_ID/ai-assistant \
-  --platform managed \
-  --region us-central1 \
-  --set-env-vars GEMINI_API_KEY=... \
-  --set-secrets GOOGLE_APPLICATION_CREDENTIALS=...
+# Check deployment status
+./scripts/cloud-deploy.sh status
+
+# View all available commands
+./scripts/cloud-deploy.sh help
+```
+
+#### Prerequisites
+
+1. **Install Google Cloud SDK**
+   ```bash
+   # macOS with Homebrew
+   brew install google-cloud-sdk
+   
+   # Add to ~/.zshrc
+   export PATH=/opt/homebrew/share/google-cloud-sdk/bin:"$PATH"
+   ```
+
+2. **Configure gcloud**
+   ```bash
+   gcloud auth login
+   gcloud config set project YOUR_PROJECT_ID
+   gcloud config set compute/region europe-west3
+   gcloud config set compute/zone europe-west3-a
+   gcloud auth configure-docker gcr.io
+   ```
+
+3. **Enable Required APIs** in Google Cloud Console:
+   - Compute Engine API
+   - Container Registry API
+   - Cloud Speech-to-Text API
+   - Cloud Text-to-Speech API
+
+4. **Set up environment variables** in `.env`:
+   ```bash
+   GEMINI_API_KEY=your-api-key
+   LANGUAGE_CODE=de-DE
+   VOICE_NAME=de-DE-Chirp-HD-F
+   LOG_LEVEL=INFO
+   ```
+
+#### Deployment Script Commands
+
+| Command | Description |
+|---------|-------------|
+| `deploy` | Full deployment (build + push + deploy) |
+| `build` | Build container image for AMD64 |
+| `push` | Push image to Google Container Registry |
+| `deploy-ce [vm-name] [type]` | Deploy to Compute Engine |
+| `start [vm-name]` | Start a stopped VM |
+| `stop [vm-name]` | Stop a running VM |
+| `delete [vm-name]` | Delete a VM |
+| `status [vm-name]` | Show VM status and health |
+| `logs [vm-name]` | View VM logs |
+| `config` | Show current configuration |
+
+#### Platform Comparison
+
+| Platform | WebRTC Support | Cost | Best For |
+|----------|---------------|------|----------|
+| **Compute Engine** ✅ | Full (UDP+TCP) | ~$24/month | **Production** |
+| Cloud Run ❌ | TCP only | Pay-per-use | Testing only |
+
+**Why Compute Engine?** WebRTC requires UDP ports for peer-to-peer connections. Cloud Run only supports HTTP/HTTPS (TCP), making WebRTC impossible. The deployment script automatically:
+- Builds AMD64-compatible images
+- Configures firewall rules (TCP:8080, UDP:49152-65535)
+- Sets up service accounts
+- Validates deployment health
+
+#### Machine Types & Costs
+
+| Machine Type | vCPUs | Memory | Cost/Month* | Use Case |
+|--------------|-------|--------|-------------|----------|
+| e2-micro | 2 | 1 GB | ~$7 | Testing only |
+| e2-small | 2 | 2 GB | ~$13 | Light usage |
+| **e2-medium** | 2 | 4 GB | **~$24** | **Recommended** |
+| e2-standard-2 | 2 | 8 GB | ~$48 | Heavy usage |
+
+*Europe-west3 region, running 24/7. Stop VM when not in use to pay only storage costs (~$0.40/month).
+
+#### Daily Operations
+
+```bash
+# Check status and get endpoints
+./scripts/cloud-deploy.sh status
+
+# Stop VM to save costs (when not in use)
+./scripts/cloud-deploy.sh stop
+
+# Start VM again
+./scripts/cloud-deploy.sh start
+
+# View logs
+./scripts/cloud-deploy.sh logs
+```
+
+#### Deployment Output
+
+After successful deployment, you'll receive:
+```
+External IP: 34.89.201.196
+Health endpoint: http://34.89.201.196:8080/health
+WebSocket endpoint: ws://34.89.201.196:8080/ws
+```
+
+Update your client `.env` file:
+```properties
+AI_ASSISTANT_SERVER_URL=ws://34.89.201.196:8080/ws
+```
+
+#### Custom Deployment
+
+Deploy with custom VM name and machine type:
+```bash
+./scripts/cloud-deploy.sh deploy-ce my-ai-assistant e2-standard-2
+```
+
+#### Cost Optimization
+
+1. **Stop when not in use**: Reduces cost from ~$24/month to ~$0.40/month
+   ```bash
+   ./scripts/cloud-deploy.sh stop
+   ```
+
+2. **Use smaller machine**: For testing/development
+   ```bash
+   ./scripts/cloud-deploy.sh deploy-ce ai-assistant-vm e2-small
+   ```
+
+3. **Delete when not needed**: Zero cost
+   ```bash
+   ./scripts/cloud-deploy.sh delete
+   ```
+
+### Local Development
+
+For local development and testing:
+
+```bash
+# Using the run script
+./scripts/run.sh start
+
+# Or manually with Docker/Podman
+podman-compose up
+```
+
+### Manual Cloud Deployment
+
+If you need custom configuration beyond the deployment script:
+
+#### Google Compute Engine (Manual)
+
+```bash
+# Build for AMD64 architecture (required for Cloud)
+podman build --platform linux/amd64 -t gcr.io/PROJECT_ID/ai-assistant -f Containerfile .
+
+# Push to registry
+podman push gcr.io/PROJECT_ID/ai-assistant
+
+# Create VM with container
+gcloud compute instances create-with-container ai-assistant-vm \
+  --container-image=gcr.io/PROJECT_ID/ai-assistant \
+  --container-env=GEMINI_API_KEY=...,LANGUAGE_CODE=de-DE,VOICE_NAME=de-DE-Chirp-HD-F \
+  --machine-type=e2-medium \
+  --zone=europe-west3-a \
+  --tags=ai-assistant \
+  --service-account=SERVICE_ACCOUNT@PROJECT_ID.iam.gserviceaccount.com \
+  --scopes=cloud-platform
+
+# Configure firewall for WebRTC
+gcloud compute firewall-rules create allow-ai-assistant \
+  --allow tcp:8080,udp:49152-65535 \
+  --target-tags=ai-assistant \
+  --source-ranges=0.0.0.0/0
+```
+
+#### Troubleshooting Deployment
+
+**Container won't start:**
+```bash
+# Check logs
+./scripts/cloud-deploy.sh logs
+
+# Wait 1-2 minutes for container to start
+./scripts/cloud-deploy.sh status
+```
+
+**Health check fails:**
+```bash
+# Verify firewall rules
+gcloud compute firewall-rules describe allow-ai-assistant
+
+# Test from local machine
+curl http://<EXTERNAL_IP>:8080/health
+```
+
+**WebRTC connection fails:**
+- Ensure firewall allows UDP ports 49152-65535
+- Verify VM has external IP
+- Check client can reach VM IP:8080
+- Verify NAT/firewall on client side allows UDP
+
+**Architecture mismatch:**
+The deployment script automatically builds for AMD64. If building manually on Apple Silicon (ARM64), always use:
+```bash
+podman build --platform linux/amd64 ...
 ```
 
 ### Scaling Considerations

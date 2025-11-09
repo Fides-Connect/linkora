@@ -34,7 +34,6 @@ async def main():
     
     # Verify required environment variables
     required_vars = [
-        'GOOGLE_APPLICATION_CREDENTIALS',
         'GEMINI_API_KEY'
     ]
     
@@ -43,10 +42,15 @@ async def main():
         logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
         return
     
+    # GOOGLE_APPLICATION_CREDENTIALS is optional in Cloud Run
+    credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+    if credentials_path and not os.path.exists(credentials_path):
+        logger.warning(f"Credentials file not found: {credentials_path}, will use default credentials")
+    
     # Log configuration
     logger.info("Configuration:")
     logger.info(f"  Language: {os.getenv('LANGUAGE_CODE', 'de-DE')}")
-    logger.info(f"  Voice: {os.getenv('VOICE_NAME', 'de-DE-Wavenet-F')}")
+    logger.info(f"  Voice: {os.getenv('VOICE_NAME', 'de-DE-Chirp-HD-F')}")
     logger.info(f"  Host: {os.getenv('HOST', '0.0.0.0')}")
     logger.info(f"  Port: {os.getenv('PORT', 8080)}")
     logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
@@ -58,7 +62,7 @@ async def main():
     ai_assistant = AIAssistant(
         gemini_api_key=os.getenv('GEMINI_API_KEY'),
         language_code=os.getenv('LANGUAGE_CODE', 'de-DE'),
-        voice_name=os.getenv('VOICE_NAME', 'de-DE-Wavenet-F')
+        voice_name=os.getenv('VOICE_NAME', 'de-DE-Chirp-HD-F')
     )
     
     # Initialize signaling server
