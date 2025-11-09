@@ -440,19 +440,21 @@ class AudioProcessor:
                         # Make a writable copy of the array
                         audio_samples = np.frombuffer(combined_audio, dtype=np.int16).copy()
                         
-                        # Apply smooth fade-in at start (3ms) and fade-out at end (3ms) to prevent clicks
-                        # Using cosine curve for smoother transitions (optimized for minimal processing)
-                        fade_samples = min(144, len(audio_samples) // 2)  # 3ms at 48kHz
-                        if fade_samples > 0:
-                            # Fade-in at start (except for first sentence which already has silence)
-                            if sentence_num > 1:
-                                # Cosine fade-in: 0 to 1 (smoother than linear)
-                                fade_in = (1.0 - np.cos(np.linspace(0, np.pi, fade_samples))) / 2.0
-                                audio_samples[:fade_samples] = (audio_samples[:fade_samples] * fade_in).astype(np.int16)
-                            
+                        # Apply smooth fade-in at start and fade-out at end to prevent clicks/crackling
+                        # Using cosine curve for smoother transitions
+                        # First sentence gets longer fade-in (10ms) to eliminate crackling on phone speakers
+                        fade_in_samples = min(480 if sentence_num == 1 else 144, len(audio_samples) // 2)  # 10ms or 3ms at 48kHz
+                        fade_out_samples = min(144, len(audio_samples) // 2)  # 3ms at 48kHz
+                        
+                        if fade_in_samples > 0:
+                            # Cosine fade-in: 0 to 1 (smoother than linear, eliminates crackling)
+                            fade_in = (1.0 - np.cos(np.linspace(0, np.pi, fade_in_samples))) / 2.0
+                            audio_samples[:fade_in_samples] = (audio_samples[:fade_in_samples] * fade_in).astype(np.int16)
+                        
+                        if fade_out_samples > 0:
                             # Cosine fade-out: 1 to 0 (smoother than linear)
-                            fade_out = (1.0 + np.cos(np.linspace(0, np.pi, fade_samples))) / 2.0
-                            audio_samples[-fade_samples:] = (audio_samples[-fade_samples:] * fade_out).astype(np.int16)
+                            fade_out = (1.0 + np.cos(np.linspace(0, np.pi, fade_out_samples))) / 2.0
+                            audio_samples[-fade_out_samples:] = (audio_samples[-fade_out_samples:] * fade_out).astype(np.int16)
                         
                         # Queue the processed audio
                         await self.output_track.queue_audio(audio_samples.tobytes())
