@@ -38,6 +38,12 @@ class AudioProcessor:
         # Transcript accumulation
         self.current_transcript = ""
         
+        # Interrupt handling
+        self.is_ai_speaking = False  # True when generating OR playing AI response
+        self.interrupt_event = asyncio.Event()
+        self.current_tts_tasks = []
+        self.playback_start_time = None  # Track when playback started
+        
         # Debug: WAV file recording
         self.debug_recording = os.getenv('DEBUG_RECORD_AUDIO', 'false').lower() == 'true'
         self.debug_wav_file = None
@@ -289,13 +295,23 @@ class AudioProcessor:
                 audio_generator()
             ):
                 if transcript:
+                    # Check if AI is currently speaking - if so, trigger interrupt
+                    if self.is_ai_speaking and len(transcript.strip()) > 0:
+                        logger.info(f"🛑 INTERRUPT detected! User speaking while AI responds: '{transcript}'")
+                        await self._trigger_interrupt()
+                        # Give a moment for the interrupt to take effect
+                        await asyncio.sleep(0.05)
+                    
                     if is_final:
                         logger.info(f"Final transcript: '{transcript}'")
-                        # Process complete transcript through LLM
-                        await self._process_final_transcript(transcript)
+                        # Process the transcript (interrupt already cleared speaking flag if needed)
+                        if not self.is_ai_speaking:
+                            await self._process_final_transcript(transcript)
+                        else:
+                            logger.warning(f"Skipping processing - AI still speaking despite interrupt")
                     else:
                         logger.debug(f"Interim transcript: '{transcript}'")
-                        # Could update UI with interim results if needed
+                        # Interim results also trigger interruption if AI is speaking
             
             logger.info("Continuous STT streaming ended")
             
@@ -304,11 +320,37 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Error in continuous STT: {e}", exc_info=True)
     
+    async def _trigger_interrupt(self):
+        """Trigger an interrupt to stop ongoing AI speech."""
+        logger.info("⚡ Triggering interrupt - cancelling ongoing TTS tasks")
+        
+        # Set the interrupt event
+        self.interrupt_event.set()
+        
+        # Cancel all ongoing TTS tasks
+        for task in self.current_tts_tasks:
+            if not task.done():
+                task.cancel()
+        
+        # Clear the output audio queue to stop playback immediately
+        await self.output_track.clear_queue()
+        
+        # Reset state
+        self.is_ai_speaking = False
+        self.current_tts_tasks = []
+        
+        logger.info("✅ Interrupt complete - AI speech stopped")
+    
     async def _process_final_transcript(self, transcript: str):
         """Process a final transcript through LLM -> TTS pipeline."""
         try:
             logger.info(f"Processing final transcript: '{transcript}'")
             start_time = asyncio.get_event_loop().time()
+            
+            # Reset interrupt event and set speaking flag
+            self.interrupt_event.clear()
+            self.is_ai_speaking = True
+            self.current_tts_tasks = []
             
             # Performance tracking
             perf_times = {
@@ -334,6 +376,11 @@ class AudioProcessor:
             async def process_sentence_to_audio(sentence: str, sentence_num: int):
                 """Process a complete sentence through TTS and queue audio in order."""
                 try:
+                    # Check for interrupt before processing
+                    if self.interrupt_event.is_set():
+                        logger.info(f"Sentence {sentence_num} skipped due to interrupt")
+                        return
+                    
                     logger.info(f"TTS for sentence {sentence_num}: '{sentence}'")
                     tts_start = asyncio.get_event_loop().time()
                     
@@ -350,6 +397,11 @@ class AudioProcessor:
                     audio_chunks = []
                     first_chunk = True
                     async for audio_chunk in self.ai_assistant.text_to_speech_stream(sentence):
+                        # Check for interrupt during TTS processing
+                        if self.interrupt_event.is_set():
+                            logger.info(f"TTS for sentence {sentence_num} interrupted during processing")
+                            return
+                        
                         if audio_chunk:
                             if first_chunk and sentence_num == 1:
                                 # Track time to first TTS audio chunk (only for first sentence)
@@ -360,8 +412,18 @@ class AudioProcessor:
                     tts_duration = asyncio.get_event_loop().time() - tts_start
                     logger.debug(f"TTS sentence {sentence_num} complete in {tts_duration:.3f}s: {len(audio_chunks)} chunks, waiting for turn to play...")
                     
+                    # Check for interrupt before waiting for turn
+                    if self.interrupt_event.is_set():
+                        logger.info(f"Sentence {sentence_num} interrupted before playback")
+                        return
+                    
                     # Wait for our turn to play
                     await my_event.wait()
+                    
+                    # Check for interrupt one more time before queueing audio
+                    if self.interrupt_event.is_set():
+                        logger.info(f"Sentence {sentence_num} interrupted right before playback")
+                        return
                     
                     # Now queue all our audio chunks atomically (hold playback_lock to prevent interleaving)
                     async with playback_lock:
@@ -460,6 +522,7 @@ class AudioProcessor:
                                     # Start TTS task immediately (don't await - process in parallel)
                                     task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
                                     tts_tasks.append(task)
+                                    self.current_tts_tasks.append(task)  # Track for interruption
                             else:
                                 # Not enough words yet, wait for more text
                                 break
@@ -481,6 +544,7 @@ class AudioProcessor:
                                         logger.debug(f"Sentence {sentence_num} extracted at break ({word_count} words): '{sentence[:50]}...'")
                                         task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
                                         tts_tasks.append(task)
+                                        self.current_tts_tasks.append(task)  # Track for interruption
                                 else:
                                     # No good break point, wait for punctuation
                                     break
@@ -499,12 +563,17 @@ class AudioProcessor:
                 logger.info(f"Processing final text fragment as sentence {sentence_num}")
                 task = asyncio.create_task(process_sentence_to_audio(sentence_buffer.strip(), sentence_num))
                 tts_tasks.append(task)
+                self.current_tts_tasks.append(task)  # Track for interruption
             
             # Wait for all TTS tasks to complete
             if tts_tasks:
                 logger.info(f"Waiting for {len(tts_tasks)} TTS tasks to complete...")
                 await asyncio.gather(*tts_tasks, return_exceptions=True)
                 perf_times['tts_complete'] = asyncio.get_event_loop().time()
+            
+            # Keep speaking flag true while audio is still in the queue/playing
+            # We'll clear it in a background task that monitors the queue
+            asyncio.create_task(self._monitor_playback_completion())
             
             total_time = asyncio.get_event_loop().time() - start_time
             
@@ -524,3 +593,35 @@ class AudioProcessor:
             
         except Exception as e:
             logger.error(f"Error processing final transcript: {e}", exc_info=True)
+        finally:
+            # Don't clear speaking flag here - let the playback monitor do it
+            # This allows interruption during audio playback, not just during TTS generation
+            self.current_tts_tasks = []
+    
+    async def _monitor_playback_completion(self):
+        """Monitor the audio queue and clear speaking flag when playback is done."""
+        try:
+            # Wait a bit for audio to start queueing
+            await asyncio.sleep(0.1)
+            
+            # Monitor queue size - when it stays at 0 for a bit, we're done playing
+            empty_count = 0
+            while self.is_ai_speaking and not self.interrupt_event.is_set():
+                queue_size = self.output_track.audio_queue.qsize()
+                buffer_size = len(self.output_track._buffer)
+                
+                if queue_size == 0 and buffer_size == 0:
+                    empty_count += 1
+                    # If queue and buffer are empty for 5 consecutive checks (100ms), we're done
+                    if empty_count >= 5:
+                        logger.info("Audio playback completed - clearing speaking flag")
+                        self.is_ai_speaking = False
+                        break
+                else:
+                    empty_count = 0
+                
+                await asyncio.sleep(0.02)  # Check every 20ms
+            
+        except Exception as e:
+            logger.error(f"Error in playback monitor: {e}", exc_info=True)
+            self.is_ai_speaking = False
