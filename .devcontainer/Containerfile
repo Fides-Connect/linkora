@@ -20,16 +20,12 @@ RUN groupadd --gid 1001 vscode \
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    coreutils \
-    util-linux \
-    procps \
     curl \
     git \
     wget \
     unzip \
     xz-utils \
     zip \
-    libglu1-mesa \
     openjdk-17-jdk \
     build-essential \
     libssl-dev \
@@ -41,25 +37,13 @@ RUN apt-get update && apt-get install -y \
     liblzma-dev \
     libstdc++-12-dev \
     fonts-droid-fallback \
-    ttf-wqy-zenhei \
-    ssh \
-    rsync \
     ca-certificates \
     gnupg \
-    lsb-release \
-    software-properties-common \
-    apt-transport-https \
-    usbutils \
     android-tools-adb \
     android-tools-fastboot \
     android-sdk \
     google-android-platform-34-installer \
-    python3.12-venv \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Chromium for Flutter web development (ARM64 compatible)
-RUN apt-get update \
-    && apt-get install -y chromium-browser \
+    chromium-browser \
     && rm -rf /var/lib/apt/lists/*
 
 # Create directories
@@ -89,15 +73,7 @@ RUN mkdir -p $ANDROID_HOME/cmdline-tools \
 RUN yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
 # Pre-download Dart dependencies and configure Flutter (skip Android components during build)
-RUN $FLUTTER_ROOT/bin/flutter precache \
-    && $FLUTTER_ROOT/bin/flutter config --enable-web \
-    && $FLUTTER_ROOT/bin/flutter config --enable-linux-desktop \
-    && $FLUTTER_ROOT/bin/flutter config --enable-macos-desktop \
-    && $FLUTTER_ROOT/bin/flutter config --enable-windows-desktop
-
-# Install additional useful tools
-RUN curl -fsSL https://deno.land/x/install/install.sh | sh \
-    && curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+RUN $FLUTTER_ROOT/bin/flutter precache
 
 # Create workspace directory
 RUN mkdir -p /home/vscode/workspace
@@ -119,5 +95,6 @@ RUN echo 'export PATH="$FLUTTER_ROOT/bin:$ANDROID_HOME/cmdline-tools/latest/bin:
 
 # Expose common Flutter development ports
 EXPOSE 8080 3000 5000 5001 8000 9000
+
 # Keep container running for dev container use
 CMD ["sleep", "infinity"]

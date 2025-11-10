@@ -116,7 +116,6 @@ jobs:
           name: test-output
           path: |
             ai-assistant/output.wav
-            ai-assistant/*.log
           retention-days: 7
 
       - name: Stop AI Assistant server
