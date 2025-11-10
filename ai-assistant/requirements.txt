@@ -3,10 +3,12 @@ aiortc>=1.14.0
 aiohttp>=3.13.2
 websockets>=15.0.1  # Used in test client only
 
-# Google Cloud APIs
+# Google Cloud APIs with gRPC support
 google-cloud-speech>=2.34.0
 google-cloud-texttospeech>=2.33.0
 google-generativeai>=0.8.5
+grpcio>=1.60.0
+grpcio-status>=1.60.0
 
 # Audio processing
 numpy>=2.3.4

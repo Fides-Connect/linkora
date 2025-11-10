@@ -7,32 +7,37 @@ import logging
 import os
 from typing import AsyncIterator
 from google.cloud import speech_v1 as speech
+from google.cloud.speech_v1 import SpeechAsyncClient
 from google.cloud import texttospeech_v1 as tts
+from google.cloud.texttospeech_v1 import TextToSpeechAsyncClient
 import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
 
 class AIAssistant:
-    """AI Assistant using Google Cloud services."""
+    """AI Assistant using Google Cloud services with gRPC streaming."""
     
     def __init__(self, gemini_api_key: str, language_code: str = 'de-DE', 
                  voice_name: str = 'de-DE-Chirp-HD-F'):
         self.language_code = language_code
         self.voice_name = voice_name
         
-        # Initialize Google Cloud clients
+        # Initialize Google Cloud clients with async gRPC
         # Use default credentials in Cloud Run (via service account)
         # Use explicit credentials locally (via GOOGLE_APPLICATION_CREDENTIALS)
         credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
         if credentials_path and os.path.exists(credentials_path):
             logger.info(f"Using credentials from: {credentials_path}")
-            self.speech_client = speech.SpeechClient.from_service_account_json(credentials_path)
-            self.tts_client = tts.TextToSpeechClient.from_service_account_json(credentials_path)
+            # For async clients, we'll use the sync client's credentials
+            from google.oauth2 import service_account
+            credentials = service_account.Credentials.from_service_account_file(credentials_path)
+            self.speech_client = SpeechAsyncClient(credentials=credentials)
+            self.tts_client = TextToSpeechAsyncClient(credentials=credentials)
         else:
             logger.info("Using default credentials (Cloud Run environment)")
-            self.speech_client = speech.SpeechClient()
-            self.tts_client = tts.TextToSpeechClient()
+            self.speech_client = SpeechAsyncClient()
+            self.tts_client = TextToSpeechAsyncClient()
         
         # Initialize Gemini AI
         genai.configure(api_key=gemini_api_key)
@@ -47,17 +52,16 @@ class AIAssistant:
             max_output_tokens=128  # Reduced for very fast response times
         )
         
-        logger.info("AI Assistant initialized")
+        logger.info("AI Assistant initialized with gRPC streaming")
     
     async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, bool]]:
         """
-        Continuously stream audio to STT and yield (transcript, is_final) tuples.
+        Continuously stream audio to STT using async gRPC and yield (transcript, is_final) tuples.
         This method accepts an async generator that yields audio chunks.
         Returns tuples of (transcript, is_final) where is_final indicates if the result is final.
-        """
-        import queue
-        import threading
         
+        Uses native async gRPC streaming for optimal latency.
+        """
         try:
             # Configure streaming recognition
             config = speech.RecognitionConfig(
@@ -76,111 +80,39 @@ class AIAssistant:
                 single_utterance=False,  # Keep listening continuously
             )
             
-            # Use thread-safe queue to bridge async and sync worlds
-            request_queue = queue.Queue()
-            stop_flag = threading.Event()
-            
-            # Background thread to populate the sync queue from async generator
-            async def populate_queue():
-                """Populate queue from async generator."""
-                try:
-                    # Stream audio chunks only - config is passed separately to streaming_recognize()
-                    chunk_count = 0
-                    async for audio_chunk in audio_generator:
-                        if audio_chunk:
-                            request_queue.put(speech.StreamingRecognizeRequest(audio_content=audio_chunk))
-                            chunk_count += 1
-                            if chunk_count == 1:
-                                logger.info(f"Sent first audio chunk to STT ({len(audio_chunk)} bytes)")
-                            elif chunk_count % 50 == 0:
-                                logger.info(f"Sent {chunk_count} audio chunks to STT")
-                    
-                except Exception as e:
-                    logger.error(f"Error populating request queue: {e}", exc_info=True)
-                finally:
-                    logger.info(f"populate_queue finished after {chunk_count} chunks")
-                    request_queue.put(None)  # Sentinel to signal end
-                    stop_flag.set()
-            
-            def sync_request_generator():
-                """Sync generator that pulls from queue."""
-                while True:
-                    try:
-                        # Block waiting for next request, with timeout to check stop flag
-                        request = request_queue.get(timeout=0.1)
-                        
-                        if request is None:  # Sentinel
-                            logger.debug("STT request generator received stop signal")
-                            break
-                        
-                        yield request
-                        
-                    except queue.Empty:
-                        # Timeout - check if we should stop
-                        if stop_flag.is_set() and request_queue.empty():
-                            break
-                        continue
-            
-            # Start queue population task
-            populate_task = asyncio.create_task(populate_queue())
-            
-            # Perform streaming recognition in executor
-            loop = asyncio.get_event_loop()
-            
-            # Queue to pass results from sync thread to async context
-            result_queue = asyncio.Queue()
-            
-            try:
-                # Function to run in thread pool - iterates over responses and queues results
-                def stream_recognize_and_queue():
-                    try:
-                        responses = self.speech_client.streaming_recognize(
-                            config=streaming_config,
-                            requests=sync_request_generator()
-                        )
-                        
-                        for response in responses:
-                            for result in response.results:
-                                if result.alternatives:
-                                    transcript = result.alternatives[0].transcript
-                                    is_final = result.is_final
-                                    logger.debug(f"STT continuous: '{transcript}' (final={is_final})")
-                                    # Put result in queue (use thread-safe put_nowait via call_soon_threadsafe)
-                                    loop.call_soon_threadsafe(result_queue.put_nowait, (transcript, is_final))
-                    except Exception as e:
-                        logger.error(f"Error in streaming recognition thread: {e}", exc_info=True)
-                        loop.call_soon_threadsafe(result_queue.put_nowait, None)  # Signal error
-                    finally:
-                        loop.call_soon_threadsafe(result_queue.put_nowait, None)  # Signal completion
+            # Create async generator for gRPC requests
+            async def request_generator():
+                """Generate streaming recognition requests."""
+                # First request with config
+                yield speech.StreamingRecognizeRequest(streaming_config=streaming_config)
                 
-                # Start streaming in a thread pool (don't await - it will run in background)
-                recognition_future = loop.run_in_executor(None, stream_recognize_and_queue)
+                # Then stream audio chunks
+                chunk_count = 0
+                async for audio_chunk in audio_generator:
+                    if audio_chunk:
+                        chunk_count += 1
+                        if chunk_count == 1:
+                            logger.info(f"Sent first audio chunk to STT ({len(audio_chunk)} bytes)")
+                        elif chunk_count % 50 == 0:
+                            logger.info(f"Sent {chunk_count} audio chunks to STT")
+                        yield speech.StreamingRecognizeRequest(audio_content=audio_chunk)
                 
-                # Yield results as they arrive from the queue
-                while True:
-                    result = await result_queue.get()
-                    if result is None:  # Completion or error signal
-                        break
-                    transcript, is_final = result
-                    yield (transcript, is_final)
-                
-            finally:
-                # Clean up
-                stop_flag.set()
-                populate_task.cancel()
-                try:
-                    await populate_task
-                except asyncio.CancelledError:
-                    # Task cancellation is expected during cleanup; ignore
-                    pass
-                
-                # Wait for recognition thread to finish (with timeout)
-                try:
-                    await asyncio.wait_for(recognition_future, timeout=2.0)
-                except asyncio.TimeoutError:
-                    logger.warning("Recognition thread did not finish within timeout")
-                except Exception as e:
-                    logger.error(f"Error waiting for recognition thread: {e}")
+                logger.info(f"Audio generator finished after {chunk_count} chunks")
+            
+            # Perform async gRPC streaming recognition
+            logger.info("Starting async gRPC streaming recognition")
+            stream = await self.speech_client.streaming_recognize(requests=request_generator())
+            
+            # Process responses asynchronously
+            async for response in stream:
+                for result in response.results:
+                    if result.alternatives:
+                        transcript = result.alternatives[0].transcript
+                        is_final = result.is_final
+                        logger.debug(f"STT continuous: '{transcript}' (final={is_final})")
+                        yield (transcript, is_final)
+            
+            logger.info("Async gRPC streaming recognition completed")
             
         except Exception as e:
             logger.error(f"Continuous streaming speech-to-text error: {e}", exc_info=True)
@@ -211,7 +143,7 @@ class AIAssistant:
             yield "Entschuldigung, ich konnte keine Antwort generieren."
     
     async def text_to_speech_stream(self, text: str) -> AsyncIterator[bytes]:
-        """Convert text to speech using Google Cloud TTS streaming API."""
+        """Convert text to speech using Google Cloud TTS async gRPC API."""
         try:
             # Configure TTS request
             synthesis_input = tts.SynthesisInput(text=text)
@@ -226,20 +158,19 @@ class AIAssistant:
                 sample_rate_hertz=48000,  # Match WebRTC's native rate - no resampling needed!
             )
             
-            # Perform synthesis
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.tts_client.synthesize_speech(
-                    input=synthesis_input,
-                    voice=voice,
-                    audio_config=audio_config
-                )
+            # Perform async synthesis using gRPC
+            logger.debug(f"Starting async TTS synthesis for text: '{text[:50]}...'")
+            response = await self.tts_client.synthesize_speech(
+                input=synthesis_input,
+                voice=voice,
+                audio_config=audio_config
             )
             
             # Stream audio in chunks (larger chunks = fewer iterations = lower overhead)
             chunk_size = 2048
             audio_content = response.audio_content
+            
+            logger.debug(f"TTS synthesis complete, streaming {len(audio_content)} bytes in chunks of {chunk_size}")
             
             for i in range(0, len(audio_content), chunk_size):
                 chunk = audio_content[i:i + chunk_size]
