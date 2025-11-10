@@ -109,6 +109,57 @@ jobs:
             exit 1
           fi
 
+      - name: Check output audio content
+        working-directory: ai-assistant
+        run: |
+          python3 << 'EOF'
+          import wave
+          import numpy as np
+          import sys
+
+          try:
+              with wave.open('output.wav', 'rb') as wf:
+                  # Read audio data
+                  frames = wf.readframes(wf.getnframes())
+                  sample_rate = wf.getframerate()
+                  sample_width = wf.getsampwidth()
+                  duration = wf.getnframes() / sample_rate
+                  
+                  print(f"Audio file info:")
+                  print(f"  Sample rate: {sample_rate} Hz")
+                  print(f"  Sample width: {sample_width} bytes")
+                  print(f"  Duration: {duration:.2f} seconds")
+                  
+                  # Convert to numpy array based on 16-bit sample width
+                  audio = np.frombuffer(frames, dtype=np.int16)
+                  
+                  # Calculate RMS (Root Mean Square) amplitude
+                  rms = np.sqrt(np.mean(audio.astype(float) ** 2))
+                  
+                  # Calculate max amplitude
+                  max_amplitude = np.max(np.abs(audio))
+                  
+                  print(f"\nAudio analysis:")
+                  print(f"  RMS amplitude: {rms:.2f}")
+                  print(f"  Max amplitude: {max_amplitude}")
+                  
+                  # For 16-bit audio: reasonable speech should have RMS > 100
+                  if sample_width == 2:
+                      min_rms_threshold = 100
+                  
+                  if rms < min_rms_threshold:
+                      print(f"\n✗ Output file likely contains only silence or noise")
+                      print(f"  RMS {rms:.2f} is below threshold {min_rms_threshold}")
+                      sys.exit(1)
+                  else:
+                      print(f"\n✓ Output file contains audio content (speech detected)")
+                      print(f"  RMS {rms:.2f} exceeds threshold {min_rms_threshold}")
+                      
+          except Exception as e:
+              print(f"✗ Error analyzing audio file: {e}")
+              sys.exit(1)
+          EOF
+
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4
