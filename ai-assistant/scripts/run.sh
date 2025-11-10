@@ -2,6 +2,12 @@
 # Script to build and run the AI Assistant container with Podman
 
 set -e
+# Resolve project root (script is in scripts/)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+ENV_FILE="$PROJECT_ROOT/.env"
+ENV_TEMPLATE="$PROJECT_ROOT/.env.template"
 
 # Colors for output
 RED='\033[0;31m'
@@ -13,15 +19,21 @@ echo -e "${GREEN}AI Assistant Container Management${NC}"
 echo "=================================="
 
 # Check if .env file exists
-if [ ! -f .env ]; then
-    echo -e "${YELLOW}Warning: .env file not found. Creating from template...${NC}"
-    cp .env.template .env
-    echo -e "${RED}Please edit .env file with your credentials before continuing!${NC}"
+if [ ! -f "$ENV_FILE" ]; then
+    echo -e "${YELLOW}Warning: .env file not found at $ENV_FILE. Creating from template...${NC}"
+    cp "$ENV_TEMPLATE" "$ENV_FILE"
+    echo -e "${RED}Please edit $ENV_FILE with your credentials before continuing!${NC}"
     exit 1
 fi
 
+
 # Load environment variables
-source .env
+source "$ENV_FILE"
+
+# Resolve credentials file to absolute path if not already
+if [[ "$GOOGLE_APPLICATION_CREDENTIALS" != /* ]]; then
+    GOOGLE_APPLICATION_CREDENTIALS="$PROJECT_ROOT/$GOOGLE_APPLICATION_CREDENTIALS"
+fi
 
 # Check for required variables
 if [ -z "$GEMINI_API_KEY" ] || [ "$GEMINI_API_KEY" = "your_gemini_api_key_here" ]; then
@@ -39,10 +51,27 @@ if [ ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
     exit 1
 fi
 
+# Detect container engine
+detect_container_engine() {
+    if command -v docker >/dev/null 2>&1; then
+        echo "docker"
+    elif command -v podman >/dev/null 2>&1; then
+        echo "podman"
+    else
+        echo "none"
+    fi
+}
+
+CONTAINER_ENGINE="$(detect_container_engine)"
+if [ "$CONTAINER_ENGINE" = "none" ]; then
+    echo -e "${RED}Error: Neither Docker nor Podman is installed. Please install one to continue.${NC}"
+    exit 1
+fi
+
 # Function to build the container
 build() {
-    echo -e "${GREEN}Building AI Assistant container...${NC}"
-    podman build -t ai-assistant -f Containerfile .
+    echo -e "${GREEN}Building AI Assistant container with $CONTAINER_ENGINE...${NC}"
+    $CONTAINER_ENGINE build -t ai-assistant -f Containerfile .
     echo -e "${GREEN}Build complete!${NC}"
 }
 
@@ -51,21 +80,21 @@ run() {
     echo -e "${GREEN}Starting AI Assistant container...${NC}"
     
     # Stop and remove existing container if it exists
-    podman rm -f ai-assistant 2>/dev/null || true
+    $CONTAINER_ENGINE rm -f ai-assistant 2>/dev/null || true
     
-    # Run the container
-    podman run -d \
-        --name ai-assistant \
-        -p ${PORT:-8080}:${PORT:-8080} \
-        -v "$GOOGLE_APPLICATION_CREDENTIALS:/app/credentials.json:ro" \
-        -e GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json \
-        -e GEMINI_API_KEY="$GEMINI_API_KEY" \
-        -e LANGUAGE_CODE="${LANGUAGE_CODE:-de-DE}" \
-        -e VOICE_NAME="${VOICE_NAME:-de-DE-Chirp-HD-F}" \
-        -e HOST="${HOST:-0.0.0.0}" \
-        -e PORT="${PORT:-8080}" \
-        -e LOG_LEVEL="${LOG_LEVEL:-INFO}" \
-        ai-assistant
+
+        $CONTAINER_ENGINE run -d \
+            --name ai-assistant \
+            -p ${PORT:-8080}:${PORT:-8080} \
+            -v "$GOOGLE_APPLICATION_CREDENTIALS:/app/credentials.json:ro" \
+            -e GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json \
+            -e GEMINI_API_KEY="$GEMINI_API_KEY" \
+            -e LANGUAGE_CODE="${LANGUAGE_CODE:-de-DE}" \
+            -e VOICE_NAME="${VOICE_NAME:-de-DE-Chirp-HD-F}" \
+            -e HOST="${HOST:-0.0.0.0}" \
+            -e PORT="${PORT:-8080}" \
+            -e LOG_LEVEL="${LOG_LEVEL:-INFO}" \
+            ai-assistant
     
     echo -e "${GREEN}Container started!${NC}"
     echo -e "WebSocket endpoint: ws://localhost:${PORT:-8080}/ws"
@@ -75,20 +104,20 @@ run() {
 # Function to stop the container
 stop() {
     echo -e "${YELLOW}Stopping AI Assistant container...${NC}"
-    podman stop ai-assistant
+    $CONTAINER_ENGINE stop ai-assistant
     echo -e "${GREEN}Container stopped${NC}"
 }
 
 # Function to view logs
 logs() {
     echo -e "${GREEN}Viewing container logs (Ctrl+C to exit)...${NC}"
-    podman logs -f ai-assistant
+    $CONTAINER_ENGINE logs -f ai-assistant
 }
 
 # Function to check status
 status() {
     echo -e "${GREEN}Checking container status...${NC}"
-    podman ps -a --filter "name=ai-assistant"
+    $CONTAINER_ENGINE ps -a --filter "name=ai-assistant"
     echo ""
     
     # Try to hit health endpoint
