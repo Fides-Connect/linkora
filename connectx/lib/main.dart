@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'widgets/particle_sphere.dart';
-import 'services/gemini_service.dart';
 import 'services/speech_service.dart';
 
 void main() async {
@@ -39,7 +38,6 @@ class ConnectXHomePage extends StatefulWidget {
 }
 
 class _ConnectXHomePageState extends State<ConnectXHomePage> {
-  late GeminiService _geminiService;
   late SpeechService _speechService;
 
   bool _isAnimating = false;
@@ -54,7 +52,6 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   }
 
   void _initializeServices() {
-    _geminiService = GeminiService();
     _speechService = SpeechService();
 
     // Set up speech service callbacks
@@ -62,7 +59,13 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       setState(() {
         _isChatting = true;
         _isAnimating = true;
-        _statusText = 'Listening...';
+        _statusText = 'Connecting to AI-Assistant...';
+      });
+    };
+
+    _speechService.onConnected = () {
+      setState(() {
+        _statusText = 'Connected! AI is listening and responding...';
       });
     };
 
@@ -70,51 +73,28 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       setState(() {
         _isChatting = false;
         _isAnimating = false;
-        _statusText = 'Processing...';
+        _statusText = 'Disconnected';
       });
     };
 
-    _speechService.onSpeechResult = (String result) {
-      _handleSpeechResult(result);
-    };
-  }
-
-  void _handleSpeechResult(String spokenText) async {
-    if (spokenText.isNotEmpty) {
+    _speechService.onDisconnected = () {
       setState(() {
-        _currentMessage = spokenText;
-        _statusText = 'Getting response from Gemini...';
+        _isChatting = false;
+        _isAnimating = false;
+        _statusText = 'Connection closed';
       });
+    };
 
-      try {
-        // Use streaming to get faster initial response
-        String fullResponse = '';
-        await for (final chunk in _geminiService.generateResponseStream(spokenText)) {
-          fullResponse += chunk;
-          // Start synthesizing as soon as we have a complete sentence
-          if (fullResponse.endsWith('.') || fullResponse.endsWith('!') || fullResponse.endsWith('?')) {
-            _speechService.synthesizeSpeech(fullResponse);
-            fullResponse = ''; // Reset for next sentence
-          }
-        }
-        // Synthesize any remaining text
-        if (fullResponse.isNotEmpty) {
-          _speechService.synthesizeSpeech(fullResponse);
-        }
-      } catch (e) {
-        setState(() {
-          _statusText = 'Error: ${e.toString()}';
-        });
-      }
-    }
   }
 
   void _startChat() async {
     try {
-      _speechService.startSpeech();
+      await _speechService.startSpeech();
     } catch (e) {
       setState(() {
         _statusText = 'Error: ${e.toString()}';
+        _isChatting = false;
+        _isAnimating = false;
       });
     }
   }
@@ -125,7 +105,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     try {
       _speechService.stopSpeech();
     } catch (e) {
-        _statusText = 'Error: ${e.toString()}';
+      print('Error stopping chat: $e');
     }
 
     setState(() {

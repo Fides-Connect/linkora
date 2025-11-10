@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""
+AI Assistant Service
+Provides WebRTC-based voice assistant functionality using Google Cloud services.
+"""
+import asyncio
+import logging
+import os
+from aiohttp import web
+from dotenv import load_dotenv
+
+from .signaling_server import SignalingServer
+from .ai_assistant import AIAssistant
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+async def main():
+    """Main application entry point."""
+    # Load environment variables
+    load_dotenv()
+
+    # Set log level from environment
+    logging.getLogger().setLevel(os.getenv('LOG_LEVEL', 'INFO').upper())
+    
+    logger.info("=" * 60)
+    logger.info("AI Assistant Service Starting")
+    logger.info("=" * 60)
+    
+    # Verify required environment variables
+    required_vars = [
+        'GEMINI_API_KEY'
+    ]
+    
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    if missing_vars:
+        logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
+        return
+    
+    # GOOGLE_APPLICATION_CREDENTIALS is optional in Cloud Run
+    credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+    if credentials_path and not os.path.exists(credentials_path):
+        logger.warning(f"Credentials file not found: {credentials_path}, will use default credentials")
+    
+    # Log configuration
+    logger.info("Configuration:")
+    logger.info(f"  Language: {os.getenv('LANGUAGE_CODE', 'de-DE')}")
+    logger.info(f"  Voice: {os.getenv('VOICE_NAME', 'de-DE-Chirp-HD-F')}")
+    logger.info(f"  Host: {os.getenv('HOST', '0.0.0.0')}")
+    logger.info(f"  Port: {os.getenv('PORT', 8080)}")
+    logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
+    logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
+    logger.debug(f"  Credentials: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
+    
+    # Initialize AI Assistant
+    logger.info("Initializing AI Assistant...")
+    ai_assistant = AIAssistant(
+        gemini_api_key=os.getenv('GEMINI_API_KEY'),
+        language_code=os.getenv('LANGUAGE_CODE', 'de-DE'),
+        voice_name=os.getenv('VOICE_NAME', 'de-DE-Chirp-HD-F')
+    )
+    
+    # Initialize signaling server
+    logger.info("Initializing signaling server...")
+    signaling_server = SignalingServer(ai_assistant)
+    
+    # Create web application
+    app = web.Application()
+    app.router.add_get('/ws', signaling_server.handle_websocket)
+    app.router.add_get('/health', signaling_server.health_check)
+    
+    # Start server
+    host = os.getenv('HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', 8080))
+    
+    logger.info(f"Starting AI Assistant server on {host}:{port}")
+    logger.info(f"WebSocket endpoint: ws://{host}:{port}/ws")
+    logger.info(f"Health check: http://{host}:{port}/health")
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host, port)
+    await site.start()
+    
+    logger.info("=" * 60)
+    logger.info("AI Assistant server is running")
+    logger.info("=" * 60)
+    
+    # Keep running
+    try:
+        await asyncio.Event().wait()
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+    finally:
+        logger.info("Cleanup started")
+        await runner.cleanup()
+        logger.info("Shutdown complete")
+
+
+if __name__ == '__main__':
+    asyncio.run(main())

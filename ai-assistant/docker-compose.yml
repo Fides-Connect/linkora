@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  ai-assistant:
+    build:
+      context: .
+      dockerfile: Containerfile
+    container_name: ai-assistant
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount your Google Cloud credentials
+      - ./credentials.json:/app/credentials.json:ro
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - LANGUAGE_CODE=${LANGUAGE_CODE:-de-DE}
+      - VOICE_NAME=${VOICE_NAME:-de-DE-Chirp-HD-F}
+      - HOST=0.0.0.0
+      - PORT=8080
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
