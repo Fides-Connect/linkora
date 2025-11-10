@@ -6,7 +6,6 @@ import asyncio
 import logging
 import numpy as np
 import time
-from typing import Optional
 from aiortc import MediaStreamTrack
 from av import AudioFrame
 from fractions import Fraction
@@ -98,7 +97,6 @@ class AudioOutputTrack(MediaStreamTrack):
             logger.debug(f"recv() called - queue size: {self.audio_queue.qsize()}, buffer size: {len(self._buffer)} samples")
             
             # Try to get audio from queue (non-blocking with short timeout)
-            has_new_audio = False
             try:
                 audio_data = await asyncio.wait_for(
                     self.audio_queue.get(),
@@ -110,7 +108,6 @@ class AudioOutputTrack(MediaStreamTrack):
                 new_samples = np.frombuffer(audio_data, dtype=np.int16)
                 self._buffer = np.concatenate([self._buffer, new_samples])
                 logger.debug(f"Buffer now has {len(self._buffer)} samples")
-                has_new_audio = True
                 
             except asyncio.TimeoutError:
                 # No audio available - we'll send comfort noise

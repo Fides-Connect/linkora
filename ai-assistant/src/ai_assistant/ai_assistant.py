@@ -171,6 +171,7 @@ class AIAssistant:
                 try:
                     await populate_task
                 except asyncio.CancelledError:
+                    # Task cancellation is expected during cleanup; ignore
                     pass
                 
                 # Wait for recognition thread to finish (with timeout)

@@ -4,7 +4,6 @@ Manages individual WebRTC connections and media streams.
 """
 import asyncio
 import logging
-import json
 from aiortc import (
     RTCPeerConnection,
     RTCSessionDescription,

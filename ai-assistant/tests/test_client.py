@@ -15,10 +15,9 @@ import websockets
 from aiortc import (
     RTCPeerConnection,
     RTCSessionDescription,
-    RTCIceCandidate,
     MediaStreamTrack
 )
-from aiortc.contrib.media import MediaPlayer, MediaRecorder
+from aiortc.contrib.media import MediaRecorder
 from av import AudioFrame
 import numpy as np
 

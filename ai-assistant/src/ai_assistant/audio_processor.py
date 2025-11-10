@@ -9,7 +9,6 @@ import re
 import wave
 import os
 from datetime import datetime
-from typing import Optional
 from aiortc import MediaStreamTrack
 from aiortc.mediastreams import MediaStreamError
 from av import AudioFrame
@@ -83,7 +82,6 @@ class AudioProcessor:
                 await self.stt_task
             except asyncio.CancelledError:
                 logger.debug("STT task cancelled successfully")
-                pass
         
         if self.processing_task:
             self.processing_task.cancel()
@@ -91,7 +89,6 @@ class AudioProcessor:
                 await self.processing_task
             except asyncio.CancelledError:
                 logger.debug("Audio processing task cancelled successfully")
-                pass
         
         # Save debug recording if enabled
         if self.debug_recording and len(self.debug_all_frames) > 0:
@@ -369,7 +366,6 @@ class AudioProcessor:
             sentence_buffer = ""
             
             # Mechanism to ensure sentences are played in order
-            next_sentence_to_play = 1
             sentence_events = {}  # Dict mapping sentence_num to asyncio.Event
             playback_lock = asyncio.Lock()
             
@@ -385,7 +381,7 @@ class AudioProcessor:
                     tts_start = asyncio.get_event_loop().time()
                     
                     # Create event for this sentence
-                    nonlocal next_sentence_to_play, sentence_events
+                    nonlocal sentence_events
                     my_event = asyncio.Event()
                     sentence_events[sentence_num] = my_event
                     
