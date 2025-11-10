@@ -491,7 +491,7 @@ class AudioProcessor:
                         
                         # Match sentence endings: . ! ? followed by whitespace or end of string
                         # Also match : followed by newline (for intro lines like "here is a story:")
-                        sentence_end_pattern = r'([.!?][\s\n]+|:\n)'
+                        sentence_end_pattern = r'([.!?,][\s\n]+|:\n)'
                         match = re.search(sentence_end_pattern, sentence_buffer)
                         
                         if match:

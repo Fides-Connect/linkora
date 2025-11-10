@@ -195,11 +195,7 @@ class WebRTCService {
         'iceServers': [
           {'urls': 'stun:stun.l.google.com:19302'},
         ],
-        'sdpSemantics': 'unified-plan',
-        // Enable low-latency audio playback
-        'audioJitterBufferMaxPackets': 20, // Reduced from default 200 for lower latency
-        'audioJitterBufferFastAccelerate': true, // Speed up playback when buffer fills
-        'audioJitterBufferMinDelayMs': 0, // Minimum delay (0 = lowest latency)
+        'sdpSemantics': 'unified-plan'
       };
       
       _peerConnection = await createPeerConnection(configuration);
@@ -301,11 +297,7 @@ class WebRTCService {
     try {
       final RTCSessionDescription offer = await _peerConnection!.createOffer({
         'offerToReceiveAudio': true,
-        'offerToReceiveVideo': false,
-        // Low-latency audio settings
-        'voiceActivityDetection': false, // Disable VAD to reduce processing delay
-        'googAutoGainControl': false, // Disable AGC on playback for lower latency
-        'googExperimentalAutoGainControl': false,
+        'offerToReceiveVideo': false
       });
       
       await _peerConnection!.setLocalDescription(offer);
