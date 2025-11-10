@@ -42,9 +42,9 @@ class AIAssistant:
         # Configure generation - AGGRESSIVE optimization for ultra-low latency
         self.generation_config = genai.types.GenerationConfig(
             temperature=0.9,  # Higher for faster, more varied sampling
-            top_k=10,  # Much lower for fastest token selection
-            top_p=0.95,
-            max_output_tokens=256  # Reduced for very fast response times
+            top_k=8,  # Much lower for fastest token selection
+            top_p=0.9,
+            max_output_tokens=128  # Reduced for very fast response times
         )
         
         logger.info("AI Assistant initialized")
@@ -238,7 +238,7 @@ class AIAssistant:
             )
             
             # Stream audio in chunks (larger chunks = fewer iterations = lower overhead)
-            chunk_size = 8192  # Increased from 4096 for better performance
+            chunk_size = 2048
             audio_content = response.audio_content
             
             for i in range(0, len(audio_content), chunk_size):
