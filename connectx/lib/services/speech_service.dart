@@ -20,7 +20,7 @@ class SpeechService {
 
   SpeechService();
 
-  void stopSpeech() {
+  void stopSpeech() async {
     // Stop and clean up WebRTC service
     _webrtcService?.disconnect();
     _webrtcService = null;
@@ -28,7 +28,7 @@ class SpeechService {
     // Stop and clean up audio renderer
     if (_remoteRenderer != null) {
       _remoteRenderer!.srcObject = null;
-      _remoteRenderer!.dispose();
+      await _remoteRenderer!.dispose();
       _remoteRenderer = null;
     }
   }
