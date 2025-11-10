@@ -1,292 +1,139 @@
 import 'dart:async';
-import 'dart:core';
-import 'dart:io' show Platform;
-import 'package:flutter/services.dart';
-
-import 'package:google_speech/google_speech.dart';
-import 'package:grpc/grpc.dart' hide Codec;
-import 'package:connectx/generated/cloud_tts.pbgrpc.dart' as cloud_tts;
 import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:taudio/taudio.dart' as ta;
+import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'webrtc_service.dart';
 
+/// Speech service that uses WebRTC to communicate with the AI-Assistant server
+/// The server handles Speech-to-Text, LLM processing, and Text-to-Speech
 class SpeechService {
-  // Recorder Services
-  ta.FlutterSoundRecorder? _recorder;
-  StreamController<Uint8List>? _recorderController;
-  Stream<Uint8List>? _recorderStream;
-
-  // Speech-to-Text components
-  StreamSubscription? _speechRecognitionSubscription;
-  SpeechToText? _speechToText;
-  ClientChannel? _clientChannel;
-  StreamingRecognitionConfig? _streamingConfig;
-
-  // Text-to-Speech components
-  ta.FlutterSoundPlayer? _player;
-  bool _isPlaying = false; // Flag to track if TTS is currently playing (I didn't find a robust way to check player state)
-  StreamSubscription<cloud_tts.StreamingSynthesizeResponse>?
-  _audioSynthesisSubscription;
-  cloud_tts.TextToSpeechClient? _textToSpeech;
+  // WebRTC service for server communication
+  WebRTCService? _webrtcService;
+  
+  // Remote audio renderer for WebRTC audio playback
+  RTCVideoRenderer? _remoteRenderer;
 
   // Callbacks
   Function()? onSpeechStart;
   Function()? onSpeechEnd;
-  Function(String)? onSpeechResult;
-
-  // Android audio-mode channel
-  static const MethodChannel _audioModeChannel = MethodChannel(
-    'connectx/audio_mode',
-  );
+  Function()? onConnected;
+  Function()? onDisconnected;
 
   SpeechService();
 
-  void stopSpeech() {
-    // Stop and clear recorder components
-    _recorder?.stopRecorder();
-    _recorder?.closeRecorder();
-    _recorderController?.close();
-    _recorderStream?.drain();
-    _recorder = null;
-    _recorderController = null;
-    _recorderStream = null;
+  void stopSpeech() async {
+    // Stop and clean up WebRTC service
+    _webrtcService?.disconnect();
+    _webrtcService = null;
 
-    // Stop and clear Speech-to-Text components
-    _speechRecognitionSubscription?.cancel();
-    _speechToText?.dispose();
-    _clientChannel?.shutdown();
-    _speechRecognitionSubscription = null;
-    _speechToText = null;
-    _clientChannel = null;
-    _streamingConfig = null;
-
-    // Stop and clear Text-to-Speech compnonents
-    _player?.stopPlayer();
-    _player?.closePlayer();
-    _audioSynthesisSubscription?.cancel();
-    _player = null;
-    _audioSynthesisSubscription = null;
-    _textToSpeech = null;
+    // Stop and clean up audio renderer
+    if (_remoteRenderer != null) {
+      _remoteRenderer!.srcObject = null;
+      await _remoteRenderer!.dispose();
+      _remoteRenderer = null;
+    }
   }
 
-  /// Streams audio chunks to Google Speech-to-Text and updates live transcription.
+  /// Start speech session by connecting to AI-Assistant server via WebRTC
+  /// The server will handle audio streaming, STT, LLM, and TTS processing
   Future<void> startSpeech() async {
     onSpeechStart?.call();
+    
     try {
+      // Initialize audio player and WebRTC
       await _initialize();
-
-      // Create a controller; pass its sink to taudio
-      _recorderController = StreamController<Uint8List>.broadcast();
-      _recorderStream = _recorderController!.stream;
-
-      await _recorder!.startRecorder(
-        codec: ta.Codec.pcm16,
-        numChannels: 1,
-        sampleRate: 16000,
-        toStream: _recorderController!.sink,
-        enableEchoCancellation: true,
-      );
-
-      final responseStream = _speechToText!.streamingRecognize(
-        _streamingConfig!,
-        _recorderStream!,
-      );
-
-      _speechRecognitionSubscription = responseStream.listen(
-        (data) async {
-          // Process only final results
-          for (final result in data.results) {
-            if (result.isFinal && result.alternatives.isNotEmpty) {
-              // Only call back with final transcript
-              onSpeechResult?.call(result.alternatives.first.transcript);
-            } else if (_isPlaying && result.alternatives.isNotEmpty) {
-              // Cancel current audio synthesis and stop playback if new speech is detected
-              try {
-                print('New speech detected, stopping TTS playback if any.');
-                await _audioSynthesisSubscription?.cancel();
-                await _initializePlayer();
-              } catch (e) {
-                print('Error stopping TTS playback: $e');
-              }
-            }
-          }
-        },
-        onError: (e) {
-          print('Error during speech recognition: $e');
-          onSpeechEnd?.call();
-        },
-      );
+      
+      // Connect to AI-Assistant server
+      await _webrtcService!.connect();
+      
+      print('SpeechService: Connected to AI-Assistant server');
+      
     } catch (e) {
-      print('Error in startSpeech: $e');
+      print('SpeechService: Error in startSpeech: $e');
       onSpeechEnd?.call();
       rethrow;
     }
   }
 
   Future<void> _initialize() async {
-    // Get OAuth Access Token from environment
-    final accessToken = dotenv.env['OAUTH_ACCESS_TOKEN'] ?? '';
-    if (accessToken.isEmpty) {
-      throw Exception('Missing OAUTH_ACCESS_TOKEN environment variable');
+    // Check microphone permission
+    final microphoneRequest = await Permission.microphone.request();
+    if (!microphoneRequest.isGranted) {
+      throw Exception('Microphone permission denied');
     }
 
-    // Android-specific audio mode setup
-    if (Platform.isAndroid) {
-      await _setAndroidCommunicationMode();
-    }
-
-    // Initialize Speech Service Components
-    if (_recorder == null) await _initializeRecorder();
-    if (_speechToText == null) _initializeSpeechToText(accessToken);
-    if (_textToSpeech == null) _initializeTextToSpeech(accessToken);
-    if (_player == null) await _initializePlayer();
-  }
-
-  Future<void> _setAndroidCommunicationMode() async {
-    try {
-      final res = await _audioModeChannel.invokeMethod<Map>(
-        'forceModeInCommunication',
-      );
-      print('Android audio mode set: $res');
-    } catch (e) {
-      print('Failed to set MODE_IN_COMMUNICATION: $e');
+    // Initialize WebRTC service
+    if (_webrtcService == null) {
+      _initializeWebRTC();
     }
   }
 
-  Future<void> _initializeRecorder() async {
-    try {
-      final microphoneRequest = await Permission.microphone.request();
-      if (!microphoneRequest.isGranted) {
-        throw Exception('Microphone permission denied');
-      }
-
-      if (_recorder == null) {
-        _recorder = ta.FlutterSoundRecorder();
-      } else {
-        await _recorder!.stopRecorder();
-        await _recorder!.closeRecorder();
-      }
-      await _recorder!.openRecorder();
-    } catch (e) {
-      print('Recorder initialization failed: $e');
-      rethrow;
-    }
-  }
-
-  void _initializeSpeechToText(String accessToken) {
-    try {
-      _streamingConfig = StreamingRecognitionConfig(
-        config: RecognitionConfig(
-          encoding: AudioEncoding.LINEAR16,
-          model: RecognitionModel.command_and_search,
-          enableAutomaticPunctuation: true,
-          sampleRateHertz: 16000,
-          languageCode: 'de-DE',
-          audioChannelCount: 1,
-        ),
-        interimResults: true,
-        singleUtterance: false, // Keep listening continuously
-      );
-      _speechToText = SpeechToText.viaToken('Bearer', accessToken);
-    } catch (e) {
-      print('Error initializing SpeechToText: $e');
+  void _initializeWebRTC() {
+    print('SpeechService: Initializing WebRTC service');
+    
+    _webrtcService = WebRTCService();
+    
+    // Set up WebRTC callbacks
+    _webrtcService!.onConnected = () async {
+      print('SpeechService: WebRTC connected');
+      onConnected?.call();
+    };
+    
+    _webrtcService!.onDisconnected = () {
+      print('SpeechService: WebRTC disconnected');
+      onDisconnected?.call();
       onSpeechEnd?.call();
-      rethrow;
-    }
+    };
+    
+    _webrtcService!.onRemoteStream = (MediaStream stream) {
+      print('SpeechService: Received remote audio stream');
+      Future.microtask(() => _handleRemoteStream(stream));
+    };
+    
+    _webrtcService!.onError = (String error) {
+      print('SpeechService: WebRTC error: $error');
+      onSpeechEnd?.call();
+    };
   }
 
-  void _initializeTextToSpeech(String accessToken) {
-    _clientChannel = ClientChannel(
-      'texttospeech.googleapis.com',
-      port: 443,
-      options: const ChannelOptions(
-        credentials: ChannelCredentials.secure(),
-        keepAlive: ClientKeepAliveOptions(
-          pingInterval: Duration(seconds: 60),
-          timeout: Duration(seconds: 10),
-          permitWithoutCalls: true,
-        ),
-      ),
-    );
-
-    _textToSpeech = cloud_tts.TextToSpeechClient(
-      _clientChannel!,
-      options: CallOptions(
-        metadata: {'Authorization': 'Bearer $accessToken'},
-        timeout: Duration(seconds: 10),
-      ),
-    );
-  }
-
-  Future<void> _initializePlayer() async {
-    if (_player == null) {
-      _player = ta.FlutterSoundPlayer(voiceProcessing: false);
-    } else {
-      await _player!.stopPlayer();
-      await _player!.closePlayer();
-    }
-    await _player!.openPlayer();
-    await _player!.startPlayerFromStream(
-      codec: ta.Codec.pcm16,
-      sampleRate: 16000,
-      interleaved: true,
-      bufferSize: 8192,
-      numChannels: 1,
-    );
-    _isPlaying = false;
-  }
-
-  void synthesizeSpeech(String text) {
-    print('synthesizeSpeech called with text: $text');
-    if (text.isNotEmpty) {
-      final streamingSynthesizeConfig = cloud_tts.StreamingSynthesizeConfig(
-        voice: cloud_tts.VoiceSelectionParams(
-          languageCode: "de-DE",
-          name: "de-DE-Chirp-HD-F",
-        ),
-        streamingAudioConfig: cloud_tts.StreamingAudioConfig(
-          audioEncoding: cloud_tts.AudioEncoding.PCM,
-          sampleRateHertz: 16000,
-        ),
-      );
-
-      final requestConfig = cloud_tts.StreamingSynthesizeRequest(
-        streamingConfig: streamingSynthesizeConfig,
-      );
-
-      final streamingSynthesisInput = cloud_tts.StreamingSynthesisInput(
-        text: text,
-      );
-
-      final requestText = cloud_tts.StreamingSynthesizeRequest(
-        input: streamingSynthesisInput,
-      );
-
-      final requestStream =
-          Stream<cloud_tts.StreamingSynthesizeRequest>.fromIterable([
-            requestConfig,
-            requestText,
-          ]);
-
-      final responseStream = _textToSpeech?.streamingSynthesize(
-        requestStream,
-        options: CallOptions(timeout: Duration(seconds: 10)), // Add explicit timeout
-      );
-
-      _isPlaying = true;
-
-      _audioSynthesisSubscription = responseStream?.listen(
-        (data) {
-          final audioChunk = Uint8List.fromList(data.audioContent);
-          _player?.uint8ListSink?.add(audioChunk);
-        },
-        onError: (e) {
-          print('Error during TTS streaming: $e');
-        },
-        onDone: () {
-          print('TTS streaming completed.');
-        },
-      );
+  /// Handle incoming remote audio stream from AI-Assistant server
+  /// This stream contains the processed audio (STT -> LLM -> TTS)
+  Future<void> _handleRemoteStream(MediaStream stream) async {
+    print('SpeechService: Setting up remote audio stream playback');
+    
+    try {
+      // Get the audio track
+      final audioTracks = stream.getAudioTracks();
+      if (audioTracks.isEmpty) {
+        print('SpeechService: No audio tracks in remote stream');
+        return;
+      }
+      
+      final audioTrack = audioTracks[0];
+      print('SpeechService: Got remote audio track: ${audioTrack.id}, enabled: ${audioTrack.enabled}, muted: ${audioTrack.muted}');
+      
+      // Clean up any existing renderer
+      if (_remoteRenderer != null) {
+        print('SpeechService: Disposing existing renderer');
+        _remoteRenderer!.srcObject = null;
+        await _remoteRenderer!.dispose();
+      }
+      
+      // Create and initialize an RTCVideoRenderer to handle the audio stream
+      print('SpeechService: Creating new RTCVideoRenderer');
+      _remoteRenderer = RTCVideoRenderer();
+      await _remoteRenderer!.initialize();
+      print('SpeechService: Renderer initialized');
+      
+      // Set the remote stream to the renderer
+      _remoteRenderer!.srcObject = stream;
+      print('SpeechService: Remote stream assigned to renderer');
+      
+      // Ensure the audio track is enabled and not muted
+      audioTrack.enabled = true;
+      
+    } catch (e) {
+      print('SpeechService: Error handling remote stream: $e');
+      print('SpeechService: Stack trace: ${StackTrace.current}');
     }
   }
 }
