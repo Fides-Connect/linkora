@@ -1,4 +1,4 @@
-name: Build APK in Dev Container
+name: Build ConnectX APK in Dev Container
 
 on:
   push:
