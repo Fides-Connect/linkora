@@ -49,10 +49,14 @@ class AIAssistant:
             temperature=0.9,  # Higher for faster, more varied sampling
             top_k=8,  # Much lower for fastest token selection
             top_p=0.9,
-            max_output_tokens=128  # Reduced for very fast response times
+            max_output_tokens=256  # Reduced for very fast response times
         )
         
         logger.info("AI Assistant initialized with gRPC streaming")
+        # Semaphore to limit concurrent Google API requests (TTS/LLM/STT)
+        # Default to 10 but allow override via environment variable for testing
+        max_concurrency = int(os.getenv('GOOGLE_API_CONCURRENCY', '10'))
+        self.google_api_semaphore = asyncio.Semaphore(max_concurrency)
     
     async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, bool]]:
         """
@@ -99,18 +103,20 @@ class AIAssistant:
                 
                 logger.info(f"Audio generator finished after {chunk_count} chunks")
             
-            # Perform async gRPC streaming recognition
-            logger.info("Starting async gRPC streaming recognition")
-            stream = await self.speech_client.streaming_recognize(requests=request_generator())
-            
-            # Process responses asynchronously
-            async for response in stream:
-                for result in response.results:
-                    if result.alternatives:
-                        transcript = result.alternatives[0].transcript
-                        is_final = result.is_final
-                        logger.debug(f"STT continuous: '{transcript}' (final={is_final})")
-                        yield (transcript, is_final)
+            # Perform async gRPC streaming recognition under semaphore
+            logger.info("Starting async gRPC streaming recognition (acquiring semaphore)")
+            async with self.google_api_semaphore:
+                logger.debug("Semaphore acquired for STT streaming")
+                stream = await self.speech_client.streaming_recognize(requests=request_generator())
+
+                # Process responses asynchronously
+                async for response in stream:
+                    for result in response.results:
+                        if result.alternatives:
+                            transcript = result.alternatives[0].transcript
+                            is_final = result.is_final
+                            logger.debug(f"STT continuous: '{transcript}' (final={is_final})")
+                            yield (transcript, is_final)
             
             logger.info("Async gRPC streaming recognition completed")
             
@@ -123,14 +129,18 @@ class AIAssistant:
         try:
             # Send message with streaming enabled
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.chat_session.send_message(
-                    prompt,
-                    generation_config=self.generation_config,
-                    stream=True
+            # Acquire semaphore before calling Gemini (synchronous call executed in executor)
+            logger.debug("Acquiring semaphore for LLM generate call")
+            async with self.google_api_semaphore:
+                logger.debug("Semaphore acquired for LLM generate call")
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: self.chat_session.send_message(
+                        prompt,
+                        generation_config=self.generation_config,
+                        stream=True
+                    )
                 )
-            )
             
             # Helper function to safely get next item from iterator
             # Returns (chunk, is_done) tuple to avoid StopIteration in executor
@@ -174,13 +184,15 @@ class AIAssistant:
                 sample_rate_hertz=48000,  # Match WebRTC's native rate - no resampling needed!
             )
             
-            # Perform async synthesis using gRPC
-            logger.debug(f"Starting async TTS synthesis for text: '{text[:50]}...'")
-            response = await self.tts_client.synthesize_speech(
-                input=synthesis_input,
-                voice=voice,
-                audio_config=audio_config
-            )
+            # Perform async synthesis using gRPC under semaphore control
+            logger.debug(f"Starting async TTS synthesis for text: '{text[:50]}...' (acquiring semaphore)")
+            async with self.google_api_semaphore:
+                logger.debug("Semaphore acquired for TTS synthesis")
+                response = await self.tts_client.synthesize_speech(
+                    input=synthesis_input,
+                    voice=voice,
+                    audio_config=audio_config
+                )
             
             # Stream audio in chunks (larger chunks = fewer iterations = lower overhead)
             chunk_size = 2048
