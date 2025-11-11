@@ -483,9 +483,9 @@ class AudioProcessor:
                     llm_parts.append(llm_chunk)
                     sentence_buffer += llm_chunk
                                    
-                    # Match sentence endings: . ! ? , followed by whitespace or end of string
+                    # Match sentence endings: . ! ? followed by whitespace or end of string
                     # Also match : followed by newline (for intro lines like "here is a story:")
-                    sentence_end_pattern = r'([.!?,][\s\n]+|:\n)'
+                    sentence_end_pattern = r'([.!?][\s\n]+|:\n)'
                     # We'll extract sentence boundaries and then merge any sentences that are too short
                     while True:
                         matches = list(re.finditer(sentence_end_pattern, sentence_buffer))
