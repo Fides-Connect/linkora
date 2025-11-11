@@ -50,10 +50,11 @@ async def main():
     # Log configuration
     logger.info("Configuration:")
     logger.info(f"  Language: {os.getenv('LANGUAGE_CODE', 'de-DE')}")
-    logger.info(f"  Voice: {os.getenv('VOICE_NAME', 'de-DE-Chirp-HD-F')}")
+    logger.info(f"  Voice: {os.getenv('VOICE_NAME', 'de-DE-Chirp3-HD-Sulafat')}")
     logger.info(f"  Host: {os.getenv('HOST', '0.0.0.0')}")
     logger.info(f"  Port: {os.getenv('PORT', 8080)}")
     logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
+    logger.info(f"  Google TTS API Concurrency: {os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5')}")
     logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
     logger.debug(f"  Credentials: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
     
@@ -62,7 +63,7 @@ async def main():
     ai_assistant = AIAssistant(
         gemini_api_key=os.getenv('GEMINI_API_KEY'),
         language_code=os.getenv('LANGUAGE_CODE', 'de-DE'),
-        voice_name=os.getenv('VOICE_NAME', 'de-DE-Chirp-HD-F')
+        voice_name=os.getenv('VOICE_NAME', 'de-DE-Chirp3-HD-Sulafat')
     )
     
     # Initialize signaling server

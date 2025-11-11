@@ -189,9 +189,10 @@ AI_ASSISTANT_SERVER_URL=ws://localhost:8080/ws
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 GEMINI_API_KEY=your_gemini_api_key_here
 LANGUAGE_CODE=de-DE
-VOICE_NAME=de-DE-Chirp-HD-F
+VOICE_NAME=de-DE-Chirp3-HD-Sulafat
 PORT=8080
 LOG_LEVEL=INFO
+GOOGLE_TTS_API_CONCURRENCY=5
 
 # Optional: Record received audio for debugging (creates debug_audio/*.wav files)
 DEBUG_RECORD_AUDIO=false

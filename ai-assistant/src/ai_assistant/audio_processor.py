@@ -482,10 +482,10 @@ class AudioProcessor:
                     logger.debug(f"LLM chunk: '{llm_chunk}'")
                     llm_parts.append(llm_chunk)
                     sentence_buffer += llm_chunk
-                    
-                    # Check for sentence boundaries - trigger on punctuation (with or without space/newline)
-                    # Process all sentences if multiple boundaries exist in the buffer
-                    sentence_end_pattern = r'([.!?,][\s\n]+|:\n|\n)'
+                                   
+                    # Match sentence endings: . ! ? , followed by whitespace or end of string
+                    # Also match : followed by newline (for intro lines like "here is a story:")
+                    sentence_end_pattern = r'([.!?,][\s\n]+|:\n)'
                     while True:
                         matches = list(re.finditer(sentence_end_pattern, sentence_buffer))
                         if matches:

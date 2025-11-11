@@ -19,7 +19,7 @@ class AIAssistant:
     """AI Assistant using Google Cloud services with gRPC streaming."""
     
     def __init__(self, gemini_api_key: str, language_code: str = 'de-DE', 
-                 voice_name: str = 'de-DE-Chirp-HD-F'):
+                 voice_name: str = 'de-DE-Chirp3-HD-Sulafat'):
         self.language_code = language_code
         self.voice_name = voice_name
         
@@ -54,8 +54,8 @@ class AIAssistant:
         
         logger.info("AI Assistant initialized with gRPC streaming")
         # Semaphore to limit concurrent Google API TTS requests for rate limiting
-        # Default to 8 but allow override via environment variable for testing
-        max_concurrency = int(os.getenv('GOOGLE_TTS_API_CONCURRENCY', '8'))
+        # Default to 5 but allow override via environment variable for testing
+        max_concurrency = int(os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5'))
         self.google_tts_api_semaphore = asyncio.Semaphore(max_concurrency)
     
     async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, bool]]:
