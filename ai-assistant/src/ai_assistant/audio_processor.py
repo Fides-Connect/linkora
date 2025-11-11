@@ -288,54 +288,27 @@ class AudioProcessor:
                         break
             
             # Stream to STT and process results
-            # Accumulate interim transcripts until SPEECH_ACTIVITY_END event
-            accumulated_transcript = ""
-            
-            async for transcript, event in self.ai_assistant.speech_to_text_continuous_stream(
+            async for transcript, is_final in self.ai_assistant.speech_to_text_continuous_stream(
                 audio_generator()
             ):
-                # Check for voice activity events first
-                if event is not None:
-                    try:
-                        # Import the enum to compare
-                        from google.cloud.speech_v1.types import cloud_speech
-                        speech_event_begin = cloud_speech.StreamingRecognizeResponse.SpeechEventType.SPEECH_ACTIVITY_BEGIN
-                        speech_event_end = cloud_speech.StreamingRecognizeResponse.SpeechEventType.SPEECH_ACTIVITY_END
-                        
-                        # SPEECH_ACTIVITY_BEGIN while AI is speaking = interrupt
-                        if event == speech_event_begin:
-                            if self.is_ai_speaking:
-                                logger.info(f"🛑 INTERRUPT detected! User started speaking (SPEECH_ACTIVITY_BEGIN) while AI responds")
-                                await self._trigger_interrupt()
-                                # Give a moment for the interrupt to take effect
-                                await asyncio.sleep(0.05)
-                                # Clear accumulated transcript on interrupt
-                                accumulated_transcript = ""
-                                continue
-                            else:
-                                logger.debug(f"🎤 SPEECH_ACTIVITY_BEGIN - user started speaking")
-                        
-                        # SPEECH_ACTIVITY_END = process the accumulated transcript
-                        elif event == speech_event_end:
-                            logger.info(f"🎤 SPEECH_ACTIVITY_END detected - processing transcript: '{accumulated_transcript}'")
-                            # Process the accumulated transcript when voice activity ends
-                            if accumulated_transcript.strip() and not self.is_ai_speaking:
-                                await self._process_final_transcript(accumulated_transcript)
-                                accumulated_transcript = ""  # Clear after processing
-                            elif not accumulated_transcript.strip():
-                                logger.info(f"SPEECH_ACTIVITY_END received but no transcript accumulated - skipping")
-                                accumulated_transcript = ""  # Clear anyway
-                            elif self.is_ai_speaking:
-                                logger.warning(f"Skipping processing - AI still speaking despite interrupt")
-                                accumulated_transcript = ""  # Clear anyway
-                    except Exception as e:
-                        logger.error(f"Error checking speech event: {e}", exc_info=True)
-                
-                # Update accumulated transcript if we received one
                 if transcript:
-                    # Accumulate transcript - always update with latest
-                    accumulated_transcript = transcript
-                    logger.debug(f"Transcript accumulated: '{accumulated_transcript}'")
+                    # Check if AI is currently speaking - if so, trigger interrupt
+                    if self.is_ai_speaking and len(transcript.strip()) > 0:
+                        logger.info(f"🛑 INTERRUPT detected! User speaking while AI responds: '{transcript}'")
+                        await self._trigger_interrupt()
+                        # Give a moment for the interrupt to take effect
+                        await asyncio.sleep(0.05)
+                    
+                    if is_final:
+                        logger.info(f"Final transcript: '{transcript}'")
+                        # Process the transcript (interrupt already cleared speaking flag if needed)
+                        if not self.is_ai_speaking:
+                            await self._process_final_transcript(transcript)
+                        else:
+                            logger.warning(f"Skipping processing - AI still speaking despite interrupt")
+                    else:
+                        logger.debug(f"Interim transcript: '{transcript}'")
+                        # Interim results also trigger interruption if AI is speaking
             
             logger.info("Continuous STT streaming ended")
             
@@ -510,9 +483,9 @@ class AudioProcessor:
                     llm_parts.append(llm_chunk)
                     sentence_buffer += llm_chunk
                                    
-                    # Match sentence endings: . ! ? followed by whitespace or end of string
+                    # Match sentence endings: . ! ? , followed by whitespace or end of string
                     # Also match : followed by newline (for intro lines like "here is a story:")
-                    sentence_end_pattern = r'([.!?][\s\n]+|:\n)'
+                    sentence_end_pattern = r'([.!?,][\s\n]+|:\n)'
                     # We'll extract sentence boundaries and then merge any sentences that are too short
                     while True:
                         matches = list(re.finditer(sentence_end_pattern, sentence_buffer))
