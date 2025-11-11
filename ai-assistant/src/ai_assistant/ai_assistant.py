@@ -132,9 +132,25 @@ class AIAssistant:
                 )
             )
             
-            # Yield text chunks as they arrive
-            for chunk in response:
-                if chunk.text:
+            # Helper function to safely get next item from iterator
+            # Returns (chunk, is_done) tuple to avoid StopIteration in executor
+            def get_next_chunk(iterator):
+                try:
+                    return (next(iterator), False)
+                except StopIteration:
+                    return (None, True)
+            
+            # Convert the synchronous iterator to async by running each next() in executor
+            # This allows proper streaming without blocking the event loop
+            response_iter = iter(response)
+            while True:
+                # Get next chunk in executor to avoid blocking
+                chunk, is_done = await loop.run_in_executor(None, get_next_chunk, response_iter)
+                
+                if is_done:
+                    break
+                    
+                if chunk and chunk.text:
                     logger.debug(f"LLM stream chunk: '{chunk.text}'")
                     yield chunk.text
             

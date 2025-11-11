@@ -484,59 +484,45 @@ class AudioProcessor:
                     sentence_buffer += llm_chunk
                     
                     # Check for sentence boundaries - trigger on punctuation (with or without space/newline)
-                    # Process multiple sentences if they exist in the buffer
+                    # Process all sentences if multiple boundaries exist in the buffer
+                    sentence_end_pattern = r'([.!?,][\s\n]+|:\n|\n)'
                     while True:
-                        # Find sentence-ending punctuation (. ! ?) followed by space, newline, or end of text
-                        # Also handle mid-sentence splits for long text
-                        
-                        # Match sentence endings: . ! ? followed by whitespace or end of string
-                        # Also match : followed by newline (for intro lines like "here is a story:")
-                        sentence_end_pattern = r'([.!?,][\s\n]+|:\n)'
-                        match = re.search(sentence_end_pattern, sentence_buffer)
-                        
-                        if match:
-                            end_pos = match.end()
-                            sentence = sentence_buffer[:end_pos].strip()
-                            
-                            # Only split if we have meaningful content (at least 3 words)
-                            word_count = len(sentence.split())
-                            if word_count >= 3:
-                                sentence_buffer = sentence_buffer[end_pos:]
-                                
-                                if sentence:
+                        matches = list(re.finditer(sentence_end_pattern, sentence_buffer))
+                        if matches:
+                            # Process all matches in order
+                            last_end = 0
+                            for match in matches:
+                                end_pos = match.end()
+                                sentence = sentence_buffer[last_end:end_pos].strip()
+                                word_count = len(sentence.split())
+                                if word_count >= 1:
                                     sentence_num += 1
                                     logger.debug(f"Sentence {sentence_num} extracted ({word_count} words): '{sentence[:50]}...'")
-                                    # Start TTS task immediately (don't await - process in parallel)
                                     task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
                                     tts_tasks.append(task)
-                                    self.current_tts_tasks.append(task)  # Track for interruption
-                            else:
-                                # Not enough words yet, wait for more text
-                                break
+                                    self.current_tts_tasks.append(task)
+                                last_end = end_pos
+                            # Remove processed sentences from buffer
+                            sentence_buffer = sentence_buffer[last_end:]
                         else:
                             # No sentence boundary found - check if buffer is getting too long
-                            # If we have 20+ words, split at a comma or dash to start streaming earlier
                             word_count = len(sentence_buffer.split())
                             if word_count >= 20:
-                                # Find a good break point (comma, dash, semicolon)
                                 break_pattern = r'([,;—–-]\s+)'
                                 break_match = re.search(break_pattern, sentence_buffer)
                                 if break_match:
                                     end_pos = break_match.end()
                                     sentence = sentence_buffer[:end_pos].strip()
                                     sentence_buffer = sentence_buffer[end_pos:]
-                                    
                                     if sentence:
                                         sentence_num += 1
                                         logger.debug(f"Sentence {sentence_num} extracted at break ({word_count} words): '{sentence[:50]}...'")
                                         task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
                                         tts_tasks.append(task)
-                                        self.current_tts_tasks.append(task)  # Track for interruption
+                                        self.current_tts_tasks.append(task)
                                 else:
-                                    # No good break point, wait for punctuation
                                     break
                             else:
-                                # Not enough text yet, wait for more
                                 break
             
             llm_duration = asyncio.get_event_loop().time() - llm_start
@@ -552,11 +538,16 @@ class AudioProcessor:
                 tts_tasks.append(task)
                 self.current_tts_tasks.append(task)  # Track for interruption
             
-            # Wait for all TTS tasks to complete
+            # Don't wait for all TTS tasks - let them complete in background
+            # Audio will start playing as soon as the first sentence is ready
             if tts_tasks:
-                logger.info(f"Waiting for {len(tts_tasks)} TTS tasks to complete...")
-                await asyncio.gather(*tts_tasks, return_exceptions=True)
-                perf_times['tts_complete'] = asyncio.get_event_loop().time()
+                logger.info(f"Started {len(tts_tasks)} TTS tasks - audio will play as each completes")
+                # Monitor TTS completion in background without blocking
+                async def monitor_tts_completion():
+                    await asyncio.gather(*tts_tasks, return_exceptions=True)
+                    perf_times['tts_complete'] = asyncio.get_event_loop().time()
+                    logger.info(f"All {len(tts_tasks)} TTS tasks completed")
+                asyncio.create_task(monitor_tts_completion())
             
             # Keep speaking flag true while audio is still in the queue/playing
             # We'll clear it in a background task that monitors the queue
