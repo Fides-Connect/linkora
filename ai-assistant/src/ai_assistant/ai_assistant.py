@@ -58,13 +58,16 @@ class AIAssistant:
         max_concurrency = int(os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5'))
         self.google_tts_api_semaphore = asyncio.Semaphore(max_concurrency)
     
-    async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, bool]]:
+    async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, object]]:
         """
-        Continuously stream audio to STT using async gRPC and yield (transcript, is_final) tuples.
+        Continuously stream audio to STT using async gRPC and yield (transcript, event) tuples.
         This method accepts an async generator that yields audio chunks.
-        Returns tuples of (transcript, is_final) where is_final indicates if the result is final.
+        Returns tuples of (transcript, event) where:
+        - transcript: recognized text (interim or final)
+        - event: speech_event_type (e.g., SPEECH_ACTIVITY_END) or None
         
-        Uses native async gRPC streaming for optimal latency.
+        Uses native async gRPC streaming for optimal latency with voice activity detection.
+        Processing is triggered by SPEECH_ACTIVITY_END event
         """
         try:
             # Configure streaming recognition
@@ -74,14 +77,15 @@ class AIAssistant:
                 language_code=self.language_code,
                 audio_channel_count=1,
                 enable_automatic_punctuation=True,
-                model='latest_long',
+                model='command_and_search',
                 use_enhanced=True
             )
             
             streaming_config = speech.StreamingRecognitionConfig(
                 config=config,
-                interim_results=True,  # Enable interim results to show progress
+                interim_results=True,  # Enable interim results for continuous updates
                 single_utterance=False,  # Keep listening continuously
+                enable_voice_activity_events=True
             )
             
             # Create async generator for gRPC requests
@@ -109,18 +113,38 @@ class AIAssistant:
 
             # Process responses asynchronously
             async for response in stream:
+                # Detect any speech/voice-activity event on the response
+                event = None
+                try:
+                    if hasattr(response, "speech_event_type") and response.speech_event_type:
+                        event = response.speech_event_type
+                        # Log the event with its name
+                        event_name = speech.StreamingRecognizeResponse.SpeechEventType(event).name
+                        logger.info(f"🎤 STT speech event: {event_name} (value={event})")
+                except Exception as e:
+                    logger.debug(f"Could not extract speech event: {e}")
+                    event = None
+
+                # Check if there are any results
+                has_results = False
                 for result in response.results:
                     if result.alternatives:
+                        has_results = True
                         transcript = result.alternatives[0].transcript
-                        is_final = result.is_final
-                        logger.debug(f"STT continuous: '{transcript}' (final={is_final})")
-                        yield (transcript, is_final)
+                        logger.debug(f"STT continuous: '{transcript}' (event={event})")
+                        # Yield transcript and the speech event
+                        yield (transcript, event)
+                
+                # If there are no results but there's an event, yield it with empty transcript
+                if not has_results and event is not None:
+                    logger.debug(f"STT event without transcript (event={event})")
+                    yield ("", event)
             
             logger.info("Async gRPC streaming recognition completed")
             
         except Exception as e:
             logger.error(f"Continuous streaming speech-to-text error: {e}", exc_info=True)
-            yield ("", False)
+            yield ("", None)
     
     async def generate_llm_response_stream(self, prompt: str) -> AsyncIterator[str]:
         """Generate streaming response using Gemini LLM for low latency."""
