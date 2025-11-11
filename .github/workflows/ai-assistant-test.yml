@@ -2,7 +2,7 @@ name: AI Assistant Integration Test
 
 on:
   push:
-    branches: [main, feature/*]
+    branches: [main]
     paths:
       - 'ai-assistant/**'
       - '.github/workflows/ai-assistant-test.yml'
