@@ -54,12 +54,7 @@ class AudioFileTrack(MediaStreamTrack):
             self.position = 0
 
     async def recv(self) -> AudioFrame:
-        """Receive next audio frame."""
-        # Check if we've reached the end
-        if self.position >= len(self.audio_data):
-            # Loop back to start or send silence
-            self.position = 0
-        
+        """Receive next audio frame."""       
         # Get next chunk
         end_pos = min(self.position + self.samples_per_frame, len(self.audio_data))
         chunk = self.audio_data[self.position:end_pos]
@@ -140,7 +135,7 @@ class TestClient:
                 self.recorder.addTrack(track)
                 await self.recorder.start()
                 logger.info("Recorder started - saving to output.wav at track's native sample rate")
-                logger.info(f"Track sample rate will be: {track.kind} track (24kHz expected from TTS)")
+                logger.info(f"Track sample rate will be: {track.kind} track (48kHz expected from TTS)")
         
         # Add audio track
         if audio_file and Path(audio_file).exists():

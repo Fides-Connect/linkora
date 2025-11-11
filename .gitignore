@@ -64,5 +64,8 @@ app.*.symbols
 # Environment variables file
 .env
 
+# Python Virtual Environment
+.venv
+
 # Service Account Json File
 gen-lang-client*.json
