@@ -486,22 +486,51 @@ class AudioProcessor:
                     # Match sentence endings: . ! ? , followed by whitespace or end of string
                     # Also match : followed by newline (for intro lines like "here is a story:")
                     sentence_end_pattern = r'([.!?,][\s\n]+|:\n)'
+                    # We'll extract sentence boundaries and then merge any sentences that are too short
                     while True:
                         matches = list(re.finditer(sentence_end_pattern, sentence_buffer))
                         if matches:
                             # Process all matches in order
                             last_end = 0
+                            extracted = []  # list of (sentence_text)
                             for match in matches:
                                 end_pos = match.end()
                                 sentence = sentence_buffer[last_end:end_pos].strip()
-                                sentence_num += 1
-                                logger.debug(f"Sentence {sentence_num} extracted ({word_count} words): '{sentence[:50]}...'")
-                                task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
-                                tts_tasks.append(task)
-                                self.current_tts_tasks.append(task)
+                                if sentence:
+                                    extracted.append(sentence)
                                 last_end = end_pos
+
                             # Remove processed sentences from buffer
                             sentence_buffer = sentence_buffer[last_end:]
+
+                            # Merge short sentences (<3 words) with following sentences
+                            merged_sentences = []
+                            i = 0
+                            while i < len(extracted):
+                                s = extracted[i]
+                                word_count = len(s.split())
+                                if word_count >= 3:
+                                    merged_sentences.append(s)
+                                    i += 1
+                                else:
+                                    # Merge with following sentences until we reach >=3 words or run out
+                                    merged = s
+                                    i += 1
+                                    while word_count < 3 and i < len(extracted):
+                                        merged = (merged + " " + extracted[i]).strip()
+                                        word_count = len(merged.split())
+                                        i += 1
+                                    merged_sentences.append(merged)
+
+                            # Create tasks for merged sentences
+                            for sent in merged_sentences:
+                                if sent:
+                                    sentence_num += 1
+                                    wc = len(sent.split())
+                                    logger.debug(f"Sentence {sentence_num} extracted ({wc} words): '{sent[:50]}...'")
+                                    task = asyncio.create_task(process_sentence_to_audio(sent, sentence_num))
+                                    tts_tasks.append(task)
+                                    self.current_tts_tasks.append(task)
                         else:
                             # No sentence boundary found - check if buffer is getting too long
                             word_count = len(sentence_buffer.split())
