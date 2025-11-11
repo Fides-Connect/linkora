@@ -495,7 +495,7 @@ class AudioProcessor:
                                 end_pos = match.end()
                                 sentence = sentence_buffer[last_end:end_pos].strip()
                                 word_count = len(sentence.split())
-                                if word_count >= 1:
+                                if word_count >= 3:
                                     sentence_num += 1
                                     logger.debug(f"Sentence {sentence_num} extracted ({word_count} words): '{sentence[:50]}...'")
                                     task = asyncio.create_task(process_sentence_to_audio(sentence, sentence_num))
