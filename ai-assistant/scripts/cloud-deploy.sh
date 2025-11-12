@@ -7,11 +7,11 @@
 set -e
 
 # Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'
+NC=$'\033[0m' # No Color
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -141,7 +141,7 @@ deploy_compute_engine() {
             gcloud compute instances update-container "$VM_NAME" \
                 --zone="$ZONE" \
                 --container-image="$IMAGE_TAG" \
-                --container-env="GEMINI_API_KEY=${GEMINI_API_KEY},LANGUAGE_CODE=${LANGUAGE_CODE:-de-DE},VOICE_NAME=${VOICE_NAME:-de-DE-Chirp-HD-F},LOG_LEVEL=${LOG_LEVEL:-INFO}"
+                --container-env="GEMINI_API_KEY=${GEMINI_API_KEY},LANGUAGE_CODE=${LANGUAGE_CODE:-de-DE},VOICE_NAME=${VOICE_NAME:-de-DE-Chirp3-HD-Sulafat},LOG_LEVEL=${LOG_LEVEL:-INFO},GOOGLE_TTS_API_CONCURRENCY=${GOOGLE_TTS_API_CONCURRENCY:-5}"
             print_success "VM updated successfully"
             return
         fi
@@ -151,7 +151,7 @@ deploy_compute_engine() {
     print_info "Creating VM with container..."
     gcloud compute instances create-with-container "$VM_NAME" \
         --container-image="$IMAGE_TAG" \
-        --container-env="GEMINI_API_KEY=${GEMINI_API_KEY},LANGUAGE_CODE=${LANGUAGE_CODE:-de-DE},VOICE_NAME=${VOICE_NAME:-de-DE-Chirp-HD-F},LOG_LEVEL=${LOG_LEVEL:-INFO}" \
+        --container-env="GEMINI_API_KEY=${GEMINI_API_KEY},LANGUAGE_CODE=${LANGUAGE_CODE:-de-DE},VOICE_NAME=${VOICE_NAME:-de-DE-Chirp3-HD-Sulafat},LOG_LEVEL=${LOG_LEVEL:-INFO},GOOGLE_TTS_API_CONCURRENCY=${GOOGLE_TTS_API_CONCURRENCY:-5}" \
         --machine-type="$MACHINE_TYPE" \
         --zone="$ZONE" \
         --tags=ai-assistant \
@@ -204,7 +204,7 @@ deploy_cloud_run() {
         --platform managed \
         --region "$REGION" \
         --port 8080 \
-        --set-env-vars "GEMINI_API_KEY=${GEMINI_API_KEY},LANGUAGE_CODE=${LANGUAGE_CODE:-de-DE},VOICE_NAME=${VOICE_NAME:-de-DE-Chirp-HD-F},LOG_LEVEL=${LOG_LEVEL:-INFO}" \
+        --set-env-vars "GEMINI_API_KEY=${GEMINI_API_KEY},LANGUAGE_CODE=${LANGUAGE_CODE:-de-DE},VOICE_NAME=${VOICE_NAME:-de-DE-Chirp3-HD-Sulafat},LOG_LEVEL=${LOG_LEVEL:-INFO},GOOGLE_TTS_API_CONCURRENCY=${GOOGLE_TTS_API_CONCURRENCY:-5}" \
         --service-account "$SERVICE_ACCOUNT" \
         --allow-unauthenticated \
         --min-instances 0 \
@@ -337,14 +337,15 @@ ${GREEN}Commands:${NC}
     ${YELLOW}config${NC}                 Show current configuration
 
 ${GREEN}Environment Variables:${NC}
-    GCP_PROJECT_ID          Google Cloud project ID (default: $DEFAULT_PROJECT_ID)
-    GCP_SERVICE_ACCOUNT     Service account email (default: $DEFAULT_SERVICE_ACCOUNT)
-    GCP_REGION              Region for Cloud Run (default: $DEFAULT_REGION)
-    GCP_ZONE                Zone for Compute Engine (default: $DEFAULT_ZONE)
-    GEMINI_API_KEY          Gemini API key (required)
-    LANGUAGE_CODE           Language code (default: de-DE)
-    VOICE_NAME              Voice name (default: de-DE-Chirp-HD-F)
-    LOG_LEVEL               Logging level (default: INFO)
+    GCP_PROJECT_ID              Google Cloud project ID (default: $DEFAULT_PROJECT_ID)
+    GCP_SERVICE_ACCOUNT         Service account email (default: $DEFAULT_SERVICE_ACCOUNT)
+    GCP_REGION                  Region for Cloud Run (default: $DEFAULT_REGION)
+    GCP_ZONE                    Zone for Compute Engine (default: $DEFAULT_ZONE)
+    GEMINI_API_KEY              Gemini API key (required)
+    LANGUAGE_CODE               Language code (default: de-DE)
+    VOICE_NAME                  Voice name (default: de-DE-Chirp3-HD-Sulafat)
+    LOG_LEVEL                   Logging level (default: INFO)
+    GOOGLE_TTS_API_CONCURRENCY  Concurrency for Google TTS API (default: 5)
 
 ${GREEN}Examples:${NC}
     # Full deployment to Compute Engine
@@ -387,8 +388,9 @@ show_config() {
     echo "Environment:"
     echo "  GEMINI_API_KEY: ${GEMINI_API_KEY:+****${GEMINI_API_KEY: -4}}"
     echo "  LANGUAGE_CODE: ${LANGUAGE_CODE:-de-DE}"
-    echo "  VOICE_NAME: ${VOICE_NAME:-de-DE-Chirp-HD-F}"
+    echo "  VOICE_NAME: ${VOICE_NAME:-de-DE-Chirp3-HD-Sulafat}"
     echo "  LOG_LEVEL: ${LOG_LEVEL:-INFO}"
+    echo "  GOOGLE_TTS_API_CONCURRENCY: ${GOOGLE_TTS_API_CONCURRENCY:-5}"
     echo ""
 }
 

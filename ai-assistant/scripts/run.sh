@@ -90,10 +90,11 @@ run() {
             -e GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json \
             -e GEMINI_API_KEY="$GEMINI_API_KEY" \
             -e LANGUAGE_CODE="${LANGUAGE_CODE:-de-DE}" \
-            -e VOICE_NAME="${VOICE_NAME:-de-DE-Chirp-HD-F}" \
+            -e VOICE_NAME="${VOICE_NAME:-de-DE-Chirp3-HD-Sulafat}" \
             -e HOST="${HOST:-0.0.0.0}" \
             -e PORT="${PORT:-8080}" \
             -e LOG_LEVEL="${LOG_LEVEL:-INFO}" \
+            -e GOOGLE_TTS_API_CONCURRENCY="${GOOGLE_TTS_API_CONCURRENCY:-5}" \
             ai-assistant
     
     echo -e "${GREEN}Container started!${NC}"
