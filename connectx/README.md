@@ -226,7 +226,7 @@ SpeechService: Remote audio stream is now playing through speakers
 
 ## Platform Support
 
-- ✅ iOS (10.0+)
+- ⚠️ iOS (10.0+) (WebRTC supported but not fully tested)
 - ✅ Android (5.0+)
 - ⚠️ Web (WebRTC supported but not fully tested)
 - ❌ Desktop (not currently supported)
@@ -248,8 +248,7 @@ connectx/
 ├── template.env                    # Environment template
 ├── pubspec.yaml                    # Dependencies
 └── README.md                       # This file
-```
-└── README.md                       # This file
+├── requirements.txt                # Python dependencies
 ```
 
 ### Running Tests

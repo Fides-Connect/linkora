@@ -3,9 +3,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'widgets/particle_sphere.dart';
 import 'services/speech_service.dart';
+import 'services/auth_service.dart';
+import 'pages/start_page.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(); // Load environment variables from .env file
+
+  // Initialize Google Sign-In early (important for web plugin)
+  try {
+    await AuthService().initialize();
+  } catch (_) {}
+
   runApp(const ConnectXApp());
 }
 
@@ -24,7 +33,10 @@ class ConnectXApp extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: const Color(0xFF0A0A0A),
       ),
-      home: const ConnectXHomePage(),
+      home: const StartPage(),
+      routes: {
+        '/home': (context) => const ConnectXHomePage(),
+      },
       debugShowCheckedModeBanner: false,
     );
   }
