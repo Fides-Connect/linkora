@@ -322,7 +322,7 @@ cp .env.template .env
 GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 GEMINI_API_KEY=your_api_key_here
 LANGUAGE_CODE=de-DE
-VOICE_NAME=de-DE-Chirp-HD-F
+VOICE_NAME=de-DE-Chirp3-HD-Sulafat
 ```
 
 #### 5. Run Locally
@@ -396,10 +396,11 @@ podman-compose down
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LANGUAGE_CODE` | Language for STT/TTS | `de-DE` |
-| `VOICE_NAME` | TTS voice model | `de-DE-Chirp-HD-F` |
+| `VOICE_NAME` | TTS voice model | `de-DE-Chirp3-HD-Sulafat` |
 | `HOST` | Server host | `0.0.0.0` |
 | `PORT` | Server port | `8080` |
 | `LOG_LEVEL` | Logging level | `INFO` |
+| `GOOGLE_TTS_API_CONCURRENCY` | Max. conncurrent requests to Google TTS API  | `5` |
 | `DEBUG_RECORD_AUDIO` | Record received audio to WAV files | `false` |
 
 ### Available Languages & Voices
@@ -411,7 +412,7 @@ podman-compose down
 - `de-DE-Wavenet-D` (Male)
 - `de-DE-Wavenet-E` (Male)
 - `de-DE-Wavenet-F` (Female)
-- `de-DE-Chirp-HD-F` (Female, High Quality) - **Default**
+- `de-DE-Chirp3-HD-Sulafat` (Female, High Quality) - **Default**
 
 #### English US (en-US)
 - `en-US-Wavenet-A` (Male)
@@ -776,7 +777,7 @@ The AI Assistant includes an automated deployment script for Google Cloud Platfo
    ```bash
    GEMINI_API_KEY=your-api-key
    LANGUAGE_CODE=de-DE
-   VOICE_NAME=de-DE-Chirp-HD-F
+   VOICE_NAME=de-DE-Chirp3-HD-Sulafat
    LOG_LEVEL=INFO
    ```
 
@@ -901,7 +902,7 @@ podman push gcr.io/PROJECT_ID/ai-assistant
 # Create VM with container
 gcloud compute instances create-with-container ai-assistant-vm \
   --container-image=gcr.io/PROJECT_ID/ai-assistant \
-  --container-env=GEMINI_API_KEY=...,LANGUAGE_CODE=de-DE,VOICE_NAME=de-DE-Chirp-HD-F \
+  --container-env=GEMINI_API_KEY=...,LANGUAGE_CODE=de-DE,VOICE_NAME=de-DE-Chirp3-HD-Sulafat \
   --machine-type=e2-medium \
   --zone=europe-west3-a \
   --tags=ai-assistant \

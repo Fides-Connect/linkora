@@ -19,7 +19,7 @@ class AIAssistant:
     """AI Assistant using Google Cloud services with gRPC streaming."""
     
     def __init__(self, gemini_api_key: str, language_code: str = 'de-DE', 
-                 voice_name: str = 'de-DE-Chirp-HD-F'):
+                 voice_name: str = 'de-DE-Chirp3-HD-Sulafat'):
         self.language_code = language_code
         self.voice_name = voice_name
         
@@ -49,10 +49,14 @@ class AIAssistant:
             temperature=0.9,  # Higher for faster, more varied sampling
             top_k=8,  # Much lower for fastest token selection
             top_p=0.9,
-            max_output_tokens=128  # Reduced for very fast response times
+            max_output_tokens=512
         )
         
         logger.info("AI Assistant initialized with gRPC streaming")
+        # Semaphore to limit concurrent Google API TTS requests for rate limiting
+        # Default to 5 but allow override via environment variable for testing
+        max_concurrency = int(os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5'))
+        self.google_tts_api_semaphore = asyncio.Semaphore(max_concurrency)
     
     async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, bool]]:
         """
@@ -102,7 +106,7 @@ class AIAssistant:
             # Perform async gRPC streaming recognition
             logger.info("Starting async gRPC streaming recognition")
             stream = await self.speech_client.streaming_recognize(requests=request_generator())
-            
+
             # Process responses asynchronously
             async for response in stream:
                 for result in response.results:
@@ -132,9 +136,25 @@ class AIAssistant:
                 )
             )
             
-            # Yield text chunks as they arrive
-            for chunk in response:
-                if chunk.text:
+            # Helper function to safely get next item from iterator
+            # Returns (chunk, is_done) tuple to avoid StopIteration in executor
+            def get_next_chunk(iterator):
+                try:
+                    return (next(iterator), False)
+                except StopIteration:
+                    return (None, True)
+            
+            # Convert the synchronous iterator to async by running each next() in executor
+            # This allows proper streaming without blocking the event loop
+            response_iter = iter(response)
+            while True:
+                # Get next chunk in executor to avoid blocking
+                chunk, is_done = await loop.run_in_executor(None, get_next_chunk, response_iter)
+                
+                if is_done:
+                    break
+                    
+                if chunk and chunk.text:
                     logger.debug(f"LLM stream chunk: '{chunk.text}'")
                     yield chunk.text
             
@@ -158,13 +178,15 @@ class AIAssistant:
                 sample_rate_hertz=48000,  # Match WebRTC's native rate - no resampling needed!
             )
             
-            # Perform async synthesis using gRPC
-            logger.debug(f"Starting async TTS synthesis for text: '{text[:50]}...'")
-            response = await self.tts_client.synthesize_speech(
-                input=synthesis_input,
-                voice=voice,
-                audio_config=audio_config
-            )
+            # Perform async synthesis using gRPC under semaphore control
+            logger.debug(f"Starting async TTS synthesis for text: '{text[:50]}...' (acquiring semaphore)")
+            async with self.google_tts_api_semaphore:
+                logger.debug("Semaphore acquired for TTS synthesis")
+                response = await self.tts_client.synthesize_speech(
+                    input=synthesis_input,
+                    voice=voice,
+                    audio_config=audio_config
+                )
             
             # Stream audio in chunks (larger chunks = fewer iterations = lower overhead)
             chunk_size = 2048
