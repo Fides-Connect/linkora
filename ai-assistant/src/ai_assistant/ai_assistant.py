@@ -5,23 +5,36 @@ Core logic for speech-to-text, LLM processing, and text-to-speech.
 import asyncio
 import logging
 import os
-from typing import AsyncIterator
+from typing import AsyncIterator, Optional
 from google.cloud import speech_v1 as speech
 from google.cloud.speech_v1 import SpeechAsyncClient
 from google.cloud import texttospeech_v1 as tts
 from google.cloud.texttospeech_v1 import TextToSpeechAsyncClient
-import google.generativeai as genai
+
+# LangChain imports
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
+
+# Observability imports (commented out - optional paid services)
+# from langfuse import Langfuse
+# from langfuse.decorators import observe, langfuse_context
 
 logger = logging.getLogger(__name__)
 
 
 class AIAssistant:
-    """AI Assistant using Google Cloud services with gRPC streaming."""
+    """AI Assistant using Google Cloud services with gRPC streaming and LangChain."""
     
     def __init__(self, gemini_api_key: str, language_code: str = 'de-DE', 
-                 voice_name: str = 'de-DE-Chirp3-HD-Sulafat'):
+                 voice_name: str = 'de-DE-Chirp3-HD-Sulafat',
+                 session_id: Optional[str] = None):
         self.language_code = language_code
         self.voice_name = voice_name
+        self.session_id = session_id or "default"
         
         # Initialize Google Cloud clients with async gRPC
         # Use default credentials in Cloud Run (via service account)
@@ -39,24 +52,70 @@ class AIAssistant:
             self.speech_client = SpeechAsyncClient()
             self.tts_client = TextToSpeechAsyncClient()
         
-        # Initialize Gemini AI
-        genai.configure(api_key=gemini_api_key)
-        self.llm_model = genai.GenerativeModel('gemini-2.0-flash')
-        self.chat_session = self.llm_model.start_chat(history=[])
-        
-        # Configure generation - AGGRESSIVE optimization for ultra-low latency
-        self.generation_config = genai.types.GenerationConfig(
-            temperature=0.9,  # Higher for faster, more varied sampling
-            top_k=8,  # Much lower for fastest token selection
+        # Initialize LangChain LLM with streaming support
+        self.llm = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash-exp",
+            google_api_key=gemini_api_key,
+            temperature=0.9,
+            top_k=8,
             top_p=0.9,
-            max_output_tokens=512
+            max_output_tokens=512,
+            streaming=True,
         )
         
-        logger.info("AI Assistant initialized with gRPC streaming")
+        # Initialize chat message history
+        self.store = {}  # Session store for chat histories
+        
+        # Create prompt template with chat history
+        self.prompt = ChatPromptTemplate.from_messages([
+            ("system", "Du bist ein hilfreicher KI-Assistent. Antworte kurz und prägnant auf Deutsch."),
+            MessagesPlaceholder(variable_name="history"),
+            ("human", "{input}"),
+        ])
+        
+        # Create chain with message history
+        self.chain = self.prompt | self.llm
+        self.chain_with_history = RunnableWithMessageHistory(
+            self.chain,
+            self._get_session_history,
+            input_messages_key="input",
+            history_messages_key="history",
+        )
+        
+        # Initialize observability tools
+        self._init_observability()
+        
+        logger.info("AI Assistant initialized with LangChain and gRPC streaming")
         # Semaphore to limit concurrent Google API TTS requests for rate limiting
         # Default to 5 but allow override via environment variable for testing
         max_concurrency = int(os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5'))
         self.google_tts_api_semaphore = asyncio.Semaphore(max_concurrency)
+    
+    def _get_session_history(self, session_id: str) -> BaseChatMessageHistory:
+        """Get or create chat message history for a session."""
+        if session_id not in self.store:
+            self.store[session_id] = ChatMessageHistory()
+            # Greeting will be generated and added dynamically when needed
+        return self.store[session_id]
+    
+    def _init_observability(self):
+        """Initialize LangSmith and Langfuse for observability."""
+        
+        # Langfuse configuration (optional - commented out to avoid paid services)
+        # langfuse_public_key = os.getenv('LANGFUSE_PUBLIC_KEY')
+        # langfuse_secret_key = os.getenv('LANGFUSE_SECRET_KEY')
+        # langfuse_host = os.getenv('LANGFUSE_HOST', 'https://cloud.langfuse.com')
+        
+        # if langfuse_public_key and langfuse_secret_key:
+        #     self.langfuse = Langfuse(
+        #         public_key=langfuse_public_key,
+        #         secret_key=langfuse_secret_key,
+        #         host=langfuse_host
+        #     )
+        #     logger.info("Langfuse observability enabled")
+        # else:
+        #     self.langfuse = None
+        self.langfuse = None
     
     async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, bool]]:
         """
@@ -123,40 +182,19 @@ class AIAssistant:
             yield ("", False)
     
     async def generate_llm_response_stream(self, prompt: str) -> AsyncIterator[str]:
-        """Generate streaming response using Gemini LLM for low latency."""
+        """Generate streaming response using LangChain with Gemini LLM for low latency."""
         try:
-            # Send message with streaming enabled
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda: self.chat_session.send_message(
-                    prompt,
-                    generation_config=self.generation_config,
-                    stream=True
-                )
-            )
+            # Use LangChain's streaming with message history
+            logger.debug(f"Generating LLM response for: '{prompt[:50]}...'")
             
-            # Helper function to safely get next item from iterator
-            # Returns (chunk, is_done) tuple to avoid StopIteration in executor
-            def get_next_chunk(iterator):
-                try:
-                    return (next(iterator), False)
-                except StopIteration:
-                    return (None, True)
-            
-            # Convert the synchronous iterator to async by running each next() in executor
-            # This allows proper streaming without blocking the event loop
-            response_iter = iter(response)
-            while True:
-                # Get next chunk in executor to avoid blocking
-                chunk, is_done = await loop.run_in_executor(None, get_next_chunk, response_iter)
-                
-                if is_done:
-                    break
-                    
-                if chunk and chunk.text:
-                    logger.debug(f"LLM stream chunk: '{chunk.text}'")
-                    yield chunk.text
+            # Stream response chunks using LangChain
+            async for chunk in self.chain_with_history.astream(
+                {"input": prompt},
+                config={"configurable": {"session_id": self.session_id}}
+            ):
+                if chunk.content:
+                    logger.debug(f"LLM stream chunk: '{chunk.content}'")
+                    yield chunk.content
             
         except Exception as e:
             logger.error(f"Streaming LLM generation error: {e}", exc_info=True)
@@ -203,3 +241,43 @@ class AIAssistant:
             logger.error(f"Text-to-speech error: {e}", exc_info=True)
             # Return empty bytes on error
             yield b''
+    
+    async def generate_greeting(self) -> str:
+        """Generate a natural, friendly greeting using the LLM."""
+        try:
+            greeting_prompt = "Generate a short, friendly greeting in German (1-2 sentences max). Be warm and welcoming, but keep it concise."
+            
+            # Use the LLM directly without chat history for greeting generation
+            messages = [HumanMessage(content=greeting_prompt)]
+            
+            full_greeting = ""
+            async for chunk in self.llm.astream(messages):
+                if chunk.content:
+                    full_greeting += chunk.content
+            
+            logger.info(f"Generated greeting: '{full_greeting}'")
+            return full_greeting.strip()
+            
+        except Exception as e:
+            logger.error(f"Error generating greeting: {e}", exc_info=True)
+            # Fallback to a simple greeting
+            return "Hallo! Wie kann ich dir heute helfen?"
+    
+    async def get_greeting_audio(self) -> tuple[str, AsyncIterator[bytes]]:
+        """Generate a natural greeting and return both text and TTS audio.
+        
+        Returns:
+            tuple: (greeting_text, audio_iterator)
+        """
+        # Generate greeting text using LLM
+        greeting_text = await self.generate_greeting()
+        
+        # Add greeting to chat history
+        history = self._get_session_history(self.session_id)
+        history.add_message(AIMessage(content=greeting_text))
+        
+        # Generate audio stream
+        logger.info(f"Generating greeting audio: '{greeting_text}'")
+        
+        # Return both the text and the audio generator
+        return greeting_text, self.text_to_speech_stream(greeting_text)
