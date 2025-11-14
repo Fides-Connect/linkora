@@ -269,6 +269,14 @@ flutter build apk --release
 flutter build ios --release
 ```
 
+#### Regenerating App Icons
+
+If you update your app icons, you can regenerate platform launcher icons using the flutter_launcher_icons package:
+
+```
+dart run flutter_launcher_icons
+```
+
 ## Contributing
 
 This is part of the Fides project. For contribution guidelines, see the main repository documentation.

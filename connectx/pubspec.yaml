@@ -60,6 +60,22 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # Flutter Launcher Icons for generating app icons
+  flutter_launcher_icons: ^0.14.4
+
+# Run the following command to regenerate app icons:
+# dart run flutter_launcher_icons
+flutter_icons:
+  image_path: "./assets/images/FidesIcon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  background_color_ios: "#ffffff"
+  web:
+    generate: true
+    background_color: "#ffffff"
+    theme_color: "#0A0A0A"
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
