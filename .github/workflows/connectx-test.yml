@@ -1,4 +1,4 @@
-name: Build ConnectX APK in Dev Container
+name: Build & Test ConnectX APK in Dev Container
 
 on:
   push:
@@ -25,4 +25,4 @@ jobs:
             cd ./connectx
             cp ./template.env .env
             flutter build apk
-            flutter test --platform chrome
+            flutter test
