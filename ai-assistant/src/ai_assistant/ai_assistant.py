@@ -21,10 +21,6 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from .prompts_templates import GREETING_AND_TRIAGE_PROMPT, TRIAGE_CONVERSATION_PROMPT
 
-# Observability imports (commented out - optional paid services)
-# from langfuse import Langfuse
-# from langfuse.decorators import observe, langfuse_context
-
 logger = logging.getLogger(__name__)
 import random
 
@@ -93,9 +89,6 @@ class AIAssistant:
             history_messages_key="history",
         )
         
-        # Initialize observability tools
-        self._init_observability()
-        
         logger.info("AI Assistant initialized with LangChain and gRPC streaming")
         # Semaphore to limit concurrent Google API TTS requests for rate limiting
         # Default to 5 but allow override via environment variable for testing
@@ -108,25 +101,6 @@ class AIAssistant:
             self.store[session_id] = ChatMessageHistory()
             # Greeting will be generated and added dynamically when needed
         return self.store[session_id]
-    
-    def _init_observability(self):
-        """Initialize LangSmith and Langfuse for observability."""
-        
-        # Langfuse configuration (optional - commented out to avoid paid services)
-        # langfuse_public_key = os.getenv('LANGFUSE_PUBLIC_KEY')
-        # langfuse_secret_key = os.getenv('LANGFUSE_SECRET_KEY')
-        # langfuse_host = os.getenv('LANGFUSE_HOST', 'https://cloud.langfuse.com')
-        
-        # if langfuse_public_key and langfuse_secret_key:
-        #     self.langfuse = Langfuse(
-        #         public_key=langfuse_public_key,
-        #         secret_key=langfuse_secret_key,
-        #         host=langfuse_host
-        #     )
-        #     logger.info("Langfuse observability enabled")
-        # else:
-        #     self.langfuse = None
-        self.langfuse = None
     
     async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, bool]]:
         """
