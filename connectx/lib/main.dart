@@ -7,6 +7,8 @@ import 'services/auth_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:async';
 import 'pages/start_page.dart';
+import 'theme.dart';
+import 'widgets/app_background.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,14 +34,7 @@ class ConnectXApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ConnectX',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6C63FF),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFF0A0A0A),
-      ),
+      theme: appTheme,
       initialRoute: '/',
       routes: {
         '/': (context) => const StartPage(),
@@ -210,15 +205,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
         child: Stack(
           children: [
             // Background gradient
-            Container(
-              decoration: const BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment.center,
-                  radius: 1.5,
-                  colors: [Color(0xFF1A1A2E), Color(0xFF0A0A0A)],
-                ),
-              ),
-            ),
+            const AppBackground(),
 
             // Main content
             Column(
@@ -238,7 +225,9 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                             Center(
                               child: Text(
                                 'Fides',
-                                style: Theme.of(context).textTheme.headlineMedium
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineMedium
                                     ?.copyWith(
                                       color: const Color(0xFF6C63FF),
                                       fontWeight: FontWeight.bold,
@@ -259,12 +248,16 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                                           ? NetworkImage(_user!.photoUrl!)
                                           : null,
                                       radius: 16,
-                                      child: _user!.photoUrl == null ? const Icon(Icons.person) : null,
+                                      child: _user!.photoUrl == null
+                                          ? const Icon(Icons.person)
+                                          : null,
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
                                       _user!.displayName ?? _user!.email,
-                                      style: const TextStyle(color: Colors.white70),
+                                      style: const TextStyle(
+                                        color: Colors.white70,
+                                      ),
                                     ),
                                     const SizedBox(width: 8),
                                     TextButton(
@@ -272,7 +265,10 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                                         final navigator = Navigator.of(context);
                                         await _auth.signOut();
                                         if (!mounted) return;
-                                        navigator.pushNamedAndRemoveUntil('/', (route) => false);
+                                        navigator.pushNamedAndRemoveUntil(
+                                          '/',
+                                          (route) => false,
+                                        );
                                       },
                                       child: const Text('Sign out'),
                                     ),

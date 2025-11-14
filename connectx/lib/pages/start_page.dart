@@ -1,9 +1,13 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:google_sign_in_web/web_only.dart' as web_render;
 
+import '../widgets/web_renderer_stub.dart'
+    if (dart.library.html) 'package:google_sign_in_web/web_only.dart'
+    as web_render;
 import '../services/auth_service.dart';
+import '../theme.dart';
+import '../widgets/app_background.dart';
 
 class StartPage extends StatefulWidget {
   const StartPage({super.key});
@@ -25,22 +29,23 @@ class _StartPageState extends State<StartPage> {
     _auth
         .initialize()
         .then((_) {
-      if (!mounted) return;
-      setState(() {
-        _initialized = true;
-      });
+          if (!mounted) return;
+          setState(() {
+            _initialized = true;
+          });
 
-      // On web, listen for authentication events and navigate when signed in
-      if (kIsWeb) {
-        GoogleSignIn.instance.authenticationEvents.listen((event) {
-          if (event is GoogleSignInAuthenticationEventSignIn) {
-            if (mounted) Navigator.pushReplacementNamed(context, '/home');
+          // On web, listen for authentication events and navigate when signed in
+          if (kIsWeb) {
+            GoogleSignIn.instance.authenticationEvents.listen((event) {
+              if (event is GoogleSignInAuthenticationEventSignIn) {
+                if (mounted) Navigator.pushReplacementNamed(context, '/home');
+              }
+            });
           }
+        })
+        .catchError((e) {
+          if (mounted) setState(() => _error = 'Init failed: $e');
         });
-      }
-    }).catchError((e) {
-      if (mounted) setState(() => _error = 'Init failed: $e');
-    });
   }
 
   Future<void> _onSignInPressed() async {
@@ -62,41 +67,76 @@ class _StartPageState extends State<StartPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Welcome to Fides', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 20),
-                if (kIsWeb) ...[
-                  // Use the web plugin's renderButton which returns a Widget
-                  if (!_initialized)
-                    const SizedBox(width: 220, height: 48, child: Center(child: CircularProgressIndicator()))
-                  else
-                    SizedBox(
-                      width: 220,
-                      height: 48,
-                      child: web_render.renderButton(),
-                    ),
-                ] else ...[
-                  ElevatedButton.icon(
-                    onPressed: _loading ? null : _onSignInPressed,
-                    icon: const Icon(Icons.login),
-                    label: Text(_loading ? 'Signing in…' : 'Sign in with Google'),
-                    style: ElevatedButton.styleFrom(minimumSize: const Size(220, 48), backgroundColor: const Color(0xFF6C63FF)),
+    final screenHeight = MediaQuery.of(context).size.height;
+    // Use 12% of screen height but keep it within reasonable bounds
+    final logoTextGap = (screenHeight * 0.12).clamp(10.0, 250.0).toDouble();
+
+    return Theme(
+      data: appTheme,
+      child: Scaffold(
+        backgroundColor: appTheme.scaffoldBackgroundColor,
+        body: Stack(
+          children: [
+            const AppBackground(),
+            SafeArea(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Welcome to Fides',
+                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: logoTextGap),
+                      SizedBox(
+                        width: 120,
+                        height: 120,
+                        child: Image.asset(
+                          'assets/images/FidesLogo.png',
+                          fit: BoxFit.contain,
+                          semanticLabel: 'Fides Logo',
+                        ),
+                      ),
+                      SizedBox(height: logoTextGap),
+                      if (kIsWeb) ...[
+                        // Use the web plugin's renderButton which returns a Widget
+                        if (!_initialized)
+                          const SizedBox(
+                            width: 220,
+                            height: 48,
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        else
+                          SizedBox(
+                            width: 220,
+                            height: 48,
+                            child: web_render.renderButton(),
+                          ),
+                      ] else ...[
+                        ElevatedButton.icon(
+                          onPressed: _loading ? null : _onSignInPressed,
+                          icon: const Icon(Icons.login),
+                          label: Text(
+                            _loading ? 'Signing in…' : 'Sign in with Google',
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(220, 48),
+                            backgroundColor: const Color(0xFF6C63FF),
+                          ),
+                        ),
+                      ],
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(_error!, style: const TextStyle(color: Colors.red)),
+                      ],
+                    ],
                   ),
-                ],
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_error!, style: const TextStyle(color: Colors.red)),
-                ]
-              ],
+                ),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
