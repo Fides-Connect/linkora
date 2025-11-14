@@ -67,6 +67,9 @@ class AudioProcessor:
         self.stt_task = asyncio.create_task(self._continuous_stt())
         logger.info(f"Audio processor started for connection {self.connection_id}")
         logger.debug("Continuous STT streaming enabled")
+        
+        # Play greeting message
+        asyncio.create_task(self._play_greeting())
     
     async def stop(self):
         """Stop processing audio."""
@@ -133,6 +136,31 @@ class AudioProcessor:
             
         except Exception as e:
             logger.error(f"Error saving debug recording: {e}", exc_info=True)
+    
+    async def _play_greeting(self):
+        """Play the AI greeting message when connection starts."""
+        try:
+            logger.info("Generating and playing greeting message...")
+            
+            # Set speaking flag to prevent interruption during greeting
+            self.is_ai_speaking = True
+            
+            # Generate greeting text and audio
+            greeting_text, audio_stream = await self.ai_assistant.get_greeting_audio()
+            logger.info(f"Playing greeting: '{greeting_text}'")
+            
+            # Queue greeting audio for playback
+            async for audio_chunk in audio_stream:
+                if audio_chunk:
+                    await self.output_track.queue_audio(audio_chunk)
+            
+            # Clear speaking flag after greeting completes
+            self.is_ai_speaking = False
+            logger.info("Greeting playback complete")
+            
+        except Exception as e:
+            logger.error(f"Error playing greeting: {e}", exc_info=True)
+            self.is_ai_speaking = False
     
     async def _process_audio(self):
         """Main audio processing loop - receives frames and queues them for STT."""
