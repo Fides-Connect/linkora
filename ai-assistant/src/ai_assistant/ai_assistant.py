@@ -28,7 +28,6 @@ import random
 AGENT_NAME = "Elin"
 COMPANY_NAME = "FidesConnect"
 USER_NAME_PLACEHOLDER = "Wolfgang"
-HAS_OPEN_REQUEST_PLACEHOLDER = random.choice([True, False])
 
 class AIAssistant:
     """AI Assistant using Google Cloud services with gRPC streaming and LangChain."""
@@ -142,7 +141,7 @@ class AIAssistant:
                         if chunk_count == 1:
                             logger.info(f"Sent first audio chunk to STT ({len(audio_chunk)} bytes)")
                         elif chunk_count % 50 == 0:
-                            logger.info(f"Sent {chunk_count} audio chunks to STT")
+                            logger.debug(f"Sent {chunk_count} audio chunks to STT")
                         yield speech.StreamingRecognizeRequest(audio_content=audio_chunk)
                 
                 logger.info(f"Audio generator finished after {chunk_count} chunks")
@@ -263,7 +262,7 @@ class AIAssistant:
         # Generate greeting text using LLM
         greeting_text = await self.generate_greeting(
             user_name=USER_NAME_PLACEHOLDER, 
-            has_open_request=HAS_OPEN_REQUEST_PLACEHOLDER
+            has_open_request=random.choice([True, False])
         )
         
         # Add greeting to chat history
