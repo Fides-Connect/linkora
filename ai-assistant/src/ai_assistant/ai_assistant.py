@@ -14,10 +14,12 @@ from google.cloud.texttospeech_v1 import TextToSpeechAsyncClient
 # LangChain imports
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
+
+from .prompts_templates import GREETING_AND_TRIAGE_PROMPT, TRIAGE_CONVERSATION_PROMPT
 
 # Observability imports (commented out - optional paid services)
 # from langfuse import Langfuse
@@ -25,6 +27,10 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 
 logger = logging.getLogger(__name__)
 
+AGENT_NAME = "Elin"
+COMPANY_NAME = "FidesConnect"
+USER_NAME_PLACEHOLDER = "Wolfgang"
+HAS_OPEN_REQUEST_PLACEHOLDER = True
 
 class AIAssistant:
     """AI Assistant using Google Cloud services with gRPC streaming and LangChain."""
@@ -66,12 +72,15 @@ class AIAssistant:
         # Initialize chat message history
         self.store = {}  # Session store for chat histories
         
-        # Create prompt template with chat history
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", "Du bist ein hilfreicher KI-Assistent. Antworte kurz und prägnant auf Deutsch."),
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "{input}"),
-        ])
+        prompt_template = ChatPromptTemplate.from_messages(
+                [SystemMessagePromptTemplate.from_template(TRIAGE_CONVERSATION_PROMPT).format(
+                        agent_name=AGENT_NAME,
+                    ),
+                 MessagesPlaceholder(variable_name="history"),
+                 ("human", "{input}")]
+            )
+        self.prompt = prompt_template
+        
         
         # Create chain with message history
         self.chain = self.prompt | self.llm
@@ -242,16 +251,22 @@ class AIAssistant:
             # Return empty bytes on error
             yield b''
     
-    async def generate_greeting(self) -> str:
+    async def generate_greeting(self, user_name: str = "", has_open_request: bool = False) -> str:
         """Generate a natural, friendly greeting using the LLM."""
         try:
-            greeting_prompt = "Generate a short, friendly greeting in German (1-2 sentences max). Be warm and welcoming, but keep it concise."
-            
-            # Use the LLM directly without chat history for greeting generation
-            messages = [HumanMessage(content=greeting_prompt)]
+            prompt_template = ChatPromptTemplate.from_messages(
+                [SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
+                 HumanMessage(content=" ")] # Gemini-API requires [SystemMessage, HumanMessage] to generate the first AIMessage.
+            )
+            greeting_message = prompt_template.format_messages(
+                agent_name=AGENT_NAME,
+                company_name=COMPANY_NAME,
+                user_name=user_name,
+                has_open_request="YES" if has_open_request else "NO",
+            )
             
             full_greeting = ""
-            async for chunk in self.llm.astream(messages):
+            async for chunk in self.llm.astream(greeting_message):
                 if chunk.content:
                     full_greeting += chunk.content
             
@@ -270,7 +285,10 @@ class AIAssistant:
             tuple: (greeting_text, audio_iterator)
         """
         # Generate greeting text using LLM
-        greeting_text = await self.generate_greeting()
+        greeting_text = await self.generate_greeting(
+            user_name=USER_NAME_PLACEHOLDER, 
+            has_open_request=HAS_OPEN_REQUEST_PLACEHOLDER
+        )
         
         # Add greeting to chat history
         history = self._get_session_history(self.session_id)
