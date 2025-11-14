@@ -26,11 +26,13 @@ from .prompts_templates import GREETING_AND_TRIAGE_PROMPT, TRIAGE_CONVERSATION_P
 # from langfuse.decorators import observe, langfuse_context
 
 logger = logging.getLogger(__name__)
+import random
 
+# Constants
 AGENT_NAME = "Elin"
 COMPANY_NAME = "FidesConnect"
 USER_NAME_PLACEHOLDER = "Wolfgang"
-HAS_OPEN_REQUEST_PLACEHOLDER = True
+HAS_OPEN_REQUEST_PLACEHOLDER = random.choice([True, False])
 
 class AIAssistant:
     """AI Assistant using Google Cloud services with gRPC streaming and LangChain."""
