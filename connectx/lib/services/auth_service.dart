@@ -32,23 +32,16 @@ class AuthService {
     final bool isAndroid =
         !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-    final clientId = (isWeb
-        ? dotenv.env['GOOGLE_CLIENT_ID_WEB']
-        : (isAndroid
-              ? dotenv.env['GOOGLE_CLIENT_ID_ANDROID'] ??
-                    dotenv.env['GOOGLE_CLIENT_ID_WEB']
-              : dotenv.env['GOOGLE_CLIENT_ID_WEB']));
-
-    if (clientId == null) {
+    final webClientId = dotenv.env['GOOGLE_OAUTH_CLIENT_ID_WEB'];
+    if (webClientId == null) {
       throw Exception(
-        'GOOGLE_CLIENT_ID not set. Add GOOGLE_CLIENT_ID_WEB and/or GOOGLE_CLIENT_ID_ANDROID to .env',
+        'GOOGLE_OAUTH_CLIENT_ID not set. Add GOOGLE_OAUTH_CLIENT_ID_WEB to .env',
       );
     }
-
     // Configure the package singleton with the right IDs, then use the singleton.
     await GoogleSignIn.instance.initialize(
-      clientId: isWeb ? clientId : null,
-      serverClientId: isAndroid ? clientId : null,
+      clientId: isWeb ? webClientId : null,
+      serverClientId: isAndroid ? webClientId : null,
     );
     _googleSignIn = GoogleSignIn.instance;
 
@@ -78,8 +71,8 @@ class AuthService {
 
   /// Try a lightweight / silent sign-in. May return null if no sign-in restored.
   Future<GoogleSignInAccount?> signInSilently() async {
-    final Future<GoogleSignInAccount?>? result =
-        _googleSignIn.attemptLightweightAuthentication();
+    final Future<GoogleSignInAccount?>? result = _googleSignIn
+        .attemptLightweightAuthentication();
     if (result == null) return null;
     return await result;
   }
