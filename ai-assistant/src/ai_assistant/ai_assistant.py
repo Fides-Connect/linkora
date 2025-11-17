@@ -14,17 +14,29 @@ from google.cloud.texttospeech_v1 import TextToSpeechAsyncClient
 # LangChain imports
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
-# Observability imports (commented out - optional paid services)
-# from langfuse import Langfuse
-# from langfuse.decorators import observe, langfuse_context
+from .prompts_templates import GREETING_AND_TRIAGE_PROMPT, TRIAGE_CONVERSATION_PROMPT, FINALIZE_SERVICE_REQUEST_PROMPT
+from .test_data import USER_DATA, search_providers, detect_category
+import json
 
 logger = logging.getLogger(__name__)
+import random
 
+# Constants
+AGENT_NAME = "Elin"
+COMPANY_NAME = "FidesConnect"
+USER_NAME_PLACEHOLDER = "Wolfgang"
+
+# Conversation stages
+class ConversationStage:
+    GREETING = "greeting"
+    TRIAGE = "triage"
+    FINALIZE = "finalize"
+    COMPLETED = "completed"
 
 class AIAssistant:
     """AI Assistant using Google Cloud services with gRPC streaming and LangChain."""
@@ -35,6 +47,15 @@ class AIAssistant:
         self.language_code = language_code
         self.voice_name = voice_name
         self.session_id = session_id or "default"
+        
+        # Conversation state
+        self.current_stage = ConversationStage.GREETING
+        self.conversation_context = {
+            "user_problem": "",
+            "detected_category": None,
+            "providers_found": [],
+            "current_provider_index": 0,
+        }
         
         # Initialize Google Cloud clients with async gRPC
         # Use default credentials in Cloud Run (via service account)
@@ -66,24 +87,9 @@ class AIAssistant:
         # Initialize chat message history
         self.store = {}  # Session store for chat histories
         
-        # Create prompt template with chat history
-        self.prompt = ChatPromptTemplate.from_messages([
-            ("system", "Du bist ein hilfreicher KI-Assistent. Antworte kurz und prägnant auf Deutsch."),
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "{input}"),
-        ])
-        
-        # Create chain with message history
-        self.chain = self.prompt | self.llm
-        self.chain_with_history = RunnableWithMessageHistory(
-            self.chain,
-            self._get_session_history,
-            input_messages_key="input",
-            history_messages_key="history",
-        )
-        
-        # Initialize observability tools
-        self._init_observability()
+        # We'll create prompts dynamically based on stage
+        # Initial prompt is TRIAGE (after greeting)
+        self.current_prompt = self._create_prompt_for_stage(ConversationStage.TRIAGE)
         
         logger.info("AI Assistant initialized with LangChain and gRPC streaming")
         # Semaphore to limit concurrent Google API TTS requests for rate limiting
@@ -98,24 +104,108 @@ class AIAssistant:
             # Greeting will be generated and added dynamically when needed
         return self.store[session_id]
     
-    def _init_observability(self):
-        """Initialize LangSmith and Langfuse for observability."""
+    def _create_prompt_for_stage(self, stage: str) -> ChatPromptTemplate:
+        """Create appropriate prompt template based on conversation stage."""
+        if stage == ConversationStage.GREETING:
+            return ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{input}")
+            ])
+        elif stage == ConversationStage.TRIAGE:
+            return ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(TRIAGE_CONVERSATION_PROMPT).format(
+                    agent_name=AGENT_NAME,
+                ),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{input}")
+            ])
+        elif stage == ConversationStage.FINALIZE:
+            provider_list_json = json.dumps(self.conversation_context["providers_found"], ensure_ascii=False)
+            provider_count = len(self.conversation_context["providers_found"])
+            return ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(FINALIZE_SERVICE_REQUEST_PROMPT).format(
+                    agent_name=AGENT_NAME,
+                    provider_list_json=provider_list_json,
+                    provider_count=provider_count,
+                ),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{input}")
+            ])
+        else:
+            # Default to triage
+            return self._create_prompt_for_stage(ConversationStage.TRIAGE)
+    
+    def _update_chain_for_stage(self, stage: str):
+        """Update the chain with new prompt for the given stage."""
+        self.current_stage = stage
+        self.current_prompt = self._create_prompt_for_stage(stage)
+        self.chain = self.current_prompt | self.llm
+        self.chain_with_history = RunnableWithMessageHistory(
+            self.chain,
+            self._get_session_history,
+            input_messages_key="input",
+            history_messages_key="history",
+        )
+        logger.info(f"Updated conversation stage to: {stage}")
+    
+    def _detect_stage_transition(self, user_input: str, ai_response: str) -> Optional[str]:
+        """
+        Detect if conversation should transition to a new stage based on context.
         
-        # Langfuse configuration (optional - commented out to avoid paid services)
-        # langfuse_public_key = os.getenv('LANGFUSE_PUBLIC_KEY')
-        # langfuse_secret_key = os.getenv('LANGFUSE_SECRET_KEY')
-        # langfuse_host = os.getenv('LANGFUSE_HOST', 'https://cloud.langfuse.com')
+        Returns:
+            New stage name if transition detected, None otherwise
+        """
+        user_lower = user_input.lower()
+        response_lower = ai_response.lower()
         
-        # if langfuse_public_key and langfuse_secret_key:
-        #     self.langfuse = Langfuse(
-        #         public_key=langfuse_public_key,
-        #         secret_key=langfuse_secret_key,
-        #         host=langfuse_host
-        #     )
-        #     logger.info("Langfuse observability enabled")
-        # else:
-        #     self.langfuse = None
-        self.langfuse = None
+        # Detect transition from TRIAGE to FINALIZE
+        # Look for confirmation keywords and the transition message
+        if self.current_stage == ConversationStage.TRIAGE:
+            transition_keywords = [
+                "database durchsuchen",
+                "datenbank durchsuchen", 
+                "einen moment",
+                "please hold",
+                "bitte warten"
+            ]
+            if any(keyword in response_lower for keyword in transition_keywords):
+                logger.info("Detected transition trigger to FINALIZE stage")
+                # Accumulate conversation context for provider search
+                self._accumulate_problem_description(user_input)
+                return ConversationStage.FINALIZE
+        
+        # Detect transition from FINALIZE to COMPLETED
+        if self.current_stage == ConversationStage.FINALIZE:
+            closing_keywords = [
+                "schönen tag",
+                "auf wiedersehen",
+                "vielen dank",
+                "thank you"
+            ]
+            if any(keyword in response_lower for keyword in closing_keywords):
+                return ConversationStage.COMPLETED
+        
+        return None
+    
+    def _accumulate_problem_description(self, user_input: str):
+        """Accumulate user's problem description for provider search."""
+        self.conversation_context["user_problem"] += " " + user_input
+        
+        # Detect category from accumulated text
+        category = detect_category(self.conversation_context["user_problem"])
+        if category:
+            self.conversation_context["detected_category"] = category
+            logger.info(f"Detected category: {category}")
+        
+        # Search for providers
+        providers = search_providers(
+            self.conversation_context["user_problem"],
+            category=self.conversation_context["detected_category"],
+            limit=3
+        )
+        self.conversation_context["providers_found"] = providers
+        logger.info(f"Found {len(providers)} matching providers")
     
     async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, bool]]:
         """
@@ -157,7 +247,7 @@ class AIAssistant:
                         if chunk_count == 1:
                             logger.info(f"Sent first audio chunk to STT ({len(audio_chunk)} bytes)")
                         elif chunk_count % 50 == 0:
-                            logger.info(f"Sent {chunk_count} audio chunks to STT")
+                            logger.debug(f"Sent {chunk_count} audio chunks to STT")
                         yield speech.StreamingRecognizeRequest(audio_content=audio_chunk)
                 
                 logger.info(f"Audio generator finished after {chunk_count} chunks")
@@ -185,16 +275,48 @@ class AIAssistant:
         """Generate streaming response using LangChain with Gemini LLM for low latency."""
         try:
             # Use LangChain's streaming with message history
-            logger.debug(f"Generating LLM response for: '{prompt[:50]}...'")
+            logger.debug(f"Generating LLM response for: '{prompt[:50]}...' [Stage: {self.current_stage}]")
+            
+            # Accumulate problem description during triage
+            if self.current_stage == ConversationStage.TRIAGE:
+                self._accumulate_problem_description(prompt)
             
             # Stream response chunks using LangChain
+            full_response = ""
             async for chunk in self.chain_with_history.astream(
                 {"input": prompt},
                 config={"configurable": {"session_id": self.session_id}}
             ):
                 if chunk.content:
                     logger.debug(f"LLM stream chunk: '{chunk.content}'")
+                    full_response += chunk.content
                     yield chunk.content
+            
+            # Check for stage transitions after complete response
+            new_stage = self._detect_stage_transition(prompt, full_response)
+            if new_stage == ConversationStage.FINALIZE:
+                logger.info(f"Stage transition detected: {self.current_stage} -> {new_stage}")
+                self._update_chain_for_stage(new_stage)
+                
+                # Automatically generate provider presentation without user input
+                logger.info("Auto-generating provider presentation in FINALIZE stage")
+                
+                # Use an empty/neutral prompt that signals to start presentation
+                # The FINALIZE prompt instructs the agent to automatically present
+                auto_prompt = " "  # Minimal prompt to trigger the chain
+                
+                # Stream the provider presentation directly
+                async for chunk in self.chain_with_history.astream(
+                    {"input": auto_prompt},
+                    config={"configurable": {"session_id": self.session_id}}
+                ):
+                    if chunk.content:
+                        logger.debug(f"LLM auto-presentation chunk: '{chunk.content}'")
+                        yield chunk.content
+                        
+            elif new_stage:
+                logger.info(f"Stage transition detected: {self.current_stage} -> {new_stage}")
+                self._update_chain_for_stage(new_stage)
             
         except Exception as e:
             logger.error(f"Streaming LLM generation error: {e}", exc_info=True)
@@ -242,25 +364,39 @@ class AIAssistant:
             # Return empty bytes on error
             yield b''
     
-    async def generate_greeting(self) -> str:
+    async def generate_greeting(self, user_name: str = "", has_open_request: bool = False) -> str:
         """Generate a natural, friendly greeting using the LLM."""
         try:
-            greeting_prompt = "Generate a short, friendly greeting in German (1-2 sentences max). Be warm and welcoming, but keep it concise."
+            # Set stage to greeting
+            self._update_chain_for_stage(ConversationStage.GREETING)
             
-            # Use the LLM directly without chat history for greeting generation
-            messages = [HumanMessage(content=greeting_prompt)]
+            prompt_template = ChatPromptTemplate.from_messages(
+                [SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
+                 HumanMessage(content=" ")] # Gemini-API requires [SystemMessage, HumanMessage] to generate the first AIMessage.
+            )
+            greeting_message = prompt_template.format_messages(
+                agent_name=AGENT_NAME,
+                company_name=COMPANY_NAME,
+                user_name=user_name,
+                has_open_request="YES" if has_open_request else "NO",
+            )
             
             full_greeting = ""
-            async for chunk in self.llm.astream(messages):
+            async for chunk in self.llm.astream(greeting_message):
                 if chunk.content:
                     full_greeting += chunk.content
             
             logger.info(f"Generated greeting: '{full_greeting}'")
+            
+            # After greeting, transition to triage stage
+            self._update_chain_for_stage(ConversationStage.TRIAGE)
+            
             return full_greeting.strip()
             
         except Exception as e:
             logger.error(f"Error generating greeting: {e}", exc_info=True)
             # Fallback to a simple greeting
+            self._update_chain_for_stage(ConversationStage.TRIAGE)
             return "Hallo! Wie kann ich dir heute helfen?"
     
     async def get_greeting_audio(self) -> tuple[str, AsyncIterator[bytes]]:
@@ -270,7 +406,11 @@ class AIAssistant:
             tuple: (greeting_text, audio_iterator)
         """
         # Generate greeting text using LLM
-        greeting_text = await self.generate_greeting()
+        # Use test data for user info
+        greeting_text = await self.generate_greeting(
+            user_name=USER_DATA.get("name", USER_NAME_PLACEHOLDER), 
+            has_open_request=USER_DATA.get("has_open_request", False)
+        )
         
         # Add greeting to chat history
         history = self._get_session_history(self.session_id)
