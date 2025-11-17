@@ -9,6 +9,7 @@ import 'dart:async';
 import 'pages/start_page.dart';
 import 'theme.dart';
 import 'widgets/app_background.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,7 +21,7 @@ void main() async {
     // Try to restore a previous sign-in before the UI builds so the main
     // screen can read `AuthService.currentUser` immediately.
     try {
-      await AuthService().signInSilently();
+      // await AuthService().signInSilently();
     } catch (_) {}
   } catch (_) {}
 
@@ -77,6 +78,7 @@ class _AuthGateState extends State<AuthGate> {
   @override
   Widget build(BuildContext context) {
     // If user is signed in, show the guarded child.
+    debugPrint('AuthGate: current user = $_user');
     if (_user != null) return widget.child;
 
     // Otherwise actively redirect to the StartPage so the URL updates and
@@ -200,6 +202,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('Building ConnectXHomePage with user: $_user');
     return Scaffold(
       body: SafeArea(
         child: Stack(
@@ -221,21 +224,6 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            // Centered title
-                            Center(
-                              child: Text(
-                                'Fides',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineMedium
-                                    ?.copyWith(
-                                      color: const Color(0xFF6C63FF),
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-
                             // Right-aligned user controls
                             if (_user != null)
                               Align(
@@ -243,23 +231,33 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    CircleAvatar(
-                                      backgroundImage: _user!.photoUrl != null
-                                          ? NetworkImage(_user!.photoUrl!)
-                                          : null,
-                                      radius: 16,
-                                      child: _user!.photoUrl == null
-                                          ? const Icon(Icons.person)
-                                          : null,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      _user!.displayName ?? _user!.email,
-                                      style: const TextStyle(
-                                        color: Colors.white70,
+                                    // User avatar if not web and photoUrl is available
+                                    // On web, just show initials due to CORS issues
+                                    if (_auth.photoUrl != null && _auth.photoUrl!.isNotEmpty && !kIsWeb)
+                                      ClipOval(
+                                        child: Image.network(
+                                          _auth.photoUrl!,
+                                          width: 32,
+                                          height: 32,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      )
+                                    else
+                                      CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: const Color(0xFF6C63FF),
+                                        child: Text(
+                                          // derive initials from display name if possible
+                                          (_user?.displayName ?? '')
+                                              .split(' ')
+                                              .where((s) => s.isNotEmpty)
+                                              .map((s) => s[0])
+                                              .take(2)
+                                              .join()
+                                              .toUpperCase(),
+                                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(width: 8),
                                     TextButton(
                                       onPressed: () async {
                                         final navigator = Navigator.of(context);
@@ -272,11 +270,23 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                                       },
                                       child: const Text('Sign out'),
                                     ),
-                                    const SizedBox(width: 8),
                                   ],
                                 ),
                               ),
                           ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      // Centered title
+                      Center(
+                        child: Text(
+                          'Fides',
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(
+                                color: const Color(0xFF6C63FF),
+                                fontWeight: FontWeight.bold,
+                              ),
+                          textAlign: TextAlign.center,
                         ),
                       ),
                       const SizedBox(height: 10),
