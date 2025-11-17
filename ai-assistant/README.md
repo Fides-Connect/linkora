@@ -44,13 +44,47 @@ This AI assistant service:
 ### Core Capabilities
 
 - **Real-time Voice Processing**: Low-latency continuous speech recognition and audio streaming
+- **Multi-Stage Conversations**: Dynamic prompt switching across greeting, triage, and finalization stages
 - **Optimized Streaming Pipeline**: Full streaming STT → LLM → TTS for minimal latency
 - **Interrupt Support**: User can interrupt AI responses by speaking
 - **Parallel Processing**: Multiple TTS tasks run simultaneously for faster responses
+- **Intelligent Provider Matching**: Auto-detects service categories and ranks providers by relevance
 - **Multi-language Support**: Configurable language and voice settings
 - **Chat Context**: Maintains conversation history per session
 - **Scalable Architecture**: Stateless design for horizontal scaling
 - **Production-ready**: Comprehensive error handling and logging
+
+### Conversation Stages
+
+The AI Assistant implements a **three-stage conversation flow** with automatic transitions:
+
+```
+┌──────────┐
+│ GREETING │ Personalized greeting by name, asks user's needs
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│ TRIAGE   │ Service coordinator mode - asks scoping questions
+└────┬─────┘  (size, timing, requirements - not diagnostics)
+     │
+     │ Agent says "database durchsuchen" → Auto-transition
+     ▼
+┌──────────┐
+│ FINALIZE │ Presents matched providers, handles acceptance/rejection
+└────┬─────┘
+     │
+     ▼
+┌──────────┐
+│COMPLETED │ Confirms request, explains next steps, says goodbye
+└──────────┘
+```
+
+**Key Features:**
+- **Automatic stage transitions** - No manual intervention required
+- **Context preservation** - All conversation data maintained across stages
+- **Smart provider search** - Category detection and relevance scoring
+- **Dynamic prompts** - Each stage uses optimized behavior and instructions
 
 ### Technical Features
 
