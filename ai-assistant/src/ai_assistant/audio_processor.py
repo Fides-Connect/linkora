@@ -213,8 +213,7 @@ class AudioProcessor:
                     
                     # Log every 50 frames at INFO level to track progress
                     if frame_count % 50 == 0:
-                        logger.info(f"[Frame {frame_count}] Queued {len(audio_bytes)} bytes for STT (RMS={rms:.2f})")
-                    logger.debug(f"[Frame {frame_count}] Queued {len(audio_bytes)} bytes for STT")
+                        logger.debug(f"[Frame {frame_count}] Queued {len(audio_bytes)} bytes for STT (RMS={rms:.2f})")
                     
                 except asyncio.TimeoutError:
                     logger.warning(f"Audio receive timeout after frame {frame_count}")
@@ -307,7 +306,7 @@ class AudioProcessor:
                             break
                         chunk_count += 1
                         if chunk_count % 50 == 0:
-                            logger.info(f"STT audio generator: yielding chunk {chunk_count} ({len(audio_chunk)} bytes)")
+                            logger.debug(f"STT audio generator: yielding chunk {chunk_count} ({len(audio_chunk)} bytes)")
                         yield audio_chunk
                     except asyncio.TimeoutError:
                         continue
