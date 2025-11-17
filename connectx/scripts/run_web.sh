@@ -32,7 +32,7 @@ echo "Using WEB_PORT=${WEB_PORT}"
 cd "$PROJECT_ROOT"
 
 # Run flutter web-server with the specified port
-CMD=(flutter run -d web-server --web-port="${WEB_PORT}")
+CMD=(flutter run -d chrome --web-port="${WEB_PORT}")
 
 echo "Executing: ${CMD[*]}"
 exec "${CMD[@]}"

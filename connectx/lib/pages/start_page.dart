@@ -1,10 +1,11 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_signin_button/flutter_signin_button.dart';
 
-import '../widgets/web_renderer_stub.dart'
+import '../widgets/sign_in_button_stub.dart'
     if (dart.library.html) 'package:google_sign_in_web/web_only.dart'
-    as web_render;
+    as sign_in_button_web;
 import '../services/auth_service.dart';
 import '../theme.dart';
 import '../widgets/app_background.dart';
@@ -34,14 +35,12 @@ class _StartPageState extends State<StartPage> {
             _initialized = true;
           });
 
-          // On web, listen for authentication events and navigate when signed in
-          if (kIsWeb) {
-            GoogleSignIn.instance.authenticationEvents.listen((event) {
-              if (event is GoogleSignInAuthenticationEventSignIn) {
-                if (mounted) Navigator.pushReplacementNamed(context, '/home');
-              }
-            });
-          }
+          // Listen for authentication events and navigate when signed in
+          GoogleSignIn.instance.authenticationEvents.listen((event) {
+            if (event is GoogleSignInAuthenticationEventSignIn) {
+              if (mounted) Navigator.pushReplacementNamed(context, '/home');
+            }
+          });
         })
         .catchError((e) {
           if (mounted) setState(() => _error = 'Init failed: $e');
@@ -57,7 +56,7 @@ class _StartPageState extends State<StartPage> {
       await _auth.signIn();
       // Navigate to the voice assistant only on successful sign-in
       if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/home');
+      //Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
       setState(() => _error = 'Sign-in failed: $e');
     } finally {
@@ -83,11 +82,15 @@ class _StartPageState extends State<StartPage> {
                 child: Padding(
                   padding: const EdgeInsets.all(24.0),
                   child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       const Text(
                         'Welcome to Fides',
-                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       SizedBox(height: logoTextGap),
                       SizedBox(
@@ -112,24 +115,30 @@ class _StartPageState extends State<StartPage> {
                           SizedBox(
                             width: 220,
                             height: 48,
-                            child: web_render.renderButton(),
+                            child: sign_in_button_web.renderButton(),
                           ),
                       ] else ...[
-                        ElevatedButton.icon(
-                          onPressed: _loading ? null : _onSignInPressed,
-                          icon: const Icon(Icons.login),
-                          label: Text(
-                            _loading ? 'Signing in…' : 'Sign in with Google',
+                        if (!_initialized)
+                          const SizedBox(
+                            width: 220,
+                            height: 48,
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        else
+                          SignInButton(
+                            Buttons.Google,
+                            text: _loading
+                                ? 'Signing in…'
+                                : 'Sign in with Google',
+                            onPressed: _loading ? null : _onSignInPressed,
                           ),
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size(220, 48),
-                            backgroundColor: const Color(0xFF6C63FF),
-                          ),
-                        ),
                       ],
                       if (_error != null) ...[
                         const SizedBox(height: 12),
-                        Text(_error!, style: const TextStyle(color: Colors.red)),
+                        Text(
+                          _error!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
                       ],
                     ],
                   ),

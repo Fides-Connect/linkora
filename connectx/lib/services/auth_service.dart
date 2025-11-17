@@ -32,11 +32,9 @@ class AuthService {
   String? get photoUrl => _photoUrl;
 
   final List<String> scopes = <String>[
-    'https://www.googleapis.com/auth/contacts.readonly',
     'openid',
     'email',
     'profile',
-    'https://www.googleapis.com/auth/userinfo.profile'
   ];
 
   /// Initialize the underlying GoogleSignIn singleton with optional clientId.
@@ -52,22 +50,21 @@ class AuthService {
       );
     }
     // Configure the package singleton with the right IDs, then use the singleton.
-    final GoogleSignIn signIn = GoogleSignIn.instance;
     unawaited(
-      signIn
+      GoogleSignIn.instance
           .initialize(
             clientId: isWeb ? webClientId : null,
             serverClientId: isAndroid ? webClientId : null,
           )
           .then((_) {
-            signIn.authenticationEvents
+            GoogleSignIn.instance.authenticationEvents
                 .listen(_handleAuthenticationEvent)
                 .onError(_handleAuthenticationError);
 
             /// This example always uses the stream-based approach to determining
             /// which UI state to show, rather than using the future returned here,
             /// if any, to conditionally skip directly to the signed-in state.
-            signIn.authenticate(scopeHint: scopes);
+            //signIn.attemptLightweightAuthentication();
           }),
     );
   }
@@ -102,7 +99,6 @@ class AuthService {
   }
 
   Future<void> _handleAuthenticationError(Object e) async {
-    // setState(() {
     debugPrint('Auth error: $e');
     _userController.add(null);
     _currentUser = null;
@@ -110,23 +106,18 @@ class AuthService {
     _errorMessage = e is GoogleSignInException
         ? _errorMessageFromSignInException(e)
         : 'Unknown error: $e';
-    // });
   }
 
   // Calls the People API REST endpoint for the signed-in user to retrieve information.
   Future<void> _handleGetContact(GoogleSignInAccount user) async {
-    // setState(() {
     _contactText = 'Loading contact info...';
-    // });
 
     final Map<String, String>? headers = await user.authorizationClient
         .authorizationHeaders(scopes);
     debugPrint('DEBUG: authorization headers -> $headers');
     if (headers == null) {
-      // setState(() {
       _contactText = '';
       _errorMessage = 'Failed to construct authorization headers.';
-      // });
       return;
     }
 

@@ -45,6 +45,9 @@ dependencies:
 
   # Google Sign-In for authentication
   google_sign_in: ^7.2.0
+
+  # Sign-In button widgets
+  flutter_signin_button: ^2.1.1
   
 dev_dependencies:
   flutter_test:

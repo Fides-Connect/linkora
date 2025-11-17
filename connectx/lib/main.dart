@@ -15,85 +15,45 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(); // Load environment variables from .env file
 
-  // Initialize Google Sign-In early (important for web plugin)
+  // Create a single AuthService instance and initialize it.
+  final auth = AuthService();
   try {
-    await AuthService().initialize();
-    // Try to restore a previous sign-in before the UI builds so the main
-    // screen can read `AuthService.currentUser` immediately.
-    try {
-      // await AuthService().signInSilently();
-    } catch (_) {}
+    await auth.initialize();
   } catch (_) {}
 
-  runApp(const ConnectXApp());
+  runApp(ConnectXApp(auth: auth));
 }
 
 class ConnectXApp extends StatelessWidget {
-  const ConnectXApp({super.key});
+  final AuthService auth;
+  const ConnectXApp({required this.auth, super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ConnectX',
       theme: appTheme,
-      initialRoute: '/',
+      // Use a StreamBuilder at the app root to select the correct screen
+      // based on the AuthService's current user stream.
+      home: StreamBuilder<GoogleSignInAccount?>(
+        stream: auth.onCurrentUserChanged,
+        initialData: auth.currentUser,
+        builder: (context, snapshot) {
+          // Use initialData so StartPage loads immediately if there's no user.
+          final user = snapshot.data;
+          if (user != null) {
+            return const ConnectXHomePage();
+          } else {
+            return const StartPage();
+          }
+        },
+      ),
       routes: {
-        '/': (context) => const StartPage(),
-        '/home': (context) => AuthGate(child: const ConnectXHomePage()),
+        '/start': (context) => const StartPage(),
+        '/home': (context) => const ConnectXHomePage(),
       },
       debugShowCheckedModeBanner: false,
     );
-  }
-}
-
-/// Simple gate that shows [child] only when a user is signed in, otherwise
-/// forwards to the `StartPage`.
-class AuthGate extends StatefulWidget {
-  final Widget child;
-  const AuthGate({required this.child, super.key});
-
-  @override
-  State<AuthGate> createState() => _AuthGateState();
-}
-
-class _AuthGateState extends State<AuthGate> {
-  final AuthService _auth = AuthService();
-  GoogleSignInAccount? _user;
-  StreamSubscription<GoogleSignInAccount?>? _sub;
-  bool _redirectScheduled = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _user = _auth.currentUser;
-    _sub = _auth.onCurrentUserChanged.listen((u) => setState(() => _user = u));
-  }
-
-  @override
-  void dispose() {
-    _sub?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // If user is signed in, show the guarded child.
-    debugPrint('AuthGate: current user = $_user');
-    if (_user != null) return widget.child;
-
-    // Otherwise actively redirect to the StartPage so the URL updates and
-    // the navigation stack is changed. Use a post-frame callback to avoid
-    // calling Navigator during build and guard to schedule the redirect only once.
-    if (!_redirectScheduled) {
-      _redirectScheduled = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        Navigator.of(context).pushNamedAndRemoveUntil('/', (route) => false);
-      });
-    }
-
-    // While redirecting, render an empty placeholder.
-    return const SizedBox.shrink();
   }
 }
 
@@ -237,7 +197,9 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                                   children: [
                                     // User avatar if not web and photoUrl is available
                                     // On web, just show initials due to CORS issues
-                                    if (_auth.photoUrl != null && _auth.photoUrl!.isNotEmpty && !kIsWeb)
+                                    if (_auth.photoUrl != null &&
+                                        _auth.photoUrl!.isNotEmpty &&
+                                        !kIsWeb)
                                       ClipOval(
                                         child: Image.network(
                                           _auth.photoUrl!,
@@ -249,7 +211,9 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                                     else
                                       CircleAvatar(
                                         radius: 16,
-                                        backgroundColor: const Color(0xFF6C63FF),
+                                        backgroundColor: const Color(
+                                          0xFF6C63FF,
+                                        ),
                                         child: Text(
                                           // derive initials from display name if possible
                                           (_user?.displayName ?? '')
@@ -259,7 +223,10 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                                               .take(2)
                                               .join()
                                               .toUpperCase(),
-                                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                          ),
                                         ),
                                       ),
                                     TextButton(
