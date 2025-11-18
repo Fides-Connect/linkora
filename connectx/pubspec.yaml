@@ -43,6 +43,18 @@ dependencies:
   # Environment variable management
   flutter_dotenv: ^6.0.0
 
+  # Google Sign-In for authentication
+  google_sign_in: ^7.2.0
+
+  # Sign-In button widgets
+  flutter_signin_button: ^2.1.1
+
+  # HTTP client for making API requests
+  http: ^1.6.0
+
+  #  Google Sign-In Web package
+  google_sign_in_web: ^1.1.0
+  
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -53,6 +65,22 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+
+  # Flutter Launcher Icons for generating app icons
+  flutter_launcher_icons: ^0.14.4
+
+# Run the following command to regenerate app icons:
+# dart run flutter_launcher_icons
+flutter_icons:
+  image_path: "./assets/images/FidesIcon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  background_color_ios: "#ffffff"
+  web:
+    generate: true
+    background_color: "#ffffff"
+    theme_color: "#0A0A0A"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -68,8 +96,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - ./.env
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+    - ./assets/images/FidesLogo.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

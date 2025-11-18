@@ -3,28 +3,58 @@ import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'widgets/particle_sphere.dart';
 import 'services/speech_service.dart';
+import 'services/auth_service.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'dart:async';
+import 'pages/start_page.dart';
+import 'theme.dart';
+import 'widgets/app_background.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'widgets/auth_guard.dart';
 
 void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(); // Load environment variables from .env file
-  runApp(const ConnectXApp());
+
+  // Create a single AuthService instance and initialize it.
+  final auth = AuthService();
+  try {
+    await auth.initialize();
+  } catch (e) {
+    debugPrint('Error initializing AuthService: $e');
+  }
+
+  runApp(ConnectXApp(auth: auth));
 }
 
 class ConnectXApp extends StatelessWidget {
-  const ConnectXApp({super.key});
+  final AuthService auth;
+  const ConnectXApp({required this.auth, super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ConnectX',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6C63FF),
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFF0A0A0A),
+      theme: appTheme,
+      home: StreamBuilder<GoogleSignInAccount?>(
+        stream: auth.onCurrentUserChanged,
+        initialData: auth.currentUser,
+        builder: (context, snapshot) {
+          final user = snapshot.data;
+          if (user != null) {
+            return const ConnectXHomePage();
+          } else {
+            return const StartPage();
+          }
+        },
       ),
-      home: const ConnectXHomePage(),
+      routes: {
+        '/start': (context) => const StartPage(),
+        '/home': (context) => AuthGuard(
+              auth: auth,
+              child: const ConnectXHomePage(),
+            ),
+      },
       debugShowCheckedModeBanner: false,
     );
   }
@@ -39,6 +69,10 @@ class ConnectXHomePage extends StatefulWidget {
 
 class _ConnectXHomePageState extends State<ConnectXHomePage> {
   late SpeechService _speechService;
+  final AuthService _auth = AuthService();
+  GoogleSignInAccount? _user;
+
+  StreamSubscription<GoogleSignInAccount?>? _userSub;
 
   bool _isAnimating = false;
   bool _isChatting = false;
@@ -49,14 +83,16 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   void initState() {
     super.initState();
     _initializeServices();
-    // Automatically start the microphone when app loads
-    // WidgetsBinding.instance.addPostFrameCallback((_) {
-    //   _startChat();
-    // });
   }
 
   void _initializeServices() {
     _speechService = SpeechService();
+
+    // Subscribe to auth changes
+    _user = _auth.currentUser;
+    _userSub = _auth.onCurrentUserChanged.listen((u) {
+      setState(() => _user = u);
+    });
 
     // Set up speech service callbacks
     _speechService.onSpeechStart = () {
@@ -89,6 +125,13 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       });
     };
 
+    // end _initializeServices
+  }
+
+  @override
+  void dispose() {
+    _userSub?.cancel();
+    super.dispose();
   }
 
   void _startChat() async {
@@ -109,7 +152,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     try {
       _speechService.stopSpeech();
     } catch (e) {
-      print('Error stopping chat: $e');
+      debugPrint('Error stopping chat: $e');
     }
 
     setState(() {
@@ -121,26 +164,14 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   }
 
   @override
-  void dispose() {
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    debugPrint('Building ConnectXHomePage with user: $_user');
     return Scaffold(
       body: SafeArea(
         child: Stack(
           children: [
             // Background gradient
-            Container(
-              decoration: const BoxDecoration(
-                gradient: RadialGradient(
-                  center: Alignment.center,
-                  radius: 1.5,
-                  colors: [Color(0xFF1A1A2E), Color(0xFF0A0A0A)],
-                ),
-              ),
-            ),
+            const AppBackground(),
 
             // Main content
             Column(
@@ -151,13 +182,82 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                   padding: const EdgeInsets.all(20),
                   child: Column(
                     children: [
-                      Text(
-                        'ConnectX',
-                        style: Theme.of(context).textTheme.headlineMedium
-                            ?.copyWith(
-                              color: const Color(0xFF6C63FF),
-                              fontWeight: FontWeight.bold,
-                            ),
+                      SizedBox(
+                        height: 44,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Right-aligned user controls
+                            if (_user != null)
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // User avatar if not web and photoUrl is available
+                                    // On web, just show initials due to CORS issues
+                                    if (_auth.photoUrl != null &&
+                                        _auth.photoUrl!.isNotEmpty &&
+                                        !kIsWeb)
+                                      ClipOval(
+                                        child: Image.network(
+                                          _auth.photoUrl!,
+                                          width: 32,
+                                          height: 32,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      )
+                                    else
+                                      CircleAvatar(
+                                        radius: 16,
+                                        backgroundColor: const Color(
+                                          0xFF6C63FF,
+                                        ),
+                                        child: Text(
+                                          // derive initials from display name if possible
+                                          (_user?.displayName ?? '')
+                                              .split(' ')
+                                              .where((s) => s.isNotEmpty)
+                                              .map((s) => s[0])
+                                              .take(2)
+                                              .join()
+                                              .toUpperCase(),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    IconButton(
+                                      icon: Icon(Icons.logout),
+                                      onPressed: () async {
+                                        final navigator = Navigator.of(context);
+                                        await _auth.signOut();
+                                        if (!mounted) return;
+                                        navigator.pushNamedAndRemoveUntil(
+                                          '/start',
+                                          (route) => false,
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      // Centered title
+                      Center(
+                        child: Text(
+                          'Fides',
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(
+                                color: const Color(0xFF6C63FF),
+                                fontWeight: FontWeight.bold,
+                              ),
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                       const SizedBox(height: 10),
                       Text(
