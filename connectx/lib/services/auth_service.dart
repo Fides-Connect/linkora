@@ -125,5 +125,5 @@ class AuthService {
   Future<void> signIn() async {
     await GoogleSignIn.instance.authenticate(scopeHint: scopes);
   }
-  
+
 }

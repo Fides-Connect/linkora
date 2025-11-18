@@ -107,17 +107,11 @@ class _StartPageState extends State<StartPage> {
                       SizedBox(
                         width: 120,
                         height: 120,
-                        child: GestureDetector(
-                          onTap: () {
-                            if (!mounted) return;
-                            Navigator.pushReplacementNamed(context, '/home');
-                          },
-                          child: Image.asset(
+                        child: Image.asset(
                             'assets/images/FidesLogo.png',
                             fit: BoxFit.contain,
                             semanticLabel: 'Fides Logo',
                           ),
-                        ),
                       ),
                       SizedBox(height: logoTextGap),
                       if (!_initialized)

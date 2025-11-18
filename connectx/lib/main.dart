@@ -10,6 +10,7 @@ import 'pages/start_page.dart';
 import 'theme.dart';
 import 'widgets/app_background.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'widgets/auth_guard.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,13 +36,10 @@ class ConnectXApp extends StatelessWidget {
     return MaterialApp(
       title: 'ConnectX',
       theme: appTheme,
-      // Use a StreamBuilder at the app root to select the correct screen
-      // based on the AuthService's current user stream.
       home: StreamBuilder<GoogleSignInAccount?>(
         stream: auth.onCurrentUserChanged,
         initialData: auth.currentUser,
         builder: (context, snapshot) {
-          // Use initialData so StartPage loads immediately if there's no user.
           final user = snapshot.data;
           if (user != null) {
             return const ConnectXHomePage();
@@ -52,7 +50,10 @@ class ConnectXApp extends StatelessWidget {
       ),
       routes: {
         '/start': (context) => const StartPage(),
-        '/home': (context) => const ConnectXHomePage(),
+        '/home': (context) => AuthGuard(
+              auth: auth,
+              child: const ConnectXHomePage(),
+            ),
       },
       debugShowCheckedModeBanner: false,
     );
