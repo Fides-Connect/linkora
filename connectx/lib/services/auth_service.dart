@@ -117,15 +117,13 @@ class AuthService {
     // Disconnect instead of just signing out, to reset the example state as
     // much as possible.
     await GoogleSignIn.instance.disconnect();
+    _userController.add(null);
+    _currentUser = null;
+    _photoUrl = null;
   }
 
   Future<void> signIn() async {
     await GoogleSignIn.instance.authenticate(scopeHint: scopes);
   }
-
-  void dispose() {
-    try {
-      _userController.close();
-    } catch (_) {}
-  }
+  
 }

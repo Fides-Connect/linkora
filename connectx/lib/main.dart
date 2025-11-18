@@ -227,17 +227,17 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                                           ),
                                         ),
                                       ),
-                                    TextButton(
+                                    IconButton(
+                                      icon: Icon(Icons.logout),
                                       onPressed: () async {
                                         final navigator = Navigator.of(context);
                                         await _auth.signOut();
                                         if (!mounted) return;
                                         navigator.pushNamedAndRemoveUntil(
-                                          '/',
+                                          '/start',
                                           (route) => false,
                                         );
                                       },
-                                      child: const Text('Sign out'),
                                     ),
                                   ],
                                 ),
