@@ -8,7 +8,7 @@ class AuthGuard extends StatelessWidget {
   final Widget child;
   final AuthService auth;
 
-  const AuthGuard({required this.child, required this.auth});
+  const AuthGuard({required this.child, required this.auth, super.key});
 
   @override
   Widget build(BuildContext context) {
