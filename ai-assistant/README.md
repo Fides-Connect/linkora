@@ -48,11 +48,12 @@ This AI assistant service:
 - **Optimized Streaming Pipeline**: Full streaming STT → LLM → TTS for minimal latency
 - **Interrupt Support**: User can interrupt AI responses by speaking
 - **Parallel Processing**: Multiple TTS tasks run simultaneously for faster responses
-- **Intelligent Provider Matching**: Auto-detects service categories and ranks providers by relevance
+- **Intelligent Provider Matching**: Weaviate vector search for semantic provider matching
 - **Multi-language Support**: Configurable language and voice settings
 - **Chat Context**: Maintains conversation history per session
 - **Scalable Architecture**: Stateless design for horizontal scaling
 - **Production-ready**: Comprehensive error handling and logging
+- **Database**: Self-hosted Weaviate with automatic embeddings for smart provider search
 
 ### Conversation Stages
 
@@ -132,10 +133,55 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 ### 2. Start the Service
 
+**Development mode (with test data):**
 ```bash
-# Using the run script
+# Navigate to ai-assistant directory
+cd ai-assistant
+
+# Start the service
+docker-compose up ai-assistant
+
+# Or using the run script
 ./scripts/run.sh start
 ```
+
+**Production mode (with Weaviate):**
+
+*Option A: Local Weaviate (self-hosted)*
+```bash
+# Step 1: Start Weaviate services (in separate directory)
+cd /path/to/fides/weaviate
+docker-compose up -d
+
+# Step 2: Configure .env
+USE_WEAVIATE=true
+WEAVIATE_URL=http://localhost:8090
+
+# Step 3: Initialize database with test data
+cd /path/to/fides/ai-assistant
+python scripts/init_weaviate.py
+
+# Step 4: Start AI assistant
+docker-compose up ai-assistant
+```
+
+*Option B: Weaviate Cloud Services (managed)*
+```bash
+# Step 1: Create cluster at https://console.weaviate.cloud/
+
+# Step 2: Configure .env
+USE_WEAVIATE=true
+WEAVIATE_CLUSTER_URL=https://your-cluster.weaviate.network
+WEAVIATE_API_KEY=your-weaviate-cloud-api-key
+
+# Step 3: Initialize cloud database
+python scripts/init_weaviate.py
+
+# Step 4: Start AI assistant (no local Weaviate needed!)
+docker-compose up ai-assistant
+```
+
+**Note**: See `/weaviate/README.md` for detailed Weaviate setup instructions.
 
 ### 3. Verify It's Running
 
@@ -429,6 +475,10 @@ podman-compose down
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `USE_WEAVIATE` | Use Weaviate vector database (`true`) or local test data (`false`) | `true` |
+| `WEAVIATE_URL` | Local Weaviate URL (self-hosted deployment) | `http://localhost:8090` |
+| `WEAVIATE_CLUSTER_URL` | Weaviate Cloud Services cluster URL (cloud deployment) | - |
+| `WEAVIATE_API_KEY` | Weaviate Cloud Services API key (cloud deployment) | - |
 | `LANGUAGE_CODE` | Language for STT/TTS | `de-DE` |
 | `VOICE_NAME` | TTS voice model | `de-DE-Chirp3-HD-Sulafat` |
 | `HOST` | Server host | `0.0.0.0` |
@@ -436,6 +486,34 @@ podman-compose down
 | `LOG_LEVEL` | Logging level | `INFO` |
 | `GOOGLE_TTS_API_CONCURRENCY` | Max. conncurrent requests to Google TTS API  | `5` |
 | `DEBUG_RECORD_AUDIO` | Record received audio to WAV files | `false` |
+
+### Data Provider Modes
+
+The AI Assistant supports two data provider modes for flexibility:
+
+#### 1. Local Test Data Mode (Default)
+- **Use Case**: Development, testing, demos without database
+- **Configuration**: `USE_WEAVIATE=false` or unset
+- **Features**: 
+  - Uses in-memory test data (`test_data.py`)
+  - 10 pre-configured service providers
+  - Keyword-based category detection
+  - Simple scoring algorithm
+  - No external dependencies
+
+#### 2. Weaviate Mode (Production)
+- **Use Case**: Production deployment with vector search
+- **Configuration**: `USE_WEAVIATE=true` + deployment option
+- **Deployment Options**:
+  - **Local (Development)**: Self-hosted with `WEAVIATE_URL` (see `/weaviate` directory)
+  - **Cloud (Production)**: Managed WCS with `WEAVIATE_CLUSTER_URL` + `WEAVIATE_API_KEY`
+- **Features**:
+  - Semantic similarity matching with automatic embeddings
+  - Hybrid search (vector + keyword)
+  - Scalable provider database
+  - Same code for both local and cloud deployments
+
+**Switching modes**: Set `USE_WEAVIATE=true` in `.env` and configure your deployment option. The code automatically adapts with zero changes required.
 
 ### Available Languages & Voices
 
