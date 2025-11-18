@@ -3,11 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter_signin_button/flutter_signin_button.dart';
-
+import 'package:flutter_signin_button/flutter_signin_button.dart'; // For non-web platforms
 import '../widgets/sign_in_button_stub.dart'
-    if (dart.library.html) 'package:google_sign_in_web/web_only.dart'
-    as sign_in_button_web;
+    if (dart.library.html) 'package:google_sign_in_web/web_only.dart'; // For web platform
+
 import '../services/auth_service.dart';
 import '../theme.dart';
 import '../widgets/app_background.dart';
@@ -41,7 +40,9 @@ class _StartPageState extends State<StartPage> {
           });
 
           // Listen for authentication events and navigate when signed in
-          _authSubscription = GoogleSignIn.instance.authenticationEvents.listen((event) {
+          _authSubscription = GoogleSignIn.instance.authenticationEvents.listen((
+            event,
+          ) {
             if (event is GoogleSignInAuthenticationEventSignIn) {
               // subscription is cancelled in dispose, so mounted should be true here
               if (mounted) Navigator.pushReplacementNamed(context, '/home');
@@ -119,33 +120,25 @@ class _StartPageState extends State<StartPage> {
                         ),
                       ),
                       SizedBox(height: logoTextGap),
-                      if (kIsWeb) ...[
-                        // Use the web plugin's renderButton which returns a Widget
-                        if (!_initialized)
-                          const SizedBox(
-                            width: 220,
-                            height: 48,
-                            child: Center(child: CircularProgressIndicator()),
-                          )
-                        else
-                          SizedBox(
-                            width: 220,
-                            height: 48,
-                            child: sign_in_button_web.renderButton(),
-                          ),
-                      ] else ...[
-                        if (!_initialized)
-                          const SizedBox(
-                            width: 220,
-                            height: 48,
-                            child: Center(child: CircularProgressIndicator()),
-                          )
-                        else
-                          SignInButton(
-                            Buttons.GoogleDark,
-                            onPressed: _loading ? null : _onSignInPressed,
-                          ),
-                      ],
+                      if (!_initialized)
+                        const SizedBox(
+                          width: 220,
+                          height: 48,
+                          child: Center(child: CircularProgressIndicator()),
+                        )
+                      else if (kIsWeb)
+                        SizedBox(
+                          width: 220,
+                          height: 48,
+                          child: renderButton(configuration: GSIButtonConfiguration(
+                            theme: GSIButtonTheme.filledBlack,
+                          )),
+                        )
+                      else
+                        SignInButton(
+                          Buttons.GoogleDark,
+                          onPressed: _loading ? null : _onSignInPressed,
+                        ),
                       if (_error != null) ...[
                         const SizedBox(height: 12),
                         Text(
