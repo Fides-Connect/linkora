@@ -83,9 +83,6 @@ cd connectx
 
 # Run the app on the specified port (default: 60099)
 ./scripts/run_web.sh
-
-# Or specify a custom port
-./scripts/run_web.sh 8080
 ```
 
 This ensures the app runs on the correct port for Google Cloud registration.
