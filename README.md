@@ -4,10 +4,11 @@ A complete voice-based AI assistant platform built with Flutter and Python, feat
 
 ## 🎯 Overview
 
-Fides is a modern AI voice assistant platform that enables natural voice conversations with AI. The platform consists of two main components:
+Fides is a modern AI voice assistant platform that enables natural voice conversations with AI. The platform consists of three main components:
 
 1. **ConnectX** - A Flutter mobile application for iOS and Android
 2. **AI-Assistant Server** - A Python-based WebRTC server handling AI processing
+3. **Weaviate** - Self-hosted vector database for semantic provider matching
 
 The platform uses WebRTC for low-latency real-time audio streaming, with all AI processing (Speech-to-Text, LLM, Text-to-Speech) centralized on the server for security and efficiency.
 
@@ -33,9 +34,14 @@ Fides/
 │
 ├── ai-assistant/         # Python WebRTC server
 │   ├── src/              # Python source code
+│   ├── scripts/          # Initialization scripts
 │   ├── Containerfile     # Container definition
 │   ├── requirements.txt  # Python dependencies
 │   └── README.md         # AI-Assistant documentation
+│
+├── weaviate/             # Vector database infrastructure
+│   ├── docker-compose.yml # Weaviate services
+│   └── README.md         # Weaviate setup guide
 │
 ├── scripts/              # Utility scripts
 │   ├── generateOAuth2Token.py  # OAuth token generator
@@ -64,23 +70,43 @@ Fides/
 
 ### 1. Start the AI-Assistant Server
 
+**Option A: Development Mode (No Database)**
+
 ```bash
 cd ai-assistant
 
 # Configure environment
 cp .env.template .env
 # Edit .env with your Google Cloud credentials and Gemini API key
+# USE_WEAVIATE=false (default for development)
 
-# Start server (using run script)
+# Start server
 ./scripts/run.sh start
-
-# Or start directly with Python
-python main.py
 
 # Server starts on ws://localhost:8080/ws
 ```
 
-See [AI-Assistant README](ai-assistant/README.md) for detailed setup instructions.
+**Option B: Production Mode (With Weaviate)**
+
+```bash
+# Step 1: Start Weaviate vector database
+cd weaviate
+docker-compose up -d
+
+# Step 2: Initialize database
+cd ../ai-assistant
+python scripts/init_weaviate.py
+
+# Step 3: Configure AI-Assistant
+# Edit .env:
+#   USE_WEAVIATE=true
+#   WEAVIATE_URL=http://localhost:8090
+
+# Step 4: Start server
+docker-compose up ai-assistant
+```
+
+See [AI-Assistant README](ai-assistant/README.md) and [Weaviate README](weaviate/README.md) for detailed setup instructions.
 
 ### 2. Run ConnectX App
 
@@ -172,6 +198,8 @@ Each component has detailed documentation:
 
 - **[ConnectX Documentation](connectx/README.md)** - Flutter app setup, usage, and troubleshooting
 - **[AI-Assistant Documentation](ai-assistant/README.md)** - Server setup, configuration, deployment, and API reference
+- **[Weaviate Documentation](weaviate/README.md)** - Vector database setup, local and cloud deployment
+- **[Project Structure](PROJECT_STRUCTURE.md)** - Complete workspace organization guide
 
 ## 🔧 Configuration
 
@@ -193,6 +221,16 @@ VOICE_NAME=de-DE-Chirp3-HD-Sulafat
 PORT=8080
 LOG_LEVEL=INFO
 GOOGLE_TTS_API_CONCURRENCY=5
+
+# Data Provider Mode
+USE_WEAVIATE=true                    # true = Weaviate DB, false = local test data
+
+# Local Weaviate (Development)
+WEAVIATE_URL=http://localhost:8090
+
+# OR Cloud Weaviate (Production)
+# WEAVIATE_CLUSTER_URL=https://your-cluster.weaviate.network
+# WEAVIATE_API_KEY=your-weaviate-api-key
 
 # Optional: Record received audio for debugging (creates debug_audio/*.wav files)
 DEBUG_RECORD_AUDIO=false
