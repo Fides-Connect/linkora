@@ -10,7 +10,7 @@ services:
       - "8080:8080"
     volumes:
       # Mount your Google Cloud credentials
-      - ./credentials.json:/app/credentials.json:ro
+      - ./${GOOGLE_CREDENTIALS_FILE:-miracle-470512-dd60e0c1b713.json}:/app/credentials.json:ro
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
       - GEMINI_API_KEY=${GEMINI_API_KEY}
@@ -20,10 +20,20 @@ services:
       - PORT=8080
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - GOOGLE_TTS_API_CONCURRENCY=${GOOGLE_TTS_API_CONCURRENCY:-5}
+      - USE_WEAVIATE=${USE_WEAVIATE:-true}
+      - WEAVIATE_URL=${WEAVIATE_URL:-http://weaviate:8080}
     restart: unless-stopped
+    networks:
+      - default
+      - weaviate-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+networks:
+  weaviate-network:
+    name: weaviate-network
+    external: true
