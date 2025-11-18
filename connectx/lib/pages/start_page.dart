@@ -58,15 +58,13 @@ class _StartPageState extends State<StartPage> {
       _loading = true;
       _error = null;
     });
+
     try {
       await _auth.signIn();
-      // Navigate to the voice assistant only on successful sign-in
-      if (!mounted) return;
-      //Navigator.pushReplacementNamed(context, '/home');
     } catch (e) {
       setState(() => _error = 'Sign-in failed: $e');
     } finally {
-      if (mounted) setState(() => _loading = false);
+      setState(() => _loading = false);
     }
   }
 
@@ -144,10 +142,7 @@ class _StartPageState extends State<StartPage> {
                           )
                         else
                           SignInButton(
-                            Buttons.Google,
-                            text: _loading
-                                ? 'Signing in…'
-                                : 'Sign in with Google',
+                            Buttons.GoogleDark,
                             onPressed: _loading ? null : _onSignInPressed,
                           ),
                       ],

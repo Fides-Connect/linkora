@@ -82,10 +82,6 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   void initState() {
     super.initState();
     _initializeServices();
-    // Automatically start the microphone when app loads
-    // WidgetsBinding.instance.addPostFrameCallback((_) {
-    //   _startChat();
-    // });
   }
 
   void _initializeServices() {

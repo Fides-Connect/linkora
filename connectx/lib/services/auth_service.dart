@@ -55,28 +55,21 @@ class AuthService {
     GoogleSignIn.instance.authenticationEvents
         .listen(_handleAuthenticationEvent)
         .onError(_handleAuthenticationError);
-    
+
     _initialized = true;
   }
 
   Future<void> _handleAuthenticationEvent(
     GoogleSignInAuthenticationEvent event,
   ) async {
-    debugPrint('Auth event: $event');
-    final GoogleSignInAccount? user;
-    if (event is GoogleSignInAuthenticationEventSignIn) {
-      user = event.user;
-    } else if (event is GoogleSignInAuthenticationEventSignOut) {
-      user = null;
-    } else {
-      user = null;
-    }
+    final GoogleSignInAccount? user =
+        event is GoogleSignInAuthenticationEventSignIn ? event.user : null;
 
     _userController.add(user);
     _currentUser = user;
 
     if (_currentUser != null) {
-      _handleGetContact(_currentUser!);
+      _getProfilePhoto(_currentUser!);
     }
   }
 
@@ -87,7 +80,7 @@ class AuthService {
   }
 
   // Calls the People API REST endpoint for the signed-in user to retrieve information.
-  Future<void> _handleGetContact(GoogleSignInAccount user) async {
+  Future<void> _getProfilePhoto(GoogleSignInAccount user) async {
     final Map<String, String>? headers = await user.authorizationClient
         .authorizationHeaders(scopes);
     if (headers == null) {
@@ -103,32 +96,16 @@ class AuthService {
     );
 
     if (response.statusCode != 200) {
+      debugPrint('Failed to fetch user profile: ${response.body}');
       return;
     }
 
     final Map<String, dynamic> profile = json.decode(response.body);
     // Extract photo url (if any)
     final List<dynamic>? photos = profile['photos'] as List<dynamic>?;
-    String? photoUrl;
-    if (photos != null && photos.isNotEmpty) {
-      try {
-        final Map<String, dynamic> first =
-            photos.firstWhere(
-                  (p) =>
-                      (p as Map<String, dynamic>)['metadata']?['primary'] ==
-                      true,
-                  orElse: () => photos.first,
-                )
-                as Map<String, dynamic>;
-        photoUrl = first['url'] as String?;
-      } catch (e) {
-        debugPrint('DEBUG: photo parsing error: $e');
-        photoUrl = null;
-      }
-    } else {
-      photoUrl = null;
-    }
-    debugPrint('DEBUG: resolved photoUrl -> $photoUrl');
+    final photoUrl = photos?.isNotEmpty == true
+        ? photos?.first['url'] as String?
+        : null;
 
     // store or expose photoUrl for UI usage
     // save and notify listeners so UI can update
@@ -146,7 +123,7 @@ class AuthService {
     await GoogleSignIn.instance.authenticate(scopeHint: scopes);
   }
 
-    void dispose() {
+  void dispose() {
     try {
       _userController.close();
     } catch (_) {}
