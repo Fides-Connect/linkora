@@ -23,11 +23,7 @@ class AuthService {
 
   GoogleSignInAccount? _currentUser;
   bool isAuthorized = false; // has granted permissions?
-  String _contactText = '';
-  String _errorMessage = '';
-  String _serverAuthCode = '';
   String? _photoUrl;
-
   /// Expose the photo URL fetched from People API (may be null).
   String? get photoUrl => _photoUrl;
 
@@ -45,40 +41,13 @@ class AuthService {
         'GOOGLE_OAUTH_CLIENT_ID not set. Add GOOGLE_OAUTH_CLIENT_ID_WEB to .env',
       );
     }
-    // Configure the package singleton with the right IDs, then use the singleton.
-
-    //unawaited(
     GoogleSignIn.instance.initialize(
       clientId: isWeb ? webClientId : null,
       serverClientId: isAndroid ? webClientId : null,
     );
-
     GoogleSignIn.instance.authenticationEvents
         .listen(_handleAuthenticationEvent)
         .onError(_handleAuthenticationError);
-
-    // final GoogleSignInClientAuthorization? authorization =
-    //     await GoogleSignIn.instance.authorizationClient
-    //         .authorizeScopes(scopes);
-
-    // if (authorization != null) {
-    //   debugPrint('User already authorized for scopes: $scopes');
-    //   // authorized: you can call authorizationHeaders(scopes) or use the token
-    //   final headers = await GoogleSignIn.instance.authorizationClient
-    //       .authorizationHeaders(scopes);
-    //   // ...use headers to call People API, etc.
-    // } else {
-    //   debugPrint('User not yet authorized for scopes: $scopes');
-    // }
-
-
-
-    /// This example always uses the stream-based approach to determining
-    /// which UI state to show, rather than using the future returned here,
-    /// if any, to conditionally skip directly to the signed-in state.
-    //signIn.attemptLightweightAuthentication();
-    //}),
-    //);
   }
 
   Future<void> _handleAuthenticationEvent(
@@ -91,20 +60,9 @@ class AuthService {
       GoogleSignInAuthenticationEventSignOut() => null,
     };
 
-    // Check for existing authorization.
-    // final GoogleSignInClientAuthorization? authorization = await user
-    //     ?.authorizationClient
-    //     .authorizeScopes(scopes);
-
-    // debugPrint('User: $user, Authorization: $authorization');
-    debugPrint('Photo URL: ${user?.photoUrl}');
     _userController.add(user);
     _currentUser = user;
-    // isAuthorized = authorization != null;
-    _errorMessage = '';
 
-    // If the user has already granted access to the required scopes, call the
-    // REST API.
     if (user != null) {
       unawaited(_handleGetContact(user));
     }
@@ -114,22 +72,16 @@ class AuthService {
     debugPrint('Auth error: $e');
     _userController.add(null);
     _currentUser = null;
-    isAuthorized = false;
-    _errorMessage = e is GoogleSignInException
-        ? _errorMessageFromSignInException(e)
-        : 'Unknown error: $e';
+    if (e is GoogleSignInException) {
+      _errorMessageFromSignInException(e);
+    }   
   }
 
   // Calls the People API REST endpoint for the signed-in user to retrieve information.
   Future<void> _handleGetContact(GoogleSignInAccount user) async {
-    _contactText = 'Loading contact info...';
-
     final Map<String, String>? headers = await user.authorizationClient
         .authorizationHeaders(scopes);
-    debugPrint('DEBUG: authorization headers -> $headers');
     if (headers == null) {
-      _contactText = '';
-      _errorMessage = 'Failed to construct authorization headers.';
       return;
     }
 
@@ -140,17 +92,12 @@ class AuthService {
       ),
       headers: headers,
     );
-    debugPrint('DEBUG: People API response code=${response.statusCode}');
-    debugPrint('DEBUG: People API response body=${response.body}');
 
     if (response.statusCode != 200) {
-      _contactText = '';
-      _errorMessage = 'People API returned ${response.statusCode}';
       return;
     }
 
     final Map<String, dynamic> profile = json.decode(response.body);
-    debugPrint('DEBUG: People API parsed profile keys=${profile.keys}');
     // Extract display name and photo url (if any)
     final String? displayName =
         (profile['names'] as List<dynamic>?)
@@ -163,7 +110,6 @@ class AuthService {
                 )['displayName']
             as String?;
     final List<dynamic>? photos = profile['photos'] as List<dynamic>?;
-    debugPrint('DEBUG: photos raw -> $photos');
     String? photoUrl;
     if (photos != null && photos.isNotEmpty) {
       try {
@@ -185,16 +131,6 @@ class AuthService {
     }
     debugPrint('DEBUG: resolved photoUrl -> $photoUrl');
 
-    _contactText = displayName ?? user.displayName ?? '';
-    // Extract the access token from authorization headers returned earlier.
-    // The headers map should contain an Authorization: Bearer <token> entry.
-    final String? authHeader =
-        headers['Authorization'] ?? headers['authorization'];
-    if (authHeader != null && authHeader.startsWith('Bearer ')) {
-      _serverAuthCode = authHeader.substring(7);
-    } else {
-      _serverAuthCode = authHeader ?? '';
-    }
     // store or expose photoUrl for UI usage
     debugPrint('Fetched photoUrl from People API: $photoUrl');
     // save and notify listeners so UI can update
@@ -220,10 +156,6 @@ class AuthService {
   }
 
   Future<void> signIn() async {
-    try {
-      await GoogleSignIn.instance.authenticate(scopeHint: scopes);
-    } catch (e) {
-      _errorMessage = e.toString();
-    }
+    await GoogleSignIn.instance.authenticate(scopeHint: scopes);
   }
 }
