@@ -6,7 +6,6 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'package:connectx/services/auth_service.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:connectx/main.dart';
@@ -14,13 +13,8 @@ import 'package:connectx/main.dart';
 void main() {
   testWidgets('ConnectX app smoke test', (WidgetTester tester) async {
 
-    // Initialize AuthService
+    // Create AuthService
     final auth = AuthService();
-    try {
-      await auth.initialize();
-    } catch (e) {
-      debugPrint('Error initializing AuthService: $e');
-    }
 
     // Build our app
     await tester.pumpWidget(ConnectXApp(auth: auth));
