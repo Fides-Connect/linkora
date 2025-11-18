@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -23,6 +25,9 @@ class _StartPageState extends State<StartPage> {
   bool _initialized = false;
   String? _error;
 
+  // Track the authentication events subscription so we can cancel it on dispose.
+  StreamSubscription<GoogleSignInAuthenticationEvent>? _authSubscription;
+
   @override
   void initState() {
     super.initState();
@@ -36,8 +41,9 @@ class _StartPageState extends State<StartPage> {
           });
 
           // Listen for authentication events and navigate when signed in
-          GoogleSignIn.instance.authenticationEvents.listen((event) {
+          _authSubscription = GoogleSignIn.instance.authenticationEvents.listen((event) {
             if (event is GoogleSignInAuthenticationEventSignIn) {
+              // subscription is cancelled in dispose, so mounted should be true here
               if (mounted) Navigator.pushReplacementNamed(context, '/home');
             }
           });
@@ -62,6 +68,12 @@ class _StartPageState extends State<StartPage> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -96,10 +108,16 @@ class _StartPageState extends State<StartPage> {
                       SizedBox(
                         width: 120,
                         height: 120,
-                        child: Image.asset(
-                          'assets/images/FidesLogo.png',
-                          fit: BoxFit.contain,
-                          semanticLabel: 'Fides Logo',
+                        child: GestureDetector(
+                          onTap: () {
+                            if (!mounted) return;
+                            Navigator.pushReplacementNamed(context, '/home');
+                          },
+                          child: Image.asset(
+                            'assets/images/FidesLogo.png',
+                            fit: BoxFit.contain,
+                            semanticLabel: 'Fides Logo',
+                          ),
                         ),
                       ),
                       SizedBox(height: logoTextGap),

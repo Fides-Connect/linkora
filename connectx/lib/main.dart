@@ -19,7 +19,9 @@ void main() async {
   final auth = AuthService();
   try {
     await auth.initialize();
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('Error initializing AuthService: $e');
+  }
 
   runApp(ConnectXApp(auth: auth));
 }
@@ -153,7 +155,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     try {
       _speechService.stopSpeech();
     } catch (e) {
-      print('Error stopping chat: $e');
+      debugPrint('Error stopping chat: $e');
     }
 
     setState(() {

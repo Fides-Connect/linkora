@@ -13,58 +13,70 @@ class AuthService {
   factory AuthService() => _instance;
   AuthService._internal();
 
-  // late final GoogleSignIn _googleSignIn;
+  bool isAuthorized = false;
+  GoogleSignInAccount? _currentUser;
+  GoogleSignInAccount? get currentUser => _currentUser;
   final StreamController<GoogleSignInAccount?> _userController =
       StreamController.broadcast();
-
-  GoogleSignInAccount? get currentUser => _currentUser;
   Stream<GoogleSignInAccount?> get onCurrentUserChanged =>
       _userController.stream;
 
-  GoogleSignInAccount? _currentUser;
-  bool isAuthorized = false; // has granted permissions?
   String? _photoUrl;
+
   /// Expose the photo URL fetched from People API (may be null).
   String? get photoUrl => _photoUrl;
 
   final List<String> scopes = <String>['openid', 'email', 'profile'];
 
+  // simple init guard
+  bool _initialized = false;
+
   /// Initialize the underlying GoogleSignIn singleton with optional clientId.
   Future<void> initialize() async {
+    if (_initialized) return;
     final bool isWeb = kIsWeb;
     final bool isAndroid =
         !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-    final webClientId = dotenv.env['GOOGLE_OAUTH_CLIENT_ID_WEB'];
+    final webClientId = dotenv.env['GOOGLE_OAUTH_CLIENT_ID'];
     if (webClientId == null) {
       throw Exception(
-        'GOOGLE_OAUTH_CLIENT_ID not set. Add GOOGLE_OAUTH_CLIENT_ID_WEB to .env',
+        'GOOGLE_OAUTH_CLIENT_ID not set. Add GOOGLE_OAUTH_CLIENT_ID to .env',
       );
     }
-    GoogleSignIn.instance.initialize(
+
+    // Await the initialization and register listener
+    await GoogleSignIn.instance.initialize(
       clientId: isWeb ? webClientId : null,
       serverClientId: isAndroid ? webClientId : null,
     );
+
+    // Listen for authentication events (store/attach errors to service-level handler)
     GoogleSignIn.instance.authenticationEvents
         .listen(_handleAuthenticationEvent)
         .onError(_handleAuthenticationError);
+    
+    _initialized = true;
   }
 
   Future<void> _handleAuthenticationEvent(
     GoogleSignInAuthenticationEvent event,
   ) async {
     debugPrint('Auth event: $event');
-    final GoogleSignInAccount? user = // ...
-    switch (event) {
-      GoogleSignInAuthenticationEventSignIn() => event.user,
-      GoogleSignInAuthenticationEventSignOut() => null,
-    };
+    final GoogleSignInAccount? user;
+    if (event is GoogleSignInAuthenticationEventSignIn) {
+      user = event.user;
+    } else if (event is GoogleSignInAuthenticationEventSignOut) {
+      user = null;
+    } else {
+      user = null;
+    }
 
     _userController.add(user);
     _currentUser = user;
 
-    if (user != null) {
-      unawaited(_handleGetContact(user));
+    if (_currentUser != null) {
+      _handleGetContact(_currentUser!);
     }
   }
 
@@ -72,9 +84,6 @@ class AuthService {
     debugPrint('Auth error: $e');
     _userController.add(null);
     _currentUser = null;
-    if (e is GoogleSignInException) {
-      _errorMessageFromSignInException(e);
-    }   
   }
 
   // Calls the People API REST endpoint for the signed-in user to retrieve information.
@@ -98,17 +107,7 @@ class AuthService {
     }
 
     final Map<String, dynamic> profile = json.decode(response.body);
-    // Extract display name and photo url (if any)
-    final String? displayName =
-        (profile['names'] as List<dynamic>?)
-                ?.cast<Map<String, dynamic>>()
-                .firstWhere(
-                  (n) => n['metadata']?['primary'] == true,
-                  orElse: () =>
-                      (profile['names'] as List<dynamic>).first
-                          as Map<String, dynamic>,
-                )['displayName']
-            as String?;
+    // Extract photo url (if any)
     final List<dynamic>? photos = profile['photos'] as List<dynamic>?;
     String? photoUrl;
     if (photos != null && photos.isNotEmpty) {
@@ -132,21 +131,9 @@ class AuthService {
     debugPrint('DEBUG: resolved photoUrl -> $photoUrl');
 
     // store or expose photoUrl for UI usage
-    debugPrint('Fetched photoUrl from People API: $photoUrl');
     // save and notify listeners so UI can update
     _photoUrl = photoUrl;
     _userController.add(_currentUser);
-    // ...update state / controllers as needed...
-  }
-
-  String _errorMessageFromSignInException(GoogleSignInException e) {
-    // In practice, an application should likely have specific handling for most
-    // or all of the, but for simplicity this just handles cancel, and reports
-    // the rest as generic errors.
-    return switch (e.code) {
-      GoogleSignInExceptionCode.canceled => 'Sign in canceled',
-      _ => 'GoogleSignInException ${e.code}: ${e.description}',
-    };
   }
 
   Future<void> signOut() async {
@@ -157,5 +144,11 @@ class AuthService {
 
   Future<void> signIn() async {
     await GoogleSignIn.instance.authenticate(scopeHint: scopes);
+  }
+
+    void dispose() {
+    try {
+      _userController.close();
+    } catch (_) {}
   }
 }

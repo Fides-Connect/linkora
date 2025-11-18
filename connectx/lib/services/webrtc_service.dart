@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -43,14 +43,14 @@ class WebRTCService {
   /// Initialize and connect to the AI-Assistant server
   Future<void> connect() async {
     if (_isConnected || _isConnecting) {
-      print('WebRTC: Already connected or connecting');
+      debugPrint('WebRTC: Already connected or connecting');
       return;
     }
     
     _isConnecting = true;
     
     try {
-      print('WebRTC: Connecting to $_serverUrl');
+      debugPrint('WebRTC: Connecting to $_serverUrl');
       
       // Create local audio stream
       await _createLocalStream();
@@ -64,10 +64,10 @@ class WebRTCService {
       // Create and send offer
       await _createOffer();
       
-      print('WebRTC: Connection process initiated');
+      debugPrint('WebRTC: Connection process initiated');
       
     } catch (e) {
-      print('WebRTC: Error during connection: $e');
+      debugPrint('WebRTC: Error during connection: $e');
       _isConnecting = false;
       onError?.call('Connection failed: $e');
       await disconnect();
@@ -77,7 +77,7 @@ class WebRTCService {
   
   /// Disconnect from the AI-Assistant server
   Future<void> disconnect() async {
-    print('WebRTC: Disconnecting...');
+    debugPrint('WebRTC: Disconnecting...');
     
     _isConnected = false;
     _isConnecting = false;
@@ -113,12 +113,12 @@ class WebRTCService {
     _audioTrack = null;
     
     onDisconnected?.call();
-    print('WebRTC: Disconnected');
+    debugPrint('WebRTC: Disconnected');
   }
   
   /// Create local audio stream from microphone
   Future<void> _createLocalStream() async {
-    print('WebRTC: Creating local audio stream');
+    debugPrint('WebRTC: Creating local audio stream');
     
     try {
       final Map<String, dynamic> mediaConstraints = {
@@ -144,19 +144,19 @@ class WebRTCService {
       
       if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
         _audioTrack = _localStream!.getAudioTracks()[0];
-        print('WebRTC: Local audio stream created: ${_audioTrack!.id}');
+        debugPrint('WebRTC: Local audio stream created: ${_audioTrack!.id}');
       } else {
         throw Exception('Failed to get audio track from local stream');
       }
     } catch (e) {
-      print('WebRTC: Error creating local stream: $e');
+      debugPrint('WebRTC: Error creating local stream: $e');
       rethrow;
     }
   }
   
   /// Connect to WebSocket signaling server
   Future<void> _connectSignaling() async {
-    print('WebRTC: Connecting to signaling server: $_serverUrl');
+    debugPrint('WebRTC: Connecting to signaling server: $_serverUrl');
     
     try {
       _signaling = WebSocketChannel.connect(Uri.parse(_serverUrl));
@@ -167,27 +167,27 @@ class WebRTCService {
           _handleSignalingMessage(message);
         },
         onError: (error) {
-          print('WebRTC: Signaling error: $error');
+          debugPrint('WebRTC: Signaling error: $error');
           onError?.call('Signaling error: $error');
         },
         onDone: () {
-          print('WebRTC: Signaling connection closed');
+          debugPrint('WebRTC: Signaling connection closed');
           if (_isConnected || _isConnecting) {
             disconnect();
           }
         },
       );
       
-      print('WebRTC: Signaling connected');
+      debugPrint('WebRTC: Signaling connected');
     } catch (e) {
-      print('WebRTC: Error connecting to signaling server: $e');
+      debugPrint('WebRTC: Error connecting to signaling server: $e');
       rethrow;
     }
   }
   
   /// Create WebRTC peer connection
   Future<void> _createPeerConnection() async {
-    print('WebRTC: Creating peer connection');
+    debugPrint('WebRTC: Creating peer connection');
     
     try {
       // ICE servers configuration
@@ -205,21 +205,21 @@ class WebRTCService {
                       defaultTargetPlatform == TargetPlatform.iOS)) {
         try {
           await Helper.setSpeakerphoneOn(false);
-          print('WebRTC: Forced earpiece mode');
+          debugPrint('WebRTC: Forced earpiece mode');
         } catch (e) {
-          print('WebRTC: Could not force earpiece: $e');
+          debugPrint('WebRTC: Could not force earpiece: $e');
         }
       }
       
       // Add local audio track to peer connection
       if (_audioTrack != null) {
         await _peerConnection!.addTrack(_audioTrack!, _localStream!);
-        print('WebRTC: Added local audio track to peer connection');
+        debugPrint('WebRTC: Added local audio track to peer connection');
       }
       
       // Handle ICE candidates
       _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
-        print('WebRTC: ICE candidate generated: ${candidate.candidate}');
+        debugPrint('WebRTC: ICE candidate generated: ${candidate.candidate}');
         _sendSignalingMessage({
           'type': 'ice-candidate',
           'candidate': {
@@ -232,7 +232,7 @@ class WebRTCService {
       
       // Handle connection state changes
       _peerConnection!.onConnectionState = (RTCPeerConnectionState state) async {
-        print('WebRTC: Connection state: $state');
+        debugPrint('WebRTC: Connection state: $state');
         
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _isConnected = true;
@@ -243,9 +243,9 @@ class WebRTCService {
                           defaultTargetPlatform == TargetPlatform.iOS)) {
             try {
               await Helper.setSpeakerphoneOn(false);
-              print('WebRTC: Re-enforced earpiece after connection established');
+              debugPrint('WebRTC: Re-enforced earpiece after connection established');
             } catch (e) {
-              print('WebRTC: Could not re-enforce earpiece: $e');
+              debugPrint('WebRTC: Could not re-enforce earpiece: $e');
             }
           }
           
@@ -261,38 +261,38 @@ class WebRTCService {
       
       // Handle remote stream
       _peerConnection!.onTrack = (RTCTrackEvent event) async {
-        print('WebRTC: Received remote track: ${event.track.kind}');
+        debugPrint('WebRTC: Received remote track: ${event.track.kind}');
         
         if (event.track.kind == 'audio') {
           if (_remoteStream == null) {
             _remoteStream = event.streams[0];
             onRemoteStream?.call(_remoteStream!);
-            print('WebRTC: Remote audio stream received');
+            debugPrint('WebRTC: Remote audio stream received');
             
             // Re-enforce earpiece when remote audio arrives
             if (!kIsWeb && (defaultTargetPlatform == TargetPlatform.android || 
                             defaultTargetPlatform == TargetPlatform.iOS)) {
               try {
                 await Helper.setSpeakerphoneOn(false);
-                print('WebRTC: Re-enforced earpiece after remote track received');
+                debugPrint('WebRTC: Re-enforced earpiece after remote track received');
               } catch (e) {
-                print('WebRTC: Could not re-enforce earpiece: $e');
+                debugPrint('WebRTC: Could not re-enforce earpiece: $e');
               }
             }
           }
         }
       };
       
-      print('WebRTC: Peer connection created');
+      debugPrint('WebRTC: Peer connection created');
     } catch (e) {
-      print('WebRTC: Error creating peer connection: $e');
+      debugPrint('WebRTC: Error creating peer connection: $e');
       rethrow;
     }
   }
   
   /// Create and send WebRTC offer
   Future<void> _createOffer() async {
-    print('WebRTC: Creating offer');
+    debugPrint('WebRTC: Creating offer');
     
     try {
       final RTCSessionDescription offer = await _peerConnection!.createOffer({
@@ -301,7 +301,7 @@ class WebRTCService {
       });
       
       await _peerConnection!.setLocalDescription(offer);
-      print('WebRTC: Local description set (offer)');
+      debugPrint('WebRTC: Local description set (offer)');
       
       // Send offer to server
       _sendSignalingMessage({
@@ -309,9 +309,9 @@ class WebRTCService {
         'sdp': offer.sdp,
       });
       
-      print('WebRTC: Offer sent to server');
+      debugPrint('WebRTC: Offer sent to server');
     } catch (e) {
-      print('WebRTC: Error creating offer: $e');
+      debugPrint('WebRTC: Error creating offer: $e');
       rethrow;
     }
   }
@@ -322,7 +322,7 @@ class WebRTCService {
       final Map<String, dynamic> data = json.decode(message);
       final String? type = data['type'];
       
-      print('WebRTC: Received signaling message: $type');
+      debugPrint('WebRTC: Received signaling message: $type');
       
       switch (type) {
         case 'answer':
@@ -334,40 +334,40 @@ class WebRTCService {
           break;
           
         default:
-          print('WebRTC: Unknown signaling message type: $type');
+          debugPrint('WebRTC: Unknown signaling message type: $type');
       }
     } catch (e) {
-      print('WebRTC: Error handling signaling message: $e');
+      debugPrint('WebRTC: Error handling signaling message: $e');
     }
   }
   
   /// Handle WebRTC answer from server
   Future<void> _handleAnswer(String sdp) async {
-    print('WebRTC: Handling answer from server');
+    debugPrint('WebRTC: Handling answer from server');
     
     try {
       final RTCSessionDescription answer = RTCSessionDescription(sdp, 'answer');
       await _peerConnection!.setRemoteDescription(answer);
-      print('WebRTC: Remote description set (answer)');
+      debugPrint('WebRTC: Remote description set (answer)');
       
       _remoteDescriptionSet = true;
       
       // Process queued ICE candidates
       if (_iceCandidatesQueue.isNotEmpty) {
-        print('WebRTC: Processing ${_iceCandidatesQueue.length} queued ICE candidates');
+        debugPrint('WebRTC: Processing ${_iceCandidatesQueue.length} queued ICE candidates');
         for (final candidate in _iceCandidatesQueue) {
           await _peerConnection!.addCandidate(candidate);
         }
         _iceCandidatesQueue.clear();
       }
     } catch (e) {
-      print('WebRTC: Error handling answer: $e');
+      debugPrint('WebRTC: Error handling answer: $e');
     }
   }
   
   /// Handle ICE candidate from server
   Future<void> _handleIceCandidate(Map<String, dynamic> candidateData) async {
-    print('WebRTC: Handling ICE candidate from server');
+    debugPrint('WebRTC: Handling ICE candidate from server');
     
     try {
       final RTCIceCandidate candidate = RTCIceCandidate(
@@ -378,13 +378,13 @@ class WebRTCService {
       
       if (_remoteDescriptionSet) {
         await _peerConnection!.addCandidate(candidate);
-        print('WebRTC: ICE candidate added');
+        debugPrint('WebRTC: ICE candidate added');
       } else {
-        print('WebRTC: Queueing ICE candidate (remote description not set yet)');
+        debugPrint('WebRTC: Queueing ICE candidate (remote description not set yet)');
         _iceCandidatesQueue.add(candidate);
       }
     } catch (e) {
-      print('WebRTC: Error handling ICE candidate: $e');
+      debugPrint('WebRTC: Error handling ICE candidate: $e');
     }
   }
   
@@ -392,9 +392,9 @@ class WebRTCService {
   void _sendSignalingMessage(Map<String, dynamic> message) {
     if (_signaling != null) {
       _signaling!.sink.add(json.encode(message));
-      print('WebRTC: Sent signaling message: ${message['type']}');
+      debugPrint('WebRTC: Sent signaling message: ${message['type']}');
     } else {
-      print('WebRTC: Cannot send message, signaling is null');
+      debugPrint('WebRTC: Cannot send message, signaling is null');
     }
   }
 }

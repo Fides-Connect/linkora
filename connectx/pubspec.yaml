@@ -48,6 +48,9 @@ dependencies:
 
   # Sign-In button widgets
   flutter_signin_button: ^2.1.1
+
+  # HTTP client for making API requests
+  http: ^1.6.0
   
 dev_dependencies:
   flutter_test:

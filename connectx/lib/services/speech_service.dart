@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'webrtc_service.dart';
@@ -45,10 +46,10 @@ class SpeechService {
       // Connect to AI-Assistant server
       await _webrtcService!.connect();
       
-      print('SpeechService: Connected to AI-Assistant server');
+      debugPrint('SpeechService: Connected to AI-Assistant server');
       
     } catch (e) {
-      print('SpeechService: Error in startSpeech: $e');
+      debugPrint('SpeechService: Error in startSpeech: $e');
       onSpeechEnd?.call();
       rethrow;
     }
@@ -68,29 +69,29 @@ class SpeechService {
   }
 
   void _initializeWebRTC() {
-    print('SpeechService: Initializing WebRTC service');
+    debugPrint('SpeechService: Initializing WebRTC service');
     
     _webrtcService = WebRTCService();
     
     // Set up WebRTC callbacks
     _webrtcService!.onConnected = () async {
-      print('SpeechService: WebRTC connected');
+      debugPrint('SpeechService: WebRTC connected');
       onConnected?.call();
     };
     
     _webrtcService!.onDisconnected = () {
-      print('SpeechService: WebRTC disconnected');
+      debugPrint('SpeechService: WebRTC disconnected');
       onDisconnected?.call();
       onSpeechEnd?.call();
     };
     
     _webrtcService!.onRemoteStream = (MediaStream stream) {
-      print('SpeechService: Received remote audio stream');
+      debugPrint('SpeechService: Received remote audio stream');
       Future.microtask(() => _handleRemoteStream(stream));
     };
     
     _webrtcService!.onError = (String error) {
-      print('SpeechService: WebRTC error: $error');
+      debugPrint('SpeechService: WebRTC error: $error');
       onSpeechEnd?.call();
     };
   }
@@ -98,42 +99,42 @@ class SpeechService {
   /// Handle incoming remote audio stream from AI-Assistant server
   /// This stream contains the processed audio (STT -> LLM -> TTS)
   Future<void> _handleRemoteStream(MediaStream stream) async {
-    print('SpeechService: Setting up remote audio stream playback');
+    debugPrint('SpeechService: Setting up remote audio stream playback');
     
     try {
       // Get the audio track
       final audioTracks = stream.getAudioTracks();
       if (audioTracks.isEmpty) {
-        print('SpeechService: No audio tracks in remote stream');
+        debugPrint('SpeechService: No audio tracks in remote stream');
         return;
       }
       
       final audioTrack = audioTracks[0];
-      print('SpeechService: Got remote audio track: ${audioTrack.id}, enabled: ${audioTrack.enabled}, muted: ${audioTrack.muted}');
+      debugPrint('SpeechService: Got remote audio track: ${audioTrack.id}, enabled: ${audioTrack.enabled}, muted: ${audioTrack.muted}');
       
       // Clean up any existing renderer
       if (_remoteRenderer != null) {
-        print('SpeechService: Disposing existing renderer');
+        debugPrint('SpeechService: Disposing existing renderer');
         _remoteRenderer!.srcObject = null;
         await _remoteRenderer!.dispose();
       }
       
       // Create and initialize an RTCVideoRenderer to handle the audio stream
-      print('SpeechService: Creating new RTCVideoRenderer');
+      debugPrint('SpeechService: Creating new RTCVideoRenderer');
       _remoteRenderer = RTCVideoRenderer();
       await _remoteRenderer!.initialize();
-      print('SpeechService: Renderer initialized');
+      debugPrint('SpeechService: Renderer initialized');
       
       // Set the remote stream to the renderer
       _remoteRenderer!.srcObject = stream;
-      print('SpeechService: Remote stream assigned to renderer');
+      debugPrint('SpeechService: Remote stream assigned to renderer');
       
       // Ensure the audio track is enabled and not muted
       audioTrack.enabled = true;
       
     } catch (e) {
-      print('SpeechService: Error handling remote stream: $e');
-      print('SpeechService: Stack trace: ${StackTrace.current}');
+      debugPrint('SpeechService: Error handling remote stream: $e');
+      debugPrint('SpeechService: Stack trace: ${StackTrace.current}');
     }
   }
 }
