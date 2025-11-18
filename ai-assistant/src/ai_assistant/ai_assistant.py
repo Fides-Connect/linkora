@@ -20,7 +20,8 @@ from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
 from .prompts_templates import GREETING_AND_TRIAGE_PROMPT, TRIAGE_CONVERSATION_PROMPT, FINALIZE_SERVICE_REQUEST_PROMPT
-from .test_data import USER_DATA, search_providers, detect_category
+from .data_provider import get_data_provider
+from .test_data import detect_category  # Keep category detection for now
 import json
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,9 @@ import random
 AGENT_NAME = "Elin"
 COMPANY_NAME = "FidesConnect"
 USER_NAME_PLACEHOLDER = "Wolfgang"
+
+MAX_PROVIDERS_TO_PRESENT = 3
+
 
 # Conversation stages
 class ConversationStage:
@@ -47,6 +51,9 @@ class AIAssistant:
         self.language_code = language_code
         self.voice_name = voice_name
         self.session_id = session_id or "default"
+        
+        # Initialize data provider (Weaviate or local test data)
+        self.data_provider = get_data_provider()
         
         # Conversation state
         self.current_stage = ConversationStage.GREETING
@@ -149,7 +156,7 @@ class AIAssistant:
         )
         logger.info(f"Updated conversation stage to: {stage}")
     
-    def _detect_stage_transition(self, user_input: str, ai_response: str) -> Optional[str]:
+    async def _detect_stage_transition(self, user_input: str, ai_response: str) -> Optional[str]:
         """
         Detect if conversation should transition to a new stage based on context.
         
@@ -172,7 +179,7 @@ class AIAssistant:
             if any(keyword in response_lower for keyword in transition_keywords):
                 logger.info("Detected transition trigger to FINALIZE stage")
                 # Accumulate conversation context for provider search
-                self._accumulate_problem_description(user_input)
+                await self._accumulate_problem_description(user_input)
                 return ConversationStage.FINALIZE
         
         # Detect transition from FINALIZE to COMPLETED
@@ -188,8 +195,8 @@ class AIAssistant:
         
         return None
     
-    def _accumulate_problem_description(self, user_input: str):
-        """Accumulate user's problem description for provider search."""
+    async def _accumulate_problem_description(self, user_input: str):
+        """Accumulate user's problem description for provider search using data provider."""
         self.conversation_context["user_problem"] += " " + user_input
         
         # Detect category from accumulated text
@@ -198,14 +205,15 @@ class AIAssistant:
             self.conversation_context["detected_category"] = category
             logger.info(f"Detected category: {category}")
         
-        # Search for providers
-        providers = search_providers(
-            self.conversation_context["user_problem"],
+        # Search for providers using data provider (Weaviate or local)
+        providers = await self.data_provider.search_providers(
+            query_text=self.conversation_context["user_problem"],
             category=self.conversation_context["detected_category"],
-            limit=3
+            limit=MAX_PROVIDERS_TO_PRESENT
         )
+        
         self.conversation_context["providers_found"] = providers
-        logger.info(f"Found {len(providers)} matching providers")
+        logger.info(f"Found {len(providers)} matching providers via data provider")
     
     async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, bool]]:
         """
@@ -279,7 +287,7 @@ class AIAssistant:
             
             # Accumulate problem description during triage
             if self.current_stage == ConversationStage.TRIAGE:
-                self._accumulate_problem_description(prompt)
+                await self._accumulate_problem_description(prompt)
             
             # Stream response chunks using LangChain
             full_response = ""
@@ -293,7 +301,7 @@ class AIAssistant:
                     yield chunk.content
             
             # Check for stage transitions after complete response
-            new_stage = self._detect_stage_transition(prompt, full_response)
+            new_stage = await self._detect_stage_transition(prompt, full_response)
             if new_stage == ConversationStage.FINALIZE:
                 logger.info(f"Stage transition detected: {self.current_stage} -> {new_stage}")
                 self._update_chain_for_stage(new_stage)
@@ -399,17 +407,29 @@ class AIAssistant:
             self._update_chain_for_stage(ConversationStage.TRIAGE)
             return "Hallo! Wie kann ich dir heute helfen?"
     
-    async def get_greeting_audio(self) -> tuple[str, AsyncIterator[bytes]]:
+    async def get_greeting_audio(self, user_id: Optional[str] = None) -> tuple[str, AsyncIterator[bytes]]:
         """Generate a natural greeting and return both text and TTS audio.
+        
+        Args:
+            user_id: Optional user ID to fetch user data from data provider
         
         Returns:
             tuple: (greeting_text, audio_iterator)
         """
+        # Try to fetch user data from data provider if user_id provided
+        user_name = USER_NAME_PLACEHOLDER
+        has_open_request = False
+        
+        if user_id:
+            user = await self.data_provider.get_user_by_id(user_id)
+            if user:
+                user_name = user.get("name", USER_NAME_PLACEHOLDER)
+                has_open_request = user.get("has_open_request", False)
+        
         # Generate greeting text using LLM
-        # Use test data for user info
         greeting_text = await self.generate_greeting(
-            user_name=USER_DATA.get("name", USER_NAME_PLACEHOLDER), 
-            has_open_request=USER_DATA.get("has_open_request", False)
+            user_name=user_name, 
+            has_open_request=has_open_request
         )
         
         # Add greeting to chat history
