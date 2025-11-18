@@ -12,6 +12,9 @@ build/
 .pub-cache/
 .pub/
 
+# Android Studio
+.idea/
+
 # Android
 android/.gradle/
 android/captures/

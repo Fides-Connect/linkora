@@ -74,8 +74,22 @@ See the [AI-Assistant README](../ai-assistant/README.md) for server setup instru
 
 ### 4. Run ConnectX
 
+#### Using the `run_web.sh` Script
+
+If you are running the app in a web environment, use the `run_web.sh` script to ensure the server runs on the correct port 60099 (as registered in Google Cloud):
+
 ```bash
 cd connectx
+
+# Run the app on the specified port (default: 60099)
+./scripts/run_web.sh
+```
+
+This ensures the app runs on the correct port for Google Cloud registration.
+
+#### Running on Other Platforms
+
+```bash
 flutter run
 ```
 
@@ -226,7 +240,7 @@ SpeechService: Remote audio stream is now playing through speakers
 
 ## Platform Support
 
-- ✅ iOS (10.0+)
+- ⚠️ iOS (10.0+) (WebRTC supported but not fully tested)
 - ✅ Android (5.0+)
 - ⚠️ Web (WebRTC supported but not fully tested)
 - ❌ Desktop (not currently supported)
@@ -248,8 +262,7 @@ connectx/
 ├── template.env                    # Environment template
 ├── pubspec.yaml                    # Dependencies
 └── README.md                       # This file
-```
-└── README.md                       # This file
+├── requirements.txt                # Python dependencies
 ```
 
 ### Running Tests
@@ -268,6 +281,14 @@ flutter build apk --release
 **iOS:**
 ```bash
 flutter build ios --release
+```
+
+#### Regenerating App Icons
+
+If you update your app icons, you can regenerate platform launcher icons using the flutter_launcher_icons package:
+
+```
+dart run flutter_launcher_icons
 ```
 
 ## Contributing

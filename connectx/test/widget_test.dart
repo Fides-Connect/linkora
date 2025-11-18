@@ -5,22 +5,21 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/material.dart';
+import 'package:connectx/services/auth_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:connectx/main.dart';
 
 void main() {
   testWidgets('ConnectX app smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const ConnectXApp());
+
+    // Create AuthService
+    final auth = AuthService();
+
+    // Build our app
+    await tester.pumpWidget(ConnectXApp(auth: auth));
 
     // Verify that our app loads with the correct title.
-    expect(find.text('ConnectX'), findsOneWidget);
-    expect(find.text('Tap the microphone to start speaking'), findsOneWidget);
-
-    // Verify that we have the microphone and stop buttons.
-    expect(find.byIcon(Icons.mic_none), findsOneWidget);
-    expect(find.byIcon(Icons.stop), findsOneWidget);
+    expect(find.text('Welcome to Fides'), findsOneWidget);
   });
 }

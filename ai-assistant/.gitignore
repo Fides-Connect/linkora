@@ -1,6 +1,8 @@
 # Environment files
 .env
 *.json
+secrets/**
+!secrets/.gitkeep
 
 # Python
 __pycache__/
