@@ -40,7 +40,6 @@ async def sign_in_google(request: web.Request) -> web.Response:
 
         # Verify the token
         request_adapter = requests.Request()
-        CLIENT_ID = "YOUR_GOOGLE_CLIENT_ID"  # Replace with your Google OAuth client ID
         id_info = id_token.verify_oauth2_token(token, request_adapter, os.getenv('GOOGLE_OAUTH_CLIENT_ID'))
 
         # Extract user information
