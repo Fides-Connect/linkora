@@ -83,7 +83,7 @@ cp .env.template .env
 # Start server
 ./scripts/run.sh start
 
-# Server starts on ws://localhost:8080/ws
+# Server starts on localhost:8080
 ```
 
 **Option B: Production Mode (With Weaviate)**
@@ -207,7 +207,7 @@ Each component has detailed documentation:
 
 ```properties
 # connectx/.env
-AI_ASSISTANT_SERVER_URL=ws://localhost:8080/ws
+AI_ASSISTANT_SERVER_URL=localhost:8080
 ```
 
 ### AI-Assistant Configuration

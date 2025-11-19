@@ -312,3 +312,32 @@ For issues or questions:
 ---
 
 **Note:** ConnectX requires the AI-Assistant server to be running and properly configured with Google Cloud credentials and a Gemini API key.
+
+## Login (Google Sign-In)
+
+This app uses Google Sign-In for authentication. The client obtains a Google ID token and sends it to the AI-Assistant backend for server-side validation.
+
+How it works (high level)
+1. User taps the Google Sign-In button in the app (web uses the Google Identity Services button).
+2. The client obtains an ID token (JWT) from Google after user consents.
+3. The client sends the token to the backend endpoint POST /sign_in_google for validation.
+4. The server verifies the token with Google, creates a short-lived session, and returns user info + session_id.
+5. The client can use the returned session_id or server-issued auth mechanism for subsequent requests.
+
+Important details
+- Environment variables:
+  - AI_ASSISTANT_SERVER_URL — host:port (or full URL) of the AI-Assistant backend (set in connectx/.env or template.env).
+  - GOOGLE_OAUTH_CLIENT_ID — the OAuth client ID used by the app (must match the server's `GOOGLE_OAUTH_CLIENT_ID`).
+- Platform differences:
+  - Web: Uses Google Identity button implementation (see web-only stub in lib/widgets/sign_in_button_stub.dart fallback).
+  - Mobile/Desktop: Uses the google_sign_in package and the native sign-in flow.
+- Implementation notes:
+  - The ConnectX StartPage triggers AuthService.initialize() and AuthService.signIn() which call GoogleSignIn and then the backend validation (_signInBackend → POST /sign_in_google).
+  - The client sends JSON: { "id_token": "<token>" } and expects the server to return validation + session info.
+- Security:
+  - Always use HTTPS/WSS in production for token exchange.
+  - Do not store long-lived Google credentials in the client.
+  - Server-side should validate tokens against the same `GOOGLE_OAUTH_CLIENT_ID` and issue its own session tokens (not implemented: replace in-memory sessions with persistent store).
+- Local development:
+  - Use connectx/template.env → copy to connectx/.env and set AI_ASSISTANT_SERVER_URL to your local server (e.g., localhost:8080).
+  - Ensure ai-assistant has GOOGLE_OAUTH_CLIENT_ID set to the same client ID.

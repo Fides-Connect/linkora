@@ -92,8 +92,8 @@ class AudioFileTrack(MediaStreamTrack):
 class TestClient:
     """Test client for AI Assistant service."""
     
-    def __init__(self, server_url: str = "ws://localhost:8080/ws"):
-        self.server_url = server_url
+    def __init__(self, server_url: str = "localhost:8080"):
+        self.server_url = f"ws://{server_url}/ws"
         self.pc = None
         self.websocket = None
         self.audio_track = None
@@ -230,7 +230,7 @@ async def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='Test AI Assistant WebRTC service')
-    parser.add_argument('--server', default='ws://localhost:8080/ws',
+    parser.add_argument('--server', default='localhost:8080',
                         help='WebSocket server URL')
     parser.add_argument('--audio-file', help='Path to WAV file (16kHz, mono, 16-bit)')
     parser.add_argument('--duration', type=int, default=30,
