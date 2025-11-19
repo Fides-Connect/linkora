@@ -28,7 +28,7 @@ class AuthService {
 
   final List<String> scopes = <String>['openid', 'email', 'profile'];
 
-  // simple init guard
+  // Simple init guard
   bool _initialized = false;
 
   /// Initialize the underlying GoogleSignIn singleton with optional clientId.
@@ -62,12 +62,24 @@ class AuthService {
   Future<void> _handleAuthenticationEvent(
     GoogleSignInAuthenticationEvent event,
   ) async {
+    // Extract user from event
     final GoogleSignInAccount? user =
         event is GoogleSignInAuthenticationEventSignIn ? event.user : null;
 
+    // Validate token with AI-Assistant server before accepting it locally
+    final String? idToken = user?.authentication.idToken;
+    if (idToken != null) {
+      final bool valid = await _validateGoogleSignIn(idToken);
+      if (!valid) {
+        debugPrint('ID token validation failed - signing out locally');
+        signOut();
+        return;
+      }
+    }
+
+    // Update current user and notify listeners and fetch profile photo
     _userController.add(user);
     _currentUser = user;
-
     if (_currentUser != null) {
       _getProfilePhoto(_currentUser!);
     }
@@ -126,4 +138,32 @@ class AuthService {
     await GoogleSignIn.instance.authenticate(scopeHint: scopes);
   }
 
+  /// Validate Google ID token with the AI-Assistant server endpoint.
+  /// Returns true if the server accepts the token.
+  Future<bool> _validateGoogleSignIn(String idToken) async {
+    final String? rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
+    final String url = 'http://$rawServer/validate-google-signin';
+
+    try {
+      final response = await http
+          .post(
+            Uri.parse(url),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'id_token': idToken}),
+          )
+          .timeout(const Duration(seconds: 6));
+
+      if (response.statusCode != 200) {
+        debugPrint('Validation request failed: ${response.statusCode} ${response.body}');
+        return false;
+      }
+
+      // Server should return a boolean 'valid' field; if absent, treat 200 as valid.
+      final Map<String, dynamic> data = json.decode(response.body) as Map<String, dynamic>;
+      return (data['valid'] is bool) ? data['valid'] as bool : true;
+    } catch (e) {
+      debugPrint('Validation error: $e');
+      return false;
+    }
+  }
 }
