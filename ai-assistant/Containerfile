@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install system dependencies
+# Install system dependencies and nginx + supervisor
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y \
     libopus-dev \
     libvpx-dev \
     libsrtp2-dev \
+    nginx \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -21,11 +23,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY main.py .
 
-# Expose WebRTC signaling port
-EXPOSE 8080
+# Copy nginx and supervisord configs into the image (keeps Dockerfile small)
+COPY configs/nginx.conf /etc/nginx/sites-available/ai-assistant
+RUN mkdir -p /etc/nginx/sites-enabled && rm -f /etc/nginx/sites-enabled/default \
+    && ln -sf /etc/nginx/sites-available/ai-assistant /etc/nginx/sites-enabled/ai-assistant
+
+# Copy supervisord config
+COPY configs/supervisor.conf /etc/supervisor/conf.d/supervisor.conf
+
+# Expose HTTP / HTTPS and app port (for direct testing)
+EXPOSE 80 443 8080
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Run the application
-CMD ["python", "main.py"]
+# Start supervisord which runs nginx + python app
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisor.conf"]
