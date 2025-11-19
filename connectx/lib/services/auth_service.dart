@@ -74,14 +74,12 @@ class AuthService {
         debugPrint('ID token validation failed - signing out locally');
         signOut();
         return;
+      } else {
+        // fetch profile photo, update current user and notify listeners
+        _getProfilePhoto(user!);
+        _currentUser = user;
+        _userController.add(user);
       }
-    }
-
-    // Update current user and notify listeners and fetch profile photo
-    _userController.add(user);
-    _currentUser = user;
-    if (_currentUser != null) {
-      _getProfilePhoto(_currentUser!);
     }
   }
 
@@ -119,15 +117,18 @@ class AuthService {
         ? photos?.first['url'] as String?
         : null;
 
-    // store or expose photoUrl for UI usage
-    // save and notify listeners so UI can update
+    // store photoUrl for UI usage
     _photoUrl = photoUrl;
-    _userController.add(_currentUser);
+
+    // Update current user and notify listeners
+    _currentUser = user;
+    _userController.add(user);
   }
 
   Future<void> signOut() async {
     // Disconnect instead of just signing out, to reset the example state as
     // much as possible.
+    debugPrint('Signing out user ${_currentUser?.email}');
     await GoogleSignIn.instance.disconnect();
     _userController.add(null);
     _currentUser = null;
@@ -142,6 +143,12 @@ class AuthService {
   /// Returns true if the server accepts the token.
   Future<bool> _validateGoogleSignIn(String idToken) async {
     final String? rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
+    if (rawServer == null || rawServer.isEmpty) {
+      debugPrint(
+        'AI_ASSISTANT_SERVER_URL not set in .env. Cannot validate ID token.',
+      );
+      return false;
+    }
     final String url = 'http://$rawServer/validate-google-signin';
 
     try {
@@ -154,12 +161,15 @@ class AuthService {
           .timeout(const Duration(seconds: 6));
 
       if (response.statusCode != 200) {
-        debugPrint('Validation request failed: ${response.statusCode} ${response.body}');
+        debugPrint(
+          'Validation request failed: ${response.statusCode} ${response.body}',
+        );
         return false;
       }
 
       // Server should return a boolean 'valid' field; if absent, treat 200 as valid.
-      final Map<String, dynamic> data = json.decode(response.body) as Map<String, dynamic>;
+      final Map<String, dynamic> data =
+          json.decode(response.body) as Map<String, dynamic>;
       return (data['valid'] is bool) ? data['valid'] as bool : true;
     } catch (e) {
       debugPrint('Validation error: $e');

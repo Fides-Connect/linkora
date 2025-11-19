@@ -38,16 +38,6 @@ class _StartPageState extends State<StartPage> {
           setState(() {
             _initialized = true;
           });
-
-          // Listen for authentication events and navigate when signed in
-          _authSubscription = GoogleSignIn.instance.authenticationEvents.listen((
-            event,
-          ) {
-            if (event is GoogleSignInAuthenticationEventSignIn) {
-              // subscription is cancelled in dispose, so mounted should be true here
-              if (mounted) Navigator.pushReplacementNamed(context, '/home');
-            }
-          });
         })
         .catchError((e) {
           if (mounted) setState(() => _error = 'Init failed: $e');

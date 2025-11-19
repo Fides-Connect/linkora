@@ -8,7 +8,7 @@ def setup_cors(app: web.Application) -> None:
     # allow all origins for dev; tighten in production
     cors = aiohttp_cors.setup(app, defaults={
         "*": aiohttp_cors.ResourceOptions(
-            allow_credentials=True,
+            allow_credentials=False,
             expose_headers="*",
             allow_headers="*",
             allow_methods=["POST", "OPTIONS"]
