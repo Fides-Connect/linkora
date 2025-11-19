@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 from .signaling_server import SignalingServer
 from .ai_assistant import AIAssistant
+from .common_endpoints import sign_in_google, setup_cors
 
 # Configure logging
 logging.basicConfig(
@@ -74,6 +75,7 @@ async def main():
     app = web.Application()
     app.router.add_get('/ws', signaling_server.handle_websocket)
     app.router.add_get('/health', signaling_server.health_check)
+    app.router.add_post('/sign_in_google', sign_in_google)
     
     # Start server
     host = os.getenv('HOST', '0.0.0.0')
@@ -82,8 +84,10 @@ async def main():
     logger.info(f"Starting AI Assistant server on {host}:{port}")
     logger.info(f"WebSocket endpoint: ws://{host}:{port}/ws")
     logger.info(f"Health check: http://{host}:{port}/health")
+    logger.info(f"Sign-In Google: http://{host}:{port}/sign_in_google")
     
     runner = web.AppRunner(app)
+    setup_cors(app)
     await runner.setup()
     site = web.TCPSite(runner, host, port)
     await site.start()

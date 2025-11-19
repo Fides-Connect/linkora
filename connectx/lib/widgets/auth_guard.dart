@@ -19,13 +19,14 @@ class AuthGuard extends StatelessWidget {
         final user = snapshot.data;
 
         if (user == null) {
+          debugPrint('AuthGuard: No user logged in, redirecting to /start');
           // Redirect to /start if the user is not logged in
           WidgetsBinding.instance.addPostFrameCallback((_) {
             Navigator.of(context).pushNamedAndRemoveUntil('/start', (route) => false);
           });
           return const SizedBox(); // Return an empty widget while redirecting
         }
-
+        debugPrint('AuthGuard: User is logged in: ${user.email}');
         // If the user is logged in, show the child widget
         return child;
       },
