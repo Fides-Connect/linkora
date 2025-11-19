@@ -69,7 +69,7 @@ class AuthService {
     // Validate token with AI-Assistant server before accepting it locally
     final String? idToken = user?.authentication.idToken;
     if (idToken != null) {
-      final bool valid = await _validateGoogleSignIn(idToken);
+      final bool valid = await _signInBackend(idToken);
       if (!valid) {
         debugPrint('ID token validation failed - signing out locally');
         signOut();
@@ -139,9 +139,9 @@ class AuthService {
     await GoogleSignIn.instance.authenticate(scopeHint: scopes);
   }
 
-  /// Validate Google ID token with the AI-Assistant server endpoint.
+  /// Sign in with Google id token at the backend server.
   /// Returns true if the server accepts the token.
-  Future<bool> _validateGoogleSignIn(String idToken) async {
+  Future<bool> _signInBackend(String idToken) async {
     final String? rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
     if (rawServer == null || rawServer.isEmpty) {
       debugPrint(
@@ -149,7 +149,7 @@ class AuthService {
       );
       return false;
     }
-    final String url = 'http://$rawServer/validate-google-signin';
+    final String url = 'http://$rawServer/sign_in_google';
 
     try {
       final response = await http
@@ -167,10 +167,12 @@ class AuthService {
         return false;
       }
 
+      debugPrint('Validation response: ${response.body}');
+
       // Server should return a boolean 'valid' field; if absent, treat 200 as valid.
       final Map<String, dynamic> data =
           json.decode(response.body) as Map<String, dynamic>;
-      return (data['valid'] is bool) ? data['valid'] as bool : true;
+      return (data['is_valid'] is bool) ? data['is_valid'] as bool : true;
     } catch (e) {
       debugPrint('Validation error: $e');
       return false;

@@ -622,19 +622,53 @@ GET http://localhost:8080/health
 }
 ```
 
-### WebRTC Audio Tracks
+### Google Sign-In: /sign_in_google
 
-#### Input Track (Client → Server)
-- **Media Type:** `audio`
-- **Sample Rate:** 48000 Hz (WebRTC native)
-- **Channels:** Mono
-- **Frame Size:** 20ms (960 samples)
+#### Endpoint
+```
+POST http://localhost:8080/sign_in_google
+```
 
-#### Output Track (Server → Client)
-- **Media Type:** `audio`
-- **Sample Rate:** 48000 Hz (WebRTC native)
-- **Channels:** Mono
-- **Frame Size:** 20ms (960 samples)
+#### Purpose
+Verify a Google ID token (obtained from client-side Google Sign-In), create a short-lived server session, and return basic user info and validation status.
+
+#### Request
+- Content-Type: application/json
+- Body:
+```json
+{ "id_token": "<JWT ID token from Google Sign-In>" }
+```
+
+#### Successful Response (200)
+```json
+{
+  "session_id": "uuid-string",
+  "user_id": "google-sub",
+  "email": "user@example.com",
+  "name": "User Name",
+  "is_valid": true
+}
+```
+
+#### Error Responses
+- 400 Bad Request: Missing or malformed `id_token`.
+  ```json
+  { "error": "Missing id_token" }
+  ```
+- 401 Unauthorized: Invalid or expired token.
+  ```json
+  { "error": "Invalid token", "details": "..." }
+  ```
+- 500 Internal Server Error: Unexpected server error.
+  ```json
+  { "error": "Internal server error", "details": "..." }
+  ```
+
+#### Notes & Security
+- The server validates the token against the configured Google OAuth client ID (env var `GOOGLE_OAUTH_CLIENT_ID`). Ensure this is set in your `.env`.
+- Use HTTPS/WSS in production when sending ID tokens to the endpoint.
+- Current implementation stores sessions in-memory for demo purposes — replace with persistent session storage (database or Redis) in production.
+- Do not expose server-side credentials to clients.
 
 ## Testing
 
