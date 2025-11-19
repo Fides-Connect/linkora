@@ -80,7 +80,7 @@ jobs:
         run: |
           # Run the test client with the test audio file
           python tests/test_client.py \
-            --server ws://localhost:8080/ws \
+            --server localhost:8080 \
             --audio-file tests/data/ai_assistant_test_input.wav \
             --duration 15
         timeout-minutes: 2
