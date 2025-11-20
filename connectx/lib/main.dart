@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'widgets/particle_sphere.dart';
 import 'services/speech_service.dart';
 import 'services/auth_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'pages/start_page.dart';
 import 'theme.dart';
 import 'widgets/app_background.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'widgets/auth_guard.dart';
+import 'localization/app_localizations.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,18 +30,48 @@ void main() async {
   runApp(ConnectXApp(auth: auth));
 }
 
-class ConnectXApp extends StatelessWidget {
+class ConnectXApp extends StatefulWidget {
   final AuthService auth;
   const ConnectXApp({required this.auth, super.key});
+
+  @override
+  State<ConnectXApp> createState() => _ConnectXAppState();
+
+  static void setLocale(BuildContext context, Locale newLocale) {
+    _ConnectXAppState? state =
+        context.findAncestorStateOfType<_ConnectXAppState>();
+    state?.setLocale(newLocale);
+  }
+}
+
+class _ConnectXAppState extends State<ConnectXApp> {
+  Locale? _locale;
+
+  void setLocale(Locale locale) {
+    setState(() {
+      _locale = locale;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ConnectX',
       theme: appTheme,
+      locale: _locale,
+      localizationsDelegates: const [
+        AppLocalizations.delegate,
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en', ''),
+        Locale('de', ''),
+      ],
       home: StreamBuilder<GoogleSignInAccount?>(
-        stream: auth.onCurrentUserChanged,
-        initialData: auth.currentUser,
+        stream: widget.auth.onCurrentUserChanged,
+        initialData: widget.auth.currentUser,
         builder: (context, snapshot) {
           final user = snapshot.data;
           if (user != null) {
@@ -51,7 +84,7 @@ class ConnectXApp extends StatelessWidget {
       routes: {
         '/start': (context) => const StartPage(),
         '/home': (context) => AuthGuard(
-              auth: auth,
+              auth: widget.auth,
               child: const ConnectXHomePage(),
             ),
       },
@@ -77,16 +110,136 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   bool _isAnimating = false;
   bool _isChatting = false;
   String _currentMessage = '';
-  String _statusText = 'Tap the microphone to start speaking';
+  String _statusText = '';
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeServices();
+    // Request permissions after widget is built and user has signed in
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _requestMicrophonePermission();
+      await _requestNotificationPermission();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_isInitialized) {
+      _initializeServices();
+      _isInitialized = true;
+    }
+  }
+
+  Future<void> _requestMicrophonePermission() async {
+    if (kIsWeb) return;
+
+    final localizations = AppLocalizations.of(context);
+    if (localizations == null) return;
+
+    var micStatus = await Permission.microphone.status;
+
+    if (!micStatus.isGranted) {
+      // First request
+      micStatus = await Permission.microphone.request();
+
+      // If denied, show explanation dialog and ask once more
+      if (!micStatus.isGranted && mounted) {
+        await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(localizations.microphonePermissionTitle),
+            content: Text(localizations.microphonePermissionMessage),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(localizations.okButton),
+              ),
+            ],
+          ),
+        );
+
+        // Ask one more time
+        micStatus = await Permission.microphone.request();
+
+        if (!micStatus.isGranted && mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text(localizations.microphoneAccessDeniedTitle),
+              content: Text(localizations.microphoneAccessDeniedMessage),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(localizations.okButton),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    if (kIsWeb) return;
+
+    final localizations = AppLocalizations.of(context);
+    if (localizations == null) return;
+
+    var notificationStatus = await Permission.notification.status;
+
+    if (!notificationStatus.isGranted) {
+      // First request permission
+      notificationStatus = await Permission.notification.request();
+
+      // Show explanation dialog if refused
+      if (!notificationStatus.isGranted && mounted) {
+        await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(localizations.notificationPermissionTitle),
+            content: Text(localizations.notificationPermissionMessage),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(localizations.okButton),
+              ),
+            ],
+          ),
+        );
+      }
+      // Request permission once more
+      notificationStatus = await Permission.notification.request();
+
+      // If still denied, show final message
+      if (!notificationStatus.isGranted && mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(localizations.notificationAccessDeniedTitle),
+            content: Text(localizations.notificationAccessDeniedMessage),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(localizations.okButton),
+              ),
+            ],
+          ),
+        );
+      }
+    }
   }
 
   void _initializeServices() {
     _speechService = SpeechService();
+
+    // Initialize status text with localization
+    final localizations = AppLocalizations.of(context);
+    if (localizations != null) {
+      _statusText = localizations.tapMicrophoneToStart;
+    }
 
     // Subscribe to auth changes
     _user = _auth.currentUser;
@@ -96,32 +249,36 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
     // Set up speech service callbacks
     _speechService.onSpeechStart = () {
+      final localizations = AppLocalizations.of(context);
       setState(() {
         _isChatting = true;
         _isAnimating = true;
-        _statusText = 'Connecting to AI-Assistant...';
+        _statusText = localizations?.connecting ?? 'Connecting to AI-Assistant...';
       });
     };
 
     _speechService.onConnected = () {
+      final localizations = AppLocalizations.of(context);
       setState(() {
-        _statusText = 'Connected! AI is listening and responding...';
+        _statusText = localizations?.connected ?? 'Connected! AI is listening and responding...';
       });
     };
 
     _speechService.onSpeechEnd = () {
+      final localizations = AppLocalizations.of(context);
       setState(() {
         _isChatting = false;
         _isAnimating = false;
-        _statusText = 'Disconnected';
+        _statusText = localizations?.disconnected ?? 'Disconnected';
       });
     };
 
     _speechService.onDisconnected = () {
+      final localizations = AppLocalizations.of(context);
       setState(() {
         _isChatting = false;
         _isAnimating = false;
-        _statusText = 'Connection closed';
+        _statusText = localizations?.connectionClosed ?? 'Connection closed';
       });
     };
 
@@ -135,14 +292,32 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   }
 
   void _startChat() async {
+    final localizations = AppLocalizations.of(context);
     try {
       await _speechService.startSpeech();
     } catch (e) {
+      final errorMsg = e.toString();
       setState(() {
-        _statusText = 'Error: ${e.toString()}';
+        _statusText = 'Error: $errorMsg';
         _isChatting = false;
         _isAnimating = false;
       });
+      // Show error dialog
+      if (mounted && localizations != null) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(localizations.errorTitle),
+            content: Text('${localizations.errorOccurred}\n\n$errorMsg'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(localizations.okButton),
+              ),
+            ],
+          ),
+        );
+      }
     }
   }
 
