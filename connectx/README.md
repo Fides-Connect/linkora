@@ -74,15 +74,15 @@ See the [AI-Assistant README](../ai-assistant/README.md) for server setup instru
 
 ### 4. Run ConnectX
 
-#### Using the `run_web.sh` Script
+#### Using the `run-web.sh` Script
 
-If you are running the app in a web environment, use the `run_web.sh` script to ensure the server runs on the correct port 60099 (as registered in Google Cloud):
+If you are running the app in a web environment, use the `run-web.sh` script to ensure the server runs on the correct port 60099 (as registered in Google Cloud):
 
 ```bash
 cd connectx
 
 # Run the app on the specified port (default: 60099)
-./scripts/run_web.sh
+./scripts/run-web.sh
 ```
 
 This ensures the app runs on the correct port for Google Cloud registration.
