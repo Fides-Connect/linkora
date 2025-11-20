@@ -30,6 +30,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
 
   # WebRTC for peer-to-peer audio streaming
   flutter_webrtc: ^1.2.0
@@ -54,6 +56,9 @@ dependencies:
 
   #  Google Sign-In Web package
   google_sign_in_web: ^1.1.0
+
+  # Local notifications for native OS notifications
+  flutter_local_notifications: ^19.5.0
   
 dev_dependencies:
   flutter_test:
