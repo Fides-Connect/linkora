@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     libsrtp2-dev \
     nginx \
     supervisor \
+    openssl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -23,13 +24,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY main.py .
 
-# Copy nginx and supervisord configs into the image (keeps Dockerfile small)
+# Copy nginx config into the image
 COPY configs/nginx.conf /etc/nginx/sites-available/ai-assistant
 RUN mkdir -p /etc/nginx/sites-enabled && rm -f /etc/nginx/sites-enabled/default \
     && ln -sf /etc/nginx/sites-available/ai-assistant /etc/nginx/sites-enabled/ai-assistant
 
-# Copy supervisord config
+# Copy supervisord config into the image
 COPY configs/supervisor.conf /etc/supervisor/conf.d/supervisor.conf
+
+# Copy self-signed SSL certificate
+COPY secrets/ssl-cert.pem /etc/ssl/ai-assistant/ssl-cert.pem
+COPY secrets/ssl-key.pem /etc/ssl/ai-assistant/ssl-key.pem
 
 # Expose HTTP / HTTPS and app port (for direct testing)
 EXPOSE 80 443 8080

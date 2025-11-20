@@ -1,5 +1,7 @@
 #!/bin/bash
+#
 # Script to build and run the AI Assistant container with Podman
+#
 
 set -e
 # Resolve project root (script is in scripts/)
@@ -88,8 +90,8 @@ run() {
             -p 80:80 \
             -p 443:443 \
             -p ${PORT:-8080}:${PORT:-8080} \
+            -p 10000-10100:10000-10100/udp \
             -v "$GOOGLE_APPLICATION_CREDENTIALS:/app/credentials.json:ro" \
-            -v "$PWD/secrets:/etc/ssl/ai-assistant:ro" \
             -e GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json \
             -e GEMINI_API_KEY="$GEMINI_API_KEY" \
             -e LANGUAGE_CODE="${LANGUAGE_CODE:-de-DE}" \

@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Simple helper to run the ConnectX Flutter web-server using a port from .env
 # Usage:
-#   ./scripts/run_web.sh            # reads WEB_PORT from .env, defaults to 60099
-#   ./scripts/run_web.sh 8080       # explicitly pass a port
+#   ./scripts/run-web.sh            # reads WEB_PORT from .env, defaults to 60099
+#   ./scripts/run-web.sh 8080       # explicitly pass a port
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"

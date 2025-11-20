@@ -1,20 +1,36 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'widgets/particle_sphere.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+
+import 'pages/start_page.dart';
 import 'services/speech_service.dart';
 import 'services/auth_service.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'dart:async';
-import 'pages/start_page.dart';
-import 'theme.dart';
 import 'widgets/app_background.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'widgets/particle_sphere.dart';
 import 'widgets/auth_guard.dart';
+import 'theme.dart';
+
+class _DevHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    final client = super.createHttpClient(context);
+    client.badCertificateCallback =
+        (X509Certificate cert, String host, int port) => true;
+    return client;
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(); // Load environment variables from .env file
+
+  // In main() when debugging:
+  HttpOverrides.global = _DevHttpOverrides();
 
   // Create a single AuthService instance and initialize it.
   final auth = AuthService();
@@ -50,10 +66,8 @@ class ConnectXApp extends StatelessWidget {
       ),
       routes: {
         '/start': (context) => const StartPage(),
-        '/home': (context) => AuthGuard(
-              auth: auth,
-              child: const ConnectXHomePage(),
-            ),
+        '/home': (context) =>
+            AuthGuard(auth: auth, child: const ConnectXHomePage()),
       },
       debugShowCheckedModeBanner: false,
     );

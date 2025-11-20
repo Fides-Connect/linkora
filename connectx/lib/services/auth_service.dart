@@ -149,7 +149,7 @@ class AuthService {
       );
       return false;
     }
-    final String url = 'http://$rawServer/sign_in_google';
+    final String url = 'https://$rawServer/sign_in_google';
 
     try {
       final response = await http

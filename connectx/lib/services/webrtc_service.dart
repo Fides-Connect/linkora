@@ -43,7 +43,7 @@ class WebRTCService {
         'AI_ASSISTANT_SERVER_URL not set in .env. Add AI_ASSISTANT_SERVER_URL to .env',
       );
     }
-    _serverUrl = 'ws://$rawServer/ws';
+    _serverUrl = 'wss://$rawServer/ws';
   }
 
   bool get isConnected => _isConnected;
