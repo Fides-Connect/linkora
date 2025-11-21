@@ -23,7 +23,7 @@ class MessagesDE {
   static const String denyButton = 'Ablehnen';
 
   // Start page messages
-  static const String welcomeTitle = 'Willkommen bei ConnectX';
+  static const String welcomeTitle = 'Willkommen bei Fides';
   static const String welcomeMessage = 'Melden Sie sich an, um mit dem KI-Assistenten zu beginnen';
   static const String signInButton = 'Mit Google anmelden';
   static const String selectLanguage = 'Sprache wählen';
