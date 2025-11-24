@@ -10,6 +10,8 @@ import '../widgets/sign_in_button_stub.dart'
 import '../services/auth_service.dart';
 import '../theme.dart';
 import '../widgets/app_background.dart';
+import '../localization/app_localizations.dart';
+import '../main.dart';
 
 class StartPage extends StatefulWidget {
   const StartPage({super.key});
@@ -67,6 +69,7 @@ class _StartPageState extends State<StartPage> {
 
   @override
   Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context);
     final screenHeight = MediaQuery.of(context).size.height;
     // Use 12% of screen height but keep it within reasonable bounds
     final logoTextGap = (screenHeight * 0.12).clamp(10.0, 250.0).toDouble();
@@ -75,6 +78,29 @@ class _StartPageState extends State<StartPage> {
       data: appTheme,
       child: Scaffold(
         backgroundColor: appTheme.scaffoldBackgroundColor,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          actions: [
+            PopupMenuButton<Locale>(
+              icon: const Icon(Icons.language),
+              tooltip: localizations?.selectLanguage ?? 'Select Language',
+              onSelected: (Locale locale) {
+                ConnectXApp.setLocale(context, locale);
+              },
+              itemBuilder: (BuildContext context) => [
+                const PopupMenuItem<Locale>(
+                  value: Locale('en', ''),
+                  child: Text('English'),
+                ),
+                const PopupMenuItem<Locale>(
+                  value: Locale('de', ''),
+                  child: Text('Deutsch'),
+                ),
+              ],
+            ),
+          ],
+        ),
         body: Stack(
           children: [
             const AppBackground(),
@@ -86,12 +112,18 @@ class _StartPageState extends State<StartPage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(
-                        'Welcome to Fides',
-                        style: TextStyle(
+                      Text(
+                        localizations?.welcomeTitle ?? 'Welcome to Fides',
+                        style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
                         ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        localizations?.welcomeMessage ?? 'Sign in to start communicating with the AI assistant',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 16),
                       ),
                       SizedBox(height: logoTextGap),
                       SizedBox(
