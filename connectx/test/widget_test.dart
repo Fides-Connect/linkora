@@ -6,11 +6,59 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'package:connectx/services/auth_service.dart';
+import 'package:firebase_core_platform_interface/firebase_core_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:connectx/main.dart';
 
+// Mock Firebase Core platform
+class MockFirebaseCore extends FirebasePlatform {
+  @override
+  FirebaseAppPlatform app([String name = defaultFirebaseAppName]) {
+    return MockFirebaseApp();
+  }
+
+  @override
+  Future<FirebaseAppPlatform> initializeApp({
+    String? name,
+    FirebaseOptions? options,
+  }) async {
+    return MockFirebaseApp();
+  }
+
+  @override
+  List<FirebaseAppPlatform> get apps => [MockFirebaseApp()];
+}
+
+class MockFirebaseApp extends FirebaseAppPlatform {
+  MockFirebaseApp() : super('test-app', const FirebaseOptions(
+    apiKey: 'test-api-key',
+    appId: 'test-app-id',
+    messagingSenderId: 'test-sender-id',
+    projectId: 'test-project-id',
+  ));
+
+  @override
+  bool get isAutomaticDataCollectionEnabled => false;
+
+  @override
+  Future<void> delete() async {}
+
+  @override
+  Future<void> setAutomaticDataCollectionEnabled(bool enabled) async {}
+
+  @override
+  Future<void> setAutomaticResourceManagementEnabled(bool enabled) async {}
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() async {
+    // Setup Firebase mock for testing
+    FirebasePlatform.instance = MockFirebaseCore();
+  });
+
   testWidgets('ConnectX app smoke test', (WidgetTester tester) async {
 
     // Create AuthService

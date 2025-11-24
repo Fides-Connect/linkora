@@ -24,3 +24,6 @@ numpy>=2.3.4
 
 # Environment variables
 python-dotenv>=1.2.1
+
+# Firebase Authentication
+firebase-admin>=6.5.0
