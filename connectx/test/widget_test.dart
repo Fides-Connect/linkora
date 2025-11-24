@@ -19,6 +19,9 @@ void main() {
     // Build our app
     await tester.pumpWidget(ConnectXApp(auth: auth));
 
+    // Pump once more to allow localization to load and widget tree to build
+    await tester.pump();
+
     // Verify that our app loads with the correct title.
     expect(find.text('Welcome to Fides'), findsOneWidget);
   });
