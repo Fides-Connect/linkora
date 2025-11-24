@@ -23,6 +23,6 @@ void main() {
     await tester.pump();
 
     // Verify that our app loads with the correct title.
-    expect(find.text('Welcome to ConnectX'), findsOneWidget);
+    expect(find.text('Welcome to Fides'), findsOneWidget);
   });
 }
