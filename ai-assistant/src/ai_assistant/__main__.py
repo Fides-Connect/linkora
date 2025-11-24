@@ -8,6 +8,8 @@ import logging
 import os
 from aiohttp import web
 from dotenv import load_dotenv
+import firebase_admin
+from firebase_admin import credentials
 
 from .signaling_server import SignalingServer
 from .ai_assistant import AIAssistant
@@ -47,6 +49,26 @@ async def main():
     credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
     if credentials_path and not os.path.exists(credentials_path):
         logger.warning(f"Credentials file not found: {credentials_path}, will use default credentials")
+    
+    # Initialize Firebase Admin SDK
+    logger.info("Initializing Firebase Admin SDK...")
+    try:
+        if not firebase_admin._apps:
+            # Use the same service account credentials for Firebase
+            if credentials_path and os.path.exists(credentials_path):
+                cred = credentials.Certificate(credentials_path)
+                firebase_admin.initialize_app(cred)
+                logger.info(f"Firebase Admin SDK initialized with credentials from {credentials_path}")
+            else:
+                # Use default credentials (works in Cloud Run)
+                firebase_admin.initialize_app()
+                logger.info("Firebase Admin SDK initialized with default credentials")
+        else:
+            logger.info("Firebase Admin SDK already initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
+        logger.error("Firebase ID token verification will not work!")
+        return
     
     # Log configuration
     logger.info("Configuration:")
