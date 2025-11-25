@@ -139,41 +139,6 @@ class AuthService {
     }
   }
 
-  Future<void> signInWithPhone(
-    String phoneNumber, {
-    required void Function(String verificationId, int? resendToken) codeSent,
-    required void Function(FirebaseAuthException error) verificationFailed,
-    required void Function(PhoneAuthCredential credential) verificationCompleted,
-    required void Function(String verificationId) codeAutoRetrievalTimeout,
-  }) async {
-    try {
-      await _firebaseAuth.verifyPhoneNumber(
-        phoneNumber: phoneNumber,
-        verificationCompleted: verificationCompleted,
-        verificationFailed: verificationFailed,
-        codeSent: codeSent,
-        codeAutoRetrievalTimeout: codeAutoRetrievalTimeout,
-      );
-    } catch (e) {
-      debugPrint('Phone sign-in error: $e');
-      rethrow;
-    }
-  }
-
-  Future<UserCredential> verifyPhoneCode(String verificationId, String smsCode) async {
-    try {
-      final credential = PhoneAuthProvider.credential(
-        verificationId: verificationId,
-        smsCode: smsCode,
-      );
-      final userCredential = await _firebaseAuth.signInWithCredential(credential);
-      return userCredential;
-    } catch (e) {
-      debugPrint('Phone verification error: $e');
-      rethrow;
-    }
-  }
-
   Future<bool> _signInBackend(String idToken) async {
     final String? rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
     if (rawServer == null || rawServer.isEmpty) {

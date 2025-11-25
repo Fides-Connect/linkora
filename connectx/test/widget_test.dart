@@ -59,7 +59,7 @@ void main() {
     FirebasePlatform.instance = MockFirebaseCore();
   });
 
-  testWidgets('ConnectX app smoke test', (WidgetTester tester) async {
+  testWidgets('Fides app smoke test', (WidgetTester tester) async {
 
     // Create AuthService
     final auth = AuthService();
@@ -67,8 +67,10 @@ void main() {
     // Build our app
     await tester.pumpWidget(ConnectXApp(auth: auth));
 
-    // Pump once more to allow localization to load and widget tree to build
+    // Pump multiple times to allow the widget tree to build
+    // (can't use pumpAndSettle due to infinite animations)
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 10));
 
     // Verify that our app loads with the correct title.
     expect(find.text('Welcome to Fides'), findsOneWidget);
