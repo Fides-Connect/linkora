@@ -126,19 +126,6 @@ class AuthService {
     }
   }
 
-  Future<UserCredential> createUserWithEmail(String email, String password) async {
-    try {
-      final userCredential = await _firebaseAuth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      return userCredential;
-    } catch (e) {
-      debugPrint('Email registration error: $e');
-      rethrow;
-    }
-  }
-
   Future<bool> _signInBackend(String idToken) async {
     final String? rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
     if (rawServer == null || rawServer.isEmpty) {

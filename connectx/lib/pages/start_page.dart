@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_signin_button/flutter_signin_button.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 import '../services/auth_service.dart';
 import '../theme.dart';
@@ -17,18 +16,12 @@ class StartPage extends StatefulWidget {
   State<StartPage> createState() => _StartPageState();
 }
 
-enum AuthMode { signIn, signUp }
-
 class _StartPageState extends State<StartPage> {
   final AuthService _auth = AuthService();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
   
   bool _loading = false;
   bool _initialized = false;
   String? _error;
-  AuthMode _authMode = AuthMode.signIn;
-  bool _showEmailForm = false;
 
   @override
   void initState() {
@@ -49,8 +42,6 @@ class _StartPageState extends State<StartPage> {
 
   @override
   void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
@@ -62,58 +53,6 @@ class _StartPageState extends State<StartPage> {
 
     try {
       await _auth.signIn();
-    } catch (e) {
-      setState(() => _error = 'Sign-in failed: $e');
-    } finally {
-      setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _onEmailAuthPressed() async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
-      setState(() => _error = 'Please enter email and password');
-      return;
-    }
-
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
-    try {
-      if (_authMode == AuthMode.signUp) {
-        await _auth.createUserWithEmail(
-          _emailController.text.trim(),
-          _passwordController.text,
-        );
-      } else {
-        await _auth.signInWithEmail(
-          _emailController.text.trim(),
-          _passwordController.text,
-        );
-      }
-    } on FirebaseAuthException catch (e) {
-      setState(() {
-        switch (e.code) {
-          case 'user-not-found':
-            _error = 'No user found with this email';
-            break;
-          case 'wrong-password':
-            _error = 'Wrong password';
-            break;
-          case 'email-already-in-use':
-            _error = 'Email already in use';
-            break;
-          case 'weak-password':
-            _error = 'Password is too weak';
-            break;
-          case 'invalid-email':
-            _error = 'Invalid email address';
-            break;
-          default:
-            _error = 'Authentication failed: ${e.message}';
-        }
-      });
     } catch (e) {
       setState(() => _error = 'Sign-in failed: $e');
     } finally {
@@ -201,68 +140,6 @@ class _StartPageState extends State<StartPage> {
                           Buttons.GoogleDark,
                           onPressed: _loading ? null : _onGoogleSignInPressed,
                         ),
-                        const SizedBox(height: 16),
-                        const Text('OR', style: TextStyle(fontSize: 14)),
-                        const SizedBox(height: 16),
-                        
-                        // Email/Password Sign In Option
-                        if (!_showEmailForm)
-                          OutlinedButton.icon(
-                            onPressed: () => setState(() => _showEmailForm = true),
-                            icon: const Icon(Icons.email),
-                            label: const Text('Sign in with Email'),
-                          ),
-                        
-                        // Email/Password Form
-                        if (_showEmailForm) ...[
-                          ToggleButtons(
-                            isSelected: [_authMode == AuthMode.signIn, _authMode == AuthMode.signUp],
-                            onPressed: (index) {
-                              setState(() {
-                                _authMode = index == 0 ? AuthMode.signIn : AuthMode.signUp;
-                              });
-                            },
-                            children: const [
-                              Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 16),
-                                child: Text('Sign In'),
-                              ),
-                              Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 16),
-                                child: Text('Sign Up'),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _emailController,
-                            decoration: const InputDecoration(
-                              labelText: 'Email',
-                              border: OutlineInputBorder(),
-                              filled: true,
-                            ),
-                            keyboardType: TextInputType.emailAddress,
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _passwordController,
-                            decoration: const InputDecoration(
-                              labelText: 'Password',
-                              border: OutlineInputBorder(),
-                              filled: true,
-                            ),
-                            obscureText: true,
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton(
-                            onPressed: _loading ? null : _onEmailAuthPressed,
-                            child: Text(_authMode == AuthMode.signIn ? 'Sign In' : 'Sign Up'),
-                          ),
-                          TextButton(
-                            onPressed: () => setState(() => _showEmailForm = false),
-                            child: const Text('Cancel'),
-                          ),
-                        ],
                       ],
                       if (_error != null) ...[
                         const SizedBox(height: 12),
