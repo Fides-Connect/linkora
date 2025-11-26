@@ -17,7 +17,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
+        
+      - name: Setup Firebase config for CI
+        run: |
+          cd connectx
+          chmod +x ./scripts/setup_firebase_for_ci.sh
+          ./scripts/setup_firebase_for_ci.sh
+          
       - name: Build and Test in Dev Container
         uses: devcontainers/ci@v0.3
         with:
