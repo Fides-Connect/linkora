@@ -110,22 +110,6 @@ class AuthService {
     }
   }
 
-  // Legacy method name for backwards compatibility
-  Future<UserCredential?> signIn() => signInWithGoogle();
-
-  Future<UserCredential> signInWithEmail(String email, String password) async {
-    try {
-      final userCredential = await _firebaseAuth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-      return userCredential;
-    } catch (e) {
-      debugPrint('Email sign-in error: $e');
-      rethrow;
-    }
-  }
-
   Future<bool> _signInBackend(String idToken) async {
     final String? rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
     if (rawServer == null || rawServer.isEmpty) {

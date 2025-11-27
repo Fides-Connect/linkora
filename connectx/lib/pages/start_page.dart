@@ -52,7 +52,7 @@ class _StartPageState extends State<StartPage> {
     });
 
     try {
-      await _auth.signIn();
+      await _auth.signInWithGoogle();
     } catch (e) {
       setState(() => _error = 'Sign-in failed: $e');
     } finally {
