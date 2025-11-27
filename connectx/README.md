@@ -475,7 +475,7 @@ Important details
   - Web: Uses Google Identity button implementation (see web-only stub in lib/widgets/sign_in_button_stub.dart fallback).
   - Mobile/Desktop: Uses the google_sign_in package and the native sign-in flow.
 - Implementation notes:
-  - The ConnectX StartPage triggers AuthService.initialize() and AuthService.signIn() which call GoogleSignIn and then the backend validation (_signInBackend → POST /sign_in_google).
+  - The ConnectX StartPage triggers AuthService.initialize() and AuthService.signInWithGoogle() which call GoogleSignIn and then the backend validation (_signInBackend → POST /sign_in_google).
   - The client sends JSON: { "id_token": "<token>" } and expects the server to return validation + session info.
 - Security:
   - Always use HTTPS/WSS in production for token exchange.
