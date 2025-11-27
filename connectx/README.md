@@ -36,15 +36,158 @@ cd connectx
 flutter pub get
 ```
 
-### 2. Configure Environment Variables
+### 2. Firebase Setup
 
-Copy the template environment file and configure it:
+ConnectX uses Firebase Authentication for user sign-in (Google, Email/Password, Phone). Follow these steps to configure Firebase:
+
+#### 2.1. Create or Link Firebase Project
+
+**Option A: Create New Firebase Project**
+1. Go to [Firebase Console](https://console.firebase.google.com)
+2. Click "Create a project" or "Add project"
+3. Enter project name and follow the setup wizard
+
+**Option B: Use Existing Google Cloud Project**
+1. Go to [Firebase Console](https://console.firebase.google.com)
+2. Click "Add project"
+3. Select "Use existing Google Cloud project"
+4. Choose your Google Cloud project from the dropdown
+5. Complete the Firebase setup
+
+> **Important:** If you're using the AI-Assistant backend, use the same Google Cloud project (e.g., `gen-lang-client-0859968110`) for both Firebase and the backend service account. This ensures token validation works correctly.
+
+#### 2.2. Enable Authentication Methods
+
+1. In Firebase Console → Select your project
+2. Go to **Authentication** → **Sign-in method**
+3. Enable the authentication methods you want:
+   - **Google**: Click "Enable" → Add your support email
+   - **Email/Password**: Click "Enable" → Toggle on
+   - **Phone**: Click "Enable" → Configure reCAPTCHA verification
+
+#### 2.3. Configure Google Sign-In OAuth Client
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Select your project
+3. Go to **APIs & Services** → **Credentials**
+4. Find or create an **OAuth 2.0 Client ID** with:
+   - **Application type**: Web application
+   - **Authorized redirect URIs**: Add your callback URLs (for local dev: `http://localhost:60099`)
+5. Copy the **Client ID** (format: `XXXXXXXX-XXXXXXXX.apps.googleusercontent.com`)
+6. Save this Client ID for the next steps
+
+#### 2.4. Configure Flutter App with Firebase
+
+Run `flutterfire configure` to set up Firebase for your Flutter platforms:
+
+```bash
+cd connectx
+
+# Configure Firebase (select your project when prompted)
+flutterfire configure --project=<your-project-id>
+
+# Select platforms: android, ios, web (use spacebar to select)
+# This generates lib/firebase_options.dart automatically
+```
+
+#### 2.5. Configure Android App
+
+**A. Add SHA-1 Fingerprint**
+
+Get your debug keystore SHA-1 fingerprint:
+
+```bash
+keytool -list -v -alias androiddebugkey \
+  -keystore ~/.android/debug.keystore \
+  -storepass android -keypass android 2>/dev/null | grep SHA1
+```
+
+Copy the SHA-1 fingerprint (format: `XX:XX:XX:...`), then:
+
+1. Go to [Firebase Console](https://console.firebase.google.com) → Your Project
+2. Navigate to **Project Settings** (⚙️ icon)
+3. Scroll to **Your apps** → Select your Android app
+4. Click **"Add fingerprint"**
+5. Paste the SHA-1 fingerprint
+6. Click **"Save"**
+
+**B. Download google-services.json**
+
+1. In Firebase Console → Project Settings → Your apps
+2. Find your Android app (`com.fides.connectx`)
+3. Click **"Download google-services.json"**
+4. Place the file in: `connectx/android/app/google-services.json`
+
+> **Note:** For production, generate and add your release keystore SHA-1 fingerprint as well.
+
+#### 2.6. Configure Environment Variables
+
+Copy the template and configure:
 
 ```bash
 cp template.env .env
 ```
 
-Edit `.env` and set the AI-Assistant server URL:
+Edit `.env` and add your configuration:
+
+```properties
+# AI-Assistant Server URL (without ws:// prefix for HTTP/HTTPS)
+# Local development (use your machine's IP for Android emulator):
+AI_ASSISTANT_SERVER_URL=192.168.1.100:8080
+
+# Production (Google Cloud or other hosting):
+# AI_ASSISTANT_SERVER_URL=34.185.167.68:8080
+
+# Google OAuth Client ID (from step 2.3)
+GOOGLE_OAUTH_CLIENT_ID=XXXXXXXX-XXXXXXXX.apps.googleusercontent.com
+
+# Web Port (must match OAuth redirect URI)
+WEB_PORT=60099
+```
+
+> **Important for Android Emulator:** Use your computer's local network IP (e.g., `192.168.1.100`), NOT `localhost`, because the emulator runs in a separate network namespace.
+
+#### 2.7. Configure AI-Assistant Backend (if using)
+
+If you're using the AI-Assistant backend for token validation:
+
+1. Ensure the backend uses the **same Firebase project**
+2. In `ai-assistant/.env`, set:
+   ```properties
+   GOOGLE_APPLICATION_CREDENTIALS=your-service-account.json
+   GOOGLE_OAUTH_CLIENT_ID=<same-client-id-as-flutter-app>
+   ```
+3. The service account JSON must be from the same Firebase/GCP project
+4. Restart the backend server after configuration
+
+#### 2.8. Verify Firebase Setup
+
+Run the app and test authentication:
+
+```bash
+flutter run
+```
+
+Check the console logs for:
+- ✅ `Firebase initialized successfully`
+- ✅ `GoogleSignIn initialized with serverClientId`
+- ✅ Successful sign-in without errors
+
+**Common Issues:**
+- **"Developer console not set up correctly"** → Add SHA-1 fingerprint (step 2.5.A)
+- **"serverClientId must be provided"** → Check `GOOGLE_OAUTH_CLIENT_ID` in `.env`
+- **"Invalid token"** → Backend and Flutter app must use same Firebase project
+- **"Audience mismatch"** → Backend service account must be from correct project
+
+### 3. Configure Additional Environment Variables (Optional)
+
+If not already configured in step 2.6, copy the template environment file:
+
+```bash
+cp template.env .env
+```
+
+Verify all required variables are set:
 
 ```properties
 # AI-Assistant Server WebSocket URL
@@ -332,7 +475,7 @@ Important details
   - Web: Uses Google Identity button implementation (see web-only stub in lib/widgets/sign_in_button_stub.dart fallback).
   - Mobile/Desktop: Uses the google_sign_in package and the native sign-in flow.
 - Implementation notes:
-  - The ConnectX StartPage triggers AuthService.initialize() and AuthService.signIn() which call GoogleSignIn and then the backend validation (_signInBackend → POST /sign_in_google).
+  - The ConnectX StartPage triggers AuthService.initialize() and AuthService.signInWithGoogle() which call GoogleSignIn and then the backend validation (_signInBackend → POST /sign_in_google).
   - The client sends JSON: { "id_token": "<token>" } and expects the server to return validation + session info.
 - Security:
   - Always use HTTPS/WSS in production for token exchange.

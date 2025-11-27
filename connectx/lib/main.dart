@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'widgets/particle_sphere.dart';
 import 'services/speech_service.dart';
 import 'services/auth_service.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'pages/start_page.dart';
@@ -18,6 +20,11 @@ import 'localization/app_localizations.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(); // Load environment variables from .env file
+
+  // Initialize Firebase with generated options
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   // Create a single AuthService instance and initialize it.
   final auth = AuthService();
@@ -69,14 +76,26 @@ class _ConnectXAppState extends State<ConnectXApp> {
         Locale('en', ''),
         Locale('de', ''),
       ],
-      home: StreamBuilder<GoogleSignInAccount?>(
+      home: StreamBuilder<User?>(
         stream: widget.auth.onCurrentUserChanged,
         initialData: widget.auth.currentUser,
         builder: (context, snapshot) {
+          // Log the connection state and data
+          debugPrint('Auth StreamBuilder - ConnectionState: ${snapshot.connectionState}, HasData: ${snapshot.hasData}, User: ${snapshot.data?.email}');
+          
+          // Wait for the stream to be ready
+          if (snapshot.connectionState == ConnectionState.waiting && snapshot.data == null) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          
           final user = snapshot.data;
           if (user != null) {
+            debugPrint('User is signed in: ${user.email}');
             return const ConnectXHomePage();
           } else {
+            debugPrint('No user signed in, showing StartPage');
             return const StartPage();
           }
         },
@@ -103,9 +122,9 @@ class ConnectXHomePage extends StatefulWidget {
 class _ConnectXHomePageState extends State<ConnectXHomePage> {
   late SpeechService _speechService;
   final AuthService _auth = AuthService();
-  GoogleSignInAccount? _user;
+  User? _user;
 
-  StreamSubscription<GoogleSignInAccount?>? _userSub;
+  StreamSubscription<User?>? _userSub;
 
   bool _isAnimating = false;
   bool _isChatting = false;

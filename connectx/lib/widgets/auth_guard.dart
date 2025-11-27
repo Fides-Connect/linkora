@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 
 // A widget that guards its child by checking if the user is authenticated.
@@ -12,7 +12,7 @@ class AuthGuard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<GoogleSignInAccount?>(
+    return StreamBuilder<User?>(
       stream: auth.onCurrentUserChanged,
       initialData: auth.currentUser,
       builder: (context, snapshot) {

@@ -1,11 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter_signin_button/flutter_signin_button.dart'; // For non-web platforms
-import '../widgets/sign_in_button_stub.dart'
-    if (dart.library.html) 'package:google_sign_in_web/web_only.dart'; // For web platform
+import 'package:flutter_signin_button/flutter_signin_button.dart';
 
 import '../services/auth_service.dart';
 import '../theme.dart';
@@ -22,17 +18,15 @@ class StartPage extends StatefulWidget {
 
 class _StartPageState extends State<StartPage> {
   final AuthService _auth = AuthService();
+  
   bool _loading = false;
   bool _initialized = false;
   String? _error;
 
-  // Track the authentication events subscription so we can cancel it on dispose.
-  StreamSubscription<GoogleSignInAuthenticationEvent>? _authSubscription;
-
   @override
   void initState() {
     super.initState();
-    // Initialize the GoogleSignIn singleton; pass clientId from env if present.
+    // Initialize AuthService
     _auth
         .initialize()
         .then((_) {
@@ -46,14 +40,19 @@ class _StartPageState extends State<StartPage> {
         });
   }
 
-  Future<void> _onSignInPressed() async {
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  Future<void> _onGoogleSignInPressed() async {
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      await _auth.signIn();
+      await _auth.signInWithGoogle();
     } catch (e) {
       setState(() => _error = 'Sign-in failed: $e');
     } finally {
@@ -62,17 +61,10 @@ class _StartPageState extends State<StartPage> {
   }
 
   @override
-  void dispose() {
-    _authSubscription?.cancel();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
     final screenHeight = MediaQuery.of(context).size.height;
-    // Use 12% of screen height but keep it within reasonable bounds
-    final logoTextGap = (screenHeight * 0.12).clamp(10.0, 250.0).toDouble();
+    final logoTextGap = (screenHeight * 0.08).clamp(10.0, 80.0).toDouble();
 
     return Theme(
       data: appTheme,
@@ -106,14 +98,14 @@ class _StartPageState extends State<StartPage> {
             const AppBackground(),
             SafeArea(
               child: Center(
-                child: Padding(
+                child: SingleChildScrollView(
                   padding: const EdgeInsets.all(24.0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        localizations?.welcomeTitle ?? 'Welcome to Fides',
+                        localizations?.welcomeTitle ?? 'Welcome to ConnectX',
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
@@ -127,13 +119,13 @@ class _StartPageState extends State<StartPage> {
                       ),
                       SizedBox(height: logoTextGap),
                       SizedBox(
-                        width: 120,
-                        height: 120,
+                        width: 100,
+                        height: 100,
                         child: Image.asset(
-                            'assets/images/FidesLogo.png',
-                            fit: BoxFit.contain,
-                            semanticLabel: 'Fides Logo',
-                          ),
+                          'assets/images/FidesLogo.png',
+                          fit: BoxFit.contain,
+                          semanticLabel: 'Fides Logo',
+                        ),
                       ),
                       SizedBox(height: logoTextGap),
                       if (!_initialized)
@@ -142,24 +134,21 @@ class _StartPageState extends State<StartPage> {
                           height: 48,
                           child: Center(child: CircularProgressIndicator()),
                         )
-                      else if (kIsWeb)
-                        SizedBox(
-                          width: 220,
-                          height: 48,
-                          child: renderButton(configuration: GSIButtonConfiguration(
-                            theme: GSIButtonTheme.filledBlack,
-                          )),
-                        )
-                      else
+                      else ...[
+                        // Google Sign-In Button
                         SignInButton(
                           Buttons.GoogleDark,
-                          onPressed: _loading ? null : _onSignInPressed,
+                          onPressed: _loading ? null : _onGoogleSignInPressed,
                         ),
+                      ],
                       if (_error != null) ...[
                         const SizedBox(height: 12),
                         Text(
                           _error!,
-                          style: const TextStyle(color: Colors.red),
+                          style: TextStyle(
+                            color: _error!.contains('Code sent') ? Colors.green : Colors.red,
+                          ),
+                          textAlign: TextAlign.center,
                         ),
                       ],
                     ],

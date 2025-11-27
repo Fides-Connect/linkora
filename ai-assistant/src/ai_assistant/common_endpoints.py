@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import Any, Dict
 from uuid import uuid4
 from aiohttp import web
-from google.oauth2 import id_token
-from google.auth.transport import requests
+import firebase_admin
+from firebase_admin import auth as firebase_auth
 import aiohttp_cors
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,7 @@ def setup_cors(app: web.Application) -> None:
         cors.add(route)
 
 async def sign_in_google(request: web.Request) -> web.Response:
-    """Handles user sign-in via Google OAuth token verification.
+    """Handles user sign-in via Firebase ID token verification.
     Expects a JSON body with an 'id_token' field. Returns user
     information if the token is valid."""
     try:
@@ -38,14 +38,14 @@ async def sign_in_google(request: web.Request) -> web.Response:
         if not token:
             return web.json_response({"error": "Missing id_token"}, status=400)
 
-        # Verify the token
-        request_adapter = requests.Request()
-        id_info = id_token.verify_oauth2_token(token, request_adapter, os.getenv('GOOGLE_OAUTH_CLIENT_ID'))
+        # Verify the Firebase ID token
+        # This automatically fetches and caches Google's public certificates
+        decoded_token = firebase_auth.verify_id_token(token)
 
         # Extract user information
-        user_id = id_info["sub"]
-        email = id_info.get("email")
-        name = id_info.get("name")
+        user_id = decoded_token["uid"]
+        email = decoded_token.get("email")
+        name = decoded_token.get("name")
 
         # create session id and store session
         # Todo: Replace with persistent session storage
