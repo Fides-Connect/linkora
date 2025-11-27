@@ -1,8 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:async';
-import 'package:flutter/foundation.dart'
-    show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
+import 'dart:io' show SocketException;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb, defaultTargetPlatform, TargetPlatform;
 
 import 'dart:convert' show json;
 import 'package:http/http.dart' as http;
@@ -13,140 +14,105 @@ class AuthService {
   factory AuthService() => _instance;
   AuthService._internal();
 
-  bool isAuthorized = false;
-  GoogleSignInAccount? _currentUser;
-  GoogleSignInAccount? get currentUser => _currentUser;
-  final StreamController<GoogleSignInAccount?> _userController =
-      StreamController.broadcast();
-  Stream<GoogleSignInAccount?> get onCurrentUserChanged =>
-      _userController.stream;
+  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
+  GoogleSignIn? _googleSignIn;
+
+  User? get currentUser => _firebaseAuth.currentUser;
+  Stream<User?> get onCurrentUserChanged => _firebaseAuth.authStateChanges();
 
   String? _photoUrl;
 
-  /// Expose the photo URL fetched from People API (may be null).
-  String? get photoUrl => _photoUrl;
-
-  final List<String> scopes = <String>['openid', 'email', 'profile'];
+  /// Expose the photo URL from Firebase user profile.
+  String? get photoUrl => _photoUrl ?? currentUser?.photoURL;
 
   // Simple init guard
   bool _initialized = false;
 
-  /// Initialize the underlying GoogleSignIn singleton with optional clientId.
+  /// Initialize Firebase and Google Sign-In.
   Future<void> initialize() async {
     if (_initialized) return;
-    final bool isWeb = kIsWeb;
-    final bool isAndroid =
-        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-
-    final webClientId = dotenv.env['GOOGLE_OAUTH_CLIENT_ID'];
-    if (webClientId == null) {
-      throw Exception(
-        'GOOGLE_OAUTH_CLIENT_ID not set. Add GOOGLE_OAUTH_CLIENT_ID to .env',
-      );
+    
+    // Initialize GoogleSignIn with proper configuration
+    final bool isAndroid = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+    final String? webClientId = dotenv.env['GOOGLE_OAUTH_CLIENT_ID'];
+    
+    if (isAndroid) {
+      if (webClientId == null || webClientId.isEmpty) {
+        throw Exception('GOOGLE_OAUTH_CLIENT_ID must be set in .env for Android');
+      }
+      _googleSignIn = GoogleSignIn.instance;
+      await _googleSignIn!.initialize(serverClientId: webClientId);
+    } else {
+      _googleSignIn = GoogleSignIn.instance;
     }
-
-    // Await the initialization and register listener
-    await GoogleSignIn.instance.initialize(
-      clientId: isWeb ? webClientId : null,
-      serverClientId: isAndroid ? webClientId : null,
-    );
-
-    // Listen for authentication events (store/attach errors to service-level handler)
-    GoogleSignIn.instance.authenticationEvents
-        .listen(_handleAuthenticationEvent)
-        .onError(_handleAuthenticationError);
-
+    
+    // Listen to auth state changes
+    _firebaseAuth.authStateChanges().listen(_handleAuthStateChanged);
+    
     _initialized = true;
   }
 
-  Future<void> _handleAuthenticationEvent(
-    GoogleSignInAuthenticationEvent event,
-  ) async {
-    // Extract user from event
-    final GoogleSignInAccount? user =
-        event is GoogleSignInAuthenticationEventSignIn ? event.user : null;
-
-    // Validate token with AI-Assistant server before accepting it locally
-    final String? idToken = user?.authentication.idToken;
-    if (idToken != null) {
-      final bool valid = await _signInBackend(idToken);
-      if (!valid) {
-        debugPrint('ID token validation failed - signing out locally');
-        signOut();
-        return;
-      } else {
-        // fetch profile photo, update current user and notify listeners
-        _getProfilePhoto(user!);
-        _currentUser = user;
-        _userController.add(user);
+  Future<void> _handleAuthStateChanged(User? user) async {
+    if (user != null) {
+      _photoUrl = user.photoURL;
+      
+      // Validate with backend if configured
+      final String? serverUrl = dotenv.env['AI_ASSISTANT_SERVER_URL'];
+      if (serverUrl != null && serverUrl.isNotEmpty && serverUrl != 'localhost:8080') {
+        final idToken = await user.getIdToken();
+        if (idToken != null) {
+          final bool valid = await _signInBackend(idToken);
+          if (!valid) {
+            debugPrint('Backend validation failed - signing out');
+            await signOut();
+            return;
+          }
+        }
       }
+    } else {
+      _photoUrl = null;
     }
-  }
-
-  Future<void> _handleAuthenticationError(Object e) async {
-    debugPrint('Auth error: $e');
-    _userController.add(null);
-    _currentUser = null;
-  }
-
-  // Calls the People API REST endpoint for the signed-in user to retrieve information.
-  Future<void> _getProfilePhoto(GoogleSignInAccount user) async {
-    final Map<String, String>? headers = await user.authorizationClient
-        .authorizationHeaders(scopes);
-    if (headers == null) {
-      return;
-    }
-
-    // Request photos explicitly using personFields
-    final http.Response response = await http.get(
-      Uri.parse(
-        'https://people.googleapis.com/v1/people/me?personFields=names,photos',
-      ),
-      headers: headers,
-    );
-
-    if (response.statusCode != 200) {
-      debugPrint('Failed to fetch user profile: ${response.body}');
-      return;
-    }
-
-    final Map<String, dynamic> profile = json.decode(response.body);
-    // Extract photo url (if any)
-    final List<dynamic>? photos = profile['photos'] as List<dynamic>?;
-    final photoUrl = photos?.isNotEmpty == true
-        ? photos?.first['url'] as String?
-        : null;
-
-    // store photoUrl for UI usage
-    _photoUrl = photoUrl;
-
-    // Update current user and notify listeners
-    _currentUser = user;
-    _userController.add(user);
   }
 
   Future<void> signOut() async {
-    // Disconnect instead of just signing out, to reset the example state as
-    // much as possible.
-    debugPrint('Signing out user ${_currentUser?.email}');
-    await GoogleSignIn.instance.disconnect();
-    _userController.add(null);
-    _currentUser = null;
+    await _googleSignIn?.signOut();
+    await _firebaseAuth.signOut();
     _photoUrl = null;
   }
 
-  Future<void> signIn() async {
-    await GoogleSignIn.instance.authenticate(scopeHint: scopes);
+  Future<UserCredential?> signInWithGoogle() async {
+    if (_googleSignIn == null) {
+      throw Exception('GoogleSignIn not initialized. Call initialize() first.');
+    }
+    
+    try {
+      // Trigger the Google Sign-In flow
+      final GoogleSignInAccount googleUser = await _googleSignIn!.authenticate(
+        scopeHint: ['openid', 'email', 'profile'],
+      );
+
+      // Obtain the auth details from the request
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      // Create a new credential with just the idToken
+      // Note: google_sign_in 7.2.0+ no longer provides accessToken separately
+      final credential = GoogleAuthProvider.credential(
+        idToken: googleAuth.idToken,
+      );
+
+      // Sign in to Firebase with the Google credential
+      final userCredential = await _firebaseAuth.signInWithCredential(credential);
+      
+      return userCredential;
+    } catch (e) {
+      debugPrint('Sign-in error: $e');
+      rethrow;
+    }
   }
 
-  /// Sign in with Google id token at the backend server.
-  /// Returns true if the server accepts the token.
   Future<bool> _signInBackend(String idToken) async {
     final String? rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
     if (rawServer == null || rawServer.isEmpty) {
-      debugPrint(
-        'AI_ASSISTANT_SERVER_URL not set in .env. Cannot validate ID token.',
-      );
       return false;
     }
     final String url = 'http://$rawServer/sign_in_google';
@@ -161,20 +127,27 @@ class AuthService {
           .timeout(const Duration(seconds: 6));
 
       if (response.statusCode != 200) {
-        debugPrint(
-          'Validation request failed: ${response.statusCode} ${response.body}',
-        );
+        debugPrint('Backend validation failed: ${response.statusCode} - ${response.body}');
         return false;
       }
 
-      debugPrint('Validation response: ${response.body}');
-
-      // Server should return a boolean 'valid' field; if absent, treat 200 as valid.
-      final Map<String, dynamic> data =
-          json.decode(response.body) as Map<String, dynamic>;
-      return (data['is_valid'] is bool) ? data['is_valid'] as bool : true;
+      // Server should return a boolean 'is_valid' field
+      try {
+        final Map<String, dynamic> data =
+            json.decode(response.body) as Map<String, dynamic>;
+        return data['is_valid'] as bool? ?? true;
+      } catch (e) {
+        // Treat 200 as valid even if response format is unexpected
+        return true;
+      }
+    } on TimeoutException catch (_) {
+      debugPrint('Backend validation timeout (6s)');
+      return false;
+    } on SocketException catch (e) {
+      debugPrint('Backend validation network error: ${e.message}');
+      return false;
     } catch (e) {
-      debugPrint('Validation error: $e');
+      debugPrint('Backend validation error: $e');
       return false;
     }
   }
