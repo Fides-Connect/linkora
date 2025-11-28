@@ -12,7 +12,7 @@ on:
       - '.github/workflows/connectx-test.yml'
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -30,5 +30,15 @@ jobs:
           runCmd: |
             cd ./connectx
             cp ./template.env .env
-            flutter build apk
+            
+            # Install test dependencies
+            flutter pub get
+            
+            # Generate mocks for unit tests
+            dart run build_runner build --delete-conflicting-outputs
+            
+            # Run all tests including new user_service tests
             flutter test
+            
+            # Build APK
+            flutter build apk

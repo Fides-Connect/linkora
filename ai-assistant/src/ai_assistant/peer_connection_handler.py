@@ -14,6 +14,7 @@ from aiortc.contrib.media import MediaRelay
 from aiortc.sdp import candidate_from_sdp
 
 from .audio_processor import AudioProcessor
+from .ai_assistant import AIAssistant
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,9 @@ logger = logging.getLogger(__name__)
 class PeerConnectionHandler:
     """Handles WebRTC peer connection for a single client."""
     
-    def __init__(self, connection_id: str, ai_assistant, websocket):
+    def __init__(self, connection_id: str, ai_assistant: AIAssistant, websocket, user_id: str | None = None):
         self.connection_id = connection_id
+        self.user_id = user_id  # Firebase user ID if authenticated
         self.ai_assistant = ai_assistant
         self.websocket = websocket
         self.pc = RTCPeerConnection()
@@ -162,8 +164,17 @@ class PeerConnectionHandler:
         
         if self.audio_processor:
             logger.debug("Stopping audio processor")
-            await self.audio_processor.stop()
+            try:
+                await self.audio_processor.stop()
+            except Exception as e:
+                logger.warning(f"Error stopping audio processor: {e}")
         
-        logger.debug("Closing RTCPeerConnection")
-        await self.pc.close()
-        logger.debug(f"Peer connection {self.connection_id} closed successfully")
+        if self.pc:
+            logger.debug("Closing RTCPeerConnection")
+            try:
+                await self.pc.close()
+                logger.debug(f"Peer connection {self.connection_id} closed successfully")
+            except Exception as e:
+                logger.warning(f"Error closing peer connection: {e}")
+            finally:
+                self.pc = None  # Clear reference to avoid double-close

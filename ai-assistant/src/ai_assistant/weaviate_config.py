@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 # Collection names
 USERS_COLLECTION = "User"
 PROVIDERS_COLLECTION = "ServiceProvider"
+CHAT_MESSAGES_COLLECTION = "ChatMessage"
 
 
 class WeaviateConnection:
@@ -97,7 +98,7 @@ class WeaviateConnection:
 
 
 def init_weaviate_schema():
-    """Initialize Weaviate schema with collections for users and providers."""
+    """Initialize Weaviate schema with collections for users, providers, and chat history."""
     try:
         client = WeaviateConnection.get_client()
         
@@ -109,7 +110,11 @@ def init_weaviate_schema():
                     Property(name="user_id", data_type=DataType.TEXT),
                     Property(name="name", data_type=DataType.TEXT),
                     Property(name="email", data_type=DataType.TEXT),
+                    Property(name="photo_url", data_type=DataType.TEXT),
+                    Property(name="fcm_token", data_type=DataType.TEXT),
                     Property(name="has_open_request", data_type=DataType.BOOL),
+                    Property(name="created_at", data_type=DataType.TEXT),
+                    Property(name="last_sign_in", data_type=DataType.TEXT),
                 ],
             )
             logger.info(f"Created collection: {USERS_COLLECTION}")
@@ -139,6 +144,23 @@ def init_weaviate_schema():
         else:
             logger.info(f"Collection already exists: {PROVIDERS_COLLECTION}")
         
+        # Create ChatMessage collection for conversation history persistence
+        if not client.collections.exists(CHAT_MESSAGES_COLLECTION):
+            client.collections.create(
+                name=CHAT_MESSAGES_COLLECTION,
+                properties=[
+                    Property(name="user_id", data_type=DataType.TEXT),
+                    Property(name="session_id", data_type=DataType.TEXT),
+                    Property(name="role", data_type=DataType.TEXT),
+                    Property(name="content", data_type=DataType.TEXT),
+                    Property(name="timestamp", data_type=DataType.TEXT),
+                    Property(name="stage", data_type=DataType.TEXT),
+                ],
+            )
+            logger.info(f"Created collection: {CHAT_MESSAGES_COLLECTION}")
+        else:
+            logger.info(f"Collection already exists: {CHAT_MESSAGES_COLLECTION}")
+        
         logger.info("Weaviate schema initialization complete")
         return True
         
@@ -157,3 +179,9 @@ def get_providers_collection():
     """Get providers collection."""
     client = WeaviateConnection.get_client()
     return client.collections.get(PROVIDERS_COLLECTION)
+
+
+def get_chat_messages_collection():
+    """Get chat messages collection."""
+    client = WeaviateConnection.get_client()
+    return client.collections.get(CHAT_MESSAGES_COLLECTION)

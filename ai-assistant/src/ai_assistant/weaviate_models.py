@@ -6,7 +6,11 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from weaviate.classes.query import Filter
-from .weaviate_config import get_users_collection, get_providers_collection
+from .weaviate_config import (
+    get_users_collection,
+    get_providers_collection,
+    get_chat_messages_collection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +29,15 @@ class UserModelWeaviate:
                     "user_id": user_data.get("user_id"),
                     "name": user_data.get("name"),
                     "email": user_data.get("email"),
+                    "photo_url": user_data.get("photo_url"),
+                    "fcm_token": user_data.get("fcm_token"),
                     "has_open_request": user_data.get("has_open_request", False),
+                    "created_at": user_data.get("created_at"),
+                    "last_sign_in": user_data.get("last_sign_in"),
                 }
             )
             
-            logger.info(f"Created user: {user_data.get('name')}")
+            logger.info(f"Created user: {user_data.get('name')} ({user_data.get('email')})")
             return str(uuid)
             
         except Exception as e:
@@ -56,6 +64,37 @@ class UserModelWeaviate:
         except Exception as e:
             logger.error(f"Error fetching user: {e}")
             return None
+    
+    @staticmethod
+    def update_user(user_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update user information."""
+        try:
+            collection = get_users_collection()
+            
+            # Find the user first
+            response = collection.query.fetch_objects(
+                filters=Filter.by_property("user_id").equal(user_id),
+                limit=1
+            )
+            
+            if not response.objects:
+                logger.warning(f"User not found for update: {user_id}")
+                return False
+            
+            uuid = response.objects[0].uuid
+            
+            # Update the user
+            collection.data.update(
+                uuid=uuid,
+                properties=update_data
+            )
+            
+            logger.info(f"Updated user: {user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating user: {e}")
+            return False
 
 
 class ProviderModelWeaviate:
@@ -175,3 +214,66 @@ class ProviderModelWeaviate:
         except Exception as e:
             logger.error(f"Error getting all providers: {e}")
             return []
+
+
+class ChatMessageModelWeaviate:
+    """Chat message persistence operations for Weaviate."""
+
+    @staticmethod
+    def save_message(
+        user_id: str,
+        role: str,
+        content: str,
+        session_id: Optional[str] = None,
+        stage: Optional[str] = None,
+        timestamp: Optional[str] = None,
+    ) -> Optional[str]:
+        """Persist a single chat message for a user."""
+        try:
+            collection = get_chat_messages_collection()
+            ts = timestamp or datetime.utcnow().isoformat()
+            uuid = collection.data.insert(
+                properties={
+                    "user_id": user_id,
+                    "session_id": session_id or user_id,
+                    "role": role,
+                    "content": content,
+                    "timestamp": ts,
+                    "stage": stage,
+                }
+            )
+            logger.debug("Persisted %s message for user %s", role, user_id)
+            return str(uuid)
+        except Exception as e:
+            logger.error("Error saving chat message for %s: %s", user_id, e)
+            return None
+
+    @staticmethod
+    def get_messages(user_id: str, limit: int = 200) -> List[Dict[str, Any]]:
+        """Retrieve chat messages for a user ordered by timestamp."""
+        try:
+            collection = get_chat_messages_collection()
+            response = collection.query.fetch_objects(
+                filters=Filter.by_property("user_id").equal(user_id),
+                limit=limit,
+            )
+            messages = [obj.properties for obj in response.objects]
+            messages.sort(key=lambda msg: msg.get("timestamp", ""))
+            return messages
+        except Exception as e:
+            logger.error("Error fetching chat messages for %s: %s", user_id, e)
+            return []
+
+    @staticmethod
+    def delete_messages(user_id: str) -> bool:
+        """Delete all chat messages for a user."""
+        try:
+            collection = get_chat_messages_collection()
+            collection.data.delete_many(
+                where=Filter.by_property("user_id").equal(user_id)
+            )
+            logger.info("Cleared chat history for user %s", user_id)
+            return True
+        except Exception as e:
+            logger.error("Error deleting chat messages for %s: %s", user_id, e)
+            return False

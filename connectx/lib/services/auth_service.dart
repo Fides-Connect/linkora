@@ -2,11 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:async';
-import 'dart:io' show SocketException;
 import 'package:flutter/foundation.dart' show debugPrint, kIsWeb, defaultTargetPlatform, TargetPlatform;
 
-import 'dart:convert' show json;
-import 'package:http/http.dart' as http;
+import 'user_service.dart';
+import 'webrtc_service.dart';
 
 class AuthService {
   // Singleton factory
@@ -16,6 +15,8 @@ class AuthService {
 
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
   GoogleSignIn? _googleSignIn;
+  final UserService _userService = UserService();
+  WebRTCService? _webrtcService;
 
   User? get currentUser => _firebaseAuth.currentUser;
   Stream<User?> get onCurrentUserChanged => _firebaseAuth.authStateChanges();
@@ -28,9 +29,13 @@ class AuthService {
   // Simple init guard
   bool _initialized = false;
 
+
   /// Initialize Firebase and Google Sign-In.
   Future<void> initialize() async {
     if (_initialized) return;
+    
+    // Initialize FCM
+    await _userService.initializeFCM();
     
     // Initialize GoogleSignIn with proper configuration
     final bool isAndroid = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -52,32 +57,67 @@ class AuthService {
     _initialized = true;
   }
 
+  /// Set the WebRTC service to enable automatic connection on sign-in
+  void setWebRTCService(WebRTCService service) {
+    _webrtcService = service;
+  }
+
   Future<void> _handleAuthStateChanged(User? user) async {
     if (user != null) {
       _photoUrl = user.photoURL;
       
-      // Validate with backend if configured
+      // Sync user data with backend
       final String? serverUrl = dotenv.env['AI_ASSISTANT_SERVER_URL'];
       if (serverUrl != null && serverUrl.isNotEmpty && serverUrl != 'localhost:8080') {
-        final idToken = await user.getIdToken();
-        if (idToken != null) {
-          final bool valid = await _signInBackend(idToken);
-          if (!valid) {
-            debugPrint('Backend validation failed - signing out');
-            await signOut();
-            return;
-          }
+        final bool synced = await _userService.syncUserWithBackend(user);
+        if (!synced) {
+          debugPrint('User sync failed - but continuing with local auth');
+        } else {
+          // User synced successfully, now automatically connect to WebRTC
+          await _connectToServer();
         }
       }
     } else {
       _photoUrl = null;
+      _userService.clearUserData();
+      
+      // Disconnect from server on sign out
+      _webrtcService?.disconnect();
+    }
+  }
+
+  /// Automatically connect to AI assistant server after successful authentication
+  Future<void> _connectToServer() async {
+    if (_webrtcService == null) {
+      debugPrint('AuthService: WebRTC service not set, skipping automatic connection');
+      return;
+    }
+
+    try {
+      debugPrint('AuthService: Automatically connecting to AI assistant server...');
+      await _webrtcService!.connect();
+      debugPrint('AuthService: Successfully connected to AI assistant server');
+    } catch (e) {
+      debugPrint('AuthService: Failed to auto-connect to server: $e');
+      // Don't block authentication if connection fails
     }
   }
 
   Future<void> signOut() async {
+    // Disconnect from server first and disable reconnection
+    _webrtcService?.disableReconnection();
+    _webrtcService?.disconnect();
+    
+    // Notify backend of logout before signing out
+    final user = currentUser;
+    if (user != null) {
+      await _userService.notifyLogout(user);
+    }
+    
     await _googleSignIn?.signOut();
     await _firebaseAuth.signOut();
     _photoUrl = null;
+    _userService.clearUserData();
   }
 
   Future<UserCredential?> signInWithGoogle() async {
@@ -107,48 +147,6 @@ class AuthService {
     } catch (e) {
       debugPrint('Sign-in error: $e');
       rethrow;
-    }
-  }
-
-  Future<bool> _signInBackend(String idToken) async {
-    final String? rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
-    if (rawServer == null || rawServer.isEmpty) {
-      return false;
-    }
-    final String url = 'http://$rawServer/sign_in_google';
-
-    try {
-      final response = await http
-          .post(
-            Uri.parse(url),
-            headers: {'Content-Type': 'application/json'},
-            body: json.encode({'id_token': idToken}),
-          )
-          .timeout(const Duration(seconds: 6));
-
-      if (response.statusCode != 200) {
-        debugPrint('Backend validation failed: ${response.statusCode} - ${response.body}');
-        return false;
-      }
-
-      // Server should return a boolean 'is_valid' field
-      try {
-        final Map<String, dynamic> data =
-            json.decode(response.body) as Map<String, dynamic>;
-        return data['is_valid'] as bool? ?? true;
-      } catch (e) {
-        // Treat 200 as valid even if response format is unexpected
-        return true;
-      }
-    } on TimeoutException catch (_) {
-      debugPrint('Backend validation timeout (6s)');
-      return false;
-    } on SocketException catch (e) {
-      debugPrint('Backend validation network error: ${e.message}');
-      return false;
-    } catch (e) {
-      debugPrint('Backend validation error: $e');
-      return false;
     }
   }
 }

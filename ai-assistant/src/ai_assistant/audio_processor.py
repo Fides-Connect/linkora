@@ -14,6 +14,7 @@ from aiortc.mediastreams import MediaStreamError
 from av import AudioFrame
 
 from .audio_track import AudioOutputTrack
+from .definitions import AUDIO_RECEIVE_TIMEOUT, AUDIO_STREAM_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,9 @@ class AudioProcessor:
         self.current_tts_tasks = []
         self.playback_start_time = None  # Track when playback started
         
+        # Greeting completion flag for STT
+        self.greeting_complete = asyncio.Event()
+        
         # Debug: WAV file recording
         self.debug_recording = os.getenv('DEBUG_RECORD_AUDIO', 'false').lower() == 'true'
         self.debug_wav_file = None
@@ -64,11 +68,12 @@ class AudioProcessor:
         """Start processing audio."""
         self.running = True
         self.processing_task = asyncio.create_task(self._process_audio())
+        # Start STT immediately so it can consume audio from the queue
         self.stt_task = asyncio.create_task(self._continuous_stt())
         logger.info(f"Audio processor started for connection {self.connection_id}")
         logger.debug("Continuous STT streaming enabled")
         
-        # Play greeting message
+        # Play greeting in parallel - STT will wait for greeting to complete before sending to Google
         asyncio.create_task(self._play_greeting())
     
     async def stop(self):
@@ -145,8 +150,10 @@ class AudioProcessor:
             # Set speaking flag to prevent interruption during greeting
             self.is_ai_speaking = True
             
-            # Generate greeting text and audio
-            greeting_text, audio_stream = await self.ai_assistant.get_greeting_audio()
+            # Generate greeting text and audio with user_id from ai_assistant
+            greeting_text, audio_stream = await self.ai_assistant.get_greeting_audio(
+                user_id=self.ai_assistant.user_id
+            )
             logger.info(f"Playing greeting: '{greeting_text}'")
             
             # Queue greeting audio for playback
@@ -154,13 +161,15 @@ class AudioProcessor:
                 if audio_chunk:
                     await self.output_track.queue_audio(audio_chunk)
             
-            # Clear speaking flag after greeting completes
+            # Clear speaking flag and signal greeting completion
             self.is_ai_speaking = False
-            logger.info("Greeting playback complete")
+            self.greeting_complete.set()  # Signal STT to start sending audio to Google
+            logger.info("Greeting playback complete, STT can now stream to Google")
             
         except Exception as e:
             logger.error(f"Error playing greeting: {e}", exc_info=True)
             self.is_ai_speaking = False
+            self.greeting_complete.set()  # Still signal completion even on error
     
     async def _process_audio(self):
         """Main audio processing loop - receives frames and queues them for STT."""
@@ -178,7 +187,7 @@ class AudioProcessor:
                     try:
                         frame = await asyncio.wait_for(
                             self.input_track.recv(),
-                            timeout=5.0
+                            timeout=AUDIO_RECEIVE_TIMEOUT
                         )
                     except MediaStreamError:
                         logger.info(f"Input track closed for connection {self.connection_id} (frame {frame_count})")
@@ -216,7 +225,8 @@ class AudioProcessor:
                         logger.debug(f"[Frame {frame_count}] Queued {len(audio_bytes)} bytes for STT (RMS={rms:.2f})")
                     
                 except asyncio.TimeoutError:
-                    logger.warning(f"Audio receive timeout after frame {frame_count}")
+                    logger.debug(f"No audio received for {AUDIO_RECEIVE_TIMEOUT}s (frame {frame_count}), continuing...")
+                    # Don't break on timeout - user might just be pausing
                     continue
                 except Exception as e:
                     logger.error(f"Error receiving frame {frame_count}: {e}", exc_info=True)
@@ -290,25 +300,36 @@ class AudioProcessor:
     async def _continuous_stt(self):
         """Continuously stream audio to STT and process final transcripts."""
         try:
-            logger.info("Starting continuous STT streaming...")
+            logger.info("Starting continuous STT - waiting for greeting to complete...")
+            
+            # Wait for greeting to complete before starting Google STT stream
+            await self.greeting_complete.wait()
+            logger.info("Greeting complete, now streaming audio to Google STT...")
             
             # Create async generator for audio chunks
             async def audio_generator():
                 chunk_count = 0
+                timeout_count = 0
                 while self.running:
                     try:
                         audio_chunk = await asyncio.wait_for(
                             self.audio_queue.get(),
-                            timeout=1.0
+                            timeout=AUDIO_STREAM_TIMEOUT
                         )
                         if audio_chunk is None:  # Sentinel value to stop
                             logger.debug("STT audio generator received stop signal")
                             break
                         chunk_count += 1
+                        timeout_count = 0  # Reset timeout counter on successful receive
                         if chunk_count % 50 == 0:
                             logger.debug(f"STT audio generator: yielding chunk {chunk_count} ({len(audio_chunk)} bytes)")
                         yield audio_chunk
                     except asyncio.TimeoutError:
+                        # Send silent audio chunk to keep stream alive
+                        timeout_count += 1
+                        if timeout_count % 10 == 1:  # Log every 10th timeout (every 30s)
+                            logger.debug(f"No audio in queue for {AUDIO_STREAM_TIMEOUT}s, connection still active")
+                        # Just continue - don't yield anything, let Google STT handle silence
                         continue
                     except Exception as e:
                         logger.error(f"Error in audio generator: {e}", exc_info=True)

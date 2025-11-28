@@ -7,6 +7,7 @@ import 'firebase_options.dart';
 import 'widgets/particle_sphere.dart';
 import 'services/speech_service.dart';
 import 'services/auth_service.dart';
+import 'services/webrtc_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
@@ -26,20 +27,31 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // Create a shared WebRTC service instance
+  final webrtcService = WebRTCService();
+
   // Create a single AuthService instance and initialize it.
   final auth = AuthService();
   try {
     await auth.initialize();
+    // Set the WebRTC service for automatic connection on sign-in
+    auth.setWebRTCService(webrtcService);
   } catch (e) {
     debugPrint('Error initializing AuthService: $e');
   }
 
-  runApp(ConnectXApp(auth: auth));
+  runApp(ConnectXApp(auth: auth, webrtcService: webrtcService));
 }
 
 class ConnectXApp extends StatefulWidget {
   final AuthService auth;
-  const ConnectXApp({required this.auth, super.key});
+  final WebRTCService webrtcService;
+  
+  const ConnectXApp({
+    required this.auth, 
+    required this.webrtcService,
+    super.key,
+  });
 
   @override
   State<ConnectXApp> createState() => _ConnectXAppState();
@@ -93,7 +105,7 @@ class _ConnectXAppState extends State<ConnectXApp> {
           final user = snapshot.data;
           if (user != null) {
             debugPrint('User is signed in: ${user.email}');
-            return const ConnectXHomePage();
+            return ConnectXHomePage(webrtcService: widget.webrtcService);
           } else {
             debugPrint('No user signed in, showing StartPage');
             return const StartPage();
@@ -104,7 +116,7 @@ class _ConnectXAppState extends State<ConnectXApp> {
         '/start': (context) => const StartPage(),
         '/home': (context) => AuthGuard(
               auth: widget.auth,
-              child: const ConnectXHomePage(),
+              child: ConnectXHomePage(webrtcService: widget.webrtcService),
             ),
       },
       debugShowCheckedModeBanner: false,
@@ -113,7 +125,12 @@ class _ConnectXAppState extends State<ConnectXApp> {
 }
 
 class ConnectXHomePage extends StatefulWidget {
-  const ConnectXHomePage({super.key});
+  final WebRTCService webrtcService;
+  
+  const ConnectXHomePage({
+    required this.webrtcService,
+    super.key,
+  });
 
   @override
   State<ConnectXHomePage> createState() => _ConnectXHomePageState();
@@ -252,7 +269,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   }
 
   void _initializeServices() {
-    _speechService = SpeechService();
+    _speechService = SpeechService(webrtcService: widget.webrtcService);
 
     // Initialize status text with localization
     final localizations = AppLocalizations.of(context);

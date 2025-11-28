@@ -51,6 +51,7 @@ This AI assistant service:
 - **Intelligent Provider Matching**: Weaviate vector search for semantic provider matching
 - **Multi-language Support**: Configurable language and voice settings
 - **Chat Context**: Maintains conversation history per session
+- **Persistent Memory**: Conversation history stored in Weaviate for seamless reconnections and crash-safe recovery
 - **Scalable Architecture**: Stateless design for horizontal scaling
 - **Production-ready**: Comprehensive error handling and logging
 - **Database**: Self-hosted Weaviate with automatic embeddings for smart provider search

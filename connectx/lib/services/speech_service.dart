@@ -9,6 +9,7 @@ import 'webrtc_service.dart';
 class SpeechService {
   // WebRTC service for server communication
   WebRTCService? _webrtcService;
+  final bool _ownsWebRTC;
   
   // Remote audio renderer for WebRTC audio playback
   RTCVideoRenderer? _remoteRenderer;
@@ -19,12 +20,19 @@ class SpeechService {
   Function()? onConnected;
   Function()? onDisconnected;
 
-  SpeechService();
+  /// Create a SpeechService with an optional existing WebRTC service.
+  /// If [webrtcService] is provided, it will reuse the existing connection.
+  /// Otherwise, it creates a new WebRTC service when needed.
+  SpeechService({WebRTCService? webrtcService})
+      : _webrtcService = webrtcService,
+        _ownsWebRTC = webrtcService == null;
 
   void stopSpeech() async {
-    // Stop and clean up WebRTC service
-    _webrtcService?.disconnect();
-    _webrtcService = null;
+    // Only disconnect if we own the WebRTC service
+    if (_ownsWebRTC) {
+      _webrtcService?.disconnect();
+      _webrtcService = null;
+    }
 
     // Stop and clean up audio renderer
     if (_remoteRenderer != null) {
@@ -43,10 +51,19 @@ class SpeechService {
       // Initialize audio player and WebRTC
       await _initialize();
       
-      // Connect to AI-Assistant server
-      await _webrtcService!.connect();
+      // Connect to AI-Assistant server (only if we own the connection)
+      if (_ownsWebRTC) {
+        await _webrtcService!.connect();
+      } else {
+        // If using shared connection, just set up callbacks
+        debugPrint('SpeechService: Using existing WebRTC connection');
+        // Trigger connected callback immediately if already connected
+        if (_webrtcService!.isConnected) {
+          onConnected?.call();
+        }
+      }
       
-      debugPrint('SpeechService: Connected to AI-Assistant server');
+      debugPrint('SpeechService: Ready for speech interaction');
       
     } catch (e) {
       debugPrint('SpeechService: Error in startSpeech: $e');
@@ -65,14 +82,20 @@ class SpeechService {
     // Initialize WebRTC service
     if (_webrtcService == null) {
       _initializeWebRTC();
+    } else if (!_ownsWebRTC) {
+      // If we're using a shared service, just set up our callbacks
+      _setupWebRTCCallbacks();
     }
   }
 
   void _initializeWebRTC() {
-    debugPrint('SpeechService: Initializing WebRTC service');
+    debugPrint('SpeechService: Initializing new WebRTC service');
     
     _webrtcService = WebRTCService();
-    
+    _setupWebRTCCallbacks();
+  }
+
+  void _setupWebRTCCallbacks() {
     // Set up WebRTC callbacks
     _webrtcService!.onConnected = () async {
       debugPrint('SpeechService: WebRTC connected');

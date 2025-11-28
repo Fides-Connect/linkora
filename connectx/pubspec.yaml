@@ -54,6 +54,9 @@ dependencies:
   # Google Sign-In for Firebase authentication
   google_sign_in: ^7.2.0
 
+  # Firebase Cloud Messaging for push notifications
+  firebase_messaging: ^15.1.5
+
   # Sign-In button widgets
   flutter_signin_button: ^2.1.1
 
@@ -76,6 +79,10 @@ dev_dependencies:
 
   # Flutter Launcher Icons for generating app icons
   flutter_launcher_icons: ^0.14.4
+
+  # Mocking for unit tests
+  mockito: ^5.4.4
+  build_runner: ^2.4.13
 
 # Run the following command to regenerate app icons:
 # dart run flutter_launcher_icons

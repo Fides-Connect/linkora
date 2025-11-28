@@ -5,7 +5,7 @@ Core logic for speech-to-text, LLM processing, and text-to-speech.
 import asyncio
 import logging
 import os
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Optional, Callable
 from google.cloud import speech_v1 as speech
 from google.cloud.speech_v1 import SpeechAsyncClient
 from google.cloud import texttospeech_v1 as tts
@@ -13,7 +13,7 @@ from google.cloud.texttospeech_v1 import TextToSpeechAsyncClient
 
 # LangChain imports
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
@@ -23,34 +23,105 @@ from .prompts_templates import GREETING_AND_TRIAGE_PROMPT, TRIAGE_CONVERSATION_P
 from .data_provider import get_data_provider
 from .test_data import detect_category  # Keep category detection for now
 import json
+from .weaviate_models import ChatMessageModelWeaviate
+from .definitions import (
+    AGENT_NAME,
+    COMPANY_NAME,
+    USER_NAME_PLACEHOLDER,
+    MAX_PROVIDERS_TO_PRESENT,
+    ConversationStage,
+    LLM_MODEL,
+    LLM_TEMPERATURE,
+    LLM_TOP_K,
+    LLM_TOP_P,
+    LLM_MAX_OUTPUT_TOKENS,
+    STT_SAMPLE_RATE_HZ,
+    STT_AUDIO_CHANNEL_COUNT,
+    STT_ENABLE_AUTOMATIC_PUNCTUATION,
+    STT_MODEL,
+    STT_USE_ENHANCED,
+    STT_INTERIM_RESULTS,
+    STT_SINGLE_UTTERANCE,
+    TTS_SAMPLE_RATE_HZ,
+    TTS_CHUNK_SIZE,
+)
 
 logger = logging.getLogger(__name__)
 import random
 
-# Constants
-AGENT_NAME = "Elin"
-COMPANY_NAME = "FidesConnect"
-USER_NAME_PLACEHOLDER = "Wolfgang"
+class PersistentChatMessageHistory(BaseChatMessageHistory):
+    """Chat history that automatically persists messages to Weaviate."""
 
-MAX_PROVIDERS_TO_PRESENT = 3
+    def __init__(self, user_id: str, session_id: str, stage_getter: Callable[[], str]):
+        self._user_id = user_id
+        self._session_id = session_id
+        self._stage_getter = stage_getter
+        self._is_loading = False
+        self._loaded = False
+        self._messages: list[BaseMessage] = []
 
+    @property
+    def messages(self) -> list[BaseMessage]:
+        """Return the list of messages."""
+        return self._messages
 
-# Conversation stages
-class ConversationStage:
-    GREETING = "greeting"
-    TRIAGE = "triage"
-    FINALIZE = "finalize"
-    COMPLETED = "completed"
+    def load_from_store(self):
+        """Load previously persisted messages into memory once."""
+        if self._loaded or not self._user_id:
+            return
+        messages = ChatMessageModelWeaviate.get_messages(self._user_id)
+        if not messages:
+            self._loaded = True
+            return
+        self._is_loading = True
+        try:
+            for msg in messages:
+                content = msg.get("content")
+                role = msg.get("role", "assistant")
+                if not content:
+                    continue
+                if role == "human":
+                    self._messages.append(HumanMessage(content=content))
+                else:
+                    self._messages.append(AIMessage(content=content))
+        finally:
+            self._is_loading = False
+            self._loaded = True
+
+    def add_message(self, message: BaseMessage) -> None:
+        """Add a message to the history and persist it."""
+        self._messages.append(message)
+        if self._is_loading or not self._user_id:
+            return
+
+        role = "human" if isinstance(message, HumanMessage) else "assistant"
+        content = getattr(message, "content", "")
+        if not content:
+            return
+
+        ChatMessageModelWeaviate.save_message(
+            user_id=self._user_id,
+            session_id=self._session_id,
+            role=role,
+            content=content,
+            stage=self._stage_getter(),
+        )
+    
+    def clear(self) -> None:
+        """Clear all messages from history."""
+        self._messages = []
+
 
 class AIAssistant:
     """AI Assistant using Google Cloud services with gRPC streaming and LangChain."""
     
     def __init__(self, gemini_api_key: str, language_code: str = 'de-DE', 
                  voice_name: str = 'de-DE-Chirp3-HD-Sulafat',
-                 session_id: Optional[str] = None):
+                 user_id: Optional[str] = None):
         self.language_code = language_code
         self.voice_name = voice_name
-        self.session_id = session_id or "default"
+        self.user_id = user_id or "anonymous"
+        self.gemini_api_key = gemini_api_key
         
         # Initialize data provider (Weaviate or local test data)
         self.data_provider = get_data_provider()
@@ -82,21 +153,28 @@ class AIAssistant:
         
         # Initialize LangChain LLM with streaming support
         self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.0-flash-exp",
+            model=LLM_MODEL,
             google_api_key=gemini_api_key,
-            temperature=0.9,
-            top_k=8,
-            top_p=0.9,
-            max_output_tokens=512,
+            temperature=LLM_TEMPERATURE,
+            top_k=LLM_TOP_K,
+            top_p=LLM_TOP_P,
+            max_output_tokens=LLM_MAX_OUTPUT_TOKENS,
             streaming=True,
         )
         
-        # Initialize chat message history
-        self.store = {}  # Session store for chat histories
+        # Initialize chat message history (in-memory store keyed by session_id)
+        self.store = {}
         
         # We'll create prompts dynamically based on stage
         # Initial prompt is TRIAGE (after greeting)
         self.current_prompt = self._create_prompt_for_stage(ConversationStage.TRIAGE)
+        self.chain = self.current_prompt | self.llm
+        self.chain_with_history = RunnableWithMessageHistory(
+            self.chain,
+            self._get_session_history,
+            input_messages_key="input",
+            history_messages_key="history",
+        )
         
         logger.info("AI Assistant initialized with LangChain and gRPC streaming")
         # Semaphore to limit concurrent Google API TTS requests for rate limiting
@@ -107,9 +185,21 @@ class AIAssistant:
     def _get_session_history(self, session_id: str) -> BaseChatMessageHistory:
         """Get or create chat message history for a session."""
         if session_id not in self.store:
-            self.store[session_id] = ChatMessageHistory()
-            # Greeting will be generated and added dynamically when needed
+            history = PersistentChatMessageHistory(
+                user_id=self.user_id,
+                session_id=session_id,
+                stage_getter=lambda: self.current_stage,
+            )
+            history.load_from_store()
+            self.store[session_id] = history
         return self.store[session_id]
+
+    def clear_conversation_history(self, clear_persistent: bool = False):
+        """Clear chat history from memory and optionally from Weaviate."""
+        if self.user_id in self.store:
+            del self.store[self.user_id]
+        if clear_persistent and self.user_id:
+            ChatMessageModelWeaviate.delete_messages(self.user_id)
     
     def _create_prompt_for_stage(self, stage: str) -> ChatPromptTemplate:
         """Create appropriate prompt template based on conversation stage."""
@@ -227,18 +317,18 @@ class AIAssistant:
             # Configure streaming recognition
             config = speech.RecognitionConfig(
                 encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                sample_rate_hertz=48000,
+                sample_rate_hertz=STT_SAMPLE_RATE_HZ,
                 language_code=self.language_code,
-                audio_channel_count=1,
-                enable_automatic_punctuation=True,
-                model='latest_long',
-                use_enhanced=True
+                audio_channel_count=STT_AUDIO_CHANNEL_COUNT,
+                enable_automatic_punctuation=STT_ENABLE_AUTOMATIC_PUNCTUATION,
+                model=STT_MODEL,
+                use_enhanced=STT_USE_ENHANCED
             )
             
             streaming_config = speech.StreamingRecognitionConfig(
                 config=config,
-                interim_results=True,  # Enable interim results to show progress
-                single_utterance=False,  # Keep listening continuously
+                interim_results=STT_INTERIM_RESULTS,  # Enable interim results to show progress
+                single_utterance=STT_SINGLE_UTTERANCE,  # Keep listening continuously
             )
             
             # Create async generator for gRPC requests
@@ -293,7 +383,7 @@ class AIAssistant:
             full_response = ""
             async for chunk in self.chain_with_history.astream(
                 {"input": prompt},
-                config={"configurable": {"session_id": self.session_id}}
+                config={"configurable": {"session_id": self.user_id}}
             ):
                 if chunk.content:
                     logger.debug(f"LLM stream chunk: '{chunk.content}'")
@@ -316,7 +406,7 @@ class AIAssistant:
                 # Stream the provider presentation directly
                 async for chunk in self.chain_with_history.astream(
                     {"input": auto_prompt},
-                    config={"configurable": {"session_id": self.session_id}}
+                    config={"configurable": {"session_id": self.user_id}}
                 ):
                     if chunk.content:
                         logger.debug(f"LLM auto-presentation chunk: '{chunk.content}'")
@@ -343,7 +433,7 @@ class AIAssistant:
             
             audio_config = tts.AudioConfig(
                 audio_encoding=tts.AudioEncoding.LINEAR16,
-                sample_rate_hertz=48000,  # Match WebRTC's native rate - no resampling needed!
+                sample_rate_hertz=TTS_SAMPLE_RATE_HZ,  # Match WebRTC's native rate - no resampling needed!
             )
             
             # Perform async synthesis using gRPC under semaphore control
@@ -357,7 +447,7 @@ class AIAssistant:
                 )
             
             # Stream audio in chunks (larger chunks = fewer iterations = lower overhead)
-            chunk_size = 2048
+            chunk_size = TTS_CHUNK_SIZE
             audio_content = response.audio_content
             
             logger.debug(f"TTS synthesis complete, streaming {len(audio_content)} bytes in chunks of {chunk_size}")
@@ -423,8 +513,21 @@ class AIAssistant:
         if user_id:
             user = await self.data_provider.get_user_by_id(user_id)
             if user:
-                user_name = user.get("name", USER_NAME_PLACEHOLDER)
+                # Get the full name and extract first name
+                full_name = user.get("name", USER_NAME_PLACEHOLDER)
+                if full_name and full_name != USER_NAME_PLACEHOLDER:
+                    # Split by space and take first name
+                    user_name = full_name.split()[0] if full_name.split() else full_name
+                    logger.info(f"Using first name for greeting: '{user_name}' (from full name: '{full_name}')")
+                else:
+                    user_name = USER_NAME_PLACEHOLDER
+                    logger.debug(f"No valid name found for user {user_id}, using placeholder")
+                
                 has_open_request = user.get("has_open_request", False)
+            else:
+                logger.warning(f"User {user_id} not found in database, using placeholder name")
+        else:
+            logger.debug("No user_id provided for greeting, using placeholder name")
         
         # Generate greeting text using LLM
         greeting_text = await self.generate_greeting(
@@ -433,7 +536,7 @@ class AIAssistant:
         )
         
         # Add greeting to chat history
-        history = self._get_session_history(self.session_id)
+        history = self._get_session_history(self.user_id)
         history.add_message(AIMessage(content=greeting_text))
         
         # Generate audio stream

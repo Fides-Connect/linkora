@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 /// WebRTC service for connecting to the AI-Assistant server
 /// Handles WebSocket signaling and WebRTC peer connection
@@ -27,9 +28,15 @@ class WebRTCService {
   Function(String)? onError;
 
   // Configuration
-  late final String _serverUrl;
+  late final String _baseServerUrl;
   bool _isConnected = false;
   bool _isConnecting = false;
+  bool _shouldReconnect = true;
+  int _reconnectAttempts = 0;
+  Timer? _reconnectTimer;
+  Timer? _pingTimer;
+  // ignore: unused_field
+  DateTime? _lastPingReceived;  // Track last ping for monitoring/debugging
 
   // ICE candidates queue (store candidates received before remote description is set)
   final List<RTCIceCandidate> _iceCandidatesQueue = [];
@@ -43,7 +50,7 @@ class WebRTCService {
         'AI_ASSISTANT_SERVER_URL not set in .env. Add AI_ASSISTANT_SERVER_URL to .env',
       );
     }
-    _serverUrl = 'ws://$rawServer/ws';
+    _baseServerUrl = rawServer;
   }
 
   bool get isConnected => _isConnected;
@@ -57,15 +64,25 @@ class WebRTCService {
     }
 
     _isConnecting = true;
+    _shouldReconnect = true;
+    _reconnectAttempts = 0;
 
     try {
-      debugPrint('WebRTC: Connecting to $_serverUrl');
+      // Get current user for authenticated connection
+      final user = FirebaseAuth.instance.currentUser;
+      final userId = user?.uid;
+      
+      final serverUrl = userId != null 
+          ? 'ws://$_baseServerUrl/ws?user_id=$userId'
+          : 'ws://$_baseServerUrl/ws';
+      
+      debugPrint('WebRTC: Connecting to $serverUrl');
 
       // Create local audio stream
       await _createLocalStream();
 
       // Connect to signaling server
-      await _connectSignaling();
+      await _connectSignaling(serverUrl);
 
       // Create peer connection
       await _createPeerConnection();
@@ -78,9 +95,42 @@ class WebRTCService {
       debugPrint('WebRTC: Error during connection: $e');
       _isConnecting = false;
       onError?.call('Connection failed: $e');
-      await disconnect();
-      rethrow;
+      
+      // Try to reconnect (don't rethrow to avoid unhandled exception)
+      _scheduleReconnect();
     }
+  }
+
+  /// Schedule reconnection attempt
+  void _scheduleReconnect() {
+    if (!_shouldReconnect) {
+      debugPrint('WebRTC: Reconnection disabled, not scheduling');
+      return;
+    }
+
+    _reconnectTimer?.cancel();
+    
+    // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
+    final delay = (2 << _reconnectAttempts.clamp(0, 4)).clamp(2, 30);
+    _reconnectAttempts++;
+    
+    debugPrint('WebRTC: Scheduling reconnect attempt ${_reconnectAttempts} in ${delay}s');
+    
+    _reconnectTimer = Timer(Duration(seconds: delay), () async {
+      debugPrint('WebRTC: Attempting reconnection...');
+      try {
+        await connect();
+      } catch (e) {
+        debugPrint('WebRTC: Reconnection attempt failed: $e');
+      }
+    });
+  }
+
+  /// Permanently disable reconnection (e.g., on explicit logout)
+  void disableReconnection() {
+    _shouldReconnect = false;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
   }
 
   /// Disconnect from the AI-Assistant server
@@ -89,6 +139,12 @@ class WebRTCService {
 
     _isConnected = false;
     _isConnecting = false;
+    
+    // Cancel timers
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _pingTimer?.cancel();
+    _pingTimer = null;
     _remoteDescriptionSet = false;
     _iceCandidatesQueue.clear();
 
@@ -165,11 +221,11 @@ class WebRTCService {
   }
 
   /// Connect to WebSocket signaling server
-  Future<void> _connectSignaling() async {
-    debugPrint('WebRTC: Connecting to signaling server: $_serverUrl');
+  Future<void> _connectSignaling(String serverUrl) async {
+    debugPrint('WebRTC: Connecting to signaling server: $serverUrl');
 
     try {
-      _signaling = WebSocketChannel.connect(Uri.parse(_serverUrl));
+      _signaling = WebSocketChannel.connect(Uri.parse(serverUrl));
 
       // Listen for signaling messages
       _signaling!.stream.listen(
@@ -179,11 +235,18 @@ class WebRTCService {
         onError: (error) {
           debugPrint('WebRTC: Signaling error: $error');
           onError?.call('Signaling error: $error');
+          _scheduleReconnect();
         },
         onDone: () {
           debugPrint('WebRTC: Signaling connection closed');
           if (_isConnected || _isConnecting) {
+            final wasConnected = _isConnected;
             disconnect();
+            
+            // Only trigger reconnect if we should and were previously connected
+            if (_shouldReconnect && wasConnected) {
+              _scheduleReconnect();
+            }
           }
         },
       );
@@ -249,6 +312,7 @@ class WebRTCService {
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _isConnected = true;
           _isConnecting = false;
+          _reconnectAttempts = 0;  // Reset reconnect attempts on success
 
           // Re-enforce earpiece when connection is fully established
           if (!kIsWeb &&
@@ -271,7 +335,13 @@ class WebRTCService {
                 RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
             state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
           if (_isConnected || _isConnecting) {
+            final wasConnected = _isConnected;
             disconnect();
+            
+            // Schedule reconnect if we were connected and should reconnect
+            if (_shouldReconnect && wasConnected) {
+              _scheduleReconnect();
+            }
           }
         }
       };
@@ -350,12 +420,30 @@ class WebRTCService {
           _handleIceCandidate(data['candidate']);
           break;
 
+        case 'ping':
+          _handlePing(data);
+          break;
+
         default:
           debugPrint('WebRTC: Unknown signaling message type: $type');
       }
     } catch (e) {
       debugPrint('WebRTC: Error handling signaling message: $e');
     }
+  }
+
+  /// Handle ping from server and respond with pong
+  void _handlePing(Map<String, dynamic> data) {
+    _lastPingReceived = DateTime.now();
+    debugPrint('WebRTC: Received ping from server');
+    
+    // Respond with pong
+    _sendSignalingMessage({
+      'type': 'pong',
+      'timestamp': data['timestamp'],
+    });
+    
+    debugPrint('WebRTC: Sent pong to server');
   }
 
   /// Handle WebRTC answer from server
