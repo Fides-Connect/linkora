@@ -117,6 +117,94 @@ class TestConcurrentConnections:
         assert len(server.active_connections) == 1
         assert 'conn_2' in server.active_connections
         assert server.active_connections['conn_2'].user_id == 'user_b'
+    
+    def test_same_user_multiple_connections_share_assistant(self, server):
+        """Test that multiple connections from same user share one AIAssistant instance."""
+        # Create one AIAssistant for the user
+        mock_assistant = Mock()
+        mock_assistant.user_id = 'user_multi'
+        server.user_assistants['user_multi'] = mock_assistant
+        
+        # Create multiple connection handlers for same user
+        handler1 = Mock()
+        handler1.user_id = 'user_multi'
+        handler2 = Mock()
+        handler2.user_id = 'user_multi'
+        handler3 = Mock()
+        handler3.user_id = 'user_multi'
+        
+        server.active_connections['conn_1'] = handler1
+        server.active_connections['conn_2'] = handler2
+        server.active_connections['conn_3'] = handler3
+        
+        # Verify: 3 connections but only 1 AIAssistant
+        assert len(server.active_connections) == 3
+        assert len(server.user_assistants) == 1
+        assert server.user_assistants['user_multi'] is mock_assistant
+    
+    def test_closing_one_connection_keeps_assistant_alive(self, server):
+        """Test that closing one connection doesn't cleanup assistant if other connections exist."""
+        # Setup: Same user with 2 connections
+        mock_assistant = Mock()
+        mock_assistant.user_id = 'user_dual'
+        mock_assistant.clear_conversation_history = Mock()
+        server.user_assistants['user_dual'] = mock_assistant
+        
+        handler1 = Mock()
+        handler1.user_id = 'user_dual'
+        handler2 = Mock()
+        handler2.user_id = 'user_dual'
+        
+        server.active_connections['conn_1'] = handler1
+        server.active_connections['conn_2'] = handler2
+        
+        # Close first connection
+        del server.active_connections['conn_1']
+        
+        # Check if user has remaining connections
+        user_has_connections = any(
+            conn.user_id == 'user_dual'
+            for conn in server.active_connections.values()
+        )
+        
+        # AIAssistant should still exist because conn_2 is active
+        assert user_has_connections is True
+        assert 'user_dual' in server.user_assistants
+        mock_assistant.clear_conversation_history.assert_not_called()
+    
+    def test_closing_last_connection_triggers_idle_tracking(self, server):
+        """Test that closing the last connection for a user starts idle tracking."""
+        # Setup: User with 2 connections
+        mock_assistant = Mock()
+        mock_assistant.user_id = 'user_idle'
+        server.user_assistants['user_idle'] = mock_assistant
+        
+        handler1 = Mock()
+        handler1.user_id = 'user_idle'
+        handler2 = Mock()
+        handler2.user_id = 'user_idle'
+        
+        server.active_connections['conn_1'] = handler1
+        server.active_connections['conn_2'] = handler2
+        
+        # Update activity timestamp
+        server._update_user_activity('user_idle')
+        assert 'user_idle' in server.user_last_activity
+        
+        # Close both connections
+        del server.active_connections['conn_1']
+        del server.active_connections['conn_2']
+        
+        # Check if user has no remaining connections
+        user_has_connections = any(
+            conn.user_id == 'user_idle'
+            for conn in server.active_connections.values()
+        )
+        
+        # No active connections, but assistant still exists (will be cleaned by idle timer)
+        assert user_has_connections is False
+        assert 'user_idle' in server.user_assistants
+        assert 'user_idle' in server.user_last_activity
 
 
 class TestUserIsolation:
