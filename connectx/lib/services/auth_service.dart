@@ -13,7 +13,13 @@ class AuthService {
   factory AuthService() => _instance;
   AuthService._internal();
 
-  final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
+  // Lazy initialization to support testing
+  FirebaseAuth? _firebaseAuthInstance;
+  FirebaseAuth get _firebaseAuth {
+    _firebaseAuthInstance ??= FirebaseAuth.instance;
+    return _firebaseAuthInstance!;
+  }
+  
   GoogleSignIn? _googleSignIn;
   final UserService _userService = UserService();
   WebRTCService? _webrtcService;

@@ -14,7 +14,12 @@ class UserService {
   factory UserService() => _instance;
   UserService._internal();
 
-  final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
+  // Lazy initialization to support testing
+  FirebaseMessaging? _firebaseMessagingInstance;
+  FirebaseMessaging get _firebaseMessaging {
+    _firebaseMessagingInstance ??= FirebaseMessaging.instance;
+    return _firebaseMessagingInstance!;
+  }
   
   String? _fcmToken;
   Map<String, dynamic>? _userProfile;
@@ -69,14 +74,22 @@ class UserService {
 
   /// Sync user data with the backend server
   /// Creates a new user or loads existing user profile and history
-  Future<bool> syncUserWithBackend(User firebaseUser) async {
-    final String? rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
+  Future<bool> syncUserWithBackend(
+    User firebaseUser, {
+    http.Client? client,
+    String? serverUrl,
+  }) async {
+    final httpClient = client ?? http.Client();
+    // If serverUrl is explicitly passed (even if null), use it; otherwise fallback to dotenv
+    final String? rawServer = serverUrl ?? (client == null ? dotenv.env['AI_ASSISTANT_SERVER_URL'] : null);
     if (rawServer == null || rawServer.isEmpty) {
       debugPrint('AI_ASSISTANT_SERVER_URL not configured');
       return false;
     }
 
-    final String url = 'http://$rawServer/user/sync';
+    final String url = rawServer.startsWith('http') 
+        ? '$rawServer/user/sync' 
+        : 'http://$rawServer/user/sync';
     
     try {
       // Get the ID token
@@ -100,7 +113,7 @@ class UserService {
 
       debugPrint('Syncing user data with backend: ${userData['email']}');
 
-      final response = await http
+      final response = await httpClient
           .post(
             Uri.parse(url),
             headers: {'Content-Type': 'application/json'},
@@ -149,14 +162,22 @@ class UserService {
 
   
   /// Notify backend of user logout
-  Future<void> notifyLogout(User firebaseUser) async {
-    final String? rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
+  Future<void> notifyLogout(
+    User firebaseUser, {
+    http.Client? client,
+    String? serverUrl,
+  }) async {
+    final httpClient = client ?? http.Client();
+    // If serverUrl is explicitly passed (even if null), use it; otherwise fallback to dotenv
+    final String? rawServer = serverUrl ?? (client == null ? dotenv.env['AI_ASSISTANT_SERVER_URL'] : null);
     if (rawServer == null || rawServer.isEmpty) {
       debugPrint('AI_ASSISTANT_SERVER_URL not configured');
       return;
     }
 
-    final String url = 'http://$rawServer/user/logout';
+    final String url = rawServer.startsWith('http')
+        ? '$rawServer/user/logout'
+        : 'http://$rawServer/user/logout';
     
     try {
       // Get the ID token
@@ -173,7 +194,7 @@ class UserService {
 
       debugPrint('Notifying backend of logout: ${firebaseUser.email}');
 
-      final response = await http
+      final response = await httpClient
           .post(
             Uri.parse(url),
             headers: {'Content-Type': 'application/json'},

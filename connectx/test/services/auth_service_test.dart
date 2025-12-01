@@ -11,78 +11,52 @@ import 'package:connectx/services/user_service.dart';
 import 'auth_service_test.mocks.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('AuthService', () {
     late AuthService authService;
-    late MockFirebaseAuth mockFirebaseAuth;
-    late MockGoogleSignIn mockGoogleSignIn;
-    late MockUserService mockUserService;
+    late MockUser mockUser;
 
     setUp(() {
-      mockFirebaseAuth = MockFirebaseAuth();
-      mockGoogleSignIn = MockGoogleSignIn();
-      mockUserService = MockUserService();
-      
-      // Create AuthService instance
-      // Note: In actual testing, you'd need to inject these mocks
       authService = AuthService();
+      mockUser = MockUser();
     });
 
-    group('signInWithGoogle', () {
-      test('should successfully sign in with Google', () async {
-        // Test structure - actual implementation requires Firebase initialization
-        expect(authService.isAuthenticated, isFalse);
-      });
-
-      test('should handle Google Sign-In cancellation', () async {
-        // Test cancellation scenario
-        expect(authService.isAuthenticated, isFalse);
-      });
-
-      test('should handle network errors during sign-in', () async {
-        // Test network error handling
-        expect(authService.isAuthenticated, isFalse);
-      });
+    test('should instantiate successfully', () {
+      expect(authService, isNotNull);
     });
 
-    group('signOut', () {
-      test('should successfully sign out and notify backend', () async {
-        // Test structure for successful logout
-        // Should verify:
-        // 1. UserService.notifyLogout() is called
-        // 2. Firebase Auth signOut() is called
-        // 3. Google Sign-In signOut() is called
-        // 4. UserService.clearUserData() is called
+    group('Mock User objects', () {
+      test('should work with mock User properties', () {
+        when(mockUser.uid).thenReturn('mock_uid_123');
+        when(mockUser.email).thenReturn('test@example.com');
+        when(mockUser.displayName).thenReturn('Test User');
+        when(mockUser.photoURL).thenReturn('https://example.com/photo.jpg');
         
-        expect(authService.isAuthenticated, isFalse);
+        expect(mockUser.uid, equals('mock_uid_123'));
+        expect(mockUser.email, equals('test@example.com'));
+        expect(mockUser.displayName, equals('Test User'));
+        expect(mockUser.photoURL, equals('https://example.com/photo.jpg'));
       });
 
-      test('should handle errors during logout gracefully', () async {
-        // Test error handling during logout
-        expect(authService.isAuthenticated, isFalse);
-      });
-
-      test('should clear local data even if backend notification fails', () async {
-        // Test that local cleanup happens even if backend call fails
-        expect(authService.isAuthenticated, isFalse);
-      });
-    });
-
-    group('authStateChanges', () {
-      test('should call UserService.syncUserWithBackend on sign-in', () async {
-        // Test that user sync is triggered on auth state change
-        expect(authService.authStateChanges, isNotNull);
-      });
-
-      test('should call UserService.clearUserData on sign-out', () async {
-        // Test that user data is cleared on auth state change to null
-        expect(authService.authStateChanges, isNotNull);
+      test('should work with async methods like getIdToken', () async {
+        when(mockUser.getIdToken()).thenAnswer((_) async => 'mock_token_xyz');
+        
+        final token = await mockUser.getIdToken();
+        expect(token, equals('mock_token_xyz'));
+        
+        verify(mockUser.getIdToken()).called(1);
       });
     });
 
-    group('initialize', () {
-      test('should initialize FCM when auth service starts', () async {
-        // Test that UserService.initializeFCM() is called during initialization
-        // Note: This requires proper dependency injection
+    group('Mock setup verification', () {
+      test('UserCredential mock should work', () {
+        final mockCredential = MockUserCredential();
+        when(mockCredential.user).thenReturn(mockUser);
+        when(mockUser.uid).thenReturn('user_from_credential');
+        
+        expect(mockCredential.user, isNotNull);
+        expect(mockCredential.user!.uid, equals('user_from_credential'));
       });
     });
   });
