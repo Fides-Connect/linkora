@@ -380,6 +380,7 @@ class AIAssistant:
                 await self._accumulate_problem_description(prompt)
             
             # Stream response chunks using LangChain
+            # Note: RunnableWithMessageHistory automatically adds both user and AI messages to history
             full_response = ""
             async for chunk in self.chain_with_history.astream(
                 {"input": prompt},
@@ -404,6 +405,7 @@ class AIAssistant:
                 auto_prompt = " "  # Minimal prompt to trigger the chain
                 
                 # Stream the provider presentation directly
+                # RunnableWithMessageHistory will automatically save both the prompt and response
                 async for chunk in self.chain_with_history.astream(
                     {"input": auto_prompt},
                     config={"configurable": {"session_id": self.user_id}}

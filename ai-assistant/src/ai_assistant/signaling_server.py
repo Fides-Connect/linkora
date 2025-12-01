@@ -11,7 +11,9 @@ from aiohttp import web, WSMsgType
 from aiortc import RTCSessionDescription
 
 from .peer_connection_handler import PeerConnectionHandler
-from .definitions import HEARTBEAT_INTERVAL, CONNECTION_TIMEOUT, IDLE_TIMEOUT
+from .definitions import HEARTBEAT_INTERVAL, CONNECTION_TIMEOUT, IDLE_TIMEOUT, WATCHDOG_CHECK_INTERVAL
+
+from .ai_assistant import AIAssistant
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ class SignalingServer:
         self.active_connections: Dict[str, PeerConnectionHandler] = {}
         
         # Track per-user AI assistant instances
-        self.user_assistants: Dict[str, 'AIAssistant'] = {}
+        self.user_assistants: Dict[str, AIAssistant] = {}
         
         # Heartbeat and idle timeout settings
         self.heartbeat_interval = HEARTBEAT_INTERVAL
@@ -42,12 +44,14 @@ class SignalingServer:
         # Background cleanup task
         self._cleanup_task = None
     
+
     async def start(self):
         """Start background tasks."""
         if self._cleanup_task is None:
             self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
             logger.info("Started periodic cleanup task")
     
+
     async def stop(self):
         """Stop background tasks."""
         if self._cleanup_task:
@@ -59,17 +63,19 @@ class SignalingServer:
             self._cleanup_task = None
             logger.info("Stopped periodic cleanup task")
     
+
     async def _periodic_cleanup(self):
         """Periodically cleanup idle AIAssistant instances."""
         while True:
             try:
-                await asyncio.sleep(60)  # Check every minute
+                await asyncio.sleep(WATCHDOG_CHECK_INTERVAL)  # Check every minute
                 await self._cleanup_idle_assistants()
             except asyncio.CancelledError:
                 logger.info("Periodic cleanup task cancelled")
                 break
             except Exception as e:
                 logger.error(f"Error in periodic cleanup: {e}", exc_info=True)
+    
     
     async def _cleanup_idle_assistants(self):
         """Remove AIAssistant instances that have been idle too long."""
@@ -96,10 +102,12 @@ class SignalingServer:
         if idle_users:
             logger.info(f"Cleaned up {len(idle_users)} idle AIAssistant instances")
     
+
     def _update_user_activity(self, user_id: str):
         """Update last activity timestamp for a user."""
         self.user_last_activity[user_id] = time.time()
     
+
     async def _heartbeat_loop(self, ws: web.WebSocketResponse, handler: PeerConnectionHandler, user_id: str):
         """Send periodic ping messages and check for stale connections."""
         try:
@@ -125,6 +133,7 @@ class SignalingServer:
         except Exception as e:
             logger.error(f"Error in heartbeat loop for {handler.connection_id}: {e}", exc_info=True)
     
+
     def cleanup_user_assistant(self, user_id: str, clear_persistent: bool = False) -> bool:
         """Clean up AIAssistant instance for a user.
         
@@ -143,6 +152,7 @@ class SignalingServer:
             return True
         return False
         
+
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connection for signaling.
         
@@ -264,6 +274,7 @@ class SignalingServer:
             
         return ws
     
+
     async def _handle_message(self, handler: PeerConnectionHandler, data: dict):
         """Handle signaling messages."""
         msg_type = data.get('type')
