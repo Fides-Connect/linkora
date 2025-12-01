@@ -208,46 +208,58 @@ python tests/test_client.py --audio-file test_audio.wav
 
 ### System Overview
 
+The AI Assistant uses a **service-oriented architecture** with clear separation of concerns:
+
+**Core Orchestrators** (4 classes) - Coordinate services and manage high-level flow
+**Service Layer** (12 modules) - Focused, reusable components handling specific functionality
+
 ```
-┌─────────────┐         WebSocket          ┌──────────────────┐
-│   Client    │ ◄─────── Signaling ───────► │ Signaling Server │
-│  (WebRTC)   │                             └──────────────────┘
-└─────────────┘                                      │
-       │                                             │
-       │ WebRTC Audio Stream                         │
-       ▼                                             ▼
-┌─────────────┐                           ┌──────────────────┐
-│  Peer Conn  │ ───────────────────────── │ Peer Connection  │
-│   Handler   │                           │     Handler      │
-└─────────────┘                           └──────────────────┘
-                                                   │
-                                                   │
-                                                   ▼
-                                          ┌──────────────────┐
-                                          │ Audio Processor  │
-                                          │ (STT Streaming)  │
-                                          └──────────────────┘
-                                                   │
-                                                   │ Continuous Audio
-                                                   ▼
-                                          ┌──────────────────┐
-                                          │  Streaming STT   │
-                                          │  (Google Cloud)  │
-                                          │  [Async gRPC]    │
-                                          └──────────────────┘
-                                                   │ Transcript chunks
-                                                   ▼
-                                          ┌──────────────────┐
-                                          │  Streaming LLM   │
-                                          │  (Gemini AI)     │
-                                          └──────────────────┘
-                                                   │ Response chunks
-                                                   ▼
-                                          ┌──────────────────┐
-                                          │  Parallel TTS    │
-                                          │  (Per Sentence)  │
-                                          │  [Async gRPC]    │
-                                          └──────────────────┘
+┌─────────────┐         WebSocket          ┌──────────────────────────────┐
+│   Client    │ ◄─────── Signaling ───────► │   Signaling Server           │
+│  (WebRTC)   │                             │  (Orchestrates services)     │
+└─────────────┘                             │  • WebSocketConnectionMgr    │
+       │                                    │  • UserSessionManager        │
+       │ WebRTC Audio Stream                │  • ConnectionRegistry        │
+       ▼                                    │  • WebRTCSignalingHandler    │
+┌─────────────┐                             └──────────────────────────────┘
+│  Peer Conn  │ ─────────────────────────────────────┘
+│   Handler   │
+└─────────────┘
+       │
+       │ Routes to AIAssistant instance
+       ▼
+┌────────────────────────────────────────────────────────────┐
+│                     AIAssistant                            │
+│                  (AI Service Coordinator)                  │
+│                                                            │
+│  Uses:                                                     │
+│  • ConversationStageManager  - Manage conversation flow    │
+│  • GreetingGenerator         - Generate personalized greetings │
+│  • LLMResponseProcessor      - Process LLM responses       │
+│  • SpeechToTextService       - Google Cloud STT            │
+│  • TextToSpeechService       - Google Cloud TTS            │
+└────────────────────────────────────────────────────────────┘
+       │
+       │ Delegates audio to AudioProcessor
+       ▼
+┌────────────────────────────────────────────────────────────┐
+│                  Audio Processor                           │
+│                (Audio Pipeline Coordinator)                │
+│                                                            │
+│  Uses:                                                     │
+│  • SentenceProcessor     - Extract/process LLM sentences   │
+│  • InterruptHandler      - Handle speech interruptions     │
+│  • AudioUtils            - Frame conversion & fading       │
+│  • SpeechToTextService   - Stream audio to Google STT      │
+└────────────────────────────────────────────────────────────┘
+       │
+       │ Continuous Audio Stream
+       ▼
+┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│  Streaming STT   │  →   │  Streaming LLM   │  →   │  Parallel TTS    │
+│  (Google Cloud)  │      │  (Gemini AI)     │      │  (Per Sentence)  │
+│  [Async gRPC]    │      │                  │      │  [Async gRPC]    │
+└──────────────────┘      └──────────────────┘      └──────────────────┘
                                                    │
                             ┌──────────────────────┼──────────────────────┐
                             │ Audio Chunk 1        │ Audio Chunk 2        │ Audio Chunk 3
@@ -320,21 +332,86 @@ ai-assistant/
 ├── .gitignore                   # Git ignore rules
 ├── scripts/
 │   ├── run.sh                   # Container management script
-│   └── cloud-deploy.sh          # Cloud deployment script
+│   ├── cloud-deploy.sh          # Cloud deployment script
+│   └── init_weaviate.py         # Database initialization
 ├── src/
 │   └── ai_assistant/
 │       ├── __init__.py          # Package initialization
-│       ├── __main__.py          # Application entry point
-│       ├── ai_assistant.py      # Core AI logic (STT, LLM, TTS)
-│       ├── audio_processor.py   # Audio processing pipeline (Continuous STT→LLM→TTS)
-│       ├── audio_track.py       # Custom audio output track
-│       ├── peer_connection_handler.py  # WebRTC peer connection management
-│       └── signaling_server.py  # WebSocket signaling server
+│       ├── __main__.py          # Application startup and server initialization
+│       │
+│       ├── Core Components (Orchestrators)
+│       ├── ai_assistant.py      # AI service coordinator
+│       ├── audio_processor.py   # Audio pipeline coordinator
+│       ├── signaling_server.py  # WebSocket/WebRTC server orchestrator
+│       ├── peer_connection_handler.py  # WebRTC peer connection manager
+│       │
+│       ├── services/             # Service Layer (Modular Components)
+│       │   ├── __init__.py
+│       │   │
+│       │   ├── AI/Audio Services
+│       │   ├── conversation_stage_manager.py   # Conversation flow management
+│       │   ├── speech_to_text_service.py       # Google Cloud STT integration
+│       │   ├── text_to_speech_service.py       # Google Cloud TTS integration
+│       │   ├── audio_utils.py                  # Audio processing utilities
+│       │   ├── interrupt_handler.py            # Speech interruption handling
+│       │   ├── sentence_processor.py           # LLM sentence extraction
+│       │   ├── greeting_generator.py           # Personalized greeting generation
+│       │   ├── llm_response_processor.py       # LLM streaming orchestration
+│       │   │
+│       │   ├── Networking Services
+│       │   ├── websocket_manager.py            # WebSocket connection lifecycle
+│       │   ├── user_session_manager.py         # User session management
+│       │   ├── webrtc_signaling.py             # WebRTC signaling protocol
+│       │   └── connection_registry.py          # Connection tracking registry
+│       │
+│       ├── Infrastructure
+│       ├── audio_track.py       # Custom WebRTC audio output track
+│       ├── common_endpoints.py  # HTTP endpoints (/health, /user/sync)
+│       ├── data_provider.py     # Data abstraction layer
+│       ├── test_data.py         # Local test data providers
+│       ├── definitions.py       # Type definitions and enums
+│       ├── prompts_templates.py # LLM prompt templates
+│       ├── weaviate_config.py   # Weaviate schema configuration
+│       └── weaviate_models.py   # Database models (User, Provider, ChatMessage)
 ├── tests/
 │   ├── __init__.py              # Test package marker
-│   └── test_client.py           # WebRTC test client
-└── README.md                    # This file
+│   ├── test_client.py           # WebRTC integration test client
+│   ├── test_signaling_server.py # Signaling server tests
+│   ├── test_user_management.py  # User management tests
+│   ├── test_chat_history_persistence.py       # Chat history tests
+│   └── test_langchain_history_integration.py  # LangChain integration tests
+├── Documentation
+├── REFACTORING_DOCUMENTATION.md           # AI/Audio refactoring details
+├── NETWORKING_REFACTORING_DOCUMENTATION.md # Networking refactoring details
+├── COMPLETE_REFACTORING_SUMMARY.md        # Complete refactoring overview
+└── README.md                              # This file
 ```
+
+### Service-Oriented Architecture
+
+The codebase has been refactored into a **clean service-oriented architecture**:
+
+**Key Benefits:**
+- 📦 **Modular Design** - 12 focused service modules, each with single responsibility
+- 🧪 **Improved Testability** - Services can be tested in isolation
+- 📖 **Better Readability** - Clear separation of concerns, easier to understand
+- 🔧 **Easy Extensibility** - New features can be added as services without modifying core
+- 🎯 **Reduced Complexity** - Core classes reduced by ~35% in size
+
+**Service Categories:**
+
+1. **AI/Audio Services** (8 modules)
+   - Conversation management, STT/TTS integration, audio processing
+   - Interruption handling, sentence processing, greeting generation
+
+2. **Networking Services** (4 modules)
+   - WebSocket lifecycle, user session management
+   - Connection tracking, WebRTC signaling protocol
+
+**Documentation:**
+- See [`REFACTORING_DOCUMENTATION.md`](REFACTORING_DOCUMENTATION.md) for AI/Audio services
+- See [`NETWORKING_REFACTORING_DOCUMENTATION.md`](NETWORKING_REFACTORING_DOCUMENTATION.md) for networking services
+- See [`COMPLETE_REFACTORING_SUMMARY.md`](COMPLETE_REFACTORING_SUMMARY.md) for full overview
 
 ### gRPC Implementation
 

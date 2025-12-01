@@ -21,6 +21,22 @@ The platform uses WebRTC for low-latency real-time audio streaming, with all AI 
 - 📱 **Cross-Platform** - Supports iOS and Android devices
 - 🐳 **Containerized** - Easy deployment with Docker/Podman
 - 🚀 **Scalable** - Stateless design for horizontal scaling
+- 📦 **Service-Oriented Architecture** - Clean, modular codebase with 12 focused services
+
+### Architecture Highlights
+
+The AI-Assistant server features a **modern service-oriented architecture** that provides:
+
+- **Modularity** - 12 specialized service modules (AI/audio processing, networking)
+- **Maintainability** - ~35% reduction in core class complexity
+- **Testability** - Services can be tested independently
+- **Extensibility** - Easy to add new features without modifying existing code
+- **Readability** - Clear separation of concerns, well-documented
+
+For detailed architecture documentation, see:
+- [`ai-assistant/COMPLETE_REFACTORING_SUMMARY.md`](ai-assistant/COMPLETE_REFACTORING_SUMMARY.md) - Complete architecture overview
+- [`ai-assistant/REFACTORING_DOCUMENTATION.md`](ai-assistant/REFACTORING_DOCUMENTATION.md) - AI/Audio services
+- [`ai-assistant/NETWORKING_REFACTORING_DOCUMENTATION.md`](ai-assistant/NETWORKING_REFACTORING_DOCUMENTATION.md) - Networking services
 
 ## 📁 Project Structure
 
@@ -34,9 +50,15 @@ Fides/
 │
 ├── ai-assistant/         # Python WebRTC server
 │   ├── src/              # Python source code
+│   │   └── ai_assistant/
+│   │       ├── Core orchestrators (ai_assistant.py, audio_processor.py, etc.)
+│   │       └── services/ # Service-oriented architecture (12 modules)
 │   ├── scripts/          # Initialization scripts
 │   ├── Containerfile     # Container definition
 │   ├── requirements.txt  # Python dependencies
+│   ├── REFACTORING_DOCUMENTATION.md         # AI/Audio refactoring
+│   ├── NETWORKING_REFACTORING_DOCUMENTATION.md  # Networking refactoring
+│   ├── COMPLETE_REFACTORING_SUMMARY.md      # Complete overview
 │   └── README.md         # AI-Assistant documentation
 │
 ├── weaviate/             # Vector database infrastructure

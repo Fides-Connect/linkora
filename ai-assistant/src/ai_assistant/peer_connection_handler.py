@@ -1,15 +1,10 @@
 """
-WebRTC Peer Connection Handler
-Manages individual WebRTC connections and media streams.
+Refactored WebRTC Peer Connection Handler
+Manages individual WebRTC connections using service pattern.
 """
 import asyncio
 import logging
-from aiortc import (
-    RTCPeerConnection,
-    RTCSessionDescription,
-    RTCIceCandidate,
-    MediaStreamTrack
-)
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCIceCandidate
 from aiortc.contrib.media import MediaRelay
 from aiortc.sdp import candidate_from_sdp
 
@@ -19,35 +14,38 @@ from .ai_assistant import AIAssistant
 logger = logging.getLogger(__name__)
 
 
-class PeerConnectionHandler:
-    """Handles WebRTC peer connection for a single client."""
-    
-    def __init__(self, connection_id: str, ai_assistant: AIAssistant, websocket, user_id: str | None = None):
+class WebRTCEventHandler:
+    """Handles WebRTC peer connection events."""
+
+    def __init__(self, connection_id: str, peer_connection, message_sender):
+        """
+        Initialize WebRTC event handler.
+        
+        Args:
+            connection_id: Unique connection identifier
+            peer_connection: RTCPeerConnection instance
+            message_sender: Async callable to send messages to client
+        """
         self.connection_id = connection_id
-        self.user_id = user_id  # Firebase user ID if authenticated
-        self.ai_assistant = ai_assistant
-        self.websocket = websocket
-        self.pc = RTCPeerConnection()
-        self.relay = MediaRelay()
+        self.pc = peer_connection
+        self.send_message = message_sender
         self.audio_processor = None
         self.track_ready = asyncio.Event()
-        
-        logger.info(f"PeerConnectionHandler created for connection {connection_id}")
-        
-        # Set up event handlers
-        self._setup_event_handlers()
-        
-    def _setup_event_handlers(self):
-        """Set up WebRTC event handlers."""
-        
-        logger.debug(f"Setting up WebRTC event handlers for connection {self.connection_id}")
-        
+
+    def setup_handlers(self):
+        """Set up all WebRTC event handlers."""
+        self._setup_ice_candidate_handler()
+        self._setup_track_handler()
+        self._setup_connection_state_handler()
+        logger.debug(f"Set up WebRTC event handlers for {self.connection_id}")
+
+    def _setup_ice_candidate_handler(self):
+        """Set up ICE candidate event handler."""
         @self.pc.on("icecandidate")
         async def on_icecandidate(candidate):
-            """Send ICE candidates to client."""
             if candidate:
-                logger.debug(f"ICE candidate generated: {candidate.candidate}")
-                await self._send_message({
+                logger.debug(f"ICE candidate generated for {self.connection_id}")
+                await self.send_message({
                     'type': 'ice-candidate',
                     'candidate': {
                         'candidate': candidate.candidate,
@@ -55,126 +53,203 @@ class PeerConnectionHandler:
                         'sdpMLineIndex': candidate.sdpMLineIndex
                     }
                 })
-        
+
+    def _setup_track_handler(self):
+        """Set up media track event handler."""
         @self.pc.on("track")
         async def on_track(track):
-            """Handle incoming media track from client."""
-            logger.info(f"Received track: {track.kind}")
-            logger.debug(f"Track details - id={track.id}, kind={track.kind}, readyState={track.readyState}")
-            
+            logger.info(f"Received {track.kind} track for {self.connection_id}")
+
             if track.kind == "audio":
-                logger.debug("Creating AudioProcessor for incoming audio track")
-                # Create audio processor for this track
+                await self._handle_audio_track(track)
+
+    def _setup_connection_state_handler(self):
+        """Set up connection state change handler."""
+        @self.pc.on("connectionstatechange")
+        async def on_connectionstatechange():
+            logger.info(
+                f"Connection {self.connection_id} state: {self.pc.connectionState}"
+            )
+
+            if self.pc.connectionState == "failed":
+                logger.error(f"Connection {self.connection_id} failed")
+
+    async def _handle_audio_track(self, track):
+        """Handle incoming audio track."""
+        logger.debug(f"Creating AudioProcessor for {self.connection_id}")
+        # Audio processor will be set externally
+        self.track_ready.set()
+
+    async def wait_for_track(self, timeout: float = 5.0):
+        """Wait for audio track to be ready."""
+        await asyncio.wait_for(self.track_ready.wait(), timeout=timeout)
+
+
+class PeerConnectionHandler:
+    """
+    Refactored WebRTC peer connection handler using service pattern.
+    
+    Manages:
+    - WebRTC peer connection lifecycle
+    - Media track handling
+    - Audio processing coordination
+    """
+
+    def __init__(
+        self,
+        connection_id: str,
+        ai_assistant: AIAssistant,
+        websocket,
+        user_id: str | None = None
+    ):
+        """
+        Initialize peer connection handler.
+        
+        Args:
+            connection_id: Unique connection identifier
+            ai_assistant: AIAssistant instance for this connection
+            websocket: WebSocket for signaling
+            user_id: Firebase user ID (optional)
+        """
+        self.connection_id = connection_id
+        self.user_id = user_id
+        self.ai_assistant = ai_assistant
+        self.websocket = websocket
+
+        # WebRTC components
+        self.pc = RTCPeerConnection()
+        self.relay = MediaRelay()
+        self.audio_processor = None
+
+        # Event handler
+        self.event_handler = WebRTCEventHandler(
+            connection_id,
+            self.pc,
+            self._send_message
+        )
+        self.event_handler.setup_handlers()
+
+        logger.info(f"PeerConnectionHandler created for {connection_id}")
+
+    async def handle_offer(self, offer: RTCSessionDescription):
+        """
+        Handle WebRTC offer from client.
+        
+        Args:
+            offer: RTCSessionDescription with client's offer
+        """
+        try:
+            logger.debug(f"Handling offer from {self.connection_id}")
+
+            # Set remote description
+            await self.pc.setRemoteDescription(offer)
+
+            # Wait for audio track
+            await self.event_handler.wait_for_track()
+
+            # Create and add audio processor
+            await self._setup_audio_processor()
+
+            # Create and send answer
+            await self._create_and_send_answer()
+
+            logger.info(f"Sent answer to client {self.connection_id}")
+
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout waiting for audio track from {self.connection_id}")
+        except Exception as e:
+            logger.error(f"Error handling offer: {e}", exc_info=True)
+
+    async def _setup_audio_processor(self):
+        """Set up audio processor with input track."""
+        # Audio track is received via event handler
+        # We need to get it from the PC's receivers
+        for receiver in self.pc.getReceivers():
+            if receiver.track and receiver.track.kind == "audio":
+                logger.debug(f"Creating AudioProcessor for {self.connection_id}")
+
                 self.audio_processor = AudioProcessor(
                     connection_id=self.connection_id,
                     ai_assistant=self.ai_assistant,
-                    input_track=track
+                    input_track=receiver.track
                 )
 
-                # Signal that the track is ready
-                self.track_ready.set()
-                logger.debug("Audio processor created and ready")
-                
-                # Start processing
-                logger.debug("Starting audio processor")
-                asyncio.create_task(self.audio_processor.start())
-        
-        @self.pc.on("connectionstatechange")
-        async def on_connectionstatechange():
-            """Handle connection state changes."""
-            logger.info(f"Connection state: {self.pc.connectionState}")
-            logger.debug(f"Connection {self.connection_id} state details - ice={self.pc.iceConnectionState}, gathering={self.pc.iceGatheringState}")
-            
-            if self.pc.connectionState == "failed":
-                logger.error(f"Connection {self.connection_id} failed")
-                await self.close()
-    
-    async def handle_offer(self, offer: RTCSessionDescription):
-        """Handle WebRTC offer from client."""
-        try:
-            logger.debug(f"Handling offer from client {self.connection_id}")
-            logger.debug(f"Offer SDP length: {len(offer.sdp)} chars")
-            
-            # Set remote description
-            logger.debug("Setting remote description")
-            await self.pc.setRemoteDescription(offer)
+                # Store reference in event handler
+                self.event_handler.audio_processor = self.audio_processor
 
-            # Wait for audio processor to be ready
-            logger.debug("Waiting for audio track to be ready...")
-            await asyncio.wait_for(self.track_ready.wait(), timeout=5.0)
-            logger.debug("Audio track is ready")
-
-            # Add output track before creating answer
-            if self.audio_processor:
+                # Add output track to peer connection
                 output_track = self.audio_processor.get_output_track()
-                logger.info(f"Adding output track to peer connection: {output_track.id}")
                 self.pc.addTrack(output_track)
-            else:
-                logger.error("Audio processor not ready after waiting!")
-            
-            # Create answer
-            logger.debug("Creating answer")
-            answer = await self.pc.createAnswer()
-            logger.debug(f"Answer SDP length: {len(answer.sdp)} chars")
-            
-            logger.debug("Setting local description")
-            await self.pc.setLocalDescription(answer)
-            
-            # Send answer to client
-            logger.debug("Sending answer to client")
-            await self._send_message({
-                'type': 'answer',
-                'sdp': self.pc.localDescription.sdp
-            })
-            
-            logger.info(f"Sent answer to client {self.connection_id}")
-            
-        except Exception as e:
-            logger.error(f"Error handling offer: {e}", exc_info=True)
-    
+                logger.info(f"Added output track to {self.connection_id}")
+
+                # Start audio processing
+                asyncio.create_task(self.audio_processor.start())
+                break
+
+        if not self.audio_processor:
+            logger.error(f"No audio track found for {self.connection_id}")
+
+    async def _create_and_send_answer(self):
+        """Create answer and send to client."""
+        answer = await self.pc.createAnswer()
+        await self.pc.setLocalDescription(answer)
+
+        await self._send_message({
+            'type': 'answer',
+            'sdp': self.pc.localDescription.sdp
+        })
+
     async def handle_ice_candidate(self, candidate_data: dict):
-        """Handle ICE candidate from client."""
+        """
+        Handle ICE candidate from client.
+        
+        Args:
+            candidate_data: Dictionary with ICE candidate information
+        """
         try:
-            logger.debug(f"Handling ICE candidate from client {self.connection_id}")
-            logger.debug(f"Candidate: {candidate_data.get('candidate', '')[:100]}...")
-            
-            # Parse the SDP candidate string into an RTCIceCandidate object
+            logger.debug(f"Handling ICE candidate for {self.connection_id}")
+
             candidate_str = candidate_data.get('candidate', '')
-            if candidate_str:
-                candidate = candidate_from_sdp(candidate_str)
-                candidate.sdpMid = candidate_data.get('sdpMid')
-                candidate.sdpMLineIndex = candidate_data.get('sdpMLineIndex')
-                await self.pc.addIceCandidate(candidate)
-                logger.debug("ICE candidate added successfully")
-            
+            if not candidate_str:
+                return
+
+            candidate = candidate_from_sdp(candidate_str)
+            candidate.sdpMid = candidate_data.get('sdpMid')
+            candidate.sdpMLineIndex = candidate_data.get('sdpMLineIndex')
+
+            await self.pc.addIceCandidate(candidate)
+            logger.debug(f"ICE candidate added for {self.connection_id}")
+
         except Exception as e:
             logger.error(f"Error adding ICE candidate: {e}", exc_info=True)
-    
+
     async def _send_message(self, message: dict):
         """Send message to client via WebSocket."""
         try:
-            logger.debug(f"Sending message to client {self.connection_id}: type={message.get('type')}")
+            logger.debug(
+                f"Sending {message.get('type')} to {self.connection_id}"
+            )
             await self.websocket.send_json(message)
         except Exception as e:
             logger.error(f"Error sending message: {e}", exc_info=True)
-    
+
     async def close(self):
         """Close peer connection and cleanup resources."""
         logger.info(f"Closing peer connection {self.connection_id}")
-        
+
+        # Stop audio processor
         if self.audio_processor:
-            logger.debug("Stopping audio processor")
             try:
                 await self.audio_processor.stop()
             except Exception as e:
                 logger.warning(f"Error stopping audio processor: {e}")
-        
+
+        # Close peer connection
         if self.pc:
-            logger.debug("Closing RTCPeerConnection")
             try:
                 await self.pc.close()
-                logger.debug(f"Peer connection {self.connection_id} closed successfully")
+                logger.debug(f"Peer connection {self.connection_id} closed")
             except Exception as e:
                 logger.warning(f"Error closing peer connection: {e}")
             finally:
-                self.pc = None  # Clear reference to avoid double-close
+                self.pc = None
