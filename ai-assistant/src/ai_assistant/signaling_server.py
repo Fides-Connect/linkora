@@ -1,6 +1,5 @@
 """
-Refactored Signaling Server
-Manages WebSocket connections and WebRTC signaling using service pattern.
+Signaling Server: Manages WebSocket connections and WebRTC signaling using service pattern.
 """
 import asyncio
 import logging
@@ -20,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class SignalingServer:
     """
-    Refactored WebRTC signaling server using service-oriented architecture.
+    WebRTC signaling server using service-oriented architecture.
     
     Coordinates between:
     - WebSocket connection management

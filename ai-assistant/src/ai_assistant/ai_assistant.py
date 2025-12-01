@@ -1,6 +1,5 @@
 """
-Refactored AI Assistant
-Core logic coordinating speech-to-text, LLM processing, and text-to-speech services.
+AI Assistant: Core logic coordinating speech-to-text, LLM processing, and text-to-speech services.
 """
 import asyncio
 import logging
@@ -107,7 +106,7 @@ class PersistentChatMessageHistory(BaseChatMessageHistory):
 
 class AIAssistant:
     """
-    Refactored AI Assistant using service-oriented architecture.
+    AI Assistant using service-oriented architecture.
     
     Coordinates between:
     - Conversation stage management

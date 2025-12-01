@@ -1,6 +1,5 @@
 """
-Refactored Audio Processor
-Handles the audio processing pipeline using service-oriented architecture.
+Audio Processor: Handles the audio processing pipeline using service-oriented architecture.
 """
 import asyncio
 import logging
@@ -269,7 +268,7 @@ class STTStreamManager:
 
 class AudioProcessor:
     """
-    Refactored Audio Processor using service-oriented architecture.
+    Audio Processor using service-oriented architecture.
     
     Coordinates between:
     - Audio frame streaming

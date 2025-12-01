@@ -1,6 +1,5 @@
 """
-Refactored WebRTC Peer Connection Handler
-Manages individual WebRTC connections using service pattern.
+WebRTC Peer Connection Handler: Manages individual WebRTC connections using service pattern.
 """
 import asyncio
 import logging
@@ -87,7 +86,7 @@ class WebRTCEventHandler:
 
 class PeerConnectionHandler:
     """
-    Refactored WebRTC peer connection handler using service pattern.
+    WebRTC peer connection handler using service pattern.
     
     Manages:
     - WebRTC peer connection lifecycle
