@@ -291,9 +291,20 @@ async def user_sync(request: web.Request) -> web.Response:
         logger.info(f"User sync completed for: {email} (user_id: {user_id}, new={is_new_user})")
         logger.debug(f"Active users: {len(_active_users)}")
         
+        # Convert datetime objects to ISO format strings for JSON serialization
+        if user_profile:
+            user_profile_serializable = {}
+            for key, value in user_profile.items():
+                if isinstance(value, datetime):
+                    user_profile_serializable[key] = value.isoformat()
+                else:
+                    user_profile_serializable[key] = value
+        else:
+            user_profile_serializable = None
+        
         return web.json_response({
             "user_id": user_id,
-            "user_profile": user_profile,
+            "user_profile": user_profile_serializable,
             "is_new_user": is_new_user,
             "success": True,
         })
