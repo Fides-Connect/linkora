@@ -48,12 +48,15 @@ class ConversationStageManager:
             return self._create_triage_prompt()
 
     def _create_greeting_prompt(self) -> ChatPromptTemplate:
-        """Create greeting prompt template."""
+        """Create greeting prompt template with runtime variables."""
         return ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
             MessagesPlaceholder(variable_name="history"),
             ("human", "{input}")
-        ])
+        ]).partial(
+            agent_name=AGENT_NAME,
+            company_name=COMPANY_NAME
+        )
 
     def _create_triage_prompt(self) -> ChatPromptTemplate:
         """Create triage prompt template."""
@@ -147,8 +150,20 @@ class ConversationStageManager:
         logger.info(f"Detected category: {category}")
 
     def set_providers(self, providers: list):
-        """Set the list of matching providers."""
+        """Set the list of found providers."""
         self.conversation_context["providers_found"] = providers
+
+    def set_user_info(self, user_name: str, has_open_request: bool):
+        """Set user information for greeting."""
+        self.conversation_context["user_name"] = user_name
+        self.conversation_context["has_open_request"] = has_open_request
+
+    def get_user_variables(self) -> dict:
+        """Get user variables for prompt formatting."""
+        return {
+            "user_name": self.conversation_context.get("user_name", "there"),
+            "has_open_request": "YES" if self.conversation_context.get("has_open_request", False) else "NO"
+        }
         logger.info(f"Found {len(providers)} matching providers")
 
     def get_user_problem(self) -> str:
