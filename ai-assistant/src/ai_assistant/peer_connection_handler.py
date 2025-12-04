@@ -39,7 +39,7 @@ class WebRTCEventHandler:
         logger.debug(f"Set up WebRTC event handlers for {self.connection_id}")
 
     def _setup_ice_candidate_handler(self):
-        """Set up ICE candidate event handler."""
+        """Set up ICE (Interactive Connectivity Establishment) candidate event handler."""
         @self.pc.on("icecandidate")
         async def on_icecandidate(candidate):
             if candidate:
@@ -116,14 +116,14 @@ class PeerConnectionHandler:
         self.websocket = websocket
 
         # WebRTC components
-        self.pc = RTCPeerConnection()
+        self.peer_connection = RTCPeerConnection()
         self.relay = MediaRelay()
         self.audio_processor = None
 
         # Event handler
         self.event_handler = WebRTCEventHandler(
             connection_id,
-            self.pc,
+            self.peer_connection,
             self._send_message
         )
         self.event_handler.setup_handlers()
@@ -141,7 +141,7 @@ class PeerConnectionHandler:
             logger.debug(f"Handling offer from {self.connection_id}")
 
             # Set remote description
-            await self.pc.setRemoteDescription(offer)
+            await self.peer_connection.setRemoteDescription(offer)
 
             # Wait for audio track
             await self.event_handler.wait_for_track()
@@ -163,7 +163,7 @@ class PeerConnectionHandler:
         """Set up audio processor with input track."""
         # Audio track is received via event handler
         # We need to get it from the PC's receivers
-        for receiver in self.pc.getReceivers():
+        for receiver in self.peer_connection.getReceivers():
             if receiver.track and receiver.track.kind == "audio":
                 logger.debug(f"Creating AudioProcessor for {self.connection_id}")
 
@@ -178,7 +178,7 @@ class PeerConnectionHandler:
 
                 # Add output track to peer connection
                 output_track = self.audio_processor.get_output_track()
-                self.pc.addTrack(output_track)
+                self.peer_connection.addTrack(output_track)
                 logger.info(f"Added output track to {self.connection_id}")
 
                 # Start audio processing
@@ -190,12 +190,12 @@ class PeerConnectionHandler:
 
     async def _create_and_send_answer(self):
         """Create answer and send to client."""
-        answer = await self.pc.createAnswer()
-        await self.pc.setLocalDescription(answer)
+        answer = await self.peer_connection.createAnswer()
+        await self.peer_connection.setLocalDescription(answer)
 
         await self._send_message({
             'type': 'answer',
-            'sdp': self.pc.localDescription.sdp
+            'sdp': self.peer_connection.localDescription.sdp
         })
 
     async def handle_ice_candidate(self, candidate_data: dict):
@@ -208,15 +208,17 @@ class PeerConnectionHandler:
         try:
             logger.debug(f"Handling ICE candidate for {self.connection_id}")
 
-            candidate_str = candidate_data.get('candidate', '')
-            if not candidate_str:
-                return
+            # Extract candidate string from nested structure
+            candidate_data = candidate_data['candidate']
+            candidate_str = candidate_data['candidate']
+            sdp_mid = candidate_data['sdpMid']
+            sdp_mline_index = candidate_data['sdpMLineIndex']
 
             candidate = candidate_from_sdp(candidate_str)
-            candidate.sdpMid = candidate_data.get('sdpMid')
-            candidate.sdpMLineIndex = candidate_data.get('sdpMLineIndex')
+            candidate.sdpMid = sdp_mid
+            candidate.sdpMLineIndex = sdp_mline_index
 
-            await self.pc.addIceCandidate(candidate)
+            await self.peer_connection.addIceCandidate(candidate)
             logger.debug(f"ICE candidate added for {self.connection_id}")
 
         except Exception as e:
@@ -244,11 +246,11 @@ class PeerConnectionHandler:
                 logger.warning(f"Error stopping audio processor: {e}")
 
         # Close peer connection
-        if self.pc:
+        if self.peer_connection:
             try:
-                await self.pc.close()
+                await self.peer_connection.close()
                 logger.debug(f"Peer connection {self.connection_id} closed")
             except Exception as e:
                 logger.warning(f"Error closing peer connection: {e}")
             finally:
-                self.pc = None
+                self.peer_connection = None

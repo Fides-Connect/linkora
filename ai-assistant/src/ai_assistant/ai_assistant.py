@@ -134,7 +134,7 @@ class AIAssistant:
         """
         self.language_code = language_code
         self.voice_name = voice_name
-        self.user_id = user_id or "anonymous"
+        self.user_id = user_id or "anonymous" # TODO: remove anonymous default
         self.gemini_api_key = gemini_api_key
 
         # Initialize data provider
@@ -191,7 +191,7 @@ class AIAssistant:
     def _init_langchain_chain(self):
         """Initialize LangChain chain with message history."""
         current_prompt = self.stage_manager.create_prompt_for_stage(
-            ConversationStage.TRIAGE
+            ConversationStage.GREETING
         )
         self.chain = current_prompt | self.llm
         self.chain_with_history = RunnableWithMessageHistory(
@@ -218,7 +218,7 @@ class AIAssistant:
         )
 
         # Greeting generator
-        self.greeting_generator = GreetingGenerator(
+        self.greeting_generator = GreetingGenerator( # TODO: remove greeting generator, but use continuous streaming including greeting
             self.llm,
             self.data_provider
         )
