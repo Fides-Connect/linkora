@@ -35,26 +35,6 @@ class UserSessionManager:
         self.user_assistants: Dict[str, any] = {}
         self.user_last_activity: Dict[str, float] = {}
 
-        # Background cleanup task
-        self._cleanup_task: Optional[asyncio.Task] = None
-
-    async def start(self):
-        """Start background cleanup task."""
-        if self._cleanup_task is None:
-            self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
-            logger.info("Started user session cleanup task")
-
-    async def stop(self):
-        """Stop background cleanup task."""
-        if self._cleanup_task:
-            self._cleanup_task.cancel()
-            try:
-                await self._cleanup_task
-            except asyncio.CancelledError:
-                pass
-            self._cleanup_task = None
-            logger.info("Stopped user session cleanup task")
-
     def get_or_create_assistant(self, user_id: str):
         """
         Get existing assistant or create new one for user.
@@ -117,18 +97,6 @@ class UserSessionManager:
             return True
 
         return False
-
-    async def _periodic_cleanup(self):
-        """Periodically cleanup idle user assistants."""
-        while True:
-            try:
-                await asyncio.sleep(self.cleanup_interval)
-                # Cleanup is triggered externally via cleanup_idle_users
-            except asyncio.CancelledError:
-                logger.info("Periodic cleanup task cancelled")
-                break
-            except Exception as e:
-                logger.error(f"Error in periodic cleanup: {e}", exc_info=True)
 
     def cleanup_idle_users(self, connection_checker):
         """

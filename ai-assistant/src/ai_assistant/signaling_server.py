@@ -85,16 +85,12 @@ class SignalingServer:
 
     async def start(self):
         """Start background tasks."""
-        await self.user_session_manager.start()
-
         if self._cleanup_task is None:
             self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
             logger.info("Started periodic cleanup task")
 
     async def stop(self):
         """Stop background tasks."""
-        await self.user_session_manager.stop()
-
         if self._cleanup_task:
             self._cleanup_task.cancel()
             try:
