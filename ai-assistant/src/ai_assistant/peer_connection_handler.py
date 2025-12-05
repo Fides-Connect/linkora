@@ -10,6 +10,9 @@ from aiortc.sdp import candidate_from_sdp
 from .audio_processor import AudioProcessor
 from .ai_assistant import AIAssistant
 
+# Set aiortc logging to WARNING to reduce noise
+logging.getLogger("aiortc").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 
@@ -72,6 +75,14 @@ class WebRTCEventHandler:
 
             if self.pc.connectionState == "failed":
                 logger.error(f"Connection {self.connection_id} failed")
+                # Stop TTS streaming when connection fails
+                if self.audio_processor:
+                    await self.audio_processor.stop_tts_streaming()
+            elif self.pc.connectionState in ["closed", "disconnected"]:
+                logger.info(f"Connection {self.connection_id} closed/disconnected by client")
+                # Stop TTS streaming when client disconnects
+                if self.audio_processor:
+                    await self.audio_processor.stop_tts_streaming()
 
     async def _handle_audio_track(self, track):
         """Handle incoming audio track."""

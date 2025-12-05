@@ -2,7 +2,6 @@
 LLM Response Processor
 Handles LLM streaming, provider search, and stage transitions.
 """
-import asyncio
 import logging
 from typing import AsyncIterator
 
@@ -17,7 +16,7 @@ class LLMResponseProcessor:
 
     def __init__(
         self,
-        chain_with_history,
+        ai_assistant,  # Reference to AIAssistant for chain updates
         stage_manager,
         data_provider,
         user_id: str
@@ -26,12 +25,12 @@ class LLMResponseProcessor:
         Initialize LLM response processor.
         
         Args:
-            chain_with_history: LangChain runnable with message history
+            ai_assistant: AIAssistant instance (for accessing updated chain)
             stage_manager: Conversation stage manager
             data_provider: Data provider for searches
             user_id: User ID for session management
         """
-        self.chain_with_history = chain_with_history
+        self.ai_assistant = ai_assistant
         self.stage_manager = stage_manager
         self.data_provider = data_provider
         self.user_id = user_id
@@ -70,7 +69,7 @@ class LLMResponseProcessor:
 
             # Stream response chunks
             full_response = ""
-            async for chunk in self.chain_with_history.astream(
+            async for chunk in self.ai_assistant.chain_with_history.astream(
                 chain_input,
                 config={"configurable": {"session_id": self.user_id}}
             ):
@@ -107,22 +106,14 @@ class LLMResponseProcessor:
             self.stage_manager.set_user_info("there", False)
 
     async def _accumulate_problem_description(self, user_input: str):
-        """Accumulate user's problem for provider search."""
+        """Accumulate user's problem description without searching yet."""
         self.stage_manager.accumulate_user_problem(user_input)
 
-        # Detect category
+        # Detect category for later use
         category = detect_category(self.stage_manager.get_user_problem())
         if category:
             self.stage_manager.set_detected_category(category)
 
-        # Search for providers
-        providers = await self.data_provider.search_providers(
-            query_text=self.stage_manager.get_user_problem(),
-            category=self.stage_manager.get_detected_category(),
-            limit=MAX_PROVIDERS_TO_PRESENT
-        )
-
-        self.stage_manager.set_providers(providers)
 
     async def _handle_stage_transitions(self, user_input: str, ai_response: str):
         """Handle conversation stage transitions."""
@@ -137,21 +128,33 @@ class LLMResponseProcessor:
             logger.info(
                 f"Stage transition: {self.stage_manager.current_stage} -> {new_stage}"
             )
-            self.stage_manager.transition_to_stage(new_stage)
+            # Update chain with new prompt for the stage
+            self.ai_assistant.update_chain_for_stage(new_stage)
 
     async def _transition_to_finalize(self):
-        """Handle transition to FINALIZE stage with auto-presentation."""
+        """Handle transition to FINALIZE stage with provider search and auto-presentation."""
         logger.info(
             f"Transitioning: {self.stage_manager.current_stage} -> "
             f"{ConversationStage.FINALIZE}"
         )
+
+        # Search for providers using accumulated problem description
+        logger.info("Searching providers based on accumulated conversation")
+        providers = await self.data_provider.search_providers(
+            query_text=self.stage_manager.get_user_problem(),
+            category=self.stage_manager.get_detected_category(),
+            limit=MAX_PROVIDERS_TO_PRESENT
+        )
+        self.stage_manager.set_providers(providers)
+
+        # Transition to FINALIZE stage
         self.stage_manager.transition_to_stage(ConversationStage.FINALIZE)
 
         # Auto-generate provider presentation
         logger.info("Auto-generating provider presentation")
         auto_prompt = " "  # Minimal prompt to trigger presentation
 
-        async for chunk in self.chain_with_history.astream(
+        async for chunk in self.ai_assistant.chain_with_history.astream(
             {"input": auto_prompt},
             config={"configurable": {"session_id": self.user_id}}
         ):

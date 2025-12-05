@@ -28,10 +28,15 @@ class SpeechService {
         _ownsWebRTC = webrtcService == null;
 
   void stopSpeech() async {
-    // Only disconnect if we own the WebRTC service
-    if (_ownsWebRTC) {
-      _webrtcService?.disconnect();
-      _webrtcService = null;
+    debugPrint('SpeechService: Stopping speech session');
+    
+    // Always disconnect to stop audio streaming
+    if (_webrtcService != null) {
+      await _webrtcService!.disconnect();
+      // Only nullify if we own the service (for re-creation next time)
+      if (_ownsWebRTC) {
+        _webrtcService = null;
+      }
     }
 
     // Stop and clean up audio renderer
@@ -40,6 +45,8 @@ class SpeechService {
       await _remoteRenderer!.dispose();
       _remoteRenderer = null;
     }
+    
+    debugPrint('SpeechService: Speech session stopped');
   }
 
   /// Start speech session by connecting to AI-Assistant server via WebRTC
@@ -51,16 +58,19 @@ class SpeechService {
       // Initialize audio player and WebRTC
       await _initialize();
       
-      // Connect to AI-Assistant server (only if we own the connection)
-      if (_ownsWebRTC) {
+      // Always establish fresh WebRTC connection for each session
+      // This ensures proper audio processor setup on server side
+      if (_webrtcService != null) {
+        // Disconnect first if already connected (to start fresh)
+        if (_webrtcService!.isConnected) {
+          debugPrint('SpeechService: Disconnecting existing connection to start fresh');
+          await _webrtcService!.disconnect();
+        }
+        
+        debugPrint('SpeechService: Connecting to AI-Assistant server');
         await _webrtcService!.connect();
       } else {
-        // If using shared connection, just set up callbacks
-        debugPrint('SpeechService: Using existing WebRTC connection');
-        // Trigger connected callback immediately if already connected
-        if (_webrtcService!.isConnected) {
-          onConnected?.call();
-        }
+        throw Exception('WebRTC service not initialized');
       }
       
       debugPrint('SpeechService: Ready for speech interaction');

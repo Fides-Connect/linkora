@@ -19,13 +19,13 @@ MAX_PROVIDERS_TO_PRESENT = 3
 # WebSocket & Connection Settings
 # ============================================================================
 # Heartbeat interval - send ping every N seconds
-HEARTBEAT_INTERVAL = 60
+HEARTBEAT_INTERVAL = 6000
 
 # Connection timeout - max time without pong before closing connection (seconds)
-CONNECTION_TIMEOUT = 300
+CONNECTION_TIMEOUT = 300000
 
 # Idle timeout - cleanup AIAssistant after N seconds of inactivity (seconds)
-IDLE_TIMEOUT = 300  # 5 minutes
+IDLE_TIMEOUT = 300000  # 5 minutes
 
 # Watchdog check interval for cleaning up idle assistants (seconds)
 WATCHDOG_CHECK_INTERVAL = 60  # 1 minute

@@ -47,7 +47,6 @@ class WebRTCSignalingHandler:
         try:
             candidate = candidate_data.get('candidate')
             if candidate:
-                logger.debug(f"Processing ICE candidate for {peer_handler.connection_id}")
                 await peer_handler.handle_ice_candidate(candidate_data)
             else:
                 logger.warning(

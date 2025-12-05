@@ -78,9 +78,6 @@ class AuthService {
         final bool synced = await _userService.syncUserWithBackend(user);
         if (!synced) {
           debugPrint('User sync failed - but continuing with local auth');
-        } else {
-          // User synced successfully, now automatically connect to WebRTC
-          await _connectToServer();
         }
       }
     } else {
@@ -89,23 +86,6 @@ class AuthService {
       
       // Disconnect from server on sign out
       _webrtcService?.disconnect();
-    }
-  }
-
-  /// Automatically connect to AI assistant server after successful authentication
-  Future<void> _connectToServer() async {
-    if (_webrtcService == null) {
-      debugPrint('AuthService: WebRTC service not set, skipping automatic connection');
-      return;
-    }
-
-    try {
-      debugPrint('AuthService: Automatically connecting to AI assistant server...');
-      await _webrtcService!.connect();
-      debugPrint('AuthService: Successfully connected to AI assistant server');
-    } catch (e) {
-      debugPrint('AuthService: Failed to auto-connect to server: $e');
-      // Don't block authentication if connection fails
     }
   }
 

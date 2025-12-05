@@ -60,11 +60,14 @@ class SpeechToTextService:
             )
 
             # Process responses asynchronously
+            response_count = 0
             async for response in stream:
+                response_count += 1
+                logger.info(f"📥 STT response #{response_count} received")
                 async for transcript, is_final in self._process_response(response):
                     yield transcript, is_final
 
-            logger.info("Async gRPC streaming recognition completed")
+            logger.info(f"Async gRPC streaming recognition completed ({response_count} responses)")
 
         except Exception as e:
             logger.error(f"Streaming speech-to-text error: {e}", exc_info=True)
@@ -117,9 +120,16 @@ class SpeechToTextService:
 
     async def _process_response(self, response) -> AsyncIterator[tuple[str, bool]]:
         """Process STT response and yield transcripts."""
+        logger.debug(f"📝 Processing STT response: {len(response.results)} results")
         for result in response.results:
             if result.alternatives:
                 transcript = result.alternatives[0].transcript
                 is_final = result.is_final
-                logger.debug(f"STT: '{transcript}' (final={is_final})")
+                # Only log final transcripts at INFO level, interim at DEBUG
+                if is_final:
+                    logger.info(f"STT: '{transcript}' (final={is_final})")
+                else:
+                    logger.debug(f"STT: '{transcript}' (final={is_final})")
                 yield transcript, is_final
+            else:
+                logger.warning("STT result has no alternatives")

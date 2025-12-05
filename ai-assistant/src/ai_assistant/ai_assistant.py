@@ -1,7 +1,6 @@
 """
 AI Assistant: Core logic coordinating speech-to-text, LLM processing, and text-to-speech services.
 """
-import asyncio
 import logging
 import os
 from typing import AsyncIterator, Optional, Callable
@@ -225,7 +224,7 @@ class AIAssistant:
 
         # LLM response processor
         self.llm_processor = LLMResponseProcessor(
-            self.chain_with_history,
+            self,  # Pass AIAssistant instance for chain updates
             self.stage_manager,
             self.data_provider,
             self.user_id

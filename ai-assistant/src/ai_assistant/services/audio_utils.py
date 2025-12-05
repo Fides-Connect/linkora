@@ -23,11 +23,8 @@ class AudioFrameConverter:
         Returns:
             Numpy array of int16 audio samples
         """
-        logger.debug(f"Converting frame: format={frame.format}, samples={frame.samples}")
-
         # Convert to numpy array
         array = frame.to_ndarray()
-        logger.debug(f"Frame array: shape={array.shape}, dtype={array.dtype}")
 
         # Handle stereo to mono conversion
         array = AudioFrameConverter._handle_stereo_to_mono(array)
@@ -46,13 +43,10 @@ class AudioFrameConverter:
 
         if array.shape[0] == 1:
             # Shape is (1, N*2) - interleaved stereo
-            logger.debug(f"Reshaping interleaved stereo: {array.shape} -> (-1, 2)")
             array = array.reshape(-1, 2)
 
         # Convert to mono by averaging channels
-        logger.debug(f"Converting stereo to mono (shape: {array.shape})")
         array = array.mean(axis=1).astype(array.dtype)
-        logger.debug(f"After mono conversion: shape={array.shape}")
 
         return array
 
@@ -64,7 +58,6 @@ class AudioFrameConverter:
 
         logger.warning(f"Converting from {array.dtype} to int16")
         array_min, array_max = array.min(), array.max()
-        logger.debug(f"Array range: min={array_min}, max={array_max}")
 
         if array.dtype in (np.float32, np.float64):
             array = AudioFrameConverter._convert_float_to_int16(array, array_min, array_max)
@@ -94,16 +87,6 @@ class AudioFrameConverter:
         if len(array) == 0:
             logger.error("Conversion resulted in empty array!")
             return np.zeros(480, dtype=np.int16)
-
-        final_min, final_max = array.min(), array.max()
-        rms = np.sqrt(np.mean(array.astype(float) ** 2))
-        logger.debug(
-            f"Final array: shape={array.shape}, dtype={array.dtype}, "
-            f"min={final_min}, max={final_max}, RMS={rms:.2f}"
-        )
-
-        if rms < 10:
-            logger.debug(f"Audio has very low RMS ({rms:.2f}) - might be silence")
 
         return array
 

@@ -2,10 +2,9 @@
 User Session Manager
 Manages user assistant instances and activity tracking.
 """
-import asyncio
 import logging
 import time
-from typing import Dict, Optional
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 

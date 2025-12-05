@@ -116,6 +116,7 @@ class WebSocketConnectionManager:
                         if msg_type == 'pong':
                             self.update_pong_timestamp()
                         else:
+                            logger.info(f"📩 WebSocket received: {msg_type} from {self.connection_id}")
                             await message_handler(data)
 
                     except json.JSONDecodeError as e:

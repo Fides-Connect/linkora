@@ -35,7 +35,6 @@ class AudioOutputTrack(MediaStreamTrack):
         
     async def queue_audio(self, audio_data: bytes):
         """Queue audio data for playback."""
-        logger.debug(f"Queueing {len(audio_data)} bytes of audio, queue size before: {self.audio_queue.qsize()}")
         await self.audio_queue.put(audio_data)
     
     async def clear_queue(self):
@@ -94,20 +93,16 @@ class AudioOutputTrack(MediaStreamTrack):
             if current_time < self._next_frame_time:
                 await asyncio.sleep(self._next_frame_time - current_time)
             
-            logger.debug(f"recv() called - queue size: {self.audio_queue.qsize()}, buffer size: {len(self._buffer)} samples")
-            
             # Try to get audio from queue (non-blocking with short timeout)
             try:
                 audio_data = await asyncio.wait_for(
                     self.audio_queue.get(),
                     timeout=0.001  # Very short timeout - don't wait long
                 )
-                logger.debug(f"Got {len(audio_data)} bytes from queue")
-                
+
                 # Convert bytes to numpy array and append to buffer
                 new_samples = np.frombuffer(audio_data, dtype=np.int16)
                 self._buffer = np.concatenate([self._buffer, new_samples])
-                logger.debug(f"Buffer now has {len(self._buffer)} samples")
                 
             except asyncio.TimeoutError:
                 # No audio available - we'll send comfort noise
@@ -119,12 +114,11 @@ class AudioOutputTrack(MediaStreamTrack):
                 audio_array = self._buffer[:self.samples_per_frame]
                 # Keep the rest in the buffer for next frame
                 self._buffer = self._buffer[self.samples_per_frame:]
-                logger.debug(f"Extracted {len(audio_array)} samples, {len(self._buffer)} samples remain in buffer")
                 self._last_frame_was_silence = False
                 
             elif len(self._buffer) > 0:
                 # Not enough for a full frame, but we have some - pad with comfort noise
-                logger.debug(f"Padding: {len(self._buffer)} -> {self.samples_per_frame} samples")
+                #logger.debug(f"Padding: {len(self._buffer)} -> {self.samples_per_frame} samples")
                 padding_size = self.samples_per_frame - len(self._buffer)
                 comfort_noise = self._generate_comfort_noise(padding_size)
                 audio_array = np.concatenate([self._buffer, comfort_noise])
@@ -134,7 +128,6 @@ class AudioOutputTrack(MediaStreamTrack):
             else:
                 # No audio available, generate comfort noise
                 if not self._last_frame_was_silence:
-                    logger.debug("No audio in buffer - generating comfort noise")
                     self._last_frame_was_silence = True
                 audio_array = self._generate_comfort_noise(self.samples_per_frame)
             
@@ -150,9 +143,7 @@ class AudioOutputTrack(MediaStreamTrack):
             frame.sample_rate = self.sample_rate
             frame.pts = self._timestamp
             frame.time_base = Fraction(1, self.sample_rate)
-            
-            logger.debug(f"Created frame: pts={self._timestamp}, samples={self.samples_per_frame}, sample_rate={self.sample_rate}")
-            
+                        
             # Update timestamp and next frame time
             self._timestamp += self.samples_per_frame
             self._next_frame_time += frame_duration

@@ -14,7 +14,7 @@ from ..definitions import (
     ConversationStage,
 )
 from ..prompts_templates import (
-    GREETING_AND_TRIAGE_PROMPT,
+    GREETING_PROMPT,
     TRIAGE_CONVERSATION_PROMPT,
     FINALIZE_SERVICE_REQUEST_PROMPT,
 )
@@ -50,7 +50,7 @@ class ConversationStageManager:
     def _create_greeting_prompt(self) -> ChatPromptTemplate:
         """Create greeting prompt template with runtime variables."""
         return ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
+            SystemMessagePromptTemplate.from_template(GREETING_PROMPT),
             MessagesPlaceholder(variable_name="history"),
             ("human", "{input}")
         ]).partial(

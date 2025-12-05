@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 
 from ..definitions import AGENT_NAME, COMPANY_NAME, USER_NAME_PLACEHOLDER
-from ..prompts_templates import GREETING_AND_TRIAGE_PROMPT
+from ..prompts_templates import GREETING_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class GreetingGenerator:
         """Generate greeting text using LLM."""
         try:
             prompt_template = ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
+                SystemMessagePromptTemplate.from_template(GREETING_PROMPT),
                 HumanMessage(content=" ")  # Required for Gemini API
             ])
 

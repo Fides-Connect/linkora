@@ -129,14 +129,8 @@ class AudioStreamManager:
                     audio_bytes = audio_data.tobytes()
                     await self.audio_queue.put(audio_bytes)
 
-                    if frame_count % 50 == 0:
-                        rms = np.sqrt(np.mean(audio_data.astype(float) ** 2))
-                        logger.debug(
-                            f"[Frame {frame_count}] Queued {len(audio_bytes)} bytes "
-                            f"(RMS={rms:.2f})"
-                        )
-
                 except asyncio.TimeoutError:
+                    # Disabled: High-frequency logging during audio gaps
                     logger.debug(f"No audio for {AUDIO_RECEIVE_TIMEOUT}s, continuing...")
                     continue
                 except Exception as e:
@@ -153,10 +147,6 @@ class AudioStreamManager:
             frame = await asyncio.wait_for(
                 self.input_track.recv(),
                 timeout=AUDIO_RECEIVE_TIMEOUT
-            )
-            logger.debug(
-                f"[Frame {frame_count}] Received: samples={frame.samples}, "
-                f"rate={frame.sample_rate}"
             )
             return frame
 
@@ -229,14 +219,12 @@ class STTStreamManager:
                 chunk_count += 1
                 timeout_count = 0
 
-                if chunk_count % 50 == 0:
-                    logger.debug(f"STT: yielding chunk {chunk_count}")
-
                 yield audio_chunk
 
             except asyncio.TimeoutError:
                 timeout_count += 1
-                if timeout_count % 10 == 1:
+                # High-frequency logging (every 10 timeouts)
+                if timeout_count % 30 == 0:
                     logger.debug(f"No audio for {AUDIO_STREAM_TIMEOUT}s, still active")
                 continue
             except Exception as e:
@@ -347,22 +335,43 @@ class AudioProcessor:
 
     async def stop(self):
         """Stop processing audio."""
-        logger.debug(f"Stopping audio processor for {self.connection_id}")
+        logger.info(f"Stopping audio processor for {self.connection_id}")
         self.running = False
 
-        # Signal end of stream
-        await self.audio_queue.put(None)
-
-        # Cancel tasks
-        for task in [self.stt_task, self.processing_task]:
-            if task:
+        # Cancel tasks first to stop new audio from being queued
+        for task in [self.processing_task, self.stt_task]:
+            if task and not task.done():
+                logger.debug(f"Cancelling task: {task.get_name() if hasattr(task, 'get_name') else 'unnamed'}")
                 task.cancel()
                 try:
                     await task
                 except asyncio.CancelledError:
                     pass
 
+        # Clear any remaining audio chunks from queue when stopping
+        queue_size = self.audio_queue.qsize()
+        if queue_size > 0:
+            logger.debug(f"Clearing {queue_size} buffered audio chunks from queue")
+            while not self.audio_queue.empty():
+                try:
+                    self.audio_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+
+        # Signal end of stream (in case STT is still waiting)
+        await self.audio_queue.put(None)
+
         logger.info(f"Audio processor stopped for {self.connection_id}")
+
+    async def stop_tts_streaming(self):
+        """Stop TTS streaming immediately (called when client disconnects)."""
+        logger.info(f"Stopping TTS streaming for {self.connection_id}")
+        
+        # Trigger interrupt to cancel all ongoing TTS
+        if self.interrupt_handler:
+            await self.interrupt_handler.trigger_interrupt()
+        
+        logger.info(f"TTS streaming stopped for {self.connection_id}")
 
     async def _play_greeting(self):
         """Play the AI greeting."""

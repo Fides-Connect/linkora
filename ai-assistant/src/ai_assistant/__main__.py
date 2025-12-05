@@ -31,6 +31,13 @@ async def main():
     # Set log level from environment
     logging.getLogger().setLevel(os.getenv('LOG_LEVEL', 'INFO').upper())
     
+    # Reduce noise from third-party libraries
+    logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
+    logging.getLogger("aiohttp").setLevel(logging.WARNING)
+    logging.getLogger("aiortc").setLevel(logging.WARNING)
+    logging.getLogger("aioice").setLevel(logging.WARNING)
+    logging.getLogger("grpc").setLevel(logging.WARNING)
+    
     logger.info("=" * 60)
     logger.info("AI Assistant Service Starting")
     logger.info("=" * 60)

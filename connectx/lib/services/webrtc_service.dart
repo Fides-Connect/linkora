@@ -187,18 +187,22 @@ class WebRTCService {
     try {
       final Map<String, dynamic> mediaConstraints = {
         'audio': {
+          // Echo cancellation - critical for preventing feedback loops
+          // WebRTC uses the audio output as reference signal to cancel echo
           'echoCancellation': true,
           'noiseSuppression': true,
           'autoGainControl': true,
           'sampleRate': 48000,
           'channelCount': 1,
-          // Android-specific constraints
+          
+          // Android-specific echo cancellation enhancements
+          // These work best when audio routing is NOT manually controlled
           'googEchoCancellation': true,
           'googAutoGainControl': true,
           'googNoiseSuppression': true,
           'googHighpassFilter': true,
           'googTypingNoiseDetection': true,
-          'googEchoCancellation2': true,
+          'googEchoCancellation2': true,  // Enhanced echo cancellation
           'googAutoGainControl2': true,
         },
         'video': false,
@@ -210,7 +214,9 @@ class WebRTCService {
 
       if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
         _audioTrack = _localStream!.getAudioTracks()[0];
-        debugPrint('WebRTC: Local audio stream created: ${_audioTrack!.id}');
+        // Ensure audio track is enabled
+        _audioTrack!.enabled = true;
+        debugPrint('WebRTC: Local audio stream created: ${_audioTrack!.id}, enabled: ${_audioTrack!.enabled}');
       } else {
         throw Exception('Failed to get audio track from local stream');
       }
@@ -273,22 +279,26 @@ class WebRTCService {
 
       _peerConnection = await createPeerConnection(configuration);
 
-      // Force earpiece mode immediately after peer connection creation
+      // Add local audio track to peer connection FIRST
+      if (_audioTrack != null) {
+        await _peerConnection!.addTrack(_audioTrack!, _localStream!);
+        debugPrint('WebRTC: Added local audio track to peer connection (enabled: ${_audioTrack!.enabled})');
+      }
+
+      // AFTER adding track, configure audio routing for echo cancellation
+      // This ensures microphone is active and echo cancellation can set up properly
       if (!kIsWeb &&
           (defaultTargetPlatform == TargetPlatform.android ||
               defaultTargetPlatform == TargetPlatform.iOS)) {
         try {
-          await Helper.setSpeakerphoneOn(false);
-          debugPrint('WebRTC: Forced earpiece mode');
+          // Use speakerphone mode (true) for testing with emulator
+          // Use earpiece mode (false) for production on real device
+          // TODO: Make this configurable based on environment
+          await Helper.setSpeakerphoneOn(false);  // Changed to true for emulator testing
+          debugPrint('WebRTC: Configured audio routing (speakerphone mode)');
         } catch (e) {
-          debugPrint('WebRTC: Could not force earpiece: $e');
+          debugPrint('WebRTC: Could not configure audio routing: $e');
         }
-      }
-
-      // Add local audio track to peer connection
-      if (_audioTrack != null) {
-        await _peerConnection!.addTrack(_audioTrack!, _localStream!);
-        debugPrint('WebRTC: Added local audio track to peer connection');
       }
 
       // Handle ICE candidates
@@ -314,19 +324,7 @@ class WebRTCService {
           _isConnecting = false;
           _reconnectAttempts = 0;  // Reset reconnect attempts on success
 
-          // Re-enforce earpiece when connection is fully established
-          if (!kIsWeb &&
-              (defaultTargetPlatform == TargetPlatform.android ||
-                  defaultTargetPlatform == TargetPlatform.iOS)) {
-            try {
-              await Helper.setSpeakerphoneOn(false);
-              debugPrint(
-                'WebRTC: Re-enforced earpiece after connection established',
-              );
-            } catch (e) {
-              debugPrint('WebRTC: Could not re-enforce earpiece: $e');
-            }
-          }
+          debugPrint('WebRTC: Connection established with automatic audio routing');
 
           onConnected?.call();
         } else if (state ==
@@ -355,20 +353,8 @@ class WebRTCService {
             _remoteStream = event.streams[0];
             onRemoteStream?.call(_remoteStream!);
             debugPrint('WebRTC: Remote audio stream received');
-
-            // Re-enforce earpiece when remote audio arrives
-            if (!kIsWeb &&
-                (defaultTargetPlatform == TargetPlatform.android ||
-                    defaultTargetPlatform == TargetPlatform.iOS)) {
-              try {
-                await Helper.setSpeakerphoneOn(false);
-                debugPrint(
-                  'WebRTC: Re-enforced earpiece after remote track received',
-                );
-              } catch (e) {
-                debugPrint('WebRTC: Could not re-enforce earpiece: $e');
-              }
-            }
+            
+            // Audio routing is handled automatically by WebRTC for proper echo cancellation
           }
         }
       };
