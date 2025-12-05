@@ -68,8 +68,11 @@ class UserService {
       };
 
       // Get backend URL from environment
-      final backendUrl =
-          dotenv.env['AI_ASSISTANT_BACKEND_URL'] ?? 'http://localhost:8080';
+      final serverUrl =
+          dotenv.env['AI_ASSISTANT_SERVER_URL'] ?? 'localhost:8080';
+      final backendUrl = serverUrl.startsWith('http')
+          ? serverUrl
+          : 'http://$serverUrl';
       final url = Uri.parse('$backendUrl/user/sync');
 
       debugPrint('Syncing user with backend: ${user.uid}');
@@ -109,8 +112,11 @@ class UserService {
       }
 
       // Get backend URL from environment
-      final backendUrl =
-          dotenv.env['AI_ASSISTANT_BACKEND_URL'] ?? 'http://localhost:8080';
+      final serverUrl =
+          dotenv.env['AI_ASSISTANT_SERVER_URL'] ?? 'localhost:8080';
+      final backendUrl = serverUrl.startsWith('http')
+          ? serverUrl
+          : 'http://$serverUrl';
       final url = Uri.parse('$backendUrl/user/logout');
 
       debugPrint('Logging out user: ${user.uid}');
