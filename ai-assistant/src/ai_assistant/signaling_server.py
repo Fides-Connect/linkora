@@ -27,14 +27,21 @@ class SignalingServer:
         
         connection_id = id(ws)
         client_ip = request.remote
-        logger.info(f"New WebSocket connection: {connection_id} from {client_ip}")
+        
+        # Extract user_id from query parameters if provided
+        user_id = request.query.get('user_id')
+        if user_id:
+            logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (user: {user_id})")
+        else:
+            logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (no user_id)")
         
         # Create peer connection handler
         logger.debug(f"Creating PeerConnectionHandler for {connection_id}")
         handler = PeerConnectionHandler(
             connection_id=str(connection_id),
             ai_assistant=self.ai_assistant,
-            websocket=ws
+            websocket=ws,
+            user_id=user_id
         )
         self.active_connections[str(connection_id)] = handler
         logger.debug(f"Active connections: {len(self.active_connections)}")
