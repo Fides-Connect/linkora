@@ -229,8 +229,7 @@ class AudioProcessor:
         # Set the interrupt event
         self.interrupt_event.set()
         
-        # Interrupt transcript processing and TTS playback
-        self.transcript_processor.interrupt()
+        # Interrupt TTS playback
         self.tts_manager.interrupt()
         
         # Clear the output audio queue to stop playback immediately
