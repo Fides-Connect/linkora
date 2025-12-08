@@ -1,0 +1,174 @@
+"""
+Unit tests for Signaling Server functionality.
+"""
+import pytest
+import json
+from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from aiohttp import web, WSMsgType
+from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
+
+from ai_assistant.signaling_server import SignalingServer
+
+
+@pytest.fixture
+def mock_ai_assistant():
+    """Mock AI Assistant."""
+    assistant = Mock()
+    assistant.get_greeting_audio = AsyncMock(return_value=(
+        "Hello!",
+        async_audio_gen()
+    ))
+    return assistant
+
+
+async def async_audio_gen():
+    """Mock audio generator."""
+    yield b'audio'
+
+
+@pytest.fixture
+def signaling_server(mock_ai_assistant):
+    """Create SignalingServer instance."""
+    return SignalingServer(mock_ai_assistant)
+
+
+class TestSignalingServerInitialization:
+    """Test SignalingServer initialization."""
+    
+    def test_initialization(self, signaling_server, mock_ai_assistant):
+        """Test that SignalingServer initializes correctly."""
+        assert signaling_server.ai_assistant is mock_ai_assistant
+        assert isinstance(signaling_server.active_connections, dict)
+        assert len(signaling_server.active_connections) == 0
+
+
+class TestHealthCheck:
+    """Test health check endpoint."""
+    
+    @pytest.mark.asyncio
+    async def test_health_check_returns_ok(self, signaling_server):
+        """Test that health check returns OK response."""
+        request = Mock(spec=web.Request)
+        response = await signaling_server.health_check(request)
+        
+        assert response.status == 200
+
+
+class TestWebSocketHandling:
+    """Test WebSocket connection handling."""
+    
+    @pytest.mark.asyncio
+    async def test_handle_websocket_creates_connection(self, signaling_server):
+        """Test that WebSocket handler creates peer connection."""
+        # Mock WebSocket
+        mock_ws = Mock(spec=web.WebSocketResponse)
+        mock_ws.prepare = AsyncMock()
+        
+        # Mock the async iteration
+        async def mock_ws_iter():
+            # Simulate no messages, then close
+            return
+            yield  # Make it a generator
+        
+        mock_ws.__aiter__ = lambda self: mock_ws_iter()
+        
+        # Mock request
+        mock_request = Mock(spec=web.Request)
+        mock_request.remote = '127.0.0.1'
+        
+        with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
+             patch('ai_assistant.signaling_server.PeerConnectionHandler') as mock_handler_class:
+            
+            mock_handler = Mock()
+            mock_handler.close = AsyncMock()
+            mock_handler_class.return_value = mock_handler
+            
+            result = await signaling_server.handle_websocket(mock_request)
+            
+            # Verify WebSocket was prepared
+            mock_ws.prepare.assert_called_once()
+
+
+class TestMessageHandling:
+    """Test message handling."""
+    
+    @pytest.mark.asyncio
+    async def test_handle_offer_message(self, signaling_server):
+        """Test handling offer message."""
+        mock_handler = Mock()
+        mock_handler.handle_offer = AsyncMock()
+        mock_handler.connection_id = 'test-123'
+        
+        message = {
+            'type': 'offer',
+            'sdp': 'test-sdp-content'
+        }
+        
+        await signaling_server._handle_message(mock_handler, message)
+        
+        mock_handler.handle_offer.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_handle_ice_candidate_message(self, signaling_server):
+        """Test handling ICE candidate message."""
+        mock_handler = Mock()
+        mock_handler.handle_ice_candidate = AsyncMock()
+        mock_handler.connection_id = 'test-123'
+        
+        message = {
+            'type': 'ice-candidate',
+            'candidate': {
+                'candidate': 'test-candidate',
+                'sdpMid': '0',
+                'sdpMLineIndex': 0
+            }
+        }
+        
+        await signaling_server._handle_message(mock_handler, message)
+        
+        mock_handler.handle_ice_candidate.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_handle_unknown_message_type(self, signaling_server):
+        """Test handling unknown message type."""
+        mock_handler = Mock()
+        mock_handler.connection_id = 'test-123'
+        
+        message = {
+            'type': 'unknown-type',
+            'data': 'test'
+        }
+        
+        # Should not raise exception
+        await signaling_server._handle_message(mock_handler, message)
+
+
+class TestConnectionManagement:
+    """Test connection management."""
+    
+    @pytest.mark.asyncio
+    async def test_active_connections_tracking(self, signaling_server):
+        """Test that active connections are tracked."""
+        # Initially empty
+        assert len(signaling_server.active_connections) == 0
+        
+        # Add a connection manually
+        mock_handler = Mock()
+        signaling_server.active_connections['conn-1'] = mock_handler
+        
+        assert len(signaling_server.active_connections) == 1
+        assert 'conn-1' in signaling_server.active_connections
+    
+    @pytest.mark.asyncio
+    async def test_connection_cleanup(self, signaling_server):
+        """Test that connections are cleaned up properly."""
+        mock_handler = Mock()
+        mock_handler.close = AsyncMock()
+        
+        signaling_server.active_connections['conn-1'] = mock_handler
+        
+        # Simulate cleanup
+        await mock_handler.close()
+        del signaling_server.active_connections['conn-1']
+        
+        assert len(signaling_server.active_connections) == 0
