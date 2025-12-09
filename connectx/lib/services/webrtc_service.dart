@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform, debugPrint;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -169,7 +170,18 @@ class WebRTCService {
     debugPrint('WebRTC: Connecting to signaling server: $_serverUrl');
 
     try {
-      _signaling = WebSocketChannel.connect(Uri.parse(_serverUrl));
+      // Get the current user's ID from Firebase
+      final User? currentUser = FirebaseAuth.instance.currentUser;
+      final String userId = currentUser?.uid ?? '';
+
+      if (userId.isEmpty) {
+        throw Exception('No authenticated user found. Cannot connect to signaling server.');
+      }
+
+      final Uri wsUri = Uri.parse(_serverUrl).replace(queryParameters: {
+        'user_id': userId,
+      });
+      _signaling = WebSocketChannel.connect(wsUri);
 
       // Listen for signaling messages
       _signaling!.stream.listen(
@@ -188,7 +200,7 @@ class WebRTCService {
         },
       );
 
-      debugPrint('WebRTC: Signaling connected');
+      debugPrint('WebRTC: Signaling connected with user_id: $userId');
     } catch (e) {
       debugPrint('WebRTC: Error connecting to signaling server: $e');
       rethrow;
