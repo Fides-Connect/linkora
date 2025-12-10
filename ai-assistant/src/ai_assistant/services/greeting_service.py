@@ -71,7 +71,8 @@ class GreetingService:
         user_name, has_open_request = await self._fetch_user_data(user_id)
         logger.info(f"📝 Resolved user_name='{user_name}', has_open_request={has_open_request}")
 
-        # Use only the first name if user_name is present
+        # Use only the first name if user_name is present.
+        # TODO: check/ask user to verify the first name if the name is not common as first name.
         first_name = user_name.split()[0] if user_name else user_name
 
         # Generate greeting text
