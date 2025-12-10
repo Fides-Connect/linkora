@@ -13,6 +13,7 @@ A containerized AI assistant service that provides real-time voice interaction c
 - [Usage & API](#usage--api)
 - [Testing](#testing)
 - [Deployment](#deployment)
+- [Admin Debug Interface](#admin-debug-interface)
 - [Performance](#performance)
 - [Troubleshooting](#troubleshooting)
 - [Client Integration](#client-integration)
@@ -1112,6 +1113,72 @@ podman build --platform linux/amd64 ...
 - Enable sticky sessions
 - Configure health checks
 - Set appropriate timeouts (>60s for WebSocket)
+
+## Admin Debug Interface
+
+The AI Assistant includes a secure admin interface for debugging, monitoring, and managing deployed servers.
+
+### Quick Start
+
+1. **Generate an admin token:**
+   ```bash
+   python scripts/generate_admin_token.py
+   ```
+
+2. **Add to your `.env` file:**
+   ```
+   ADMIN_SECRET_KEY=your_generated_token_here
+   ```
+
+3. **Access admin endpoints:**
+   ```bash
+   export ADMIN_TOKEN='your_generated_token_here'
+   curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8080/admin/health
+   ```
+
+### Available Admin Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/admin/health` | GET | Detailed health check with system info |
+| `/admin/stats` | GET | Database and system statistics |
+| `/admin/users` | GET | List all users |
+| `/admin/users/{user_id}` | GET | Get specific user details |
+| `/admin/providers` | GET | List all service providers |
+| `/admin/notifications/send` | POST | Send push notifications |
+| `/admin/notifications/test` | POST | Test notification to FCM token |
+| `/admin/logs` | GET | View recent log entries |
+
+### Common Admin Tasks
+
+**Check server health:**
+```bash
+curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8080/admin/health | jq
+```
+
+**Send broadcast notification:**
+```bash
+curl -X POST \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Maintenance Notice",
+    "body": "Server will be down for maintenance at 2 AM"
+  }' \
+  http://localhost:8080/admin/notifications/send
+```
+
+**View database statistics:**
+```bash
+curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8080/admin/stats | jq '.database'
+```
+
+**Test admin interface:**
+```bash
+python scripts/test_admin_interface.py
+```
+
+For complete documentation, see [docs/ADMIN_INTERFACE.md](docs/ADMIN_INTERFACE.md).
 
 ### Security Best Practices
 
