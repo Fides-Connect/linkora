@@ -212,13 +212,13 @@ class AudioProcessor:
                             await asyncio.sleep(0.05)
                         
                         if is_final:
+                            # Stop the audio generator to prevent it from consuming more chunks
+                            await self.audio_queue.put(None)
                             # Process the transcript (interrupt already cleared speaking flag if needed)
                             if not self.is_ai_speaking:
                                 await self._process_final_transcript(transcript)
                             else:
                                 logger.warning(f"Skipping processing - AI still speaking despite interrupt")
-                            # Stop the audio generator to prevent it from consuming more chunks
-                            await self.audio_queue.put(None)
                             # Break out of the inner loop to start a new STT stream
                             logger.info("🔄 Final transcript received, starting new STT stream for next utterance")
                             break
