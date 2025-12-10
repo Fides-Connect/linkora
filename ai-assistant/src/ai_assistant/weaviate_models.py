@@ -96,6 +96,23 @@ class UserModelWeaviate:
     
 
     @staticmethod
+    def get_all_users(limit: int = 100) -> List[Dict[str, Any]]:
+        """Get all users."""
+        try:
+            collection = get_users_collection()
+            
+            response = collection.query.fetch_objects(limit=limit)
+            users = [obj.properties for obj in response.objects]
+            
+            logger.info(f"Retrieved {len(users)} users")
+            return users
+            
+        except Exception as e:
+            logger.error(f"Error getting all users: {e}")
+            return []
+
+
+    @staticmethod
     def get_attributes_by_filter(
         filter_attr: str,
         filter_values: List[Any],
