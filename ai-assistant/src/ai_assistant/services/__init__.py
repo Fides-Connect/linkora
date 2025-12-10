@@ -12,6 +12,7 @@ from .transcript_processor import TranscriptProcessor, TranscriptAccumulator
 from .tts_playback_manager import TTSPlaybackManager, SentenceParser
 from .response_orchestrator import ResponseOrchestrator
 from .greeting_service import GreetingService
+from .notification_service import NotificationService
 
 __all__ = [
     'SpeechToTextService',
@@ -27,4 +28,5 @@ __all__ = [
     'SentenceParser',
     'ResponseOrchestrator',
     'GreetingService',
+    'NotificationService',
 ]

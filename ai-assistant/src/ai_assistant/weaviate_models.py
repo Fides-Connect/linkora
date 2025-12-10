@@ -39,7 +39,8 @@ class UserModelWeaviate:
         except Exception as e:
             logger.error(f"Error creating user: {e}")
             return None
-    
+
+
     @staticmethod
     def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
         """Get user by ID."""
@@ -61,6 +62,7 @@ class UserModelWeaviate:
             logger.error(f"Error fetching user: {e}")
             return None
     
+
     @staticmethod
     def update_user(user_id: str, update_data: Dict[str, Any]) -> bool:
         """Update existing user."""
@@ -91,6 +93,60 @@ class UserModelWeaviate:
         except Exception as e:
             logger.error(f"Error updating user: {e}")
             return False
+    
+
+    @staticmethod
+    def get_attributes_by_filter(
+        filter_attr: str,
+        filter_values: List[Any],
+        return_attr: str
+    ) -> Dict[Any, Optional[Any]]:
+        """
+        Get specified attributes for users matching filter criteria.
+        
+        Args:
+            filter_attr: The attribute name to filter by (e.g., "user_id")
+            filter_values: List of values to match (e.g., list of user IDs)
+            return_attr: The attribute name to return (e.g., "fcm_token")
+            
+        Returns:
+            Dict mapping filter values to their corresponding return attribute values.
+            Returns None for values where no match is found.
+            
+        Example:
+            >>> UserModelWeaviate.get_attributes_by_filter(
+            ...     filter_attr="user_id",
+            ...     filter_values=["user1", "user2", "user3"],
+            ...     return_attr="fcm_token"
+            ... )
+            {'user1': 'token_abc', 'user2': 'token_xyz', 'user3': None}
+        """
+        try:
+            if not filter_attr or not filter_values or not return_attr:
+                return {}
+            
+            collection = get_users_collection()
+            filters = Filter.by_property(filter_attr).contains_any(filter_values)
+            
+            # Fetch all matching objects in one query
+            response = collection.query.fetch_objects(
+                filters=filters,
+                limit=len(filter_values)
+            )
+            
+            # Build result map
+            result_map = {value: None for value in filter_values}
+            for obj in response.objects:
+                filter_value = obj.properties.get(filter_attr)
+                if filter_value in result_map:
+                    result_map[filter_value] = obj.properties.get(return_attr)
+            
+            logger.info(f"Retrieved {sum(1 for v in result_map.values() if v is not None)}/{len(filter_values)} {return_attr} values by {filter_attr}")
+            return result_map
+            
+        except Exception as e:
+            logger.error(f"Error getting attributes by filter: {e}")
+            return {value: None for value in filter_values}
 
 
 class ProviderModelWeaviate:
@@ -126,6 +182,7 @@ class ProviderModelWeaviate:
             logger.error(f"Error creating provider: {e}")
             return None
     
+
     @staticmethod
     def get_provider_by_id(provider_id: str) -> Optional[Dict[str, Any]]:
         """Get provider by ID."""
@@ -147,6 +204,7 @@ class ProviderModelWeaviate:
             logger.error(f"Error fetching provider: {e}")
             return None
     
+
     @staticmethod
     def search_providers_by_category(category: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Search providers by category."""
@@ -166,6 +224,7 @@ class ProviderModelWeaviate:
             logger.error(f"Error searching providers by category: {e}")
             return []
     
+
     @staticmethod
     def vector_search_providers(query_text: str, limit: int = 3) -> List[Dict[str, Any]]:
         """
@@ -194,6 +253,7 @@ class ProviderModelWeaviate:
         except Exception as e:
             logger.error(f"Error in vector search: {e}")
             return []
+    
     
     @staticmethod
     def get_all_providers(limit: int = 100) -> List[Dict[str, Any]]:
