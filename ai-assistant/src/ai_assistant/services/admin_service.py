@@ -289,14 +289,18 @@ class AdminService:
             # Remove sensitive data and format for display
             users_display = []
             for user in users:
+                # Handle datetime fields safely
+                last_sign_in = user.get('last_sign_in')
+                created_at = user.get('created_at')
+                
                 users_display.append({
                     "user_id": user.get('user_id'),
                     "name": user.get('name'),
                     "email": user.get('email'),
                     "has_fcm_token": bool(user.get('fcm_token')),
                     "has_open_request": user.get('has_open_request', False),
-                    "last_sign_in": user.get('last_sign_in').isoformat() if user.get('last_sign_in') else None,
-                    "created_at": user.get('created_at').isoformat() if user.get('created_at') else None,
+                    "last_sign_in": last_sign_in.isoformat() if hasattr(last_sign_in, 'isoformat') else str(last_sign_in) if last_sign_in else None,
+                    "created_at": created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at) if created_at else None,
                 })
             
             return web.json_response({
@@ -335,6 +339,10 @@ class AdminService:
                     "error": "User not found"
                 }, status=404)
             
+            # Handle datetime fields safely
+            last_sign_in = user.get('last_sign_in')
+            created_at = user.get('created_at')
+            
             # Format user data
             user_display = {
                 "user_id": user.get('user_id'),
@@ -344,8 +352,8 @@ class AdminService:
                 "has_fcm_token": bool(user.get('fcm_token')),
                 "fcm_token_preview": user.get('fcm_token', '')[:20] + '...' if user.get('fcm_token') else None,
                 "has_open_request": user.get('has_open_request', False),
-                "last_sign_in": user.get('last_sign_in').isoformat() if user.get('last_sign_in') else None,
-                "created_at": user.get('created_at').isoformat() if user.get('created_at') else None,
+                "last_sign_in": last_sign_in.isoformat() if hasattr(last_sign_in, 'isoformat') else str(last_sign_in) if last_sign_in else None,
+                "created_at": created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at) if created_at else None,
             }
             
             return web.json_response(user_display)

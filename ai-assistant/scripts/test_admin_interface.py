@@ -70,12 +70,18 @@ async def test_endpoint(
         if method == 'GET':
             async with session.get(url, headers=headers) as response:
                 status = response.status
-                data = await response.json()
+                try:
+                    data = await response.json()
+                except:
+                    data = {"text": await response.text()}
         elif method == 'POST':
             headers['Content-Type'] = 'application/json'
             async with session.post(url, headers=headers, json=data) as response:
                 status = response.status
-                data = await response.json()
+                try:
+                    data = await response.json()
+                except:
+                    data = {"text": await response.text()}
         
         success = status == expected_status
         return {
@@ -127,7 +133,10 @@ async def run_tests():
             print_success(f"Retrieved {result['data'].get('count', 0)} users")
             print_result(result['data'])
         else:
-            print_error(f"List users failed: {result.get('error', 'Unknown error')}")
+            error_msg = result.get('error', 'Unknown error')
+            print_error(f"List users failed: {error_msg}")
+            if 'data' in result:
+                print(f"Response data: {result['data']}")
         
         # Test 4: List Providers
         print_header("Test 4: List Providers")
