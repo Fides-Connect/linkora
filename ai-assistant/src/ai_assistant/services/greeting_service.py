@@ -26,7 +26,7 @@ class GreetingService:
         tts_service: TextToSpeechService,
         llm_service: LLMService,
         data_provider: DataProvider,
-        default_user_name: str = "Wolfgang"
+        default_user_name: str = ""
     ):
         """
         Initialize greeting service.
@@ -70,11 +70,15 @@ class GreetingService:
         # Fetch user data
         user_name, has_open_request = await self._fetch_user_data(user_id)
         logger.info(f"📝 Resolved user_name='{user_name}', has_open_request={has_open_request}")
-        
+
+        # Use only the first name if user_name is present.
+        # TODO: check/ask user to verify the first name if the name is not common as first name.
+        first_name = user_name.split()[0] if user_name else user_name
+
         # Generate greeting text
         greeting_text = await self.conversation_service.generate_greeting(
             session_id=session_id,
-            user_name=user_name,
+            user_name=first_name,
             has_open_request=has_open_request
         )
         

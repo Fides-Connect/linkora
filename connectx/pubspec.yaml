@@ -51,6 +51,9 @@ dependencies:
   # Firebase Authentication
   firebase_auth: ^5.3.3
 
+  # Firebase Cloud Messaging for push notifications
+  firebase_messaging: ^15.1.7
+
   # Google Sign-In for Firebase authentication
   google_sign_in: ^7.2.0
 

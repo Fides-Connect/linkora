@@ -1,6 +1,6 @@
 """
 Transcript Processing Service
-Handles continuous speech-to-text processing with interruption support.
+Handles continuous speech-to-text processing and transcript accumulation.
 """
 import asyncio
 import logging
@@ -26,7 +26,6 @@ class TranscriptProcessor:
         """
         self.stt_service = stt_service
         self._processing = False
-        self._interrupted = False
         self._current_transcript = ""
     
     async def process_audio_stream(
@@ -46,7 +45,6 @@ class TranscriptProcessor:
             GoogleAPIError: If STT API fails
         """
         self._processing = True
-        self._interrupted = False
         self._current_transcript = ""
         
         logger.info("🎙️  Transcript processor started, waiting for STT results...")
@@ -57,10 +55,6 @@ class TranscriptProcessor:
                 result_count += 1
                 if result_count == 1:
                     logger.info(f"✅ First transcript result received from STT!")
-                    
-                if self._interrupted:
-                    logger.info("Transcript processing interrupted")
-                    break
                 
                 if transcript:
                     if is_final:
@@ -80,19 +74,9 @@ class TranscriptProcessor:
         finally:
             self._processing = False
     
-    def interrupt(self):
-        """Interrupt current transcription processing."""
-        if self._processing:
-            logger.info("Interrupting transcript processing")
-            self._interrupted = True
-    
     def is_processing(self) -> bool:
         """Check if currently processing transcription."""
         return self._processing
-    
-    def is_interrupted(self) -> bool:
-        """Check if processing was interrupted."""
-        return self._interrupted
     
     def get_current_transcript(self) -> str:
         """Get the current transcript text."""
@@ -101,7 +85,6 @@ class TranscriptProcessor:
     def reset(self):
         """Reset processor state."""
         self._processing = False
-        self._interrupted = False
         self._current_transcript = ""
 
 

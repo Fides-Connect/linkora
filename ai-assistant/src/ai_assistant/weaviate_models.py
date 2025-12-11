@@ -25,7 +25,11 @@ class UserModelWeaviate:
                     "user_id": user_data.get("user_id"),
                     "name": user_data.get("name"),
                     "email": user_data.get("email"),
+                    "photo_url": user_data.get("photo_url", ""),
+                    "fcm_token": user_data.get("fcm_token", ""),
                     "has_open_request": user_data.get("has_open_request", False),
+                    "created_at": user_data.get("created_at", datetime.utcnow()),
+                    "last_sign_in": user_data.get("last_sign_in", datetime.utcnow()),
                 }
             )
             
@@ -56,6 +60,37 @@ class UserModelWeaviate:
         except Exception as e:
             logger.error(f"Error fetching user: {e}")
             return None
+    
+    @staticmethod
+    def update_user(user_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update existing user."""
+        try:
+            collection = get_users_collection()
+            
+            # Find user by user_id
+            response = collection.query.fetch_objects(
+                filters=Filter.by_property("user_id").equal(user_id),
+                limit=1
+            )
+            
+            if not response.objects:
+                logger.warning(f"User not found: {user_id}")
+                return False
+            
+            obj = response.objects[0]
+            
+            # Update user properties
+            collection.data.update(
+                uuid=obj.uuid,
+                properties=update_data
+            )
+            
+            logger.info(f"Updated user: {user_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating user: {e}")
+            return False
 
 
 class ProviderModelWeaviate:

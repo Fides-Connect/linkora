@@ -94,7 +94,7 @@ class SpeechToTextService:
             language_code=self.language_code,
             audio_channel_count=1,
             enable_automatic_punctuation=True,
-            model='latest_long',
+            model='phone_call',
             use_enhanced=True
         )
     

@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Constants
 AGENT_NAME = "Elin"
 COMPANY_NAME = "FidesConnect"
-USER_NAME_PLACEHOLDER = "Wolfgang"
+USER_NAME_PLACEHOLDER = ""
 
 class AIAssistant:
     """

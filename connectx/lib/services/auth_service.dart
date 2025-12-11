@@ -3,10 +3,13 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:async';
 import 'dart:io' show SocketException;
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show debugPrint, kIsWeb, defaultTargetPlatform, TargetPlatform;
 
 import 'dart:convert' show json;
 import 'package:http/http.dart' as http;
+import 'user_service.dart';
+import 'webrtc_service.dart';
 
 class AuthService {
   // Singleton factory
@@ -16,6 +19,9 @@ class AuthService {
 
   final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
   GoogleSignIn? _googleSignIn;
+
+  final UserService _userService = UserService();
+  WebRTCService? _webrtcService;
 
   User? get currentUser => _firebaseAuth.currentUser;
   Stream<User?> get onCurrentUserChanged => _firebaseAuth.authStateChanges();
@@ -28,37 +34,58 @@ class AuthService {
   // Simple init guard
   bool _initialized = false;
 
+  /// Set WebRTC service to enable auto-connect after sign-in
+  void setWebRTCService(WebRTCService webrtcService) {
+    _webrtcService = webrtcService;
+  }
+
   /// Initialize Firebase and Google Sign-In.
   Future<void> initialize() async {
     if (_initialized) return;
-    
+
+    // Initialize FCM for push notifications
+    await _userService.initializeFCM();
+
     // Initialize GoogleSignIn with proper configuration
-    final bool isAndroid = !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+    final bool isAndroid =
+        !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
     final String? webClientId = dotenv.env['GOOGLE_OAUTH_CLIENT_ID'];
-    
+
     if (isAndroid) {
       if (webClientId == null || webClientId.isEmpty) {
-        throw Exception('GOOGLE_OAUTH_CLIENT_ID must be set in .env for Android');
+        throw Exception(
+          'GOOGLE_OAUTH_CLIENT_ID must be set in .env for Android',
+        );
       }
       _googleSignIn = GoogleSignIn.instance;
       await _googleSignIn!.initialize(serverClientId: webClientId);
     } else {
       _googleSignIn = GoogleSignIn.instance;
     }
-    
+
     // Listen to auth state changes
     _firebaseAuth.authStateChanges().listen(_handleAuthStateChanged);
-    
+
     _initialized = true;
   }
 
   Future<void> _handleAuthStateChanged(User? user) async {
     if (user != null) {
       _photoUrl = user.photoURL;
-      
+
+      // Sync user profile with backend
+      await _userService.syncUserWithBackend();
+
+      // Auto-connect to WebRTC if service is available
+      if (_webrtcService != null) {
+        await _webrtcService!.connect();
+      }
+
       // Validate with backend if configured
       final String? serverUrl = dotenv.env['AI_ASSISTANT_SERVER_URL'];
-      if (serverUrl != null && serverUrl.isNotEmpty && serverUrl != 'localhost:8080') {
+      if (serverUrl != null &&
+          serverUrl.isNotEmpty &&
+          serverUrl != 'localhost:8080') {
         final idToken = await user.getIdToken();
         if (idToken != null) {
           final bool valid = await _signInBackend(idToken);
@@ -75,6 +102,9 @@ class AuthService {
   }
 
   Future<void> signOut() async {
+    // Logout from backend first
+    await _userService.logout();
+
     await _googleSignIn?.signOut();
     await _firebaseAuth.signOut();
     _photoUrl = null;
@@ -84,7 +114,7 @@ class AuthService {
     if (_googleSignIn == null) {
       throw Exception('GoogleSignIn not initialized. Call initialize() first.');
     }
-    
+
     try {
       // Trigger the Google Sign-In flow
       final GoogleSignInAccount googleUser = await _googleSignIn!.authenticate(
@@ -92,7 +122,8 @@ class AuthService {
       );
 
       // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
 
       // Create a new credential with just the idToken
       // Note: google_sign_in 7.2.0+ no longer provides accessToken separately
@@ -101,8 +132,10 @@ class AuthService {
       );
 
       // Sign in to Firebase with the Google credential
-      final userCredential = await _firebaseAuth.signInWithCredential(credential);
-      
+      final userCredential = await _firebaseAuth.signInWithCredential(
+        credential,
+      );
+
       return userCredential;
     } catch (e) {
       debugPrint('Sign-in error: $e');
@@ -127,7 +160,9 @@ class AuthService {
           .timeout(const Duration(seconds: 6));
 
       if (response.statusCode != 200) {
-        debugPrint('Backend validation failed: ${response.statusCode} - ${response.body}');
+        debugPrint(
+          'Backend validation failed: ${response.statusCode} - ${response.body}',
+        );
         return false;
       }
 
