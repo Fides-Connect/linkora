@@ -50,3 +50,7 @@ Thumbs.db
 # Test Output
 *.wav
 !tests/data/ai_assistant_test_input.wav
+
+# Test Coverage Output
+.coverage
+coverage.xml

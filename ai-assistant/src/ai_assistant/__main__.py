@@ -14,6 +14,7 @@ from firebase_admin import credentials
 from .signaling_server import SignalingServer
 from .ai_assistant import AIAssistant
 from .common_endpoints import sign_in_google, setup_cors
+from .user_endpoints import user_sync, user_logout
 
 # Configure logging
 logging.basicConfig(
@@ -98,6 +99,8 @@ async def main():
     app.router.add_get('/ws', signaling_server.handle_websocket)
     app.router.add_get('/health', signaling_server.health_check)
     app.router.add_post('/sign_in_google', sign_in_google)
+    app.router.add_post('/user/sync', user_sync)
+    app.router.add_post('/user/logout', user_logout)
     
     # Start server
     host = os.getenv('HOST', '0.0.0.0')

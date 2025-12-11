@@ -171,49 +171,63 @@ class AudioProcessor:
         try:
             logger.info("🎙️  Starting continuous STT streaming...")
             
-            # Create async generator for audio chunks
-            async def audio_generator():
-                chunk_count = 0
-                while self.running:
-                    try:
-                        audio_chunk = await asyncio.wait_for(
-                            self.audio_queue.get(),
-                            timeout=1.0
-                        )
-                        if audio_chunk is None:  # Sentinel value to stop
-                            logger.debug("STT audio generator received stop signal")
+            # Keep processing utterances until stopped
+            while self.running:
+                
+                # Create async generator for audio chunks
+                async def audio_generator():
+                    chunk_count = 0
+                    while self.running:
+                        try:
+                            audio_chunk = await asyncio.wait_for(
+                                self.audio_queue.get(),
+                                timeout=1.0
+                            )
+                            if audio_chunk is None:  # Sentinel value to stop
+                                logger.debug("STT audio generator received stop signal")
+                                break
+                            chunk_count += 1
+                            if chunk_count == 1:
+                                logger.info(f"✅ First audio chunk received by STT generator ({len(audio_chunk)} bytes)")
+                            yield audio_chunk
+                        except asyncio.TimeoutError:
+                            continue
+                        except Exception as e:
+                            logger.error(f"Error in audio generator: {e}", exc_info=True)
                             break
-                        chunk_count += 1
-                        if chunk_count == 1:
-                            logger.info(f"✅ First audio chunk received by STT generator ({len(audio_chunk)} bytes)")
-                        yield audio_chunk
-                    except asyncio.TimeoutError:
-                        continue
-                    except Exception as e:
-                        logger.error(f"Error in audio generator: {e}", exc_info=True)
-                        break
-            
-            # Stream to STT and process results using TranscriptProcessor
-            async for transcript, is_final in self.transcript_processor.process_audio_stream(
-                audio_generator()
-            ):
-                if transcript:
-                    # Check if AI is currently speaking - if so, trigger interrupt
-                    if self.is_ai_speaking and len(transcript.strip()) > 0:
-                        logger.info(f"🛑 INTERRUPT detected! User speaking while AI responds: '{transcript}'")
-                        await self._trigger_interrupt()
-                        # Give a moment for the interrupt to take effect
-                        await asyncio.sleep(0.05)
-                    
-                    if is_final:
-                        # Process the transcript (interrupt already cleared speaking flag if needed)
-                        if not self.is_ai_speaking:
-                            await self._process_final_transcript(transcript)
+                    logger.debug(f"Audio generator finished (chunks={chunk_count})")
+                
+                # Stream to STT and process results using TranscriptProcessor
+                # This will process a single utterance and then return
+                audio_generator_instance = audio_generator()
+                async for transcript, is_final in self.transcript_processor.process_audio_stream(
+                    audio_generator_instance
+                ):
+                    if transcript:
+                        # Check if AI is currently speaking - if so, trigger interrupt
+                        if self.is_ai_speaking and len(transcript.strip()) > 0:
+                            logger.info(f"🛑 INTERRUPT detected! User speaking while AI responds: '{transcript}'")
+                            await self._trigger_interrupt()
+                            # Give a moment for the interrupt to take effect
+                            await asyncio.sleep(0.05)
+                        
+                        if is_final:
+                            # Stop the audio generator to prevent it from consuming more chunks
+                            await self.audio_queue.put(None)
+                            # Process the transcript (interrupt already cleared speaking flag if needed)
+                            if not self.is_ai_speaking:
+                                await self._process_final_transcript(transcript)
+                            else:
+                                logger.warning(f"Skipping processing - AI still speaking despite interrupt")
+                            # Break out of the inner loop to start a new STT stream
+                            logger.info("🔄 Final transcript received, starting new STT stream for next utterance")
+                            break
                         else:
-                            logger.warning(f"Skipping processing - AI still speaking despite interrupt")
-                    else:
-                        logger.debug(f"Interim transcript: '{transcript}'")
-                        # Interim results also trigger interruption if AI is speaking
+                            logger.debug(f"Interim transcript: '{transcript}'")
+                            # Interim results also trigger interruption if AI is speaking
+                
+                # Give a brief moment before starting next utterance processing
+                await asyncio.sleep(0.1)
             
             logger.info("Continuous STT streaming ended")
             
@@ -229,8 +243,7 @@ class AudioProcessor:
         # Set the interrupt event
         self.interrupt_event.set()
         
-        # Interrupt transcript processing and TTS playback
-        self.transcript_processor.interrupt()
+        # Interrupt TTS playback
         self.tts_manager.interrupt()
         
         # Clear the output audio queue to stop playback immediately

@@ -109,7 +109,11 @@ def init_weaviate_schema():
                     Property(name="user_id", data_type=DataType.TEXT),
                     Property(name="name", data_type=DataType.TEXT),
                     Property(name="email", data_type=DataType.TEXT),
+                    Property(name="photo_url", data_type=DataType.TEXT),
+                    Property(name="fcm_token", data_type=DataType.TEXT),
                     Property(name="has_open_request", data_type=DataType.BOOL),
+                    Property(name="created_at", data_type=DataType.DATE),
+                    Property(name="last_sign_in", data_type=DataType.DATE),
                 ],
             )
             logger.info(f"Created collection: {USERS_COLLECTION}")
