@@ -7,7 +7,6 @@ from aiohttp import web
 import firebase_admin
 from firebase_admin import auth as firebase_auth
 import aiohttp_cors
-from .weaviate_models import UserModelWeaviate
 
 logger = logging.getLogger(__name__)
 
