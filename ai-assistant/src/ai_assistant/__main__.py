@@ -15,6 +15,7 @@ from .signaling_server import SignalingServer
 from .ai_assistant import AIAssistant
 from .common_endpoints import sign_in_google, setup_cors
 from .user_endpoints import user_sync, user_logout
+from .services.admin_service import AdminService
 
 # Configure logging
 logging.basicConfig(
@@ -94,6 +95,10 @@ async def main():
     logger.info("Initializing signaling server...")
     signaling_server = SignalingServer(ai_assistant)
     
+    # Initialize admin service
+    logger.info("Initializing admin service...")
+    admin_service = AdminService(signaling_server=signaling_server)
+    
     # Create web application
     app = web.Application()
     app.router.add_get('/ws', signaling_server.handle_websocket)
@@ -101,6 +106,9 @@ async def main():
     app.router.add_post('/sign_in_google', sign_in_google)
     app.router.add_post('/user/sync', user_sync)
     app.router.add_post('/user/logout', user_logout)
+    
+    # Register admin routes
+    admin_service.register_routes(app)
     
     # Start server
     host = os.getenv('HOST', '0.0.0.0')

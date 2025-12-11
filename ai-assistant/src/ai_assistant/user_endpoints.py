@@ -1,6 +1,6 @@
 """User management endpoints for sync and logout."""
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from aiohttp import web
 from .weaviate_models import UserModelWeaviate
 
@@ -41,7 +41,7 @@ async def user_sync(request: web.Request) -> web.Response:
             "email": body.get("email", ""),
             "photo_url": body.get("photo_url", ""),
             "fcm_token": body.get("fcm_token", ""),
-            "last_sign_in": datetime.utcnow(),
+            "last_sign_in": datetime.now(UTC),
         }
         
         if existing_user:
@@ -65,7 +65,7 @@ async def user_sync(request: web.Request) -> web.Response:
             })
         else:
             # Create new user
-            user_data["created_at"] = datetime.utcnow()
+            user_data["created_at"] = datetime.now(UTC)
             uuid = UserModelWeaviate.create_user(user_data)
             
             if not uuid:
