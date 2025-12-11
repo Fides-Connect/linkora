@@ -82,14 +82,7 @@ class UserModelWeaviate:
             # Update user properties
             collection.data.update(
                 uuid=obj.uuid,
-                properties={
-                    "name": update_data.get("name", obj.properties.get("name")),
-                    "email": update_data.get("email", obj.properties.get("email")),
-                    "photo_url": update_data.get("photo_url", obj.properties.get("photo_url", "")),
-                    "fcm_token": update_data.get("fcm_token", obj.properties.get("fcm_token", "")),
-                    "has_open_request": update_data.get("has_open_request", obj.properties.get("has_open_request", False)),
-                    "last_sign_in": update_data.get("last_sign_in", datetime.utcnow()),
-                }
+                properties=update_data
             )
             
             logger.info(f"Updated user: {user_id}")
