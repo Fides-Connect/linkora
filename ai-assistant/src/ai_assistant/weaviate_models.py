@@ -81,10 +81,13 @@ class UserModelWeaviate:
             
             obj = response.objects[0]
             
+            # Merge existing properties with update data to preserve unmodified fields
+            merged_properties = {**obj.properties, **update_data}
+            
             # Update user properties
             collection.data.update(
                 uuid=obj.uuid,
-                properties=update_data
+                properties=merged_properties
             )
             
             logger.info(f"Updated user: {user_id}")
