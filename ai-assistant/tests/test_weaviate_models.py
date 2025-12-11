@@ -1,7 +1,7 @@
 """Unit tests for Weaviate Models."""
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime
+from datetime import datetime, UTC
 
 from ai_assistant.weaviate_models import UserModelWeaviate, ProviderModelWeaviate
 
@@ -29,8 +29,8 @@ class TestUserModelWeaviate:
             "photo_url": "https://example.com/photo.jpg",
             "fcm_token": "fcm_token_abc",
             "has_open_request": False,
-            "created_at": datetime.utcnow(),
-            "last_sign_in": datetime.utcnow()
+            "created_at": datetime.now(UTC),
+            "last_sign_in": datetime.now(UTC)
         }
 
     def test_create_user_success(self, sample_user_data):
@@ -99,7 +99,7 @@ class TestUserModelWeaviate:
             "photo_url": "https://example.com/photo.jpg",
             "fcm_token": "old_token",
             "has_open_request": False,
-            "last_sign_in": datetime.utcnow()
+            "last_sign_in": datetime.now(UTC)
         }
         self.mock_collection.query.fetch_objects.return_value.objects = [mock_obj]
 

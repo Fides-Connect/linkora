@@ -10,7 +10,7 @@ Security:
 import logging
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional, Callable, Any
 from functools import wraps
 from aiohttp import web
@@ -105,12 +105,12 @@ class AdminService:
             signaling_server: Reference to the SignalingServer instance for stats
         """
         self.signaling_server = signaling_server
-        self.startup_time = datetime.utcnow()
+        self.startup_time = datetime.now(UTC)
         logger.info("Admin service initialized")
     
     def get_system_info(self) -> dict[str, Any]:
         """Get system information and statistics."""
-        uptime = datetime.utcnow() - self.startup_time
+        uptime = datetime.now(UTC) - self.startup_time
         
         info = {
             "status": "running",
@@ -146,7 +146,7 @@ class AdminService:
             info = self.get_system_info()
             return web.json_response({
                 "status": "healthy",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "system": info
             })
         except Exception as e:
@@ -421,7 +421,7 @@ class AdminService:
                 fcm_token=fcm_token,
                 title=title,
                 body=message,
-                data={"type": "test", "timestamp": datetime.utcnow().isoformat()}
+                data={"type": "test", "timestamp": datetime.now(UTC).isoformat()}
             )
             
             return web.json_response({

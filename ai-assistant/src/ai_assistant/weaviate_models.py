@@ -3,7 +3,7 @@ Weaviate Models and Operations
 Data models and database operations for users and service providers.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import List, Dict, Optional, Any
 from weaviate.classes.query import Filter
 from .weaviate_config import get_users_collection, get_providers_collection
@@ -28,8 +28,8 @@ class UserModelWeaviate:
                     "photo_url": user_data.get("photo_url", ""),
                     "fcm_token": user_data.get("fcm_token", ""),
                     "has_open_request": user_data.get("has_open_request", False),
-                    "created_at": user_data.get("created_at", datetime.utcnow()),
-                    "last_sign_in": user_data.get("last_sign_in", datetime.utcnow()),
+                    "created_at": user_data.get("created_at", datetime.now(UTC)),
+                    "last_sign_in": user_data.get("last_sign_in", datetime.now(UTC)),
                 }
             )
             
