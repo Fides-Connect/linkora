@@ -26,6 +26,10 @@ wheels/
 .installed.cfg
 *.egg
 
+# pytest
+coverage.xml
+.coverage
+
 # Virtual environments
 venv/
 env/
