@@ -3,10 +3,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'widgets/particle_sphere.dart';
 import 'services/speech_service.dart';
 import 'services/auth_service.dart';
+import 'services/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
@@ -17,6 +19,15 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'widgets/auth_guard.dart';
 import 'localization/app_localizations.dart';
 
+/// Background message handler - must be top-level function
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  debugPrint('Background message received: ${message.messageId}');
+  debugPrint('Title: ${message.notification?.title}');
+  debugPrint('Body: ${message.notification?.body}');
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(); // Load environment variables from .env file
@@ -25,6 +36,9 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Set up background message handler
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   // Create a single AuthService instance and initialize it.
   final auth = AuthService();
@@ -251,6 +265,37 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     }
   }
 
+  void _setupForegroundMessageHandler() {
+    // Handle foreground messages
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      debugPrint('Foreground message received: ${message.messageId}');
+      debugPrint('Title: ${message.notification?.title}');
+      debugPrint('Body: ${message.notification?.body}');
+      
+      // Show notification using NotificationService
+      if (message.notification != null) {
+        final notification = message.notification!;
+        // Use message hashCode as notification ID to ensure uniqueness
+        final notificationId = message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch;
+        NotificationService().showNotification(
+          id: notificationId,
+          title: notification.title ?? 'New Message',
+          body: notification.body ?? '',
+        );
+      }
+    });
+
+    // Handle notification taps when app is in foreground or background
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      debugPrint('Notification opened from background: ${message.messageId}');
+      // Handle navigation or custom action when user taps notification
+      if (message.data.isNotEmpty) {
+        debugPrint('Message data: ${message.data}');
+        // You can navigate to specific screens based on message.data
+      }
+    });
+  }
+
   void _initializeServices() {
     _speechService = SpeechService();
 
@@ -265,6 +310,9 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     _userSub = _auth.onCurrentUserChanged.listen((u) {
       setState(() => _user = u);
     });
+
+    // Set up FCM foreground message handler
+    _setupForegroundMessageHandler();
 
     // Set up speech service callbacks
     _speechService.onSpeechStart = () {
