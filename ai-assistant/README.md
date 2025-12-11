@@ -1120,20 +1120,20 @@ The AI Assistant includes a secure admin interface for debugging, monitoring, an
 
 ### Quick Start
 
-1. **Generate an admin token:**
+1. **Generate an admin secret key:**
    ```bash
    python scripts/generate_admin_token.py
    ```
 
 2. **Add to your `.env` file:**
    ```
-   ADMIN_SECRET_KEY=your_generated_token_here
+   ADMIN_SECRET_KEY=your_generated_secret_key_here
    ```
 
 3. **Access admin endpoints:**
    ```bash
-   export ADMIN_TOKEN='your_generated_token_here'
-   curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8080/admin/health
+   export ADMIN_SECRET_KEY='your_generated_secret_key_here'
+   curl -H "Authorization: Bearer $ADMIN_SECRET_KEY" http://localhost:8080/admin/health
    ```
 
 ### Available Admin Endpoints
@@ -1153,13 +1153,13 @@ The AI Assistant includes a secure admin interface for debugging, monitoring, an
 
 **Check server health:**
 ```bash
-curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8080/admin/health | jq
+curl -H "Authorization: Bearer $ADMIN_SECRET_KEY" http://localhost:8080/admin/health | jq
 ```
 
 **Send broadcast notification:**
 ```bash
 curl -X POST \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Authorization: Bearer $ADMIN_SECRET_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Maintenance Notice",
@@ -1170,7 +1170,7 @@ curl -X POST \
 
 **View database statistics:**
 ```bash
-curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8080/admin/stats | jq '.database'
+curl -H "Authorization: Bearer $ADMIN_SECRET_KEY" http://localhost:8080/admin/stats | jq '.database'
 ```
 
 **Test admin interface:**

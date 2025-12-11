@@ -7,7 +7,7 @@ Usage:
     python scripts/test_admin_interface.py
     
 Set ADMIN_SECRET_KEY environment variable before running:
-    export ADMIN_SECRET_KEY='your_admin_token'
+    export ADMIN_SECRET_KEY='your_admin_secret_key'
 """
 import os
 import sys
@@ -16,7 +16,7 @@ import aiohttp
 from typing import Dict, Any
 
 BASE_URL = os.getenv('ADMIN_BASE_URL', 'http://localhost:8080')
-ADMIN_TOKEN = os.getenv('ADMIN_SECRET_KEY')
+ADMIN_SECRET_KEY = os.getenv('ADMIN_SECRET_KEY')
 
 class Colors:
     """ANSI color codes for terminal output."""
@@ -64,7 +64,7 @@ async def test_endpoint(
         Dict with 'success', 'status', and 'data' keys
     """
     url = f"{BASE_URL}{path}"
-    headers = {'Authorization': f'Bearer {ADMIN_TOKEN}'}
+    headers = {'Authorization': f'Bearer {ADMIN_SECRET_KEY}'}
     
     try:
         if method == 'GET':
@@ -98,14 +98,14 @@ async def test_endpoint(
 
 async def run_tests():
     """Run all admin interface tests."""
-    if not ADMIN_TOKEN:
+    if not ADMIN_SECRET_KEY:
         print_error("ADMIN_SECRET_KEY environment variable not set!")
-        print("Set it with: export ADMIN_SECRET_KEY='your_admin_token'")
+        print("Set it with: export ADMIN_SECRET_KEY='your_admin_secret_key'")
         sys.exit(1)
     
     print_header("Admin Interface Test Suite")
     print(f"Base URL: {BASE_URL}")
-    print(f"Token: {ADMIN_TOKEN[:10]}...{ADMIN_TOKEN[-5:]}\n")
+    print(f"Secret Key: {ADMIN_SECRET_KEY[:10]}...{ADMIN_SECRET_KEY[-5:]}\n")
     
     async with aiohttp.ClientSession() as session:
         # Test 1: Health Check
