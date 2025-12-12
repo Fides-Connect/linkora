@@ -18,6 +18,7 @@ import 'package:connectx/services/wrappers.dart';
   RTCVideoRenderer,
   RTCSessionDescription,
   RTCIceCandidate,
+  RTCDataChannel,
   PermissionWrapper,
   WebRTCWrapper,
   FirebaseAuthWrapper,
