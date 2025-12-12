@@ -5,7 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
-import 'widgets/particle_sphere.dart';
+import 'widgets/ai_blob_visualizer.dart';
 import 'services/speech_service.dart';
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
@@ -18,6 +18,13 @@ import 'widgets/app_background.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'widgets/auth_guard.dart';
 import 'localization/app_localizations.dart';
+
+/// Conversation state enum
+enum ConversationState {
+  idle,       // Not connected
+  listening,  // Connected and listening to user
+  processing, // Processing user input (thinking)
+}
 
 /// Background message handler - must be top-level function
 @pragma('vm:entry-point')
@@ -140,11 +147,17 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
   StreamSubscription<User?>? _userSub;
 
-  bool _isAnimating = false;
-  bool _isChatting = false;
+  ConversationState _conversationState = ConversationState.idle;
   String _currentMessage = '';
   String _statusText = '';
   bool _isInitialized = false;
+  final List<String> _topics = [
+    'Preferred role',
+    'Location radius',
+    'Salary band',
+    'Workstyle flexibility',
+    'Seniority expectations',
+  ];
 
   @override
   void initState() {
@@ -318,8 +331,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     _speechService.onSpeechStart = () {
       final localizations = AppLocalizations.of(context);
       setState(() {
-        _isChatting = true;
-        _isAnimating = true;
+        _conversationState = ConversationState.listening;
         _statusText = localizations?.connecting ?? 'Connecting to AI-Assistant...';
       });
     };
@@ -334,8 +346,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     _speechService.onSpeechEnd = () {
       final localizations = AppLocalizations.of(context);
       setState(() {
-        _isChatting = false;
-        _isAnimating = false;
+        _conversationState = ConversationState.idle;
         _statusText = localizations?.disconnected ?? 'Disconnected';
       });
     };
@@ -343,8 +354,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     _speechService.onDisconnected = () {
       final localizations = AppLocalizations.of(context);
       setState(() {
-        _isChatting = false;
-        _isAnimating = false;
+        _conversationState = ConversationState.idle;
         _statusText = localizations?.connectionClosed ?? 'Connection closed';
       });
     };
@@ -366,8 +376,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       final errorMsg = e.toString();
       setState(() {
         _statusText = 'Error: $errorMsg';
-        _isChatting = false;
-        _isAnimating = false;
+        _conversationState = ConversationState.idle;
       });
       // Show error dialog
       if (mounted && localizations != null) {
@@ -398,8 +407,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     }
 
     setState(() {
-      _isChatting = false;
-      _isAnimating = false;
+      _conversationState = ConversationState.idle;
       _currentMessage = '';
       _statusText = 'Chat stopped. Tap the microphone to start again.';
     });
@@ -415,160 +423,245 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
             // Background gradient
             const AppBackground(),
 
-            // Main content
+            // User avatar and logout button (top-right)
+            Positioned(
+              top: 20,
+              right: 20,
+              child: _user != null
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // User avatar if not web and photoUrl is available
+                        // On web, just show initials due to CORS issues
+                        if (_auth.photoUrl != null &&
+                            _auth.photoUrl!.isNotEmpty &&
+                            !kIsWeb)
+                          ClipOval(
+                            child: Image.network(
+                              _auth.photoUrl!,
+                              width: 32,
+                              height: 32,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        else
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: const Color(0xFF6C63FF),
+                            child: Text(
+                              // derive initials from display name if possible
+                              (_user?.displayName ?? '')
+                                  .split(' ')
+                                  .where((s) => s.isNotEmpty)
+                                  .map((s) => s[0])
+                                  .take(2)
+                                  .join()
+                                  .toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.logout),
+                          onPressed: () async {
+                            await _auth.signOut();
+                          },
+                        ),
+                      ],
+                    )
+                  : const SizedBox.shrink(),
+            ),
+
+            // Main content with stage + headline
             Column(
               children: [
-                // Status bar
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      SizedBox(
-                        height: 44,
-                        child: Stack(
-                          alignment: Alignment.center,
+                const SizedBox(height: 48),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Row(
+                    children: const [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Right-aligned user controls
-                            if (_user != null)
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    // User avatar if not web and photoUrl is available
-                                    // On web, just show initials due to CORS issues
-                                    if (_auth.photoUrl != null &&
-                                        _auth.photoUrl!.isNotEmpty &&
-                                        !kIsWeb)
-                                      ClipOval(
-                                        child: Image.network(
-                                          _auth.photoUrl!,
-                                          width: 32,
-                                          height: 32,
-                                          fit: BoxFit.cover,
-                                        ),
-                                      )
-                                    else
-                                      CircleAvatar(
-                                        radius: 16,
-                                        backgroundColor: const Color(
-                                          0xFF6C63FF,
-                                        ),
-                                        child: Text(
-                                          // derive initials from display name if possible
-                                          (_user?.displayName ?? '')
-                                              .split(' ')
-                                              .where((s) => s.isNotEmpty)
-                                              .map((s) => s[0])
-                                              .take(2)
-                                              .join()
-                                              .toUpperCase(),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    IconButton(
-                                      icon: Icon(Icons.logout),
-                                      onPressed: () async {
-                                        await _auth.signOut();
-                                      },
-                                    ),
-                                  ],
-                                ),
+                            Text(
+                              'Atlas - AI job agent',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.2,
                               ),
+                            ),
+                            SizedBox(height: 6),
+                            Text(
+                              'Speak your needs. See intent visualized.',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      // Centered title
-                      Center(
-                        child: Text(
-                          'Fides',
-                          style: Theme.of(context).textTheme.headlineMedium
-                              ?.copyWith(
-                                color: const Color(0xFF6C63FF),
-                                fontWeight: FontWeight.bold,
-                              ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        _statusText,
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
-                        textAlign: TextAlign.center,
                       ),
                     ],
                   ),
                 ),
-
-                // Particle sphere in the center
+                const SizedBox(height: 26),
                 Expanded(
                   child: Center(
-                    child: ParticleSphere(
-                      isAnimating: _isAnimating,
-                      radius: 120,
-                      particleCount: 80,
-                      primaryColor: const Color(0xFF6C63FF),
-                      secondaryColor: const Color(0xFF00D4FF),
+                    child: AIBlobVisualizer(
+                      isListening: _conversationState == ConversationState.listening,
+                      isProcessing: _conversationState == ConversationState.processing,
+                      size: 260,
+                      primaryColor: const Color(0xFF5EEAD4),
+                      secondaryColor: const Color(0xFF6366F1),
+                      accentColor: const Color(0xFF93C5FD),
                     ),
                   ),
                 ),
-
-                // Current message display
-                if (_currentMessage.isNotEmpty)
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.all(20),
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFF6C63FF).withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Text(
-                      _currentMessage,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.bodyMedium?.copyWith(color: Colors.white),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
+                const SizedBox(height: 32),
               ],
             ),
 
-            // Bottom action buttons
+            // Speech-first glass card with two-line chat + topics
             Positioned(
-              bottom: 40,
-              left: 40,
-              child: FloatingActionButton(
-                onPressed: _stopChat,
-                backgroundColor: Colors.red.withValues(alpha: 0.8),
-                heroTag: 'stop_button',
-                child: const Icon(Icons.stop, color: Colors.white),
+              left: 16,
+              right: 16,
+              bottom: 132,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 20,
+                      offset: const Offset(0, 12),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: _conversationState == ConversationState.processing
+                                ? const Color(0xFF22D3EE)
+                                : const Color(0xFF86EFAC),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _conversationState == ConversationState.listening
+                              ? 'Live listening'
+                              : _conversationState == ConversationState.processing
+                                  ? 'Thinking with Atlas'
+                                  : 'Ready for your voice',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _currentMessage.isNotEmpty ? _currentMessage : _statusText,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      children: _topics
+                          .map(
+                            (topic) => Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  margin: const EdgeInsets.only(right: 6),
+                                  decoration: const BoxDecoration(
+                                    color: Colors.white70,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                Text(
+                                  topic,
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ],
+                ),
               ),
             ),
 
+            // Bottom microphone button (center, single button)
             Positioned(
               bottom: 40,
-              right: 40,
-              child: FloatingActionButton.large(
-                onPressed: _isChatting ? null : _startChat,
-                backgroundColor: _isChatting
-                    ? const Color(0xFF6C63FF).withValues(alpha: 0.5)
-                    : const Color(0xFF6C63FF),
-                heroTag: 'mic_button',
-                child: Icon(
-                  _isChatting ? Icons.mic : Icons.mic_none,
-                  color: Colors.white,
-                  size: 32,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: GestureDetector(
+                  onTap: _conversationState != ConversationState.idle ? _stopChat : _startChat,
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _conversationState != ConversationState.idle
+                          ? Colors.red.withValues(alpha: 0.8)
+                          : const Color(0xFF6C63FF),
+                      boxShadow: [
+                        BoxShadow(
+                          color: (_conversationState != ConversationState.idle
+                              ? Colors.red 
+                              : const Color(0xFF6C63FF))
+                              .withValues(alpha: 0.3),
+                          blurRadius: 20,
+                          spreadRadius: 5,
+                        ),
+                      ],
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Icon(
+                      _conversationState != ConversationState.idle ? Icons.mic_off : Icons.mic,
+                      color: Colors.white,
+                      size: 32,
+                    ),
+                  ),
                 ),
               ),
             ),
