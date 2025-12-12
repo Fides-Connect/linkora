@@ -5,7 +5,10 @@ Handles the audio processing pipeline: STT -> LLM -> TTS
 import asyncio
 import logging
 import numpy as np
-from typing import Optional
+import time
+import re
+from difflib import SequenceMatcher
+from typing import Optional, List, Dict
 from aiortc import MediaStreamTrack
 from aiortc.mediastreams import MediaStreamError
 from av import AudioFrame
@@ -48,6 +51,12 @@ class AudioProcessor:
         # Interrupt handling
         self.is_ai_speaking = False  # True when generating OR playing AI response
         self.interrupt_event = asyncio.Event()
+        
+        # Speaker diarization and echo filtering
+        self.ai_speaker_tag: Optional[int] = None  # Identified speaker tag for AI voice
+        self.ai_speaking_start_time: Optional[float] = None  # Track when AI starts speaking
+        self.ai_output_buffer: List[Dict] = []  # Buffer of recent AI text output for echo detection
+        self.ai_output_buffer_max_duration = 30.0  # Keep last 30 seconds of AI output
         
     def get_output_track(self) -> MediaStreamTrack:
         """Get the output audio track."""
@@ -103,6 +112,14 @@ class AudioProcessor:
             # Generate greeting text and audio (pass user_id if available)
             greeting_text, audio_stream = await self.ai_assistant.get_greeting_audio(user_id=self.user_id)
             logger.info(f"Playing greeting: '{greeting_text}'")
+            
+            # Store greeting text in buffer for echo detection
+            self.ai_output_buffer.append({
+                'text': greeting_text,
+                'timestamp': time.time(),
+                'is_current': False
+            })
+            logger.info(f"📝 Stored greeting in buffer for echo detection")
             
             # Queue greeting audio for playback
             async for audio_chunk in audio_stream:
@@ -200,13 +217,35 @@ class AudioProcessor:
                 # Stream to STT and process results using TranscriptProcessor
                 # This will process a single utterance and then return
                 audio_generator_instance = audio_generator()
-                async for transcript, is_final in self.transcript_processor.process_audio_stream(
+                async for transcript, is_final, speaker_tag in self.transcript_processor.process_audio_stream(
                     audio_generator_instance
                 ):
                     if transcript:
+                        # AI echo detection using text similarity (primary method)
+                        if self._is_ai_echo_by_text(transcript, speaker_tag):
+                            logger.info(f"🔇 Filtering echo (text match) from speaker {speaker_tag}: '{transcript}'")
+                            continue  # Skip processing this transcript
+                        
+                        # Speaker tag filtering is ONLY used as fallback when:
+                        # 1. Text matching didn't detect echo (transcript is different from AI output)
+                        # 2. We're currently playing AI speech (high confidence it's echo)
+                        # 3. Speaker tag matches previously identified AI speaker
+                        if (self.is_ai_speaking and 
+                            speaker_tag is not None and 
+                            speaker_tag == self.ai_speaker_tag):
+                            logger.info(f"🔇 Filtering echo (speaker tag + timing) from speaker {speaker_tag}: '{transcript}'")
+                            continue  # Skip processing this transcript
+                        
+                        # Log user speech with speaker tag
+                        if speaker_tag is not None:
+                            logger.info(f"👤 User speech from speaker {speaker_tag}: '{transcript}'")
+                        
                         # Check if AI is currently speaking - if so, trigger interrupt
-                        if self.is_ai_speaking and len(transcript.strip()) > 0:
-                            logger.info(f"🛑 INTERRUPT detected! User speaking while AI responds: '{transcript}'")
+                        # Require at least 3 words to distinguish real user speech from single-word acoustic echo
+                        word_count = len(transcript.strip().split())
+                        
+                        if self.is_ai_speaking and word_count >= 3:
+                            logger.info(f"🛑 INTERRUPT detected! User speaking while AI responds ({word_count} words): '{transcript}'")
                             await self._trigger_interrupt()
                             # Give a moment for the interrupt to take effect
                             await asyncio.sleep(0.05)
@@ -236,6 +275,74 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Error in continuous STT: {e}", exc_info=True)
     
+    def _is_ai_echo_by_text(self, transcript: str, speaker_tag: Optional[int]) -> bool:
+        """
+        Determine if transcript is likely AI echo by comparing with recent AI output.
+        
+        Args:
+            transcript: The transcribed text to check
+            speaker_tag: The speaker tag from diarization
+            
+        Returns:
+            True if transcript matches recent AI output (likely echo)
+        """
+        if not transcript or not self.ai_output_buffer:
+            buffer_size = len(self.ai_output_buffer) if self.ai_output_buffer else 0
+            logger.info(f"🔍 Echo check skipped - transcript empty: {not transcript}, buffer empty: {not self.ai_output_buffer}, buffer size: {buffer_size}")
+            return False
+        
+        # Strip punctuation and normalize for comparison
+        transcript_normalized = re.sub(r'[^\w\s]', '', transcript.lower().strip())
+        current_time = time.time()
+        
+        logger.info(f"🔍 Checking if transcript is AI echo: '{transcript}'")
+        logger.info(f"🔍 AI buffer has {len(self.ai_output_buffer)} entries")
+        
+        # Check similarity with recent AI outputs (clean up AFTER to avoid deleting during check)
+        for i, entry in enumerate(self.ai_output_buffer):
+            # Skip expired entries during comparison but don't delete yet
+            if current_time - entry['timestamp'] >= self.ai_output_buffer_max_duration:
+                continue
+            # Strip punctuation and normalize for comparison
+            ai_text_normalized = re.sub(r'[^\w\s]', '', entry['text'].lower().strip())
+            
+            logger.info(f"🔍 Comparing with buffer entry {i}: '{entry['text'][:100]}...'")
+            
+            # Calculate similarity ratio on normalized text (without punctuation)
+            similarity = SequenceMatcher(None, transcript_normalized, ai_text_normalized).ratio()
+            
+            logger.info(f"🔍 Similarity score: {similarity:.2f}")
+            
+            # Check both:
+            # 1. Overall similarity for full matches (threshold 0.45)
+            # 2. If transcript appears as substring in AI output (for partial interim results)
+            #    BUT only if it's a meaningful match (at least 10 chars to avoid common words like "die", "das", etc.)
+            is_substring = (
+                len(transcript_normalized) >= 10 and 
+                transcript_normalized in ai_text_normalized
+            )
+            
+            if similarity > 0.45 or is_substring:
+                match_type = "similarity" if similarity > 0.45 else "substring"
+                logger.info(f"🔍 Text {match_type} match detected: similarity={similarity:.2f}, substring={is_substring}")
+                logger.info(f"   Transcript: '{transcript}'")
+                logger.info(f"   AI output:  '{entry['text'][:100]}...'")
+                
+                # If we don't have an AI speaker tag yet, assign it
+                if self.ai_speaker_tag is None and speaker_tag is not None:
+                    self.ai_speaker_tag = speaker_tag
+                    logger.info(f"🎯 AI speaker identified as speaker tag {speaker_tag} (via text matching)")
+                
+                return True
+        
+        # Clean up old entries from buffer AFTER all checks are done
+        self.ai_output_buffer = [
+            entry for entry in self.ai_output_buffer
+            if current_time - entry['timestamp'] < self.ai_output_buffer_max_duration
+        ]
+        
+        return False
+    
     async def _trigger_interrupt(self):
         """Trigger an interrupt to stop ongoing AI speech."""
         logger.info("⚡ Triggering interrupt - cancelling ongoing TTS tasks")
@@ -263,6 +370,7 @@ class AudioProcessor:
             # Reset interrupt event and set speaking flag
             self.interrupt_event.clear()
             self.is_ai_speaking = True
+            self.ai_speaking_start_time = asyncio.get_event_loop().time()
             
             # Performance tracking
             perf_times = {
@@ -281,7 +389,8 @@ class AudioProcessor:
             # Stage 2: Process through TTS manager (handles sentence parsing, TTS, and ordered playback)
             logger.info("Stage 2: Processing LLM stream through TTS manager...")
             
-            # Wrap LLM stream to track first token
+            # Wrap LLM stream to track first token and collect AI output text
+            ai_response_text = []
             async def tracked_llm_stream():
                 first_chunk = True
                 async for chunk in llm_stream:
@@ -289,10 +398,32 @@ class AudioProcessor:
                         perf_times['llm_first_token'] = asyncio.get_event_loop().time()
                         logger.info(f"⚡ Time to first LLM token: {perf_times['llm_first_token'] - llm_start:.3f}s")
                         first_chunk = False
+                    if chunk:
+                        ai_response_text.append(chunk)
+                        # Store incrementally in buffer for immediate echo detection
+                        current_response = ''.join(ai_response_text)
+                        # Update or add the current response in buffer
+                        if self.ai_output_buffer and self.ai_output_buffer[-1].get('is_current'):
+                            # Update the last entry if it's marked as current
+                            self.ai_output_buffer[-1]['text'] = current_response
+                            self.ai_output_buffer[-1]['timestamp'] = time.time()
+                        else:
+                            # Add new entry marked as current
+                            self.ai_output_buffer.append({
+                                'text': current_response,
+                                'timestamp': time.time(),
+                                'is_current': True
+                            })
+                        logger.info(f"📝 Updated AI buffer with chunk: '{current_response[:50]}...'")
                     yield chunk
             
             # Process through TTS manager
             await self.tts_manager.process_llm_stream(tracked_llm_stream())
+            
+            # Mark the last buffer entry as complete (no longer current)
+            if self.ai_output_buffer and self.ai_output_buffer[-1].get('is_current'):
+                self.ai_output_buffer[-1]['is_current'] = False
+                logger.info(f"✅ AI response complete and stored in buffer: '{self.ai_output_buffer[-1]['text'][:100]}...'")
             
             # Monitor playback completion in background
             asyncio.create_task(self._monitor_playback_completion())

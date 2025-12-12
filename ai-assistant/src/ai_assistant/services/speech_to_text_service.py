@@ -4,7 +4,7 @@ Handles all speech recognition functionality.
 """
 import asyncio
 import logging
-from typing import AsyncIterator, Tuple
+from typing import AsyncIterator, Tuple, Optional
 from google.cloud import speech_v1 as speech
 from google.cloud.speech_v1 import SpeechAsyncClient
 
@@ -33,7 +33,7 @@ class SpeechToTextService:
         
         logger.info(f"STT service configured for language: {language_code}")
     
-    async def continuous_stream(self, audio_generator) -> AsyncIterator[Tuple[str, bool]]:
+    async def continuous_stream(self, audio_generator) -> AsyncIterator[Tuple[str, bool, Optional[int]]]:
         """
         Continuously stream audio to STT using async gRPC.
         
@@ -41,7 +41,10 @@ class SpeechToTextService:
             audio_generator: Async generator yielding audio chunks
         
         Yields:
-            Tuple of (transcript, is_final) where is_final indicates if result is final
+            Tuple of (transcript, is_final, speaker_tag) where:
+            - transcript: The recognized text
+            - is_final: Whether this is a final result
+            - speaker_tag: Primary speaker identifier (None if no diarization or no words)
         """
         try:
             config = self._create_recognition_config()
@@ -65,13 +68,23 @@ class SpeechToTextService:
                 logger.debug(f"📨 STT response #{response_count}: {len(response.results)} results")
                 for result in response.results:
                     if result.alternatives:
-                        transcript = result.alternatives[0].transcript
+                        alternative = result.alternatives[0]
+                        transcript = alternative.transcript
                         is_final = result.is_final
+                        
+                        # Extract speaker tags from words
+                        speaker_tag = None
+                        if hasattr(alternative, 'words') and alternative.words:
+                            # Calculate primary speaker as most frequent speaker_tag
+                            speaker_tags = [word.speaker_tag for word in alternative.words if hasattr(word, 'speaker_tag')]
+                            if speaker_tags:
+                                speaker_tag = max(set(speaker_tags), key=speaker_tags.count)
+                        
                         if is_final:
-                            logger.info(f"✅ STT FINAL: '{transcript}'")
+                            logger.info(f"✅ STT FINAL (Speaker {speaker_tag}): '{transcript}'")
                         else:
-                            logger.debug(f"⏳ STT interim: '{transcript}'")
-                        yield (transcript, is_final)
+                            logger.debug(f"⏳ STT interim (Speaker {speaker_tag}): '{transcript}'")
+                        yield (transcript, is_final, speaker_tag)
                     else:
                         logger.debug(f"⚠️  STT result has no alternatives")
             
@@ -79,15 +92,22 @@ class SpeechToTextService:
             
         except Exception as e:
             logger.error(f"STT streaming error: {e}", exc_info=True)
-            yield ("", False)
+            yield ("", False, None)
     
     def _create_recognition_config(self) -> speech.RecognitionConfig:
         """
-        Create speech recognition configuration.
+        Create speech recognition configuration with speaker diarization.
         
         Returns:
             RecognitionConfig object
         """
+        # Configure speaker diarization
+        diarization_config = speech.SpeakerDiarizationConfig(
+            enable_speaker_diarization=True,
+            min_speaker_count=2,
+            max_speaker_count=4,
+        )
+        
         return speech.RecognitionConfig(
             encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=48000,
@@ -95,7 +115,8 @@ class SpeechToTextService:
             audio_channel_count=1,
             enable_automatic_punctuation=True,
             model='phone_call',
-            use_enhanced=True
+            use_enhanced=True,
+            diarization_config=diarization_config
         )
     
     async def _create_request_generator(self, streaming_config, audio_generator):
