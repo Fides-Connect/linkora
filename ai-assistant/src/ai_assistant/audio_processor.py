@@ -253,11 +253,20 @@ class AudioProcessor:
                         if is_final:
                             # Stop the audio generator to prevent it from consuming more chunks
                             await self.audio_queue.put(None)
-                            # Process the transcript (interrupt already cleared speaking flag if needed)
-                            if not self.is_ai_speaking:
+                            
+                            # If AI is still marked as speaking but we got a final user transcript,
+                            # force clear the flag (playback monitor may have failed)
+                            if self.is_ai_speaking:
+                                logger.warning(f"⚠️  Final transcript received but is_ai_speaking=True - force clearing flag")
+                                logger.warning(f"   Queue size: {self.output_track.audio_queue.qsize()}, Buffer: {len(self.output_track._buffer)} bytes")
+                                self.is_ai_speaking = False
+                            
+                            # Process the transcript if it's not empty
+                            if transcript.strip():
                                 await self._process_final_transcript(transcript)
                             else:
-                                logger.warning(f"Skipping processing - AI still speaking despite interrupt")
+                                logger.warning(f"⚠️  Received empty final transcript - skipping processing")
+                            
                             # Break out of the inner loop to start a new STT stream
                             logger.info("🔄 Final transcript received, starting new STT stream for next utterance")
                             break
@@ -315,12 +324,23 @@ class AudioProcessor:
             
             # Check both:
             # 1. Overall similarity for full matches (threshold 0.45)
-            # 2. If transcript appears as substring in AI output (for partial interim results)
-            #    BUT only if it's a meaningful match (at least 10 chars to avoid common words like "die", "das", etc.)
-            is_substring = (
-                len(transcript_normalized) >= 10 and 
-                transcript_normalized in ai_text_normalized
-            )
+            # 2. Word-based fuzzy substring matching for partial interim results:
+            #    - Split both into words
+            #    - Check if transcript words appear consecutively in AI output (allowing partial last word)
+            #    - Require at least 3 words to avoid matching common phrases
+            is_substring = False
+            transcript_words = transcript_normalized.split()
+            ai_words = ai_text_normalized.split()
+            
+            if len(transcript_words) >= 3:
+                # Check if first N-1 words appear consecutively in AI output
+                # (last word might be partial in interim transcripts)
+                words_to_match = transcript_words[:-1]  # All but last word
+                if len(words_to_match) >= 2:
+                    # Build phrase from all but last word
+                    phrase = ' '.join(words_to_match)
+                    if phrase in ai_text_normalized:
+                        is_substring = True
             
             if similarity > 0.45 or is_substring:
                 match_type = "similarity" if similarity > 0.45 else "substring"
@@ -475,7 +495,10 @@ class AudioProcessor:
             
             # Monitor queue size - when it stays at 0 for a bit, we're done playing
             empty_count = 0
-            while self.is_ai_speaking and not self.interrupt_event.is_set():
+            check_count = 0
+            max_checks = 500  # Failsafe: 10 seconds max (500 * 0.02s)
+            
+            while self.is_ai_speaking and not self.interrupt_event.is_set() and check_count < max_checks:
                 queue_size = self.output_track.audio_queue.qsize()
                 buffer_size = len(self.output_track._buffer)
                 
@@ -483,13 +506,19 @@ class AudioProcessor:
                     empty_count += 1
                     # If queue and buffer are empty for 5 consecutive checks (100ms), we're done
                     if empty_count >= 5:
-                        logger.info("Audio playback completed - clearing speaking flag")
+                        logger.info("🔊 Audio playback completed - clearing speaking flag")
                         self.is_ai_speaking = False
                         break
                 else:
                     empty_count = 0
                 
+                check_count += 1
                 await asyncio.sleep(0.02)  # Check every 20ms
+            
+            # Failsafe: if we hit max checks, force clear the flag
+            if check_count >= max_checks and self.is_ai_speaking:
+                logger.warning(f"⚠️  Playback monitor timeout after {max_checks} checks - force clearing speaking flag")
+                self.is_ai_speaking = False
             
         except Exception as e:
             logger.error(f"Error in playback monitor: {e}", exc_info=True)
