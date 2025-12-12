@@ -4,6 +4,7 @@ Handles the audio processing pipeline: STT -> LLM -> TTS
 """
 import asyncio
 import logging
+import json
 import numpy as np
 from typing import Optional
 from aiortc import MediaStreamTrack
@@ -48,6 +49,26 @@ class AudioProcessor:
         # Interrupt handling
         self.is_ai_speaking = False  # True when generating OR playing AI response
         self.interrupt_event = asyncio.Event()
+        self.data_channel = None
+
+    def set_data_channel(self, channel):
+        """Set the data channel for sending text messages."""
+        self.data_channel = channel
+        logger.info("Data channel set in AudioProcessor")
+
+    def _send_chat_message(self, text: str, is_user: bool, is_chunk: bool = False):
+        """Send chat message to client via data channel."""
+        if self.data_channel and self.data_channel.readyState == "open":
+            try:
+                message = json.dumps({
+                    "type": "chat",
+                    "text": text,
+                    "isUser": is_user,
+                    "isChunk": is_chunk
+                })
+                self.data_channel.send(message)
+            except Exception as e:
+                logger.error(f"Error sending chat message: {e}")
         
     def get_output_track(self) -> MediaStreamTrack:
         """Get the output audio track."""
@@ -258,6 +279,10 @@ class AudioProcessor:
         """Process a final transcript through LLM -> TTS pipeline."""
         try:
             logger.info(f"Processing final transcript: '{transcript}'")
+            
+            # Send user transcript to client
+            self._send_chat_message(transcript, is_user=True)
+            
             start_time = asyncio.get_event_loop().time()
             
             # Reset interrupt event and set speaking flag
@@ -285,6 +310,10 @@ class AudioProcessor:
             async def tracked_llm_stream():
                 first_chunk = True
                 async for chunk in llm_stream:
+                    if chunk:
+                        # Send AI chunk to client
+                        self._send_chat_message(chunk, is_user=False, is_chunk=True)
+                        
                     if first_chunk and chunk:
                         perf_times['llm_first_token'] = asyncio.get_event_loop().time()
                         logger.info(f"⚡ Time to first LLM token: {perf_times['llm_first_token'] - llm_start:.3f}s")

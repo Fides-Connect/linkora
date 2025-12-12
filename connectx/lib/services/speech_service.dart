@@ -23,6 +23,7 @@ class SpeechService {
   Function()? onSpeechEnd;
   Function()? onConnected;
   Function()? onDisconnected;
+  Function(String, bool, bool)? onChatMessage; // text, isUser, isChunk
 
   SpeechService({
     PermissionWrapper? permissionWrapper,
@@ -92,6 +93,10 @@ class SpeechService {
       debugPrint('SpeechService: WebRTC disconnected');
       onDisconnected?.call();
       onSpeechEnd?.call();
+    };
+    
+    _webrtcService!.onChatMessage = (String text, bool isUser, bool isChunk) {
+      onChatMessage?.call(text, isUser, isChunk);
     };
     
     _webrtcService!.onRemoteStream = (MediaStream stream) {
