@@ -19,6 +19,7 @@ void main() {
   late MockRTCPeerConnection mockPeerConnection;
   late MockMediaStream mockLocalStream;
   late MockMediaStreamTrack mockAudioTrack;
+  late MockRTCDataChannel mockDataChannel;
 
   late StreamController<dynamic> streamController;
 
@@ -32,6 +33,7 @@ void main() {
     mockPeerConnection = MockRTCPeerConnection();
     mockLocalStream = MockMediaStream();
     mockAudioTrack = MockMediaStreamTrack();
+    mockDataChannel = MockRTCDataChannel();
 
     // Setup WebSocket mock
     when(mockWebSocketChannel.sink).thenReturn(mockWebSocketSink);
@@ -62,6 +64,8 @@ void main() {
     when(mockPeerConnection.setLocalDescription(any))
         .thenAnswer((_) async {});
     when(mockPeerConnection.close()).thenAnswer((_) async {});
+    when(mockPeerConnection.createDataChannel(any, any))
+        .thenAnswer((_) async => mockDataChannel);
     
     // Setup LocalStream mocks
     when(mockLocalStream.getTracks()).thenReturn([mockAudioTrack]);

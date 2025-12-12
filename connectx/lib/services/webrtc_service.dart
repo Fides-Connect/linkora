@@ -21,12 +21,16 @@ class WebRTCService {
 
   // Audio track for sending
   MediaStreamTrack? _audioTrack;
+  
+  // Data Channel
+  RTCDataChannel? _dataChannel;
 
   // Callbacks
   Function()? onConnected;
   Function()? onDisconnected;
   Function(MediaStream)? onRemoteStream;
   Function(String)? onError;
+  Function(String, bool, bool)? onChatMessage; // text, isUser, isChunk
 
   // Configuration
   late final String _serverUrl;
@@ -132,6 +136,9 @@ class WebRTCService {
     // Close peer connection
     await _peerConnection?.close();
     _peerConnection = null;
+    
+    _dataChannel?.close();
+    _dataChannel = null;
 
     _audioTrack = null;
 
@@ -236,6 +243,28 @@ class WebRTCService {
       };
 
       _peerConnection = await _webRTCWrapper.createPeerConnection(configuration);
+
+      // Create Data Channel
+      final dataChannelInit = RTCDataChannelInit()
+        ..ordered = true;
+      _dataChannel = await _peerConnection!.createDataChannel('chat', dataChannelInit);
+      debugPrint('WebRTC: Data channel created');
+
+      _dataChannel!.onMessage = (RTCDataChannelMessage message) {
+        if (message.isBinary) return;
+        try {
+          final data = jsonDecode(message.text);
+          if (data['type'] == 'chat') {
+            onChatMessage?.call(
+              data['text'], 
+              data['isUser'], 
+              data['isChunk'] ?? false
+            );
+          }
+        } catch (e) {
+          debugPrint('WebRTC: Error parsing data channel message: $e');
+        }
+      };
 
       // Force earpiece mode immediately after peer connection creation
       if (!kIsWeb &&

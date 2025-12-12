@@ -5,17 +5,20 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
-import 'widgets/ai_blob_visualizer.dart';
+import 'widgets/ai_neural_visualizer.dart';
+import 'widgets/home/user_header.dart';
+import 'widgets/home/topics_list.dart';
+import 'widgets/home/chat_display.dart';
+import 'widgets/home/mic_button.dart';
+import 'utils/permission_helper.dart';
 import 'services/speech_service.dart';
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'pages/start_page.dart';
 import 'theme.dart';
 import 'widgets/app_background.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'widgets/auth_guard.dart';
 import 'localization/app_localizations.dart';
 
@@ -148,24 +151,20 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   StreamSubscription<User?>? _userSub;
 
   ConversationState _conversationState = ConversationState.idle;
+  final List<String> _topics = ['Salary Expectations', 'Remote Work', 'Experience Level', 'Relocation'];
   String _currentMessage = '';
   String _statusText = '';
   bool _isInitialized = false;
-  final List<String> _topics = [
-    'Preferred role',
-    'Location radius',
-    'Salary band',
-    'Workstyle flexibility',
-    'Seniority expectations',
-  ];
+
+  bool _lastMessageWasUser = false;
 
   @override
   void initState() {
     super.initState();
     // Request permissions after widget is built and user has signed in
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _requestMicrophonePermission();
-      await _requestNotificationPermission();
+      await PermissionHelper.requestMicrophonePermission(context);
+      await PermissionHelper.requestNotificationPermission(context);
     });
   }
 
@@ -175,106 +174,6 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     if (!_isInitialized) {
       _initializeServices();
       _isInitialized = true;
-    }
-  }
-
-  Future<void> _requestMicrophonePermission() async {
-    if (kIsWeb) return;
-
-    final localizations = AppLocalizations.of(context);
-    if (localizations == null) return;
-
-    var micStatus = await Permission.microphone.status;
-
-    if (!micStatus.isGranted) {
-      // First request
-      micStatus = await Permission.microphone.request();
-
-      // If denied, show explanation dialog and ask once more
-      if (!micStatus.isGranted && mounted) {
-        await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(localizations.microphonePermissionTitle),
-            content: Text(localizations.microphonePermissionMessage),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(localizations.okButton),
-              ),
-            ],
-          ),
-        );
-
-        // Ask one more time
-        micStatus = await Permission.microphone.request();
-
-        if (!micStatus.isGranted && mounted) {
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: Text(localizations.microphoneAccessDeniedTitle),
-              content: Text(localizations.microphoneAccessDeniedMessage),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(localizations.okButton),
-                ),
-              ],
-            ),
-          );
-        }
-      }
-    }
-  }
-
-  Future<void> _requestNotificationPermission() async {
-    if (kIsWeb) return;
-
-    final localizations = AppLocalizations.of(context);
-    if (localizations == null) return;
-
-    var notificationStatus = await Permission.notification.status;
-
-    if (!notificationStatus.isGranted) {
-      // First request permission
-      notificationStatus = await Permission.notification.request();
-
-      // Show explanation dialog if refused
-      if (!notificationStatus.isGranted && mounted) {
-        await showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(localizations.notificationPermissionTitle),
-            content: Text(localizations.notificationPermissionMessage),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(localizations.okButton),
-              ),
-            ],
-          ),
-        );
-      }
-      // Request permission once more
-      notificationStatus = await Permission.notification.request();
-
-      // If still denied, show final message
-      if (!notificationStatus.isGranted && mounted) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(localizations.notificationAccessDeniedTitle),
-            content: Text(localizations.notificationAccessDeniedMessage),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(localizations.okButton),
-              ),
-            ],
-          ),
-        );
-      }
     }
   }
 
@@ -308,6 +207,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       }
     });
   }
+
 
   void _initializeServices() {
     _speechService = SpeechService();
@@ -359,14 +259,37 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       });
     };
 
+    _speechService.onChatMessage = (String text, bool isUser, bool isChunk) {
+      setState(() {
+        if (isUser) {
+          _currentMessage = text;
+          _lastMessageWasUser = true;
+          _conversationState = ConversationState.processing;
+        } else {
+          // AI Message
+          if (_lastMessageWasUser) {
+            // New AI response starting
+            _currentMessage = text;
+            _lastMessageWasUser = false;
+            _conversationState = ConversationState.listening; // AI is speaking
+          } else {
+            // Appending to existing AI response
+            _currentMessage += text;
+          }
+        }
+      });
+    };
+
     // end _initializeServices
   }
+
 
   @override
   void dispose() {
     _userSub?.cancel();
     super.dispose();
   }
+
 
   void _startChat() async {
     final localizations = AppLocalizations.of(context);
@@ -397,6 +320,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     }
   }
 
+
   Future<void> _stopChat() async {
     // Provide haptic feedback
     HapticFeedback.mediumImpact();
@@ -413,6 +337,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     });
   }
 
+
   @override
   Widget build(BuildContext context) {
     debugPrint('Building ConnectXHomePage with user: $_user');
@@ -424,246 +349,46 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
             const AppBackground(),
 
             // User avatar and logout button (top-right)
-            Positioned(
-              top: 20,
-              right: 20,
-              child: _user != null
-                  ? Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // User avatar if not web and photoUrl is available
-                        // On web, just show initials due to CORS issues
-                        if (_auth.photoUrl != null &&
-                            _auth.photoUrl!.isNotEmpty &&
-                            !kIsWeb)
-                          ClipOval(
-                            child: Image.network(
-                              _auth.photoUrl!,
-                              width: 32,
-                              height: 32,
-                              fit: BoxFit.cover,
-                            ),
-                          )
-                        else
-                          CircleAvatar(
-                            radius: 16,
-                            backgroundColor: const Color(0xFF6C63FF),
-                            child: Text(
-                              // derive initials from display name if possible
-                              (_user?.displayName ?? '')
-                                  .split(' ')
-                                  .where((s) => s.isNotEmpty)
-                                  .map((s) => s[0])
-                                  .take(2)
-                                  .join()
-                                  .toUpperCase(),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                        IconButton(
-                          icon: const Icon(Icons.logout),
-                          onPressed: () async {
-                            await _auth.signOut();
-                          },
-                        ),
-                      ],
-                    )
-                  : const SizedBox.shrink(),
-            ),
+            UserHeader(user: _user, auth: _auth),
 
-            // Main content with stage + headline
+            // Main Layout
             Column(
               children: [
-                const SizedBox(height: 48),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
-                    children: const [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Atlas - AI job agent',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.2,
-                              ),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              'Speak your needs. See intent visualized.',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 26),
+                const SizedBox(height: 20),
+                
+                // Topics List (Bullet points style)
+                // TopicsList(topics: _topics),
+
+                // AI Neural Visualizer
                 Expanded(
                   child: Center(
-                    child: AIBlobVisualizer(
+                    child: AINeuralVisualizer(
                       isListening: _conversationState == ConversationState.listening,
                       isProcessing: _conversationState == ConversationState.processing,
-                      size: 260,
-                      primaryColor: const Color(0xFF5EEAD4),
-                      secondaryColor: const Color(0xFF6366F1),
-                      accentColor: const Color(0xFF93C5FD),
+                      size: 300,
+                      primaryColor: const Color(0xFF00D4FF),
+                      secondaryColor: const Color(0xFF6C63FF),
+                      accentColor: const Color(0xFF818CF8),
                     ),
                   ),
                 ),
-                const SizedBox(height: 32),
-              ],
-            ),
 
-            // Speech-first glass card with two-line chat + topics
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: 132,
-              child: Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.25),
-                      blurRadius: 20,
-                      offset: const Offset(0, 12),
-                    ),
-                  ],
+                // Two Liners Chat Text
+                ChatDisplay(
+                  message: _currentMessage,
+                  statusText: _statusText,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: _conversationState == ConversationState.processing
-                                ? const Color(0xFF22D3EE)
-                                : const Color(0xFF86EFAC),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _conversationState == ConversationState.listening
-                              ? 'Live listening'
-                              : _conversationState == ConversationState.processing
-                                  ? 'Thinking with Atlas'
-                                  : 'Ready for your voice',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _currentMessage.isNotEmpty ? _currentMessage : _statusText,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 8,
-                      children: _topics
-                          .map(
-                            (topic) => Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  margin: const EdgeInsets.only(right: 6),
-                                  decoration: const BoxDecoration(
-                                    color: Colors.white70,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                Text(
-                                  topic,
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
 
-            // Bottom microphone button (center, single button)
-            Positioned(
-              bottom: 40,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: GestureDetector(
+                const SizedBox(height: 40),
+
+                // Mic Button
+                MicButton(
+                  state: _conversationState,
                   onTap: _conversationState != ConversationState.idle ? _stopChat : _startChat,
-                  child: Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _conversationState != ConversationState.idle
-                          ? Colors.red.withValues(alpha: 0.8)
-                          : const Color(0xFF6C63FF),
-                      boxShadow: [
-                        BoxShadow(
-                          color: (_conversationState != ConversationState.idle
-                              ? Colors.red 
-                              : const Color(0xFF6C63FF))
-                              .withValues(alpha: 0.3),
-                          blurRadius: 20,
-                          spreadRadius: 5,
-                        ),
-                      ],
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Icon(
-                      _conversationState != ConversationState.idle ? Icons.mic_off : Icons.mic,
-                      color: Colors.white,
-                      size: 32,
-                    ),
-                  ),
                 ),
-              ),
+
+                const SizedBox(height: 60),
+              ],
             ),
           ],
         ),

@@ -68,6 +68,10 @@ class PeerConnectionHandler:
                     input_track=track,
                     user_id=self.user_id
                 )
+                
+                # If we already have a data channel, pass it to the audio processor
+                if hasattr(self, 'data_channel') and self.data_channel:
+                    self.audio_processor.set_data_channel(self.data_channel)
 
                 # Signal that the track is ready
                 self.track_ready.set()
@@ -77,6 +81,15 @@ class PeerConnectionHandler:
                 logger.debug("Starting audio processor")
                 asyncio.create_task(self.audio_processor.start())
         
+        @self.pc.on("datachannel")
+        def on_datachannel(channel):
+            """Handle incoming data channel."""
+            logger.info(f"Data channel received: {channel.label}")
+            self.data_channel = channel
+            
+            if self.audio_processor:
+                self.audio_processor.set_data_channel(channel)
+                
         @self.pc.on("connectionstatechange")
         async def on_connectionstatechange():
             """Handle connection state changes."""
