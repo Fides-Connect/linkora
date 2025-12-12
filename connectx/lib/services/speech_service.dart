@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'webrtc_service.dart';
+import 'wrappers.dart';
 
 /// Speech service that uses WebRTC to communicate with the AI-Assistant server
 /// The server handles Speech-to-Text, LLM processing, and Text-to-Speech
@@ -13,13 +14,21 @@ class SpeechService {
   // Remote audio renderer for WebRTC audio playback
   RTCVideoRenderer? _remoteRenderer;
 
+  // Dependencies
+  final PermissionWrapper _permissionWrapper;
+  final WebRTCService Function() _webRTCServiceFactory;
+
   // Callbacks
   Function()? onSpeechStart;
   Function()? onSpeechEnd;
   Function()? onConnected;
   Function()? onDisconnected;
 
-  SpeechService();
+  SpeechService({
+    PermissionWrapper? permissionWrapper,
+    WebRTCService Function()? webRTCServiceFactory,
+  })  : _permissionWrapper = permissionWrapper ?? PermissionWrapper(),
+        _webRTCServiceFactory = webRTCServiceFactory ?? (() => WebRTCService());
 
   void stopSpeech() async {
     // Stop and clean up WebRTC service
@@ -57,7 +66,7 @@ class SpeechService {
 
   Future<void> _initialize() async {
     // Check microphone permission
-    final microphoneRequest = await Permission.microphone.request();
+    final microphoneRequest = await _permissionWrapper.requestMicrophone();
     if (!microphoneRequest.isGranted) {
       throw Exception('Microphone permission denied');
     }
@@ -71,7 +80,7 @@ class SpeechService {
   void _initializeWebRTC() {
     debugPrint('SpeechService: Initializing WebRTC service');
     
-    _webrtcService = WebRTCService();
+    _webrtcService = _webRTCServiceFactory();
     
     // Set up WebRTC callbacks
     _webrtcService!.onConnected = () async {
