@@ -298,6 +298,8 @@ class TestGreetingPlayback:
         audio_processor.output_track.queue_audio = capture_speaking
         
         await audio_processor._play_greeting()
+
+        await audio_processor._monitor_playback_completion()
         
         # Flag should be False after greeting completes
         assert audio_processor.is_ai_speaking is False

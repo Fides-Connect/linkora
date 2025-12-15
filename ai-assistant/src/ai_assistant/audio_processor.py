@@ -286,15 +286,14 @@ class AudioProcessor:
         Returns:
             True if the last 4 words match AI output (it's AI voice), False otherwise (human)
         """
-        logger.info(f"📊 Checking Transcript: {transcript}")
         # Only check for AI voice while AI is actively speaking
         if not self.is_ai_speaking:
-            logger.info("📊 AI is not speaking - skipping sliding window check")
+            logger.debug("📊 AI is not speaking - skipping sliding window check")
             return False
         
         # Need AI output buffer to compare against
         if not self.last_ai_output:
-            logger.info("📊 No AI output buffer - cannot perform sliding window check")
+            logger.debug("📊 No AI output buffer - cannot perform sliding window check")
             return False
         
         # Normalize transcript: remove punctuation, lowercase, split into words
@@ -303,7 +302,7 @@ class AudioProcessor:
 
         # Need at least 1 word to update sliding window
         if not words:
-            logger.info("📊 Transcript has no words - skipping sliding window check")
+            logger.debug("📊 Transcript has no words - skipping sliding window check")
             return False
         
         # Update sliding window: Since interim results are cumulative (each contains previous + new words),
@@ -314,12 +313,12 @@ class AudioProcessor:
         
         # Need at least 4 words to check
         if len(stt_word_window) < 4:
-            logger.info(f"📊 Sliding window has only {len(stt_word_window)} words: {stt_word_window}")
+            logger.debug(f"📊 Sliding window has only {len(stt_word_window)} words: {stt_word_window}")
             return True  # Not enough data yet, assume AI voice to avoid false interrupts
         
         # Get last 4 words as phrase
         last_4_words = ' '.join(stt_word_window)
-        logger.info(f"🔍 Sliding window (last 4 words): '{last_4_words}'")
+        logger.debug(f"🔍 Sliding window (last 4 words): '{last_4_words}'")
         
         # Normalize: remove punctuation, lowercase, collapse all whitespace to single spaces
         ai_normalized = re.sub(r'[^\w\s]', '', self.last_ai_output.lower().strip())
@@ -471,15 +470,15 @@ class AudioProcessor:
                 
                 if queue_size == 0 and buffer_size == 0:
                     empty_count += 1
-                    # If queue and buffer are empty for 20 consecutive checks (2s), we're done
-                    if empty_count >= 20:
+                    # If queue and buffer are empty for 8 consecutive checks (2s), we're done
+                    if empty_count >= 8:
                         logger.info("🔊 Audio playback completed - clearing speaking flag")
                         self.is_ai_speaking = False
                         break
                 else:
                     empty_count = 0
                 
-                await asyncio.sleep(0.100)  # Check every 100ms
+                await asyncio.sleep(0.250)  # Check every 250ms
             
         except Exception as e:
             logger.error(f"Error in playback monitor: {e}", exc_info=True)
