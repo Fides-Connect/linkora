@@ -103,7 +103,7 @@ class DebugRecorder:
         
         if audio_rms < 100:
             logger.warning(
-                f"WARNING: Audio has very low RMS ({audio_rms:.2f}) - "
+                f"Audio has very low RMS ({audio_rms:.2f}) - "
                 "recording might be silence or corrupted"
             )
     

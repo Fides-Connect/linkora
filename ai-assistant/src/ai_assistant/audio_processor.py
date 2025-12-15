@@ -54,12 +54,7 @@ class AudioProcessor:
         
         # Speaker diarization and echo filtering
         self.ai_speaker_tag: Optional[int] = None  # Identified speaker tag for AI voice
-        self.ai_speaking_start_time: Optional[float] = None  # Track when AI starts speaking
-        self.ai_output_buffer: List[Dict] = []  # Buffer of recent AI text output for echo detection
-        self.ai_output_buffer_max_duration = 30.0  # Keep last 30 seconds of AI output
-        
-        # Sliding window for AI voice detection (last 4 words from accumulated STT)
-        self.stt_word_window: List[str] = []  # Sliding window of normalized words from STT
+        self.last_ai_output: str = ""  # Recent LLM text output for echo detection
         self.sliding_window_similarity_threshold = 0.7  # Minimum similarity (70%) for fuzzy matching
         
     def get_output_track(self) -> MediaStreamTrack:
@@ -112,29 +107,24 @@ class AudioProcessor:
             
             # Set speaking flag to prevent interruption during greeting
             self.is_ai_speaking = True
-            # Clear sliding window for new AI output
-            self.stt_word_window.clear()
-            logger.debug("🧹 Cleared sliding window for greeting")
             
             # Generate greeting text and audio (pass user_id if available)
             greeting_text, audio_stream = await self.ai_assistant.get_greeting_audio(user_id=self.user_id)
             logger.info(f"Playing greeting: '{greeting_text}'")
             
             # Store greeting text in buffer for echo detection
-            self.ai_output_buffer.append({
-                'text': greeting_text,
-                'timestamp': time.time(),
-                'is_current': False
-            })
+            self.last_ai_output = greeting_text
             logger.info(f"📝 Stored greeting in buffer for echo detection")
             
             # Queue greeting audio for playback
             async for audio_chunk in audio_stream:
                 if audio_chunk:
                     await self.output_track.queue_audio(audio_chunk)
+
+            # Monitor playback completion in background
+            asyncio.create_task(self._monitor_playback_completion())
             
             # Clear speaking flag after greeting completes
-            self.is_ai_speaking = False
             logger.info("Greeting playback complete")
             
         except Exception as e:
@@ -257,10 +247,6 @@ class AudioProcessor:
                                 logger.warning(f"   Queue size: {self.output_track.audio_queue.qsize()}, Buffer: {len(self.output_track._buffer)} bytes")
                                 self.is_ai_speaking = False
                             
-                            # Clear sliding window for next utterance
-                            self.stt_word_window.clear()
-                            logger.debug(f"🧹 Cleared sliding window for next utterance")
-                            
                             # Process the transcript if it's not empty
                             if transcript.strip():
                                 await self._process_final_transcript(transcript)
@@ -300,76 +286,71 @@ class AudioProcessor:
         Returns:
             True if the last 4 words match AI output (it's AI voice), False otherwise (human)
         """
+        logger.info(f"📊 Checking Transcript: {transcript}")
         # Only check for AI voice while AI is actively speaking
-        # Exception: Final transcripts are checked even if AI stopped (processing delay)
-        if not self.is_ai_speaking and not is_final:
+        if not self.is_ai_speaking:
+            logger.info("📊 AI is not speaking - skipping sliding window check")
             return False
         
         # Need AI output buffer to compare against
-        if not self.ai_output_buffer:
+        if not self.last_ai_output:
+            logger.info("📊 No AI output buffer - cannot perform sliding window check")
             return False
         
         # Normalize transcript: remove punctuation, lowercase, split into words
         transcript_normalized = re.sub(r'[^\w\s]', '', transcript.lower().strip())
         words = transcript_normalized.split()
-        
+
+        # Need at least 1 word to update sliding window
         if not words:
+            logger.info("📊 Transcript has no words - skipping sliding window check")
             return False
         
         # Update sliding window: Since interim results are cumulative (each contains previous + new words),
         # we replace the window with the last 4 words from the current transcript
         # This prevents duplicating words across multiple interim results
-        self.stt_word_window = words[-4:] if len(words) >= 4 else words
-        logger.debug(f"📊 Updated sliding window: {self.stt_word_window} (from {len(words)} words)")
+        stt_word_window = words[-4:] if len(words) >= 4 else words
+        logger.debug(f"📊 Updated sliding window: {stt_word_window} (from {len(words)} words)")
         
         # Need at least 4 words to check
-        if len(self.stt_word_window) < 4:
-            logger.debug(f"📊 Sliding window has only {len(self.stt_word_window)} words: {self.stt_word_window}")
+        if len(stt_word_window) < 4:
+            logger.info(f"📊 Sliding window has only {len(stt_word_window)} words: {stt_word_window}")
             return True  # Not enough data yet, assume AI voice to avoid false interrupts
         
         # Get last 4 words as phrase
-        last_4_words = ' '.join(self.stt_word_window[-4:])
+        last_4_words = ' '.join(stt_word_window)
         logger.info(f"🔍 Sliding window (last 4 words): '{last_4_words}'")
         
-        # Check against current AI output buffer (most recent entry)
-        if self.ai_output_buffer:
-            # Use the most recent AI output (last entry in buffer)
-            latest_ai_output = self.ai_output_buffer[-1]['text']
-            # Normalize: remove punctuation, lowercase, collapse all whitespace to single spaces
-            ai_normalized = re.sub(r'[^\w\s]', '', latest_ai_output.lower().strip())
-            ai_normalized = re.sub(r'\s+', ' ', ai_normalized)  # Collapse multiple spaces/newlines to single space
-            
-            # Find best matching subsequence using fuzzy matching
-            # Split AI output into words and check all 4-word windows
-            ai_words = ai_normalized.split()
-            best_similarity = 0.0
-            
-            # Check each 4-word window in the AI output
-            for i in range(len(ai_words) - 3):
-                ai_window = ' '.join(ai_words[i:i+4])
-                similarity = SequenceMatcher(None, last_4_words, ai_window).ratio()
-                if similarity > best_similarity:
-                    best_similarity = similarity
-            
-            logger.info(f"📊 Sliding window similarity: {best_similarity:.2%} (threshold: {self.sliding_window_similarity_threshold:.0%})")
-            
-            # Check if similarity exceeds threshold
-            if best_similarity >= self.sliding_window_similarity_threshold:
-                logger.info(f"✅ Sliding window MATCH - AI voice detected")
-                logger.info(f"   Window: '{last_4_words}'")
-                logger.info(f"   AI output: '{latest_ai_output[:100]}...'")
-                return True
-            else:
-                logger.info(f"❌  NO MATCH - Human voice detected!")
-                logger.info(f"   Window: '{last_4_words}'")
-                logger.info(f"   AI output: '{latest_ai_output[:100]}...'")
-                return False
+        # Normalize: remove punctuation, lowercase, collapse all whitespace to single spaces
+        ai_normalized = re.sub(r'[^\w\s]', '', self.last_ai_output.lower().strip())
+        ai_normalized = re.sub(r'\s+', ' ', ai_normalized)  # Collapse multiple spaces/newlines to single space
         
-        return False
-    
+        # Find best matching subsequence using fuzzy matching
+        # Split AI output into words and check all 4-word windows
+        ai_words = ai_normalized.split()
+        best_similarity = 0.0
         
-        return False
-    
+        # Check each 4-word window in the AI output
+        for i in range(len(ai_words) - 3):
+            ai_window = ' '.join(ai_words[i:i+4])
+            similarity = SequenceMatcher(None, last_4_words, ai_window).ratio()
+            if similarity > best_similarity:
+                best_similarity = similarity
+        
+        logger.info(f"📊 Sliding window similarity: {best_similarity:.2%} (threshold: {self.sliding_window_similarity_threshold:.0%})")
+        
+        # Check if similarity exceeds threshold
+        if best_similarity >= self.sliding_window_similarity_threshold:
+            logger.info(f"✅ Sliding window MATCH - AI voice detected")
+            logger.info(f"   Window: '{last_4_words}'")
+            logger.info(f"   AI output: '{self.last_ai_output[:100]}...'")
+            return True
+        else:
+            logger.info(f"❌  NO MATCH - Human voice detected!")
+            logger.info(f"   Window: '{last_4_words}'")
+            logger.info(f"   AI output: '{self.last_ai_output[:100]}...'")
+            return False
+        
     async def _trigger_interrupt(self):
         """Trigger an interrupt to stop ongoing AI speech."""
         logger.info("⚡ Triggering interrupt - cancelling ongoing TTS tasks")
@@ -397,10 +378,6 @@ class AudioProcessor:
             # Reset interrupt event and set speaking flag
             self.interrupt_event.clear()
             self.is_ai_speaking = True
-            self.ai_speaking_start_time = asyncio.get_event_loop().time()
-            # Clear sliding window for new AI output
-            self.stt_word_window.clear()
-            logger.debug("🧹 Cleared sliding window for new AI response")
             
             # Performance tracking
             perf_times = {
@@ -430,30 +407,12 @@ class AudioProcessor:
                         first_chunk = False
                     if chunk:
                         ai_response_text.append(chunk)
-                        # Store incrementally in buffer for immediate echo detection
-                        current_response = ''.join(ai_response_text)
                         # Update or add the current response in buffer
-                        if self.ai_output_buffer and self.ai_output_buffer[-1].get('is_current'):
-                            # Update the last entry if it's marked as current
-                            self.ai_output_buffer[-1]['text'] = current_response
-                            self.ai_output_buffer[-1]['timestamp'] = time.time()
-                        else:
-                            # Add new entry marked as current
-                            self.ai_output_buffer.append({
-                                'text': current_response,
-                                'timestamp': time.time(),
-                                'is_current': True
-                            })
-                        logger.info(f"📝 Updated AI buffer with chunk: '{current_response[:50]}...'")
+                        self.last_ai_output = ''.join(ai_response_text)
                     yield chunk
             
             # Process through TTS manager
             await self.tts_manager.process_llm_stream(tracked_llm_stream())
-            
-            # Mark the last buffer entry as complete (no longer current)
-            if self.ai_output_buffer and self.ai_output_buffer[-1].get('is_current'):
-                self.ai_output_buffer[-1]['is_current'] = False
-                logger.info(f"✅ AI response complete and stored in buffer: '{self.ai_output_buffer[-1]['text'][:100]}...'")
             
             # Monitor playback completion in background
             asyncio.create_task(self._monitor_playback_completion())
@@ -512,15 +471,15 @@ class AudioProcessor:
                 
                 if queue_size == 0 and buffer_size == 0:
                     empty_count += 1
-                    # If queue and buffer are empty for 5 consecutive checks (100ms), we're done
-                    if empty_count >= 5:
+                    # If queue and buffer are empty for 20 consecutive checks (2s), we're done
+                    if empty_count >= 20:
                         logger.info("🔊 Audio playback completed - clearing speaking flag")
                         self.is_ai_speaking = False
                         break
                 else:
                     empty_count = 0
                 
-                await asyncio.sleep(0.02)  # Check every 20ms
+                await asyncio.sleep(0.100)  # Check every 100ms
             
         except Exception as e:
             logger.error(f"Error in playback monitor: {e}", exc_info=True)
