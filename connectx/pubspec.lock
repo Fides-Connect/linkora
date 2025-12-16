@@ -597,6 +597,7 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.16.0"
+<<<<<<< Updated upstream
   mime:
     dependency: transitive
     description:
@@ -621,6 +622,8 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
+=======
+>>>>>>> Stashed changes
   path:
     dependency: transitive
     description:
