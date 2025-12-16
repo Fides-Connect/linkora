@@ -32,5 +32,6 @@ jobs:
           runCmd: |
             cd ./connectx
             cp ./template.env .env
+            dart run build_runner build --delete-conflicting-outputs
             flutter build apk
             flutter test
