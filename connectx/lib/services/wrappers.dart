@@ -1,5 +1,5 @@
 import 'package:permission_handler/permission_handler.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
@@ -12,14 +12,14 @@ class PermissionWrapper {
 
 /// Wrapper for WebRTC global functions to allow mocking
 class WebRTCWrapper {
-  Future<MediaStream> getUserMedia(Map<String, dynamic> mediaConstraints) {
-    return navigator.mediaDevices.getUserMedia(mediaConstraints);
+  Future<rtc.MediaStream> getUserMedia(Map<String, dynamic> mediaConstraints) {
+    return rtc.navigator.mediaDevices.getUserMedia(mediaConstraints);
   }
 
-  Future<RTCPeerConnection> createPeerConnection(
+  Future<rtc.RTCPeerConnection> createPeerConnection(
       Map<String, dynamic> configuration,
-      [Map<String, dynamic>? constraints]) {
-    return createPeerConnection(configuration, constraints);
+      [Map<String, dynamic>? constraints]) async {
+    return await rtc.createPeerConnection(configuration, constraints ?? {});
   }
 }
 
