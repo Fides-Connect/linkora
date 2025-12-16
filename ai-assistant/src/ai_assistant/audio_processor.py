@@ -125,6 +125,9 @@ class AudioProcessor:
             greeting_text, audio_stream = await self.ai_assistant.get_greeting_audio(user_id=self.user_id)
             logger.info(f"Playing greeting: '{greeting_text}'")
             
+            # Send greeting text to client via data channel
+            self._send_chat_message(greeting_text, is_user=False, is_chunk=False)
+            
             # Queue greeting audio for playback
             async for audio_chunk in audio_stream:
                 if audio_chunk:

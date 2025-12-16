@@ -152,6 +152,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
   ConversationState _conversationState = ConversationState.idle;
   final List<String> _topics = ['Salary Expectations', 'Remote Work', 'Experience Level', 'Relocation'];
+  final List<Map<String, dynamic>> _chatMessages = []; // List of {text: String, isUser: bool}
   String _currentMessage = '';
   String _statusText = '';
   bool _isInitialized = false;
@@ -229,33 +230,27 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
     // Set up speech service callbacks
     _speechService.onSpeechStart = () {
-      final localizations = AppLocalizations.of(context);
       setState(() {
         _conversationState = ConversationState.listening;
-        _statusText = localizations?.connecting ?? 'Connecting to AI-Assistant...';
       });
     };
 
     _speechService.onConnected = () {
-      final localizations = AppLocalizations.of(context);
       setState(() {
-        _statusText = localizations?.connected ?? 'Connected! AI is listening and responding...';
+        // Clear status text so chat messages appear immediately
+        _statusText = '';
       });
     };
 
     _speechService.onSpeechEnd = () {
-      final localizations = AppLocalizations.of(context);
       setState(() {
         _conversationState = ConversationState.idle;
-        _statusText = localizations?.disconnected ?? 'Disconnected';
       });
     };
 
     _speechService.onDisconnected = () {
-      final localizations = AppLocalizations.of(context);
       setState(() {
         _conversationState = ConversationState.idle;
-        _statusText = localizations?.connectionClosed ?? 'Connection closed';
       });
     };
 
@@ -263,18 +258,24 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       setState(() {
         if (isUser) {
           _currentMessage = text;
+          _chatMessages.add({'text': text, 'isUser': true});
           _lastMessageWasUser = true;
           _conversationState = ConversationState.processing;
         } else {
           // AI Message
-          if (_lastMessageWasUser) {
-            // New AI response starting
+          if (_lastMessageWasUser || _chatMessages.isEmpty || _chatMessages.last['isUser']) {
+            // New AI response starting (after user message OR first message OR last was user)
             _currentMessage = text;
+            _chatMessages.add({'text': text, 'isUser': false});
             _lastMessageWasUser = false;
             _conversationState = ConversationState.listening; // AI is speaking
           } else {
-            // Appending to existing AI response
+            // Appending chunks to existing AI response
             _currentMessage += text;
+            // Update the last message in the list
+            if (_chatMessages.isNotEmpty && !_chatMessages.last['isUser']) {
+              _chatMessages.last['text'] = _currentMessage;
+            }
           }
         }
       });
@@ -333,7 +334,12 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     setState(() {
       _conversationState = ConversationState.idle;
       _currentMessage = '';
-      _statusText = 'Chat stopped. Tap the microphone to start again.';
+      _chatMessages.clear();
+      // Reset to initial status text
+      final localizations = AppLocalizations.of(context);
+      if (localizations != null) {
+        _statusText = localizations.tapMicrophoneToStart;
+      }
     });
   }
 
@@ -354,10 +360,9 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
             // Main Layout
             Column(
               children: [
-                const SizedBox(height: 20),
-                
+                // const SizedBox(height: 20),
                 // Topics List (Bullet points style)
-                // TopicsList(topics: _topics),
+                //TopicsList(topics: _topics),
 
                 // AI Neural Visualizer
                 Expanded(
@@ -375,7 +380,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
                 // Two Liners Chat Text
                 ChatDisplay(
-                  message: _currentMessage,
+                  messages: _chatMessages,
                   statusText: _statusText,
                 ),
 
