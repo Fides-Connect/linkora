@@ -50,13 +50,14 @@ class _AINeuralVisualizerState extends State<AINeuralVisualizer>
   _Particle _createParticle() {
     final angle = _random.nextDouble() * 2 * math.pi;
     final radius = _random.nextDouble() * 0.4; // Smaller spread
+    
     return _Particle(
       angle: angle,
       radius: radius,
       speed: 0.1 + _random.nextDouble() * 0.2, // Slower movement
       size: 2.0 + _random.nextDouble() * 2.0, // Smaller particles
-      color: _random.nextBool() ? widget.primaryColor : widget.secondaryColor,
-      opacity: 0.4 + _random.nextDouble() * 0.4, // More subtle
+      color: Colors.white,
+      opacity: 0.3 + _random.nextDouble() * 0.4, // Varying transparency
     );
   }
 
@@ -129,7 +130,7 @@ class _NeuralPainter extends CustomPainter {
 
     // Draw soft central glow
     final glowPaint = Paint()
-      ..color = primaryColor.withValues(alpha: 0.1)
+      ..color = Colors.white.withValues(alpha: 0.08)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 30);
     canvas.drawCircle(center, 60, glowPaint);
 
@@ -192,7 +193,7 @@ class _NeuralPainter extends CustomPainter {
         position, 
         particle.size * 2.5, 
         Paint()
-          ..color = particle.color.withValues(alpha: 0.1)
+          ..color = Colors.white.withValues(alpha: 0.08)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5)
       );
 
@@ -206,13 +207,13 @@ class _NeuralPainter extends CustomPainter {
         center, 
         pulse, 
         Paint()
-          ..color = accentColor.withValues(alpha: 0.2)
+          ..color = Colors.white.withValues(alpha: 0.2)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8)
       );
       canvas.drawCircle(
         center, 
         8, 
-        Paint()..color = accentColor.withValues(alpha: 0.6)
+        Paint()..color = Colors.white.withValues(alpha: 0.6)
       );
     }
   }
