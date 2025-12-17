@@ -50,11 +50,13 @@ class _AINeuralVisualizerState extends State<AINeuralVisualizer>
   _Particle _createParticle() {
     final angle = _random.nextDouble() * 2 * math.pi;
     final radius = _random.nextDouble() * 0.4; // Smaller spread
+    final baseSpeed = 0.1 + _random.nextDouble() * 0.2;
     
     return _Particle(
       angle: angle,
       radius: radius,
-      speed: 0.1 + _random.nextDouble() * 0.2, // Slower movement
+      speed: baseSpeed,
+      currentSpeed: baseSpeed * 0.002, // Start at idle speed
       size: 2.0 + _random.nextDouble() * 2.0, // Smaller particles
       color: Colors.white,
       opacity: 0.3 + _random.nextDouble() * 0.4, // Varying transparency
@@ -92,6 +94,7 @@ class _Particle {
   double angle;
   double radius;
   double speed;
+  double currentSpeed; // Current rotation speed for smooth transitions
   double size;
   Color color;
   double opacity;
@@ -100,6 +103,7 @@ class _Particle {
     required this.angle,
     required this.radius,
     required this.speed,
+    required this.currentSpeed,
     required this.size,
     required this.color,
     required this.opacity,
@@ -141,20 +145,33 @@ class _NeuralPainter extends CustomPainter {
       // Gentle breathing animation
       final breathe = math.sin(animationValue * 2 * math.pi) * 0.05;
       
-      // Update logic based on state
+      // Define target speeds for each state
+      double targetSpeed;
+      double targetRadius;
+      
       if (isProcessing) {
-        // Gentle pulsing inward
-        particle.angle += 0.003 * particle.speed;
-        particle.radius = (0.25 + breathe) + 0.1 * math.sin(animationValue * 2 * math.pi + i);
+        // Processing: moderate speed, compact
+        targetSpeed = particle.speed * 0.005;
+        targetRadius = 0.25 + breathe + 0.1 * math.sin(animationValue * 2 * math.pi + i);
       } else if (isListening) {
-        // Calm expansion
-        particle.angle += 0.008 * particle.speed;
-        particle.radius = (0.3 + breathe) + 0.08 * math.sin(animationValue * 2 * math.pi + i);
+        // Listening: fast, energetic motion
+        targetSpeed = particle.speed * 0.025; // 12.5x faster than idle
+        targetRadius = 0.35 + breathe + 0.12 * math.sin(animationValue * 2 * math.pi + i);
       } else {
-        // Idle gentle float
-        particle.angle += 0.002 * particle.speed;
-        particle.radius = 0.25 + breathe + 0.05 * math.sin(animationValue * 2 * math.pi + i);
+        // Idle: slow, calm motion
+        targetSpeed = particle.speed * 0.002;
+        targetRadius = 0.25 + breathe + 0.05 * math.sin(animationValue * 2 * math.pi + i);
       }
+      
+      // Smooth acceleration/deceleration (lerp towards target speed)
+      final acceleration = 0.05; // Smoothness factor
+      particle.currentSpeed += (targetSpeed - particle.currentSpeed) * acceleration;
+      
+      // Update particle angle with current speed
+      particle.angle += particle.currentSpeed;
+      
+      // Smooth radius transition
+      particle.radius += (targetRadius - particle.radius) * 0.05;
 
       // Calculate position
       final r = particle.radius * maxRadius;
