@@ -16,7 +16,7 @@ class ChatDisplay extends StatelessWidget {
     if (messages.isEmpty) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 32),
-        height: 320,
+        height: 380,
         alignment: Alignment.center,
         child: Text(
           statusText,
@@ -33,35 +33,50 @@ class ChatDisplay extends StatelessWidget {
       );
     }
 
-    // Show chat messages with scrolling
+    // Show chat messages with scrolling and fade effect at top
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 32),
-      height: 320,
-      child: ListView.builder(
-        reverse: true, // Show latest messages at the bottom
-        itemCount: messages.length,
-        itemBuilder: (context, index) {
-          // Reverse index to show latest messages first (at bottom)
-          final reversedIndex = messages.length - 1 - index;
-          final message = messages[reversedIndex];
-          final text = message['text'] as String;
-          final isUser = message['isUser'] as bool;
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12.0),
-            child: Text(
-              text,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: isUser ? FontWeight.w400 : FontWeight.w300,
-                fontStyle: isUser ? FontStyle.italic : FontStyle.normal,
-                height: 1.2,
-              ),
-              textAlign: isUser ? TextAlign.right : TextAlign.left,
-            ),
-          );
+      height: 380,
+      child: ShaderMask(
+        shaderCallback: (Rect bounds) {
+          return LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: const [
+              Colors.transparent,
+              Colors.white,
+              Colors.white,
+            ],
+            stops: const [0.0, 0.10, 1.0], // Fade out top ~15% (roughly 2 lines)
+          ).createShader(bounds);
         },
+        blendMode: BlendMode.dstIn,
+        child: ListView.builder(
+          reverse: true, // Show latest messages at the bottom
+          itemCount: messages.length,
+          itemBuilder: (context, index) {
+            // Reverse index to show latest messages first (at bottom)
+            final reversedIndex = messages.length - 1 - index;
+            final message = messages[reversedIndex];
+            final text = message['text'] as String;
+            final isUser = message['isUser'] as bool;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: isUser ? FontWeight.w400 : FontWeight.w300,
+                  fontStyle: isUser ? FontStyle.italic : FontStyle.normal,
+                  height: 1.2,
+                ),
+                textAlign: isUser ? TextAlign.right : TextAlign.left,
+              ),
+            );
+          },
+        ),
       ),
     );
   }
