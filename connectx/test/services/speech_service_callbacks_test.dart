@@ -16,6 +16,9 @@ void main() {
     mockWebRTCService = MockWebRTCService();
     mockRenderer = MockRTCVideoRenderer();
 
+    // Setup callback setters
+    when(mockWebRTCService.onChatMessage = any).thenReturn(null);
+
     speechService = SpeechService(
       permissionWrapper: mockPermissionWrapper,
       webRTCServiceFactory: () => mockWebRTCService,
