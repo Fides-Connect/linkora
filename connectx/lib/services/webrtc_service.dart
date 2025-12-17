@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'wrappers.dart';
 
 /// WebRTC service for connecting to the AI-Assistant server
 /// Handles WebSocket signaling and WebRTC peer connection
@@ -36,9 +37,22 @@ class WebRTCService {
   final List<RTCIceCandidate> _iceCandidatesQueue = [];
   bool _remoteDescriptionSet = false;
 
-  WebRTCService() {
+  // Dependencies
+  final WebRTCWrapper _webRTCWrapper;
+  final WebSocketChannel Function(Uri) _webSocketFactory;
+  final FirebaseAuthWrapper _firebaseAuthWrapper;
+
+  WebRTCService({
+    WebRTCWrapper? webRTCWrapper,
+    WebSocketChannel Function(Uri)? webSocketFactory,
+    FirebaseAuthWrapper? firebaseAuthWrapper,
+    String? serverUrl,
+  })  : _webRTCWrapper = webRTCWrapper ?? WebRTCWrapper(),
+        _webSocketFactory =
+            webSocketFactory ?? ((uri) => WebSocketChannel.connect(uri)),
+        _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper() {
     // Load server URL from environment variable
-    final String? rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
+    final String? rawServer = serverUrl ?? dotenv.env['AI_ASSISTANT_SERVER_URL'];
     if (rawServer == null || rawServer.isEmpty) {
       throw Exception(
         'AI_ASSISTANT_SERVER_URL not set in .env. Add AI_ASSISTANT_SERVER_URL to .env',
@@ -149,7 +163,7 @@ class WebRTCService {
         'video': false,
       };
 
-      _localStream = await navigator.mediaDevices.getUserMedia(
+      _localStream = await _webRTCWrapper.getUserMedia(
         mediaConstraints,
       );
 
@@ -171,7 +185,7 @@ class WebRTCService {
 
     try {
       // Get the current user's ID from Firebase
-      final User? currentUser = FirebaseAuth.instance.currentUser;
+      final User? currentUser = _firebaseAuthWrapper.currentUser;
       final String userId = currentUser?.uid ?? '';
 
       if (userId.isEmpty) {
@@ -181,7 +195,7 @@ class WebRTCService {
       final Uri wsUri = Uri.parse(_serverUrl).replace(queryParameters: {
         'user_id': userId,
       });
-      _signaling = WebSocketChannel.connect(wsUri);
+      _signaling = _webSocketFactory(wsUri);
 
       // Listen for signaling messages
       _signaling!.stream.listen(
@@ -220,7 +234,7 @@ class WebRTCService {
         'sdpSemantics': 'unified-plan',
       };
 
-      _peerConnection = await createPeerConnection(configuration);
+      _peerConnection = await _webRTCWrapper.createPeerConnection(configuration);
 
       // Force earpiece mode immediately after peer connection creation
       if (!kIsWeb &&
