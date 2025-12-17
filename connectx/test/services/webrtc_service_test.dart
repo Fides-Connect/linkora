@@ -67,6 +67,14 @@ void main() {
     when(mockPeerConnection.createDataChannel(any, any))
         .thenAnswer((_) async => mockDataChannel);
     
+    // Setup DataChannel mocks - callback setters must return null
+    when(mockDataChannel.onMessage = any).thenReturn(null);
+    
+    // Setup PeerConnection callback setters
+    when(mockPeerConnection.onIceCandidate = any).thenReturn(null);
+    when(mockPeerConnection.onConnectionState = any).thenReturn(null);
+    when(mockPeerConnection.onTrack = any).thenReturn(null);
+    
     // Setup LocalStream mocks
     when(mockLocalStream.getTracks()).thenReturn([mockAudioTrack]);
     when(mockLocalStream.dispose()).thenAnswer((_) async {});
