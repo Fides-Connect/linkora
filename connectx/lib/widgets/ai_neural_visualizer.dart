@@ -27,7 +27,7 @@ class _AINeuralVisualizerState extends State<AINeuralVisualizer>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   final List<_Particle> _particles = [];
-  final int _particleCount = 60;
+  final int _particleCount = 30; // Reduced for simplicity
   final math.Random _random = math.Random();
 
   @override
@@ -35,7 +35,7 @@ class _AINeuralVisualizerState extends State<AINeuralVisualizer>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(seconds: 4), // Slower for calmness
     )..repeat();
 
     _initializeParticles();
@@ -49,14 +49,14 @@ class _AINeuralVisualizerState extends State<AINeuralVisualizer>
 
   _Particle _createParticle() {
     final angle = _random.nextDouble() * 2 * math.pi;
-    final radius = _random.nextDouble() * 0.5; // Normalized radius 0.0 to 0.5
+    final radius = _random.nextDouble() * 0.4; // Smaller spread
     return _Particle(
       angle: angle,
       radius: radius,
-      speed: 0.2 + _random.nextDouble() * 0.5,
-      size: 2.0 + _random.nextDouble() * 3.0,
+      speed: 0.1 + _random.nextDouble() * 0.2, // Slower movement
+      size: 2.0 + _random.nextDouble() * 2.0, // Smaller particles
       color: _random.nextBool() ? widget.primaryColor : widget.secondaryColor,
-      opacity: 0.3 + _random.nextDouble() * 0.7,
+      opacity: 0.4 + _random.nextDouble() * 0.4, // More subtle
     );
   }
 
@@ -127,30 +127,32 @@ class _NeuralPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final maxRadius = size.width / 2;
 
-    // Draw connecting lines
-    final linePaint = Paint()
-      ..strokeWidth = 1.0
-      ..style = PaintingStyle.stroke;
+    // Draw soft central glow
+    final glowPaint = Paint()
+      ..color = primaryColor.withValues(alpha: 0.1)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 30);
+    canvas.drawCircle(center, 60, glowPaint);
 
     // Update and draw particles
     for (var i = 0; i < particles.length; i++) {
       var particle = particles[i];
 
+      // Gentle breathing animation
+      final breathe = math.sin(animationValue * 2 * math.pi) * 0.05;
+      
       // Update logic based on state
       if (isProcessing) {
-        // Swirl rapidly towards center
-        particle.angle += 0.0005 * particle.speed;
-        particle.radius = (particle.radius - 0.005);
-        if (particle.radius < 0.1) particle.radius = 0.5;
+        // Gentle pulsing inward
+        particle.angle += 0.003 * particle.speed;
+        particle.radius = (0.25 + breathe) + 0.1 * math.sin(animationValue * 2 * math.pi + i);
       } else if (isListening) {
-        // Expand and rotate faster
-        particle.angle += 0.02 * particle.speed;
-        particle.radius = 0.3 + 0.2 * math.sin(animationValue * 2 * math.pi + i);
+        // Calm expansion
+        particle.angle += 0.008 * particle.speed;
+        particle.radius = (0.3 + breathe) + 0.08 * math.sin(animationValue * 2 * math.pi + i);
       } else {
-        // Idle float
-        particle.angle += 0.005 * particle.speed;
-        // Gentle breathing
-        particle.radius = particle.radius; 
+        // Idle gentle float
+        particle.angle += 0.002 * particle.speed;
+        particle.radius = 0.25 + breathe + 0.05 * math.sin(animationValue * 2 * math.pi + i);
       }
 
       // Calculate position
@@ -159,8 +161,12 @@ class _NeuralPainter extends CustomPainter {
       final y = center.dy + r * math.sin(particle.angle);
       final position = Offset(x, y);
 
-      // Draw connections to nearby particles
-      if (!isProcessing) { // Don't draw lines when swirling fast
+      // Draw subtle connections to very close particles
+      if (!isProcessing) {
+        final linePaint = Paint()
+          ..strokeWidth = 0.5
+          ..style = PaintingStyle.stroke;
+          
         for (var j = i + 1; j < particles.length; j++) {
           final other = particles[j];
           final otherR = other.radius * maxRadius;
@@ -169,40 +175,45 @@ class _NeuralPainter extends CustomPainter {
           final otherPos = Offset(otherX, otherY);
 
           final dist = (position - otherPos).distance;
-          if (dist < 40) {
-            linePaint.color = particle.color.withValues(alpha: (1 - dist / 40) * 0.3);
+          if (dist < 50) {
+            linePaint.color = particle.color.withValues(alpha: (1 - dist / 50) * 0.15);
             canvas.drawLine(position, otherPos, linePaint);
           }
         }
       }
 
-      // Draw particle
+      // Draw particle with soft glow
       final paint = Paint()
-        ..color = (isProcessing ? accentColor : particle.color).withValues(alpha: particle.opacity)
+        ..color = particle.color.withValues(alpha: particle.opacity)
         ..style = PaintingStyle.fill;
       
-      // Glow effect
-      if (isListening) {
-        canvas.drawCircle(
-          position, 
-          particle.size * 1.5, 
-          Paint()..color = particle.color.withValues(alpha: 0.2)
-        );
-      }
+      // Soft glow around particle
+      canvas.drawCircle(
+        position, 
+        particle.size * 2.5, 
+        Paint()
+          ..color = particle.color.withValues(alpha: 0.1)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5)
+      );
 
       canvas.drawCircle(position, particle.size, paint);
     }
     
-    // Draw central core if processing
+    // Draw gentle central pulse if processing
     if (isProcessing) {
-       canvas.drawCircle(
-         center, 
-         20, 
-         Paint()
-           ..color = accentColor.withValues(alpha: 0.5)
-           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10)
-       );
-       canvas.drawCircle(center, 10, Paint()..color = Colors.white);
+      final pulse = 15 + 5 * math.sin(animationValue * 4 * math.pi);
+      canvas.drawCircle(
+        center, 
+        pulse, 
+        Paint()
+          ..color = accentColor.withValues(alpha: 0.2)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8)
+      );
+      canvas.drawCircle(
+        center, 
+        8, 
+        Paint()..color = accentColor.withValues(alpha: 0.6)
+      );
     }
   }
 
