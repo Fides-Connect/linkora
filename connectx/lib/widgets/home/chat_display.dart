@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import '../../models/chat_message.dart';
 
 class ChatDisplay extends StatelessWidget {
-  final List<Map<String, dynamic>> messages;
+  final List<ChatMessage> messages;
   final String statusText;
 
   const ChatDisplay({
@@ -58,8 +59,8 @@ class ChatDisplay extends StatelessWidget {
             // Reverse index to show latest messages first (at bottom)
             final reversedIndex = messages.length - 1 - index;
             final message = messages[reversedIndex];
-            final text = message['text'] as String;
-            final isUser = message['isUser'] as bool;
+            final text = message.text;
+            final isUser = message.isUser;
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 12.0),

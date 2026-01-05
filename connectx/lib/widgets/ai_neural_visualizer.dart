@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../utils/constants.dart';
 
 class AINeuralVisualizer extends StatefulWidget {
   final bool isListening;
@@ -13,10 +14,10 @@ class AINeuralVisualizer extends StatefulWidget {
     super.key,
     required this.isListening,
     required this.isProcessing,
-    this.size = 300,
-    this.primaryColor = const Color(0xFF00D4FF),
-    this.secondaryColor = const Color(0xFF6C63FF),
-    this.accentColor = const Color(0xFF818CF8),
+    this.size = AppConstants.neuralVisualizerSize,
+    this.primaryColor = AppConstants.primaryCyan,
+    this.secondaryColor = AppConstants.primaryPurple,
+    this.accentColor = AppConstants.accentPurple,
   });
 
   @override
@@ -27,7 +28,7 @@ class _AINeuralVisualizerState extends State<AINeuralVisualizer>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   final List<_Particle> _particles = [];
-  final int _particleCount = 30; // Reduced for simplicity
+  final int _particleCount = AppConstants.particleCount;
   final math.Random _random = math.Random();
 
   @override
@@ -35,7 +36,7 @@ class _AINeuralVisualizerState extends State<AINeuralVisualizer>
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 4), // Slower for calmness
+      duration: AppConstants.neuralAnimationDuration,
     )..repeat();
 
     _initializeParticles();
