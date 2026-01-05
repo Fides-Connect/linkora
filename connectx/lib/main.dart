@@ -7,7 +7,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'widgets/ai_neural_visualizer.dart';
 import 'widgets/home/user_header.dart';
-import 'widgets/home/topics_list.dart';
 import 'widgets/home/chat_display.dart';
 import 'widgets/home/mic_button.dart';
 import 'utils/permission_helper.dart';
@@ -21,13 +20,9 @@ import 'theme.dart';
 import 'widgets/app_background.dart';
 import 'widgets/auth_guard.dart';
 import 'localization/app_localizations.dart';
-
-/// Conversation state enum
-enum ConversationState {
-  idle,       // Not connected
-  listening,  // Connected and listening to user
-  processing, // Processing user input (thinking)
-}
+import 'models/app_types.dart';
+import 'models/chat_message.dart';
+import 'utils/constants.dart';
 
 /// Background message handler - must be top-level function
 @pragma('vm:entry-point')
@@ -151,8 +146,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   StreamSubscription<User?>? _userSub;
 
   ConversationState _conversationState = ConversationState.idle;
-  final List<String> _topics = ['Salary Expectations', 'Remote Work', 'Experience Level', 'Relocation'];
-  final List<Map<String, dynamic>> _chatMessages = []; // List of {text: String, isUser: bool}
+  final List<ChatMessage> _chatMessages = [];
   String _currentMessage = '';
   String _statusText = '';
   bool _isInitialized = false;
@@ -258,23 +252,23 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       setState(() {
         if (isUser) {
           _currentMessage = text;
-          _chatMessages.add({'text': text, 'isUser': true});
+          _chatMessages.add(ChatMessage(text: text, isUser: true));
           _lastMessageWasUser = true;
           _conversationState = ConversationState.processing;
         } else {
           // AI Message
-          if (_lastMessageWasUser || _chatMessages.isEmpty || _chatMessages.last['isUser']) {
+          if (_lastMessageWasUser || _chatMessages.isEmpty || _chatMessages.last.isUser) {
             // New AI response starting (after user message OR first message OR last was user)
             _currentMessage = text;
-            _chatMessages.add({'text': text, 'isUser': false});
+            _chatMessages.add(ChatMessage(text: text, isUser: false));
             _lastMessageWasUser = false;
             _conversationState = ConversationState.listening; // AI is speaking
           } else {
             // Appending chunks to existing AI response
             _currentMessage += text;
             // Update the last message in the list
-            if (_chatMessages.isNotEmpty && !_chatMessages.last['isUser']) {
-              _chatMessages.last['text'] = _currentMessage;
+            if (_chatMessages.isNotEmpty && !_chatMessages.last.isUser) {
+              _chatMessages[_chatMessages.length - 1] = ChatMessage(text: _currentMessage, isUser: false);
             }
           }
         }
@@ -370,10 +364,10 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                     child: AINeuralVisualizer(
                       isListening: _conversationState == ConversationState.listening,
                       isProcessing: _conversationState == ConversationState.processing,
-                      size: 300,
-                      primaryColor: const Color(0xFF00D4FF),
-                      secondaryColor: const Color(0xFF6C63FF),
-                      accentColor: const Color(0xFF818CF8),
+                      size: AppConstants.neuralVisualizerSize,
+                      primaryColor: AppConstants.primaryCyan,
+                      secondaryColor: AppConstants.primaryPurple,
+                      accentColor: AppConstants.accentPurple,
                     ),
                   ),
                 ),

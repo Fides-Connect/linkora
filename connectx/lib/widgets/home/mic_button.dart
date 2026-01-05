@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../main.dart'; // For ConversationState enum
+import '../../models/app_types.dart';
+import '../../utils/constants.dart';
 
 class MicButton extends StatelessWidget {
   final ConversationState state;
@@ -16,14 +17,14 @@ class MicButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 80,
-        height: 80,
+        width: AppConstants.micButtonSize,
+        height: AppConstants.micButtonSize,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: LinearGradient(
             colors: state != ConversationState.idle
                 ? [Colors.red.shade400, Colors.red.shade700]
-                : [const Color(0xFF00D4FF), const Color(0xFF6C63FF)],
+                : [AppConstants.primaryCyan, AppConstants.primaryPurple],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -31,17 +32,17 @@ class MicButton extends StatelessWidget {
             BoxShadow(
               color: (state != ConversationState.idle
                   ? Colors.red 
-                  : const Color(0xFF6C63FF))
-                  .withValues(alpha: 0.4),
-              blurRadius: 30,
-              spreadRadius: 5,
+                  : AppConstants.primaryPurple)
+                  .withValues(alpha: AppConstants.shadowOpacity),
+              blurRadius: AppConstants.shadowBlurRadius,
+              spreadRadius: AppConstants.shadowSpreadRadius,
             ),
           ],
         ),
         child: Icon(
           state != ConversationState.idle ? Icons.stop : Icons.mic,
           color: Colors.white,
-          size: 36,
+          size: AppConstants.micIconSize,
         ),
       ),
     );
