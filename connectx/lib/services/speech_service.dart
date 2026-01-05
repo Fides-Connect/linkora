@@ -4,6 +4,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'webrtc_service.dart';
 import 'wrappers.dart';
+import '../models/app_types.dart';
 
 /// Speech service that uses WebRTC to communicate with the AI-Assistant server
 /// The server handles Speech-to-Text, LLM processing, and Text-to-Speech
@@ -19,11 +20,11 @@ class SpeechService {
   final WebRTCService Function() _webRTCServiceFactory;
 
   // Callbacks
-  Function()? onSpeechStart;
-  Function()? onSpeechEnd;
-  Function()? onConnected;
-  Function()? onDisconnected;
-  Function(String, bool, bool)? onChatMessage; // text, isUser, isChunk
+  OnSpeechStartCallback? onSpeechStart;
+  OnSpeechEndCallback? onSpeechEnd;
+  OnConnectedCallback? onConnected;
+  OnDisconnectedCallback? onDisconnected;
+  OnChatMessageCallback? onChatMessage;
 
   SpeechService({
     PermissionWrapper? permissionWrapper,
