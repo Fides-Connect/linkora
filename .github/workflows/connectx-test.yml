@@ -19,6 +19,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Firebase config for CI
+        env:
+          GOOGLE_SERVICES_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          cd connectx
+          chmod +x ./scripts/setup_firebase_for_ci.sh
+          ./scripts/setup_firebase_for_ci.sh
+
       - name: Build APK in Dev Container
         uses: devcontainers/ci@v0.3
         with:
