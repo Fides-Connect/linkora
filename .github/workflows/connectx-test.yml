@@ -16,10 +16,12 @@ jobs:
     name: Build Android APK
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - &checkout
+        name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Firebase config for CI
+      - &setup_firebase
+        name: Setup Firebase config for CI
         env:
           GOOGLE_SERVICES_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
@@ -32,6 +34,7 @@ jobs:
         with:
           runCmd: |
             cd ./connectx
+            cp ./template.env .env
             dart run build_runner build --delete-conflicting-outputs
             flutter build apk
 
@@ -39,16 +42,9 @@ jobs:
     name: Run Flutter Tests
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - *checkout
 
-      - name: Setup Firebase config for CI
-        env:
-          GOOGLE_SERVICES_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: |
-          cd connectx
-          chmod +x ./scripts/setup_firebase_for_ci.sh
-          ./scripts/setup_firebase_for_ci.sh
+      - *setup_firebase
 
       - name: Run Tests in Dev Container
         uses: devcontainers/ci@v0.3
