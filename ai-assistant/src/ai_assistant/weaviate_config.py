@@ -1,20 +1,31 @@
 """
 Weaviate Vector Database Configuration
-Handles connection and schema setup for storing users and service providers.
+Handles connection and schema setup using Hub and Spoke architecture.
 Supports both local (self-hosted) and cloud (Weaviate Cloud Services) deployments.
 """
 import os
 import logging
 import weaviate
-from weaviate.classes.config import Configure, Property, DataType
 from weaviate.auth import AuthApiKey
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+# Handle both package and direct imports
+try:
+    from .hub_spoke_schema import (
+        init_hub_spoke_schema,
+        get_unified_profile_collection,
+        get_competence_entry_collection,
+        cleanup_hub_spoke_schema
+    )
+except ImportError:
+    from hub_spoke_schema import (
+        init_hub_spoke_schema,
+        get_unified_profile_collection,
+        get_competence_entry_collection,
+        cleanup_hub_spoke_schema
+    )
 
-# Collection names
-USERS_COLLECTION = "User"
-PROVIDERS_COLLECTION = "ServiceProvider"
+logger = logging.getLogger(__name__)
 
 
 class WeaviateConnection:
@@ -97,67 +108,23 @@ class WeaviateConnection:
 
 
 def init_weaviate_schema():
-    """Initialize Weaviate schema with collections for users and providers."""
+    """Initialize Weaviate schema with Hub and Spoke architecture."""
     try:
-        client = WeaviateConnection.get_client()
-        
-        # Create Users collection
-        if not client.collections.exists(USERS_COLLECTION):
-            client.collections.create(
-                name=USERS_COLLECTION,
-                properties=[
-                    Property(name="user_id", data_type=DataType.TEXT),
-                    Property(name="name", data_type=DataType.TEXT),
-                    Property(name="email", data_type=DataType.TEXT),
-                    Property(name="photo_url", data_type=DataType.TEXT),
-                    Property(name="fcm_token", data_type=DataType.TEXT),
-                    Property(name="has_open_request", data_type=DataType.BOOL),
-                    Property(name="created_at", data_type=DataType.DATE),
-                    Property(name="last_sign_in", data_type=DataType.DATE),
-                ],
-            )
-            logger.info(f"Created collection: {USERS_COLLECTION}")
-        else:
-            logger.info(f"Collection already exists: {USERS_COLLECTION}")
-        
-        # Create ServiceProvider collection with vectorization
-        if not client.collections.exists(PROVIDERS_COLLECTION):
-            client.collections.create(
-                name=PROVIDERS_COLLECTION,
-                vectorizer_config=Configure.Vectorizer.text2vec_model2vec(),
-                properties=[
-                    Property(name="provider_id", data_type=DataType.TEXT),
-                    Property(name="name", data_type=DataType.TEXT),
-                    Property(name="category", data_type=DataType.TEXT),
-                    Property(name="skills", data_type=DataType.TEXT_ARRAY),
-                    Property(name="rating", data_type=DataType.NUMBER),
-                    Property(name="experience_years", data_type=DataType.INT),
-                    Property(name="price_range", data_type=DataType.TEXT),
-                    Property(name="availability", data_type=DataType.TEXT),
-                    Property(name="description", data_type=DataType.TEXT, 
-                             vectorize_property_name=True,  # Vectorize description
-                             skip_vectorization=False),
-                ],
-            )
-            logger.info(f"Created collection with vectorization: {PROVIDERS_COLLECTION}")
-        else:
-            logger.info(f"Collection already exists: {PROVIDERS_COLLECTION}")
-        
-        logger.info("Weaviate schema initialization complete")
+        # Initialize hub and spoke schema
+        init_hub_spoke_schema()
+        logger.info("Hub and Spoke schema initialization complete")
         return True
         
     except Exception as e:
-        logger.error(f"Error initializing Weaviate schema: {e}")
+        logger.error(f"Error initializing Hub and Spoke schema: {e}")
         raise
 
 
 def get_users_collection():
-    """Get users collection."""
-    client = WeaviateConnection.get_client()
-    return client.collections.get(USERS_COLLECTION)
+    """Get unified profile collection (replaces old users collection)."""
+    return get_unified_profile_collection()
 
 
 def get_providers_collection():
-    """Get providers collection."""
-    client = WeaviateConnection.get_client()
-    return client.collections.get(PROVIDERS_COLLECTION)
+    """Get competence entry collection (replaces old providers collection)."""
+    return get_competence_entry_collection()
