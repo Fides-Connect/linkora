@@ -161,8 +161,8 @@ USE_WEAVIATE=true
 WEAVIATE_URL=http://localhost:8090
 
 # Step 3: Initialize database with test data
-cd ../ai-assistant
-python scripts/init_weaviate.py
+cd /path/to/fides/ai-assistant
+python scripts/init_hub_spoke_schema.py --load-test-data
 
 # Step 4: Start AI assistant
 docker-compose up ai-assistant
@@ -178,7 +178,7 @@ WEAVIATE_CLUSTER_URL=https://your-cluster.weaviate.network
 WEAVIATE_API_KEY=your-weaviate-cloud-api-key
 
 # Step 3: Initialize cloud database
-python scripts/init_weaviate.py
+python scripts/init_hub_spoke_schema.py --load-test-data
 
 # Step 4: Start AI assistant (no local Weaviate needed!)
 docker-compose up ai-assistant

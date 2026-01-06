@@ -1,12 +1,21 @@
 """
 Weaviate Models and Operations
-Data models and database operations for users and service providers.
+Data models using Hub and Spoke architecture.
+Maps legacy User/Provider operations to UnifiedProfile/CompetenceEntry.
 """
 import logging
 from datetime import datetime, UTC
 from typing import List, Dict, Optional, Any
 from weaviate.classes.query import Filter
 from .weaviate_config import get_users_collection, get_providers_collection
+
+# Handle both package and direct imports for hub_spoke
+try:
+    from .hub_spoke_ingestion import HubSpokeIngestion
+    from .hub_spoke_search import HubSpokeSearch
+except ImportError:
+    from hub_spoke_ingestion import HubSpokeIngestion
+    from hub_spoke_search import HubSpokeSearch
 
 logger = logging.getLogger(__name__)
 
@@ -16,20 +25,23 @@ class UserModelWeaviate:
     
     @staticmethod
     def create_user(user_data: Dict[str, Any]) -> Optional[str]:
-        """Create a new user."""
+        """Create a new user (UnifiedProfile)."""
         try:
             collection = get_users_collection()
             
+            # Map old User fields to UnifiedProfile fields
             uuid = collection.data.insert(
                 properties={
                     "user_id": user_data.get("user_id"),
-                    "name": user_data.get("name"),
+                    "display_name": user_data.get("name") or user_data.get("display_name", ""),  # Map name -> display_name
                     "email": user_data.get("email"),
+                    "type": "client",  # Default type for users
                     "photo_url": user_data.get("photo_url", ""),
                     "fcm_token": user_data.get("fcm_token", ""),
                     "has_open_request": user_data.get("has_open_request", False),
                     "created_at": user_data.get("created_at", datetime.now(UTC)),
                     "last_sign_in": user_data.get("last_sign_in", datetime.now(UTC)),
+                    "last_active_date": user_data.get("last_active_date", datetime.now(UTC).isoformat()),  # Track activity
                 }
             )
             
@@ -54,7 +66,11 @@ class UserModelWeaviate:
             
             if response.objects:
                 obj = response.objects[0]
-                return obj.properties
+                user = obj.properties.copy()
+                # Add backward compatibility: map display_name -> name
+                if 'display_name' in user and 'name' not in user:
+                    user['name'] = user['display_name']
+                return user
             
             return None
             
@@ -81,6 +97,13 @@ class UserModelWeaviate:
             
             obj = response.objects[0]
             
+            # Map name -> display_name if present
+            if 'name' in update_data and 'display_name' not in update_data:
+                update_data['display_name'] = update_data['name']
+            
+            # Update last_active_date on any update
+            update_data['last_active_date'] = datetime.now(UTC).isoformat()
+            
             # Merge existing properties with update data to preserve unmodified fields
             merged_properties = {**obj.properties, **update_data}
             
@@ -105,7 +128,13 @@ class UserModelWeaviate:
             collection = get_users_collection()
             
             response = collection.query.fetch_objects(limit=limit)
-            users = [obj.properties for obj in response.objects]
+            users = []
+            for obj in response.objects:
+                user = obj.properties.copy()
+                # Add backward compatibility: map display_name -> name
+                if 'display_name' in user and 'name' not in user:
+                    user['name'] = user['display_name']
+                users.append(user)
             
             logger.info(f"Retrieved {len(users)} users")
             return users
@@ -175,28 +204,36 @@ class ProviderModelWeaviate:
     @staticmethod
     def create_provider(provider_data: Dict[str, Any]) -> Optional[str]:
         """
-        Create a new service provider.
-        Weaviate will automatically generate embeddings from the description.
+        Create a new service provider (UnifiedProfile + CompetenceEntry).
+        Creates a profile with type='provider' and a competence entry.
         """
         try:
-            collection = get_providers_collection()
+            # Create profile data
+            profile_data = {
+                "user_id": provider_data.get("provider_id") or provider_data.get("id"),
+                "display_name": provider_data.get("name", ""),
+                "email": provider_data.get("email", ""),
+                "type": "provider",
+                "last_active_date": datetime.now(UTC).isoformat(),
+            }
             
-            uuid = collection.data.insert(
-                properties={
-                    "provider_id": provider_data.get("provider_id") or provider_data.get("id"),
-                    "name": provider_data.get("name"),
-                    "category": provider_data.get("category"),
-                    "skills": provider_data.get("skills", []),
-                    "rating": float(provider_data.get("rating", 0)),
-                    "experience_years": int(provider_data.get("experience_years", 0)),
-                    "price_range": provider_data.get("price_range", ""),
-                    "availability": provider_data.get("availability", ""),
-                    "description": provider_data.get("description", ""),
-                }
+            # Create competence data  
+            competence_data = {
+                "title": provider_data.get("name", ""),
+                "description": provider_data.get("description", ""),
+                "category": provider_data.get("category", ""),
+                "parent_category": provider_data.get("category", ""),
+                "keywords": provider_data.get("skills", []),
+            }
+            
+            # Use HubSpokeIngestion to create profile with competence
+            profile_uuid, competence_uuids = HubSpokeIngestion.create_profile_with_competences(
+                profile_data=profile_data,
+                competences=[competence_data]
             )
             
             logger.info(f"Created provider: {provider_data.get('name')}")
-            return str(uuid)
+            return str(profile_uuid) if profile_uuid else None
             
         except Exception as e:
             logger.error(f"Error creating provider: {e}")
@@ -205,18 +242,23 @@ class ProviderModelWeaviate:
 
     @staticmethod
     def get_provider_by_id(provider_id: str) -> Optional[Dict[str, Any]]:
-        """Get provider by ID."""
+        """Get provider by ID (searches UnifiedProfile by user_id)."""
         try:
-            collection = get_providers_collection()
+            collection = get_users_collection()  # UnifiedProfile
             
             response = collection.query.fetch_objects(
-                filters=Filter.by_property("provider_id").equal(provider_id),
+                filters=Filter.by_property("user_id").equal(provider_id),
                 limit=1
             )
             
             if response.objects:
                 obj = response.objects[0]
-                return obj.properties
+                provider = obj.properties.copy()
+                # Map display_name -> name for backward compatibility
+                if 'display_name' in provider:
+                    provider['name'] = provider['display_name']
+                provider['provider_id'] = provider.get('user_id')
+                return provider
             
             return None
             
@@ -227,16 +269,29 @@ class ProviderModelWeaviate:
 
     @staticmethod
     def search_providers_by_category(category: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Search providers by category."""
+        """Search providers by category using hub_spoke search."""
         try:
-            collection = get_providers_collection()
-            
-            response = collection.query.fetch_objects(
-                filters=Filter.by_property("category").equal(category),
-                limit=limit
+            # Use HubSpokeSearch to find competences in this category
+            results = HubSpokeSearch.search_competences(
+                query=category,
+                limit=limit,
+                max_inactive_days=180,
+                group_by_profile=True  # One result per provider
             )
             
-            providers = [obj.properties for obj in response.objects]
+            # Map to provider format
+            providers = []
+            for result in results:
+                profile = result.get('profile', {})
+                provider = {
+                    'provider_id': profile.get('uuid'),
+                    'name': profile.get('name'),
+                    'category': result.get('category'),
+                    'description': result.get('description'),
+                    'skills': result.get('keywords', []),
+                }
+                providers.append(provider)
+            
             logger.info(f"Found {len(providers)} providers in category: {category}")
             return providers
             
@@ -248,23 +303,30 @@ class ProviderModelWeaviate:
     @staticmethod
     def vector_search_providers(query_text: str, limit: int = 3) -> List[Dict[str, Any]]:
         """
-        Search providers using vector similarity.
-        Weaviate automatically generates embeddings for the query text.
+        Search providers using hybrid search (vector + keyword).
+        Uses hub_spoke architecture with ghost filtering and grouping.
         """
         try:
-            collection = get_providers_collection()
-            
-            # Perform hybrid search (vector + keyword)
-            response = collection.query.hybrid(
+            # Use HubSpokeSearch for hybrid search
+            results = HubSpokeSearch.search_competences(
                 query=query_text,
                 limit=limit,
-                return_metadata=['score']
+                max_inactive_days=180,  # Exclude inactive providers
+                group_by_profile=True   # One result per provider
             )
             
+            # Map to provider format for backward compatibility
             providers = []
-            for obj in response.objects:
-                provider = obj.properties.copy()
-                provider['score'] = obj.metadata.score if obj.metadata else 0
+            for result in results:
+                profile = result.get('profile', {})
+                provider = {
+                    'provider_id': profile.get('uuid'),
+                    'name': profile.get('name'),
+                    'category': result.get('category'),
+                    'description': result.get('description'),
+                    'skills': result.get('keywords', []),
+                    'score': result.get('score', 0),
+                }
                 providers.append(provider)
             
             logger.info(f"Vector search found {len(providers)} providers for: '{query_text[:50]}...'")
@@ -277,12 +339,23 @@ class ProviderModelWeaviate:
     
     @staticmethod
     def get_all_providers(limit: int = 100) -> List[Dict[str, Any]]:
-        """Get all providers."""
+        """Get all providers (UnifiedProfile with type='provider')."""
         try:
-            collection = get_providers_collection()
+            collection = get_users_collection()  # UnifiedProfile
             
-            response = collection.query.fetch_objects(limit=limit)
-            providers = [obj.properties for obj in response.objects]
+            response = collection.query.fetch_objects(
+                filters=Filter.by_property("type").equal("provider"),
+                limit=limit
+            )
+            
+            providers = []
+            for obj in response.objects:
+                provider = obj.properties.copy()
+                # Map display_name -> name for backward compatibility
+                if 'display_name' in provider:
+                    provider['name'] = provider['display_name']
+                provider['provider_id'] = provider.get('user_id')
+                providers.append(provider)
             
             logger.info(f"Retrieved {len(providers)} providers")
             return providers

@@ -43,8 +43,10 @@ class TestUserModelWeaviate:
         self.mock_collection.data.insert.assert_called_once()
         call_args = self.mock_collection.data.insert.call_args[1]['properties']
         assert call_args['user_id'] == "user_123"
-        assert call_args['name'] == "Test User"
+        assert call_args['display_name'] == "Test User"  # Now uses display_name
         assert call_args['email'] == "test@example.com"
+        assert call_args['type'] == "client"  # New field
+        assert 'last_active_date' in call_args  # New field
 
     def test_create_user_failure(self, sample_user_data):
         """Test creating user with exception."""
@@ -59,7 +61,7 @@ class TestUserModelWeaviate:
         mock_obj = MagicMock()
         mock_obj.properties = {
             "user_id": "user_123",
-            "name": "Test User",
+            "display_name": "Test User",  # Stored as display_name
             "email": "test@example.com",
             "fcm_token": "fcm_token_abc"
         }
@@ -69,7 +71,7 @@ class TestUserModelWeaviate:
 
         assert result is not None
         assert result["user_id"] == "user_123"
-        assert result["name"] == "Test User"
+        assert result["name"] == "Test User"  # Mapped from display_name
         assert result["fcm_token"] == "fcm_token_abc"
 
     def test_get_user_by_id_not_found(self):
@@ -94,7 +96,7 @@ class TestUserModelWeaviate:
         mock_obj.uuid = "uuid_123"
         mock_obj.properties = {
             "user_id": "user_123",
-            "name": "Old Name",
+            "display_name": "Old Name",
             "email": "old@example.com",
             "photo_url": "https://example.com/photo.jpg",
             "fcm_token": "old_token",
@@ -118,9 +120,10 @@ class TestUserModelWeaviate:
         assert call_args['uuid'] == "uuid_123"
         
         updated_properties = call_args['properties']
-        assert updated_properties['name'] == "New Name"
+        assert updated_properties['display_name'] == "New Name"  # Mapped to display_name
         assert updated_properties['email'] == "new@example.com"
         assert updated_properties['fcm_token'] == "new_token"
+        assert 'last_active_date' in updated_properties  # Should be updated
         
         # Ensure other properties are not lost
         assert 'photo_url' in updated_properties
@@ -275,22 +278,18 @@ class TestProviderModelWeaviate:
     
     def test_create_provider_success(self, mock_collection, sample_provider_data):
         """Test creating a new provider successfully."""
-        with patch('ai_assistant.weaviate_models.get_providers_collection', return_value=mock_collection):
-            mock_collection.data.insert.return_value = "uuid_456"
+        with patch('ai_assistant.weaviate_models.HubSpokeIngestion') as mock_ingestion:
+            mock_ingestion.create_profile_with_competences.return_value = ("uuid_456", ["comp_uuid_1"])
             
             result = ProviderModelWeaviate.create_provider(sample_provider_data)
             
             assert result == "uuid_456"
-            assert mock_collection.data.insert.called
-            call_args = mock_collection.data.insert.call_args[1]['properties']
-            assert call_args['provider_id'] == "provider_123"
-            assert call_args['name'] == "John's Plumbing"
-            assert call_args['category'] == "plumbing"
+            assert mock_ingestion.create_profile_with_competences.called
     
     def test_create_provider_failure(self, mock_collection, sample_provider_data):
         """Test creating provider with exception."""
-        with patch('ai_assistant.weaviate_models.get_providers_collection', return_value=mock_collection):
-            mock_collection.data.insert.side_effect = Exception("Database error")
+        with patch('ai_assistant.weaviate_models.HubSpokeIngestion') as mock_ingestion:
+            mock_ingestion.create_profile_with_competences.side_effect = Exception("Database error")
             
             result = ProviderModelWeaviate.create_provider(sample_provider_data)
             
@@ -298,12 +297,12 @@ class TestProviderModelWeaviate:
     
     def test_get_provider_by_id_success(self, mock_collection):
         """Test getting provider by ID successfully."""
-        with patch('ai_assistant.weaviate_models.get_providers_collection', return_value=mock_collection):
+        with patch('ai_assistant.weaviate_models.get_users_collection', return_value=mock_collection):
             mock_obj = Mock()
             mock_obj.properties = {
-                "provider_id": "provider_123",
-                "name": "John's Plumbing",
-                "category": "plumbing"
+                "user_id": "provider_123",
+                "display_name": "John's Plumbing",
+                "type": "provider"
             }
             mock_response = Mock()
             mock_response.objects = [mock_obj]
@@ -317,7 +316,7 @@ class TestProviderModelWeaviate:
     
     def test_get_provider_by_id_not_found(self, mock_collection):
         """Test getting provider when not found."""
-        with patch('ai_assistant.weaviate_models.get_providers_collection', return_value=mock_collection):
+        with patch('ai_assistant.weaviate_models.get_users_collection', return_value=mock_collection):
             mock_response = Mock()
             mock_response.objects = []
             mock_collection.query.fetch_objects.return_value = mock_response
@@ -328,14 +327,21 @@ class TestProviderModelWeaviate:
     
     def test_search_providers_by_category_success(self, mock_collection):
         """Test searching providers by category."""
-        with patch('ai_assistant.weaviate_models.get_providers_collection', return_value=mock_collection):
-            mock_obj1 = Mock()
-            mock_obj1.properties = {"name": "Provider 1", "category": "plumbing"}
-            mock_obj2 = Mock()
-            mock_obj2.properties = {"name": "Provider 2", "category": "plumbing"}
-            mock_response = Mock()
-            mock_response.objects = [mock_obj1, mock_obj2]
-            mock_collection.query.fetch_objects.return_value = mock_response
+        with patch('ai_assistant.weaviate_models.HubSpokeSearch') as mock_search:
+            mock_search.search_competences.return_value = [
+                {
+                    'category': 'plumbing',
+                    'description': 'Service 1',
+                    'profile': {'uuid': 'uuid_1', 'name': 'Provider 1'},
+                    'keywords': []
+                },
+                {
+                    'category': 'plumbing',
+                    'description': 'Service 2',
+                    'profile': {'uuid': 'uuid_2', 'name': 'Provider 2'},
+                    'keywords': []
+                }
+            ]
             
             result = ProviderModelWeaviate.search_providers_by_category("plumbing", limit=10)
             
@@ -345,25 +351,25 @@ class TestProviderModelWeaviate:
     
     def test_search_providers_by_category_empty(self, mock_collection):
         """Test searching providers with no results."""
-        with patch('ai_assistant.weaviate_models.get_providers_collection', return_value=mock_collection):
-            mock_response = Mock()
-            mock_response.objects = []
-            mock_collection.query.fetch_objects.return_value = mock_response
+        with patch('ai_assistant.weaviate_models.HubSpokeSearch') as mock_search:
+            mock_search.search_competences.return_value = []
             
-            result = ProviderModelWeaviate.search_providers_by_category("nonexistent")
+            result = ProviderModelWeaviate.search_providers_by_category("nonexistent", limit=10)
             
-            assert result == []
+            assert len(result) == 0
     
     def test_vector_search_providers_success(self, mock_collection):
         """Test vector search for providers."""
-        with patch('ai_assistant.weaviate_models.get_providers_collection', return_value=mock_collection):
-            mock_obj = Mock()
-            mock_obj.properties = {"name": "Provider 1"}
-            mock_obj.metadata = Mock()
-            mock_obj.metadata.score = 0.95
-            mock_response = Mock()
-            mock_response.objects = [mock_obj]
-            mock_collection.query.hybrid.return_value = mock_response
+        with patch('ai_assistant.weaviate_models.HubSpokeSearch') as mock_search:
+            mock_search.search_competences.return_value = [
+                {
+                    'category': 'plumbing',
+                    'description': 'Plumbing service',
+                    'profile': {'uuid': 'uuid_1', 'name': 'Provider 1'},
+                    'keywords': [],
+                    'score': 0.95
+                }
+            ]
             
             result = ProviderModelWeaviate.vector_search_providers("need plumber", limit=3)
             
@@ -373,8 +379,8 @@ class TestProviderModelWeaviate:
     
     def test_vector_search_providers_exception(self, mock_collection):
         """Test vector search with exception."""
-        with patch('ai_assistant.weaviate_models.get_providers_collection', return_value=mock_collection):
-            mock_collection.query.hybrid.side_effect = Exception("Search error")
+        with patch('ai_assistant.weaviate_models.HubSpokeSearch') as mock_search:
+            mock_search.search_competences.side_effect = Exception("Search error")
             
             result = ProviderModelWeaviate.vector_search_providers("need plumber")
             
@@ -382,11 +388,11 @@ class TestProviderModelWeaviate:
     
     def test_get_all_providers_success(self, mock_collection):
         """Test getting all providers."""
-        with patch('ai_assistant.weaviate_models.get_providers_collection', return_value=mock_collection):
+        with patch('ai_assistant.weaviate_models.get_users_collection', return_value=mock_collection):
             mock_obj1 = Mock()
-            mock_obj1.properties = {"name": "Provider 1"}
+            mock_obj1.properties = {"user_id": "p1", "display_name": "Provider 1", "type": "provider"}
             mock_obj2 = Mock()
-            mock_obj2.properties = {"name": "Provider 2"}
+            mock_obj2.properties = {"user_id": "p2", "display_name": "Provider 2", "type": "provider"}
             mock_response = Mock()
             mock_response.objects = [mock_obj1, mock_obj2]
             mock_collection.query.fetch_objects.return_value = mock_response

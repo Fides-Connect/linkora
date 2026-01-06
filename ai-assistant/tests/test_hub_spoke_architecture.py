@@ -16,6 +16,7 @@ import logging
 import time
 from datetime import datetime, UTC
 from typing import Dict, Any
+from weaviate.classes.query import QueryReference
 
 from src.ai_assistant.hub_spoke_schema import (
     init_hub_spoke_schema,
@@ -128,7 +129,10 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         competence_collection = get_competence_entry_collection()
         competence_obj = competence_collection.query.fetch_object_by_id(
             uuid=competence_uuid,
-            return_references=["owned_by"]
+            return_references=QueryReference(
+                link_on="owned_by",
+                return_properties=["display_name", "last_active_date"]
+            )
         )
         
         self.assertIsNotNone(competence_obj, "Competence should exist")

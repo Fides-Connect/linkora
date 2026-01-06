@@ -114,7 +114,7 @@ docker-compose restart
 ### Data Management
 ```bash
 # Initialize/reinitialize
-cd ../ai-assistant && python scripts/init_weaviate.py
+cd ../ai-assistant && python scripts/init_hub_spoke_schema.py --load-test-data
 
 # Backup
 docker run --rm -v weaviate_data:/data -v $(pwd):/backup alpine \
@@ -123,7 +123,7 @@ docker run --rm -v weaviate_data:/data -v $(pwd):/backup alpine \
 # Clean restart (deletes all data)
 docker-compose down -v
 docker-compose up -d
-cd ../ai-assistant && python scripts/init_weaviate.py
+cd ../ai-assistant && python scripts/init_hub_spoke_schema.py --load-test-data
 ```
 
 ### Health Checks
@@ -169,7 +169,7 @@ docker-compose logs weaviate
 docker-compose exec weaviate weaviate-cli collection list
 
 # Reinitialize if needed
-cd ../ai-assistant && python scripts/init_weaviate.py
+cd ../ai-assistant && python scripts/init_hub_spoke_schema.py --load-test-data
 ```
 
 ### Data disappeared after restart
@@ -229,7 +229,7 @@ To move from local to cloud:
    WEAVIATE_CLUSTER_URL=https://your-cluster.weaviate.network
    WEAVIATE_API_KEY=your-api-key
    ```
-3. Initialize: `python scripts/init_weaviate.py`
+3. Initialize: `python scripts/init_hub_spoke_schema.py --load-test-data`
 4. No local Weaviate needed!
 
 ---
