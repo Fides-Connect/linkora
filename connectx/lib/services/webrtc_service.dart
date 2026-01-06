@@ -146,19 +146,20 @@ class WebRTCService {
     try {
       final Map<String, dynamic> mediaConstraints = {
         'audio': {
-          'echoCancellation': true,
-          'noiseSuppression': true,
-          'autoGainControl': true,
-          'sampleRate': 48000,
-          'channelCount': 1,
-          // Android-specific constraints
-          'googEchoCancellation': true,
-          'googAutoGainControl': true,
-          'googNoiseSuppression': true,
-          'googHighpassFilter': true,
-          'googTypingNoiseDetection': true,
-          'googEchoCancellation2': true,
-          'googAutoGainControl2': true,
+          'mandatory': {
+            'echoCancellation': 'true',
+            'noiseSuppression': 'true',
+            'autoGainControl': 'true',
+            // Additional Android-specific constraints (WebRTC will ignore these on other platforms)
+            'googEchoCancellation': 'true',
+            'googEchoCancellation2': 'true',
+            'googAutoGainControl': 'true',
+            'googAutoGainControl2': 'true',
+            'googNoiseSuppression': 'true',
+            'googHighpassFilter': 'true',
+            'googTypingNoiseDetection': 'true',
+            'googDAEchoCancellation': 'true',
+          },
         },
         'video': false,
       };
