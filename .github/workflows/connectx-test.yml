@@ -13,44 +13,50 @@ on:
 
 jobs:
   build:
-    name: Build Android APK
     runs-on: ubuntu-latest
     steps:
-      - &checkout
-        name: Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - &setup_firebase
-        name: Setup Firebase config for CI
+        
+      - name: Setup Firebase config for CI
         env:
           GOOGLE_SERVICES_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           cd connectx
           chmod +x ./scripts/setup_firebase_for_ci.sh
           ./scripts/setup_firebase_for_ci.sh
-
-      - name: Build APK in Dev Container
+          
+      - name: Free Disk Space Before Build
+        run: |
+          # Remove unnecessary tools to free space
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android/sdk/ndk-bundle
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/share/boost
+          df -h
+          
+      - name: Build and Test in Dev Container
         uses: devcontainers/ci@v0.3
         with:
           runCmd: |
             cd ./connectx
             cp ./template.env .env
+            
+            # Run build_runner
             dart run build_runner build --delete-conflicting-outputs
-            flutter build apk
-
-  test:
-    name: Run Flutter Tests
-    runs-on: ubuntu-latest
-    steps:
-      - *checkout
-
-      - *setup_firebase
-
-      - name: Run Tests in Dev Container
-        uses: devcontainers/ci@v0.3
-        with:
-          runCmd: |
-            cd ./connectx
-            cp ./template.env .env
-            dart run build_runner build --delete-conflicting-outputs
+            
+            # Clean up after build_runner
+            flutter clean
+            rm -rf build/.dart_tool
+            
+            # Build APK with split-per-abi to reduce size
+            flutter build apk --split-per-abi
+            
+            # Clean up build artifacts before tests
+            rm -rf build/app/outputs
+            rm -rf build/app/intermediates
+            rm -rf ~/.gradle/caches
+            flutter clean
+            
+            # Run tests
             flutter test
