@@ -33,7 +33,7 @@ class UserModelWeaviate:
             uuid = collection.data.insert(
                 properties={
                     "user_id": user_data.get("user_id"),
-                    "display_name": user_data.get("name") or user_data.get("display_name", ""),  # Map name -> display_name
+                    "name": user_data.get("name") or user_data.get("display_name", ""),
                     "email": user_data.get("email"),
                     "type": "client",  # Default type for users
                     "photo_url": user_data.get("photo_url", ""),
@@ -41,7 +41,7 @@ class UserModelWeaviate:
                     "has_open_request": user_data.get("has_open_request", False),
                     "created_at": user_data.get("created_at", datetime.now(UTC)),
                     "last_sign_in": user_data.get("last_sign_in", datetime.now(UTC)),
-                    "last_active_date": user_data.get("last_active_date", datetime.now(UTC).isoformat()),  # Track activity
+                    "last_active_date": user_data.get("last_active_date", datetime.now(UTC).isoformat()),
                 }
             )
             
@@ -201,43 +201,6 @@ class UserModelWeaviate:
 class ProviderModelWeaviate:
     """Service provider data model and operations for Weaviate."""
     
-    @staticmethod
-    def create_provider(provider_data: Dict[str, Any]) -> Optional[str]:
-        """
-        Create a new service provider (UnifiedProfile + CompetenceEntry).
-        Creates a profile with type='provider' and a competence entry.
-        """
-        try:
-            # Create profile data
-            profile_data = {
-                "user_id": provider_data.get("provider_id") or provider_data.get("id"),
-                "display_name": provider_data.get("name", ""),
-                "email": provider_data.get("email", ""),
-                "type": "provider",
-                "last_active_date": datetime.now(UTC).isoformat(),
-            }
-            
-            # Create competence data  
-            competence_data = {
-                "title": provider_data.get("name", ""),
-                "description": provider_data.get("description", ""),
-                "category": provider_data.get("category", ""),
-                "parent_category": provider_data.get("category", ""),
-                "keywords": provider_data.get("skills", []),
-            }
-            
-            # Use HubSpokeIngestion to create profile with competence
-            profile_uuid, competence_uuids = HubSpokeIngestion.create_profile_with_competences(
-                profile_data=profile_data,
-                competences=[competence_data]
-            )
-            
-            logger.info(f"Created provider: {provider_data.get('name')}")
-            return str(profile_uuid) if profile_uuid else None
-            
-        except Exception as e:
-            logger.error(f"Error creating provider: {e}")
-            return None
     
 
     @staticmethod

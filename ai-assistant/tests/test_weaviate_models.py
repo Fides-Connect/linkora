@@ -43,7 +43,7 @@ class TestUserModelWeaviate:
         self.mock_collection.data.insert.assert_called_once()
         call_args = self.mock_collection.data.insert.call_args[1]['properties']
         assert call_args['user_id'] == "user_123"
-        assert call_args['display_name'] == "Test User"  # Now uses display_name
+        assert call_args['name'] == "Test User"
         assert call_args['email'] == "test@example.com"
         assert call_args['type'] == "client"  # New field
         assert 'last_active_date' in call_args  # New field
@@ -276,25 +276,7 @@ class TestProviderModelWeaviate:
             "description": "Professional plumbing services"
         }
     
-    def test_create_provider_success(self, mock_collection, sample_provider_data):
-        """Test creating a new provider successfully."""
-        with patch('ai_assistant.weaviate_models.HubSpokeIngestion') as mock_ingestion:
-            mock_ingestion.create_profile_with_competences.return_value = ("uuid_456", ["comp_uuid_1"])
-            
-            result = ProviderModelWeaviate.create_provider(sample_provider_data)
-            
-            assert result == "uuid_456"
-            assert mock_ingestion.create_profile_with_competences.called
-    
-    def test_create_provider_failure(self, mock_collection, sample_provider_data):
-        """Test creating provider with exception."""
-        with patch('ai_assistant.weaviate_models.HubSpokeIngestion') as mock_ingestion:
-            mock_ingestion.create_profile_with_competences.side_effect = Exception("Database error")
-            
-            result = ProviderModelWeaviate.create_provider(sample_provider_data)
-            
-            assert result is None
-    
+
     def test_get_provider_by_id_success(self, mock_collection):
         """Test getting provider by ID successfully."""
         with patch('ai_assistant.weaviate_models.get_users_collection', return_value=mock_collection):

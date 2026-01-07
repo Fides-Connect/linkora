@@ -124,13 +124,16 @@ def init_hub_spoke_schema():
             client.collections.create(
                 name=UNIFIED_PROFILE_COLLECTION,
                 properties=[
+                    Property(name="user_id", data_type=DataType.TEXT),  # External ID (e.g. Firebase UID)
                     Property(name="name", data_type=DataType.TEXT),
                     Property(name="email", data_type=DataType.TEXT),
-                    Property(name="type", data_type=DataType.TEXT),  # "user" or "company"
+                    Property(name="type", data_type=DataType.TEXT),  # "client" or "provider"
+                    Property(name="photo_url", data_type=DataType.TEXT),
                     Property(name="fcm_token", data_type=DataType.TEXT),
                     Property(name="created_at", data_type=DataType.DATE),
+                    Property(name="last_sign_in", data_type=DataType.DATE),
                     Property(name="has_open_request", data_type=DataType.BOOL),
-                    Property(name="last_active_date", data_type=DataType.DATE),  # Ghost filtering
+                    Property(name="last_active_date", data_type=DataType.DATE),
                 ],
                 references=[
                     ReferenceProperty(
