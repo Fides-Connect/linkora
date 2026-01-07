@@ -14,6 +14,7 @@ Following TDD: These tests should fail initially, then pass after implementation
 import unittest
 import logging
 import time
+import socket
 from datetime import datetime, UTC
 from typing import Dict, Any
 from weaviate.classes.query import QueryReference
@@ -37,6 +38,19 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def is_weaviate_available(host='localhost', port=8090, timeout=1):
+    """Check if Weaviate is running and accessible."""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((host, port))
+        sock.close()
+        return result == 0
+    except Exception:
+        return False
+
+
+@unittest.skipUnless(is_weaviate_available(), "Weaviate is not running at localhost:8090")
 class TestHubSpokeArchitecture(unittest.TestCase):
     """
     Test suite for Hub and Spoke architecture.
