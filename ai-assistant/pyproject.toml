@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-assistant"
+version = "0.1.0"
+description = "AI Assistant with Hub and Spoke Architecture"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "aiortc>=1.14.0",
+    "aiohttp>=3.13.2",
+    "aiohttp_cors>=0.8.1",
+    "websockets>=15.0.1",
+    "google-cloud-speech>=2.34.0",
+    "google-cloud-texttospeech>=2.33.0",
+    "grpcio>=1.60.0",
+    "grpcio-status>=1.60.0",
+    "langchain>=0.3.0",
+    "langchain-google-genai>=2.0.0",
+    "langchain-community>=0.3.0",
+    "langchain-core>=0.3.0",
+    "weaviate-client>=4.9.0",
+    "numpy>=2.3.4",
+    "python-dotenv>=1.2.1",
+    "firebase-admin>=6.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"

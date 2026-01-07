@@ -317,7 +317,7 @@ ai-assistant/
 ├── main.py                      # Application entry point
 ├── Dockerfile                   # Container image definition
 ├── docker-compose.yml           # Docker Compose configuration
-├── requirements.txt             # Python dependencies
+├── pyproject.toml               # Python package configuration & dependencies
 ├── .env.template                # Environment variable template
 ├── .gitignore                   # Git ignore rules
 ├── src/
@@ -365,8 +365,8 @@ For more technical details, see [`GRPC_MIGRATION.md`](GRPC_MIGRATION.md).
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install requirements
-pip install -r requirements.txt
+# Install package in development mode
+pip install -e ".[dev]"
 ```
 
 #### 2. Configure Google Cloud
