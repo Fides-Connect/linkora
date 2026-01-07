@@ -17,10 +17,6 @@ import sys
 import argparse
 import logging
 
-# Add project root to path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(project_root, 'src'))
-
 from ai_assistant.hub_spoke_schema import (
     init_hub_spoke_schema,
     cleanup_hub_spoke_schema,
@@ -38,7 +34,8 @@ logger = logging.getLogger(__name__)
 
 def load_test_data():
     """Load test personas into the database."""
-    sys.path.insert(0, os.path.join(project_root, 'tests'))
+    # Import test data - works because package is installed in dev mode
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tests'))
     from test_hub_spoke_data import TEST_PERSONAS
     
     logger.info("Loading test personas...")
