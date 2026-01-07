@@ -139,7 +139,7 @@ async def run_tests():
                 print(f"Response data: {result['data']}")
         
         # Test 4: List Providers
-        print_header("Test 4: List Providers")
+        print_header("Test 4: List Providers: TODO Remove this endpoint, add endpoint to retrieve users with attributes")
         result = await test_endpoint(session, 'GET', '/admin/providers?limit=5')
         if result['success']:
             print_success(f"Retrieved {result['data'].get('count', 0)} providers")
