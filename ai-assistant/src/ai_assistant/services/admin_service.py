@@ -377,9 +377,26 @@ class AdminService:
             limit = int(request.query.get('limit', 100))
             providers = ProviderModelWeaviate.get_all_providers(limit=limit)
             
+            providers_display = []
+            for provider in providers:
+                # Handle datetime fields safely
+                created_at = provider.get('created_at')
+                last_active_date = provider.get('last_active_date')
+                last_sign_in = provider.get('last_sign_in')
+                
+                providers_display.append({
+                    "provider_id": provider.get('provider_id'),
+                    "name": provider.get('name'),
+                    "email": provider.get('email'),
+                    "type": provider.get('type'),
+                    "created_at": created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at) if created_at else None,
+                    "last_active_date": last_active_date.isoformat() if hasattr(last_active_date, 'isoformat') else str(last_active_date) if last_active_date else None,
+                    "last_sign_in": last_sign_in.isoformat() if hasattr(last_sign_in, 'isoformat') else str(last_sign_in) if last_sign_in else None,
+                })
+            
             return web.json_response({
-                "providers": providers,
-                "count": len(providers),
+                "providers": providers_display,
+                "count": len(providers_display),
                 "limit": limit
             })
             
