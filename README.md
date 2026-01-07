@@ -141,6 +141,223 @@ flutter run
 
 See [ConnectX README](connectx/README.md) for detailed setup instructions.
 
+## 👨‍💻 Developer Onboarding
+
+### New Developer Setup
+
+Follow these steps when starting to work on the Fides project:
+
+#### 1. Clone the Repository
+
+```bash
+git clone <repository-url>
+cd fides
+```
+
+#### 2. Set Up Python Environment for AI-Assistant
+
+```bash
+# Navigate to ai-assistant directory
+cd ai-assistant
+
+# Create and activate virtual environment
+python3 -m venv ../.venv
+source ../.venv/bin/activate  # On Windows: ..\.venv\Scripts\activate
+
+# Install the package in development mode (this makes imports work properly)
+pip install -e .
+
+# Install dev dependencies
+pip install -e ".[dev]"
+```
+
+**Why install in development mode?**
+Installing with `pip install -e .` configures the project as a Python package, allowing imports like `from ai_assistant.hub_spoke_schema import ...` to work correctly throughout the project without manual path manipulation.
+
+#### 3. Configure Google Cloud Credentials
+
+**Create a Service Account:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Navigate to IAM & Admin → Service Accounts
+3. Create new service account with these roles:
+   - Cloud Speech-to-Text User
+   - Cloud Text-to-Speech User
+4. Create and download JSON key file
+5. Place it in `ai-assistant/` directory (it will be ignored by git)
+
+**Enable Required APIs:**
+```bash
+gcloud services enable speech.googleapis.com
+gcloud services enable texttospeech.googleapis.com
+```
+
+**Get Gemini API Key:**
+1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Create new API key
+3. Save for next step
+
+#### 4. Configure Environment Variables
+
+```bash
+# In ai-assistant directory
+cp .env.template .env
+
+# Edit .env with your credentials:
+nano .env
+```
+
+**Minimum required configuration:**
+```bash
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+GEMINI_API_KEY=your_gemini_api_key_here
+USE_WEAVIATE=false  # Use test data for development
+```
+
+#### 5. Set Up Weaviate (Optional - for full stack development)
+
+Only needed if working on database features or testing with real data:
+
+```bash
+# Start Weaviate services
+cd ../weaviate
+docker-compose up -d
+
+# Initialize schema and load test data
+cd ../ai-assistant
+python scripts/init_hub_spoke_schema.py --load-test-data
+```
+
+Update `.env`:
+```bash
+USE_WEAVIATE=true
+WEAVIATE_URL=http://localhost:8090
+```
+
+#### 6. Set Up Flutter Environment (for ConnectX development)
+
+```bash
+cd ../connectx
+
+# Install dependencies
+flutter pub get
+
+# Configure environment
+cp template.env .env
+# Edit .env to set AI_ASSISTANT_SERVER_URL (default: http://localhost:8080)
+```
+
+**Optional - Firebase Setup:**
+If working on authentication features, see [ConnectX README](connectx/README.md) for Firebase configuration steps.
+
+#### 7. Verify Everything Works
+
+**Test AI-Assistant Server:**
+```bash
+cd ai-assistant
+
+# Activate virtual environment if not already activated
+source ../.venv/bin/activate
+
+# Run server locally
+python -m ai_assistant
+
+# In another terminal, test health endpoint
+curl http://localhost:8080/health
+# Expected: {"status": "healthy", "active_connections": 0}
+```
+
+**Test ConnectX App:**
+```bash
+cd connectx
+
+# Run on connected device or emulator
+flutter run
+```
+
+#### 8. Run Tests
+
+**AI-Assistant Tests:**
+```bash
+cd ai-assistant
+source ../.venv/bin/activate
+pytest tests/
+```
+
+**ConnectX Tests:**
+```bash
+cd connectx
+flutter test
+```
+
+### Common Development Tasks
+
+#### Running the Full Stack Locally
+
+```bash
+# Terminal 1: Start Weaviate (if needed)
+cd weaviate
+docker-compose up
+
+# Terminal 2: Start AI-Assistant
+cd ai-assistant
+source ../.venv/bin/activate
+python -m ai_assistant
+
+# Terminal 3: Start ConnectX
+cd connectx
+flutter run
+```
+
+#### Making Code Changes
+
+**Python Code (AI-Assistant):**
+- Code is in `ai-assistant/src/ai_assistant/`
+- Changes are immediately active (development mode installation)
+- Run tests: `pytest tests/`
+- Format code: `black src/ tests/`
+
+**Flutter Code (ConnectX):**
+- Code is in `connectx/lib/`
+- Hot reload: Press `r` in Flutter terminal
+- Hot restart: Press `R` in Flutter terminal
+- Run tests: `flutter test`
+
+#### Database Management
+
+**Initialize/Reset Database:**
+```bash
+cd ai-assistant
+python scripts/init_hub_spoke_schema.py --load-test-data
+```
+
+**Clean Only (no recreation):**
+```bash
+python scripts/init_hub_spoke_schema.py --clean-only
+```
+
+### Troubleshooting Setup Issues
+
+**Import errors in Python:**
+- Make sure you installed with `pip install -e .` in the ai-assistant directory
+- Verify virtual environment is activated: `which python` should point to `.venv`
+
+**Google Cloud API errors:**
+- Check credentials file exists and path is correct
+- Verify APIs are enabled in Google Cloud Console
+- Test credentials: `gcloud auth application-default print-access-token`
+
+**Weaviate connection errors:**
+- Check Weaviate is running: `docker ps | grep weaviate`
+- Verify URL in `.env` matches docker-compose port
+- Check logs: `docker-compose logs weaviate`
+
+**Flutter build errors:**
+- Clean build: `flutter clean && flutter pub get`
+- Update Flutter: `flutter upgrade`
+- Check Flutter doctor: `flutter doctor -v`
+
+For more detailed troubleshooting, see component-specific README files.
+
 ## 🏗️ Architecture
 
 ### System Overview
