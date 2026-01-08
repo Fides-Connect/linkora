@@ -72,3 +72,29 @@ app.*.symbols
 
 # Service Account Json File
 gen-lang-client*.json
+
+# Terraform Files
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+terraform/.terraform.tfstate.lock.info
+
+# Terraform Bootstrap
+terraform/bootstrap/.terraform/
+terraform/bootstrap/.terraform.lock.hcl
+terraform/bootstrap/*.tfstate
+terraform/bootstrap/*.tfstate.*
+terraform/bootstrap/terraform.tfvars
+
+# Helm
+helm/*/charts/
+helm/*/.helmignore
+
+# Secrets
+*.pem
+*.key
+*.crt
+**/secrets/
+service-account-key.json

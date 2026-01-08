@@ -1,0 +1,64 @@
+# Default values for ai-assistant
+replicaCount: 1
+
+image:
+  repository: gcr.io/gen-lang-client-0859968110/ai-assistant
+  pullPolicy: IfNotPresent
+  tag: latest
+
+service:
+  type: LoadBalancer
+  port: 8080
+  targetPort: 8080
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+env:
+  # Google Cloud Configuration
+  googleApplicationCredentials: "/app/secrets/gcp-sa-key.json"
+  
+  # Language and Voice Configuration
+  languageCode: "de-DE"
+  voiceName: "de-DE-Chirp3-HD-Sulafat"
+  
+  # Server Configuration
+  host: "0.0.0.0"
+  port: "8080"
+  
+  # Logging Level
+  logLevel: "INFO"
+  
+  # Data Provider Configuration
+  useWeaviate: "true"
+  weaviateUrl: "http://weaviate:8080"
+  
+  # Number of concurrent requests to Google TTS API
+  googleTtsApiConcurrency: "5"
+  
+  # Debug: Record received audio to WAV files
+  debugRecordAudio: "false"
+
+# Secrets - these will be created from GitHub Actions
+secrets:
+  # GCP Service Account Key (JSON file content)
+  gcpServiceAccount: ""
+  
+  # Gemini API Key
+  geminiApiKey: ""
+  
+  # Google OAuth Client ID
+  googleOauthClientId: ""
+  
+  # Admin Secret Key
+  adminSecretKey: ""
+
+# Weaviate connection settings
+weaviate:
+  enabled: true
+  url: "http://weaviate:8080"

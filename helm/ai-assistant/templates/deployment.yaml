@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-assistant.fullname" . }}
+  labels:
+    {{- include "ai-assistant.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ai-assistant.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Force pod restart on config/secret changes
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      labels:
+        {{- include "ai-assistant.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.env.port }}
+          protocol: TCP
+        env:
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: {{ .Values.env.googleApplicationCredentials }}
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: gemini-api-key
+        - name: GOOGLE_OAUTH_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: google-oauth-client-id
+        - name: USE_WEAVIATE
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: use-weaviate
+        - name: WEAVIATE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: weaviate-url
+        - name: LANGUAGE_CODE
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: language-code
+        - name: VOICE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: voice-name
+        - name: HOST
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: host
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: port
+        - name: LOG_LEVEL
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: log-level
+        - name: GOOGLE_TTS_API_CONCURRENCY
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: google-tts-api-concurrency
+        - name: DEBUG_RECORD_AUDIO
+          valueFrom:
+            configMapKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: debug-record-audio
+        - name: ADMIN_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "ai-assistant.fullname" . }}
+              key: admin-secret-key
+        volumeMounts:
+        - name: gcp-sa-key
+          mountPath: /app/secrets
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+      volumes:
+      - name: gcp-sa-key
+        secret:
+          secretName: {{ include "ai-assistant.fullname" . }}
+          items:
+          - key: gcp-sa-key
+            path: gcp-sa-key.json
