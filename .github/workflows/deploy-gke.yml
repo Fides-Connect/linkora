@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - feature/update-cloud-deployment
     paths:
       - 'ai-assistant/**'
       - 'helm/ai-assistant/**'
