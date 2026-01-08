@@ -51,7 +51,6 @@ README.md
 *.md
 
 # Docker
-Containerfile
 docker-compose.yml
 
 # Scripts

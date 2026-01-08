@@ -19,7 +19,7 @@ The platform uses WebRTC for low-latency real-time audio streaming, with all AI 
 - ⚡ **WebRTC Streaming** - Direct peer-to-peer audio communication
 - 🤖 **AI-Powered** - Uses Google Gemini 2.0, Cloud Speech-to-Text, and Text-to-Speech
 - 📱 **Cross-Platform** - Supports iOS and Android devices
-- 🐳 **Containerized** - Easy deployment with Docker/Podman
+- 🐳 **Containerized** - Easy deployment with Docker
 - 🚀 **Scalable** - Stateless design for horizontal scaling
 
 ## 📁 Project Structure
@@ -35,7 +35,7 @@ Fides/
 ├── ai-assistant/         # Python WebRTC server
 │   ├── src/              # Python source code
 │   ├── scripts/          # Initialization scripts
-│   ├── Containerfile     # Container definition
+│   ├── Dockerfile        # Container definition
 │   ├── requirements.txt  # Python dependencies
 │   └── README.md         # AI-Assistant documentation
 │
@@ -49,7 +49,7 @@ Fides/
 │
 ├── .devcontainer/        # VS Code Dev Container configuration
 │   ├── devcontainer.json
-│   └── Containerfile
+│   └── Dockerfile
 │
 └── README.md             # This file
 ```
@@ -64,7 +64,7 @@ Fides/
 
 - **For AI-Assistant Server:**
   - Python 3.11+
-  - Podman or Docker
+  - Docker
   - Google Cloud Platform account with APIs enabled
   - Google Gemini API key
 
@@ -289,10 +289,10 @@ The server can be deployed using containers:
 cd ai-assistant
 
 # Build container
-podman build -t ai-assistant -f Containerfile .
+docker build -t ai-assistant -f Dockerfile .
 
 # Run container
-podman run -d \
+docker run -d \
   --name ai-assistant \
   -p 8080:8080 \
   --env-file .env \
@@ -353,7 +353,7 @@ For issues or questions:
 
 ## 📦 Flutter Development Container (Optional)
 
-This project includes a complete Flutter development environment using Podman/Docker and VS Code Dev Containers for optional containerized development.
+This project includes a complete Flutter development environment using Docker and VS Code Dev Containers for optional containerized development.
 
 ### Dev Container Features
 
@@ -369,7 +369,7 @@ This project includes a complete Flutter development environment using Podman/Do
 
 **Prerequisites:**
 - macOS (preferably with Apple Silicon)
-- Podman or Docker (latest version)
+- Docker (latest version)
 - VS Code with Dev Containers extension
 - 8GB+ RAM recommended (16GB+ for smooth emulator performance)
 
@@ -460,7 +460,7 @@ Edit `.devcontainer/devcontainer.json`:
 
 **Installing Additional Tools:**
 
-Edit `.devcontainer/Containerfile`:
+Edit `.devcontainer/Dockerfile`:
 ```dockerfile
 RUN apt-get update && apt-get install -y \
     your-package-name \
@@ -470,7 +470,7 @@ RUN apt-get update && apt-get install -y \
 ### Troubleshooting Dev Container
 
 **Container Build Issues:**
-- Ensure Podman Machine has enough RAM allocated (8GB+)
+- Ensure Docker has enough RAM ressources (8GB+)
 - Close other resource-intensive applications
 
 **Flutter Doctor Issues:**
@@ -484,4 +484,4 @@ adb kill-server && adb start-server
 adb devices
 ```
 
-For more details, see the inline comments in `.devcontainer/devcontainer.json` and `.devcontainer/Containerfile`.
+For more details, see the inline comments in `.devcontainer/devcontainer.json` and `.devcontainer/Dockerfile`.

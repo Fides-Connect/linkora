@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script to build and run the AI Assistant container with Podman
+# Script to build and run the AI Assistant container with Docker
 
 set -e
 # Resolve project root (script is in scripts/)
@@ -51,27 +51,25 @@ if [ ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
     exit 1
 fi
 
-# Detect container engine
+# Detect whether Docker is available (returns "true" or "false")
 detect_container_engine() {
     if command -v docker >/dev/null 2>&1; then
-        echo "docker"
-    elif command -v podman >/dev/null 2>&1; then
-        echo "podman"
+        echo "true"
     else
-        echo "none"
+        echo "false"
     fi
 }
 
-CONTAINER_ENGINE="$(detect_container_engine)"
-if [ "$CONTAINER_ENGINE" = "none" ]; then
-    echo -e "${RED}Error: Neither Docker nor Podman is installed. Please install one to continue.${NC}"
+DOCKER_AVAILABLE="$(detect_container_engine)"
+if [ "$DOCKER_AVAILABLE" = "false" ]; then
+    echo -e "${RED}Error: Docker is not installed. Please install it to continue.${NC}"
     exit 1
 fi
 
 # Function to build the container
 build() {
-    echo -e "${GREEN}Building AI Assistant container with $CONTAINER_ENGINE...${NC}"
-    $CONTAINER_ENGINE build -t ai-assistant -f Containerfile .
+    echo -e "${GREEN}Building AI Assistant container with Docker...${NC}"
+    docker build -t ai-assistant -f Dockerfile .
     echo -e "${GREEN}Build complete!${NC}"
 }
 
@@ -80,10 +78,10 @@ run() {
     echo -e "${GREEN}Starting AI Assistant container...${NC}"
     
     # Stop and remove existing container if it exists
-    $CONTAINER_ENGINE rm -f ai-assistant 2>/dev/null || true
+    docker rm -f ai-assistant 2>/dev/null || true
     
 
-        $CONTAINER_ENGINE run -d \
+        docker run -d \
             --name ai-assistant \
             -p ${PORT:-8080}:${PORT:-8080} \
             -v "$GOOGLE_APPLICATION_CREDENTIALS:/app/credentials.json:ro" \
@@ -105,20 +103,20 @@ run() {
 # Function to stop the container
 stop() {
     echo -e "${YELLOW}Stopping AI Assistant container...${NC}"
-    $CONTAINER_ENGINE stop ai-assistant
+    docker stop ai-assistant
     echo -e "${GREEN}Container stopped${NC}"
 }
 
 # Function to view logs
 logs() {
     echo -e "${GREEN}Viewing container logs (Ctrl+C to exit)...${NC}"
-    $CONTAINER_ENGINE logs -f ai-assistant
+    docker logs -f ai-assistant
 }
 
 # Function to check status
 status() {
     echo -e "${GREEN}Checking container status...${NC}"
-    $CONTAINER_ENGINE ps -a --filter "name=ai-assistant"
+    docker ps -a --filter "name=ai-assistant"
     echo ""
     
     # Try to hit health endpoint

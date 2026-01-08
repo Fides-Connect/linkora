@@ -28,7 +28,7 @@ This AI assistant service:
 - ✅ Processes queries using Google Gemini 2.0 Flash
 - ✅ Generates natural-sounding responses using Google Cloud TTS
 - ✅ Streams audio responses back to clients via WebRTC
-- ✅ Runs in a containerized environment (Podman/Docker)
+- ✅ Runs in a containerized environment (Docker)
 - ✅ Handles multiple concurrent connections
 
 ### Why This Service
@@ -100,13 +100,13 @@ The AI Assistant implements a **three-stage conversation flow** with automatic t
 - Fully async/await architecture with no thread pool overhead
 - Asynchronous processing pipeline with detailed timing metrics
 - Health check endpoints
-- Docker/Podman containerization
+- Docker containerization
 
 ## Quick Start
 
 ### Prerequisites
 
-- Podman or Docker installed
+- Docker installed
 - Google Cloud Platform account with enabled APIs:
   - Cloud Speech-to-Text API
   - Cloud Text-to-Speech API
@@ -313,7 +313,7 @@ python tests/test_client.py --audio-file test_audio.wav
 ```
 ai-assistant/
 ├── main.py                      # Application entry point
-├── Containerfile                # Container image definition
+├── Dockerfile                   # Container image definition
 ├── docker-compose.yml           # Docker Compose configuration
 ├── requirements.txt             # Python dependencies
 ├── .env.template                # Environment variable template
@@ -433,14 +433,14 @@ python main.py
 ./scripts/run.sh stop
 ```
 
-#### Using Podman Directly
+#### Using Docker Directly
 
 ```bash
 # Build image
-podman build -t ai-assistant -f Containerfile .
+docker build -t ai-assistant -f Dockerfile .
 
 # Run container
-podman run -d \
+docker run -d \
   --name ai-assistant \
   -p 8080:8080 \
   --env-file .env \
@@ -448,17 +448,17 @@ podman run -d \
   ai-assistant
 ```
 
-#### Using Docker Compose / Podman Compose
+#### Using Docker Compose
 
 ```bash
 # Start all services
-podman-compose up -d
+docker-compose up -d
 
 # View logs
-podman-compose logs -f
+docker-compose logs -f
 
 # Stop services
-podman-compose down
+docker-compose down
 ```
 
 ## Configuration
@@ -836,8 +836,8 @@ LOG_LEVEL=DEBUG
 
 #### View Detailed Logs
 ```bash
-# Podman
-podman logs -f ai-assistant
+# Docker
+docker logs -f ai-assistant
 
 # Local
 python main.py 2>&1 | tee debug.log
@@ -1029,8 +1029,8 @@ For local development and testing:
 # Using the run script
 ./scripts/run.sh start
 
-# Or manually with Docker/Podman
-podman-compose up
+# Or manually with Docker
+docker-compose up
 ```
 
 ### Manual Cloud Deployment
@@ -1041,10 +1041,10 @@ If you need custom configuration beyond the deployment script:
 
 ```bash
 # Build for AMD64 architecture (required for Cloud)
-podman build --platform linux/amd64 -t gcr.io/PROJECT_ID/ai-assistant -f Containerfile .
+docker build --platform linux/amd64 -t gcr.io/PROJECT_ID/ai-assistant -f Dockerfile .
 
 # Push to registry
-podman push gcr.io/PROJECT_ID/ai-assistant
+docker push gcr.io/PROJECT_ID/ai-assistant
 
 # Create VM with container
 gcloud compute instances create-with-container ai-assistant-vm \
@@ -1092,7 +1092,7 @@ curl http://<EXTERNAL_IP>:8080/health
 **Architecture mismatch:**
 The deployment script automatically builds for AMD64. If building manually on Apple Silicon (ARM64), always use:
 ```bash
-podman build --platform linux/amd64 ...
+docker build --platform linux/amd64 ...
 ```
 
 ### Scaling Considerations
@@ -1290,7 +1290,7 @@ The system uses **native async gRPC streaming and parallel processing** to minim
 **Problem:** Container exits immediately
 ```bash
 # Check logs
-podman logs ai-assistant
+docker logs ai-assistant
 
 # Common causes:
 # 1. Missing environment variables
@@ -1342,7 +1342,7 @@ curl http://localhost:8080/health
 LOG_LEVEL=DEBUG
 
 # Check for API errors in logs
-podman logs ai-assistant | grep ERROR
+docker logs ai-assistant | grep ERROR
 
 # Verify API credentials
 gcloud auth application-default print-access-token
@@ -1411,25 +1411,25 @@ time curl -X POST https://speech.googleapis.com/v1/...
 **Logs:**
 ```bash
 # Full debug logs
-podman logs ai-assistant > debug.log 2>&1
+docker logs ai-assistant > debug.log 2>&1
 
 # Filter for errors
-podman logs ai-assistant 2>&1 | grep -i error
+docker logs ai-assistant 2>&1 | grep -i error
 
 # Follow live logs
-podman logs -f ai-assistant
+docker logs -f ai-assistant
 ```
 
 **System Info:**
 ```bash
 # Container info
-podman inspect ai-assistant
+docker inspect ai-assistant
 
 # Resource usage
-podman stats ai-assistant
+docker stats ai-assistant
 
 # Network info
-podman port ai-assistant
+docker port ai-assistant
 ```
 
 ## Client Integration
