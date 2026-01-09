@@ -15,7 +15,6 @@ env:
   GKE_CLUSTER: fides-production
   GKE_REGION: europe-west3
   IMAGE_NAME: ai-assistant
-  HELM_RELEASE_NAME: ai-assistant
   NAMESPACE: default
 
 jobs:
@@ -90,7 +89,7 @@ jobs:
     
     - name: Deploy AI Assistant to GKE
       run: |
-        helm upgrade --install ${{ env.HELM_RELEASE_NAME }} ./helm/ai-assistant \
+        helm upgrade --install ai-assistant ./helm/ai-assistant \
           --namespace ${{ env.NAMESPACE }} \
           --create-namespace \
           --set image.tag=${{ github.sha }} \
@@ -107,7 +106,7 @@ jobs:
         # Wait for LoadBalancer IP to be assigned
         echo "Waiting for LoadBalancer IP..."
         for i in {1..30}; do
-          EXTERNAL_IP=$(kubectl get service ${{ env.HELM_RELEASE_NAME }} \
+          EXTERNAL_IP=$(kubectl get service ai-assistant \
             -n ${{ env.NAMESPACE }} \
             -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
           
