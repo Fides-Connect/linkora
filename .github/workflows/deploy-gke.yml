@@ -30,7 +30,7 @@ jobs:
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
       with:
-        service_account_key: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        service_account_key: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
         project_id: ${{ env.PROJECT_ID }}
         export_default_credentials: true
     
@@ -87,7 +87,7 @@ jobs:
           --namespace ${{ env.NAMESPACE }} \
           --create-namespace \
           --set image.tag=${{ github.sha }} \
-          --set secrets.gcpServiceAccount="${{ secrets.GOOGLE_SERVICES_JSON }}" \
+          --set secrets.gcpServiceAccount="${{ secrets.GOOGLE_CREDENTIALS_JSON }}" \
           --set secrets.geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
           --set secrets.googleOauthClientId="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
           --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}" \
