@@ -103,7 +103,7 @@ jobs:
           --set secrets.googleOauthClientId="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
           --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}" \
           --wait \
-          --timeout 10m
+          --timeout 15m
     
     - name: Get Service External IP
       id: get-ip
