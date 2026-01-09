@@ -101,34 +101,8 @@ jobs:
           --set secrets.gcpServiceAccount="${{ env.GOOGLE_CREDENTIALS_JSON_BASE_64 }}" \
           --set secrets.geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
           --set secrets.googleOauthClientId="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
-          --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}" \
-          --wait \
-          --timeout 30m
-    
-    - name: Get Service External IP
-      id: get-ip
-      run: |
-        # Wait for LoadBalancer IP to be assigned
-        echo "Waiting for LoadBalancer IP..."
-        for i in {1..30}; do
-          EXTERNAL_IP=$(kubectl get service ai-assistant \
-            -n ${{ env.NAMESPACE }} \
-            -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-          
-          if [ -n "$EXTERNAL_IP" ]; then
-            echo "LoadBalancer IP: $EXTERNAL_IP"
-            echo "EXTERNAL_IP=$EXTERNAL_IP" >> $GITHUB_ENV
-            break
-          fi
-          
-          echo "Waiting... ($i/30)"
-          sleep 10
-        done
-        
-        if [ -z "$EXTERNAL_IP" ]; then
-          echo "Warning: LoadBalancer IP not assigned yet. Check manually."
-        fi
-    
+          --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}"
+
     - name: Deployment Summary
       run: |
         echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
@@ -140,10 +114,3 @@ jobs:
         echo "- **Region:** ${{ env.GKE_REGION }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Image:** gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
         echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-        
-        if [ -n "${{ env.EXTERNAL_IP }}" ]; then
-          echo "- **External IP:** ${{ env.EXTERNAL_IP }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Access your application:" >> $GITHUB_STEP_SUMMARY
-          echo "http://${{ env.EXTERNAL_IP }}:8080" >> $GITHUB_STEP_SUMMARY
-        fi
