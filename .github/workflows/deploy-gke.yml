@@ -15,7 +15,7 @@ env:
   GKE_CLUSTER: fides-production
   GKE_REGION: europe-west3
   IMAGE_NAME: ai-assistant
-  NAMESPACE: default
+  NAMESPACE: production
 
 jobs:
   build-and-deploy:
