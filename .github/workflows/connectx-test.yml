@@ -20,7 +20,7 @@ jobs:
         
       - name: Setup Firebase config for CI
         env:
-          GOOGLE_SERVICES_JSON_CONTENT: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          GOOGLE_SERVICES_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           cd connectx
           chmod +x ./scripts/setup_firebase_for_ci.sh
