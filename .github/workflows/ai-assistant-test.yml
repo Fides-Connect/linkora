@@ -71,7 +71,7 @@ jobs:
         working-directory: ai-assistant
         run: |
           # Create credentials file from secret
-          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > google-credentials.json
+          echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > google-credentials.json
           echo "GOOGLE_CREDENTIALS_PATH=$(pwd)/google-credentials.json" >> $GITHUB_ENV
 
       - name: Create test environment file
