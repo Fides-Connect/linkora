@@ -36,7 +36,10 @@ jobs:
       uses: google-github-actions/setup-gcloud@v2
       with:
         project_id: ${{ env.PROJECT_ID }}
-        install_components: gke-gcloud-auth-plugin kubectl
+
+    - name: Install gke-gcloud-auth-plugin & kubectl
+      run: |
+        gcloud components install gke-gcloud-auth-plugin kubectl --quiet || true
     
     - name: Configure Docker for GCR
       run: |
