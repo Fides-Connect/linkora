@@ -77,7 +77,7 @@ Add the following secrets to your GitHub repository:
 
 | Secret Name | Description | How to Get |
 |-------------|-------------|------------|
-| `GOOGLE_SERVICES_JSON` | Service account JSON key | Download from GCP Console → IAM → Service Accounts |
+| `GOOGLE_CREDENTIALS_JSON` | Service account JSON key | Download from GCP Console → IAM → Service Accounts |
 | `GEMINI_API_KEY` | Google Gemini API key | From your `.env` file or GCP Console |
 | `GOOGLE_OAUTH_CLIENT_ID` | OAuth client ID | From your `.env` file or GCP Console |
 | `ADMIN_SECRET_KEY` | Admin panel secret | Generate with: `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
