@@ -81,8 +81,8 @@ jobs:
 
     - name: Prepare service account for Helm
       run: |
-        GOOGLE_CREDENTIALS_JSON_BASE_64=$(printf '%s' "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" | base64 -w0)
-        echo "GOOGLE_CREDENTIALS_JSON_BASE_64=$GOOGLE_CREDENTIALS_JSON_BASE_64" >> $GITHUB_ENV
+        # write raw JSON secret to a temp file (do NOT base64 encode)
+        printf '%s' "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" > /tmp/gcp-sa-key.json
     
     - name: Deploy Weaviate to GKE
       run: |
@@ -98,10 +98,11 @@ jobs:
           --namespace ${{ env.NAMESPACE }} \
           --create-namespace \
           --set image.tag=${{ github.sha }} \
-          --set secrets.gcpServiceAccount="${{ env.GOOGLE_CREDENTIALS_JSON_BASE_64 }}" \
+          --set-file secrets.gcpServiceAccount=/tmp/gcp-sa-key.json \
           --set secrets.geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
           --set secrets.googleOauthClientId="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
           --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}"
+        rm -f /tmp/gcp-sa-key.json
 
     - name: Deployment Summary
       run: |
