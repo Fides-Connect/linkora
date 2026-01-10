@@ -11,9 +11,18 @@ import logging
 import os
 import secrets
 from datetime import datetime, UTC
-from typing import Optional, Callable, Any
 from functools import wraps
+from typing import Any, Callable, Optional
+
 from aiohttp import web
+from weaviate.classes.query import QueryReference
+
+from ai_assistant.hub_spoke_schema import get_competence_entry_collection
+from ai_assistant.services.notification_service import NotificationService
+from ai_assistant.weaviate_models import (
+    ProviderModelWeaviate, 
+    UserModelWeaviate
+)
 
 logger = logging.getLogger(__name__)
 
@@ -163,8 +172,6 @@ class AdminService:
         Get system statistics and metrics.
         """
         try:
-            from ..weaviate_models import UserModelWeaviate, ProviderModelWeaviate
-            
             # Get database statistics
             users = UserModelWeaviate.get_all_users(limit=1000)
             providers = ProviderModelWeaviate.get_all_providers(limit=1000)
@@ -203,9 +210,6 @@ class AdminService:
         }
         """
         try:
-            from ..services.notification_service import NotificationService
-            from ..weaviate_models import UserModelWeaviate
-            
             body = await request.json()
             
             title = body.get('title')
@@ -281,8 +285,6 @@ class AdminService:
         List all users in the system.
         """
         try:
-            from ..weaviate_models import UserModelWeaviate
-            
             limit = int(request.query.get('limit', 100))
             users = UserModelWeaviate.get_all_users(limit=limit)
             
@@ -323,8 +325,6 @@ class AdminService:
         Get detailed information about a specific user.
         """
         try:
-            from ..weaviate_models import UserModelWeaviate
-            
             user_id = request.match_info.get('user_id')
             
             if not user_id:
@@ -366,44 +366,61 @@ class AdminService:
             }, status=500)
     
     @AdminAuth.require_auth
-    async def list_providers(self, request: web.Request) -> web.Response:
+    async def list_competences(self, request: web.Request) -> web.Response:
         """
-        GET /admin/providers?limit=100
-        List all service providers in the system.
+        GET /admin/competences?limit=100
+        List all competences (spokes) in the system.
         """
         try:
-            from ..weaviate_models import ProviderModelWeaviate
-            
             limit = int(request.query.get('limit', 100))
-            providers = ProviderModelWeaviate.get_all_providers(limit=limit)
             
-            providers_display = []
-            for provider in providers:
-                # Handle datetime fields safely
-                created_at = provider.get('created_at')
-                last_active_date = provider.get('last_active_date')
-                last_sign_in = provider.get('last_sign_in')
+            # Fetch competences with 'owned_by' reference to show who owns them
+            collection = get_competence_entry_collection()
+            result = collection.query.fetch_objects(
+                limit=limit,
+                return_references=[
+                    QueryReference(link_on="owned_by")
+                ]
+            )
+            
+            competences_display = []
+            for obj in result.objects:
+                props = obj.properties
+                owner_name = "Unknown"
+                owner_id = None
                 
-                providers_display.append({
-                    "provider_id": provider.get('provider_id'),
-                    "name": provider.get('name'),
-                    "email": provider.get('email'),
-                    "type": provider.get('type'),
-                    "created_at": created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at) if created_at else None,
-                    "last_active_date": last_active_date.isoformat() if hasattr(last_active_date, 'isoformat') else str(last_active_date) if last_active_date else None,
-                    "last_sign_in": last_sign_in.isoformat() if hasattr(last_sign_in, 'isoformat') else str(last_sign_in) if last_sign_in else None,
+                # Check for owner reference
+                if hasattr(obj, 'references') and 'owned_by' in obj.references:
+                    owners = obj.references['owned_by'].objects
+                    if owners:
+                        owner = owners[0]
+                        owner_id = str(owner.uuid)
+                        # Ensure we handle missing name property safely
+                        if owner.properties and 'name' in owner.properties:
+                            owner_name = owner.properties['name']
+                
+                competences_display.append({
+                    "competence_id": str(obj.uuid),
+                    "title": props.get('title'),
+                    "category": props.get('category'),
+                    "price_range": props.get('price_range'),
+                    "description_preview": (props.get('description', '')[:50] + '...') if props.get('description') else '',
+                    "owned_by": {
+                        "name": owner_name,
+                        "uuid": owner_id
+                    }
                 })
             
             return web.json_response({
-                "providers": providers_display,
-                "count": len(providers_display),
+                "competences": competences_display,
+                "count": len(competences_display),
                 "limit": limit
             })
             
         except Exception as e:
-            logger.error(f"Error listing providers: {e}")
+            logger.error(f"Error listing competences: {e}")
             return web.json_response({
-                "error": "Failed to list providers",
+                "error": "Failed to list competences",
                 "message": str(e)
             }, status=500)
     
@@ -421,8 +438,6 @@ class AdminService:
         }
         """
         try:
-            from ..services.notification_service import NotificationService
-            
             body = await request.json()
             
             fcm_token = body.get('fcm_token')
@@ -502,8 +517,8 @@ class AdminService:
         app.router.add_get('/admin/users', self.list_users)
         app.router.add_get('/admin/users/{user_id}', self.get_user_detail)
         
-        # Provider management
-        app.router.add_get('/admin/providers', self.list_providers)
+        # Competence management (Hub & Spoke)
+        app.router.add_get('/admin/competences', self.list_competences)
         
         # Notifications
         app.router.add_post('/admin/notifications/send', self.send_notification)
