@@ -81,22 +81,7 @@ jobs:
 
     - name: Prepare service account for Helm
       run: |
-        set -euo pipefail
         echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > /tmp/gcp-sa-key.json
-        echo "size: $(wc -c < /tmp/gcp-sa-key.json)"
-        echo "sha256: $(sha256sum /tmp/gcp-sa-key.json | cut -d' ' -f1)"
-        echo "--- head (visible chars) ---"
-        sed -n '1,12p' /tmp/gcp-sa-key.json | sed -n '1,12p' | cat -v
-        echo "--- hexdump (first 64 bytes) ---"
-        hexdump -C /tmp/gcp-sa-key.json | sed -n '1,4p'
-        if jq -e . /tmp/gcp-sa-key.json > /dev/null; then
-          echo "JSON valid"
-        else
-          echo "JSON invalid" >&2
-          # optionally upload the file as an artifact for local inspection (use with caution)
-          # gh workflow run artifacts or upload-artifact action here if needed
-          exit 1
-        fi
     
     - name: Deploy Weaviate to GKE
       run: |
