@@ -11,5 +11,9 @@ spec:
       targetPort: {{ .Values.service.targetPort }}
       protocol: TCP
       name: http
+    - port: {{ .Values.service.grpcPort }}
+      targetPort: {{ .Values.service.grpcTargetPort }}
+      protocol: TCP
+      name: grpc
   selector:
     {{- include "weaviate.selectorLabels" . | nindent 4 }}

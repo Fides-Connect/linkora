@@ -57,8 +57,3 @@ secrets:
   
   # Admin Secret Key
   adminSecretKey: ""
-
-# Weaviate connection settings
-weaviate:
-  enabled: true
-  url: "http://weaviate:8080"
