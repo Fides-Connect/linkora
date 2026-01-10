@@ -82,6 +82,14 @@ jobs:
     - name: Prepare service account for Helm
       run: |
         printf '%s' "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" > /tmp/gcp-sa-key.json
+        echo "size: $(wc -c < /tmp/gcp-sa-key.json)"
+        echo "sha256: $(sha256sum /tmp/gcp-sa-key.json | cut -d' ' -f1)"
+        if jq -e . /tmp/gcp-sa-key.json > /dev/null; then
+          echo "JSON valid"
+        else
+          echo "JSON invalid" >&2
+          exit 1
+        fi
     
     - name: Deploy Weaviate to GKE
       run: |
