@@ -50,6 +50,9 @@ def print_result(response: Dict[Any, Any]):
     import json
     print(json.dumps(response, indent=2))
 
+
+# TODO: add remove user endpoint and remove skills endpoint 
+
 async def test_endpoint(
     session: aiohttp.ClientSession,
     method: str,
@@ -138,14 +141,17 @@ async def run_tests():
             if 'data' in result:
                 print(f"Response data: {result['data']}")
         
-        # Test 4: List Providers
-        print_header("Test 4: List Providers: TODO Remove this endpoint, add endpoint to retrieve users with attributes")
-        result = await test_endpoint(session, 'GET', '/admin/providers?limit=5')
+        # Test 4: List Competences (Spokes)
+        print_header("Test 4: List Competences (Spokes)")
+        result = await test_endpoint(session, 'GET', '/admin/competences?limit=5')
         if result['success']:
-            print_success(f"Retrieved {result['data'].get('count', 0)} providers")
+            print_success(f"Retrieved {result['data'].get('count', 0)} competences")
             print_result(result['data'])
         else:
-            print_error(f"List providers failed: {result.get('error', 'Unknown error')}")
+            error_msg = result.get('error', 'Unknown error')
+            print_error(f"List competences failed: {error_msg}")
+            if 'data' in result:
+                print(f"Response data: {result['data']}")
         
         # Test 5: Unauthorized Access (should fail)
         print_header("Test 5: Unauthorized Access (Expected to Fail)")
