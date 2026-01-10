@@ -82,7 +82,7 @@ jobs:
     - name: Prepare service account for Helm
       run: |
         set -euo pipefail
-        printf '%s' "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" > /tmp/gcp-sa-key.json
+        printf '%s' "$GOOGLE_CREDENTIALS_JSON" > /tmp/gcp-sa-key.json
         echo "size: $(wc -c < /tmp/gcp-sa-key.json)"
         echo "sha256: $(sha256sum /tmp/gcp-sa-key.json | cut -d' ' -f1)"
         echo "--- head (visible chars) ---"
