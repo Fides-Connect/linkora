@@ -81,16 +81,13 @@ jobs:
 
     - name: Prepare service account for Helm
       run: |
-        # write raw JSON secret to a temp file (do NOT base64 encode)
         printf '%s' "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" > /tmp/gcp-sa-key.json
     
     - name: Deploy Weaviate to GKE
       run: |
         helm upgrade --install weaviate ./helm/weaviate \
           --namespace ${{ env.NAMESPACE }} \
-          --create-namespace \
-          --wait \
-          --timeout 5m
+          --create-namespace
     
     - name: Deploy AI Assistant to GKE
       run: |
