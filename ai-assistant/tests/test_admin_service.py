@@ -174,7 +174,8 @@ class TestAdminService:
         admin_service = AdminService()
         request = Mock()
         request.remote = '127.0.0.1'
-        request.match_info = {'user_id': 'user123'}
+        request.match_info = Mock()
+        request.match_info.get = Mock(return_value='user123')
         
         mock_user = {
             'user_id': 'user123',
@@ -196,7 +197,8 @@ class TestAdminService:
         admin_service = AdminService()
         request = Mock()
         request.remote = '127.0.0.1'
-        request.match_info = {'user_id': 'nonexistent'}
+        request.match_info = Mock()
+        request.match_info.get = Mock(return_value='nonexistent')
         
         with patch.object(AdminAuth, 'verify_token', return_value=True), \
              patch.object(UserModelWeaviate, 'get_user_by_id', return_value=None):
@@ -282,7 +284,7 @@ class TestAdminService:
         assert '/admin/health' in routes
         assert '/admin/stats' in routes
         assert '/admin/users' in routes
-        assert '/admin/providers' in routes
+        assert '/admin/competences' in routes
 
 
 class TestAdminServiceErrorHandling:
@@ -310,7 +312,8 @@ class TestAdminServiceErrorHandling:
         
         with patch.object(AdminAuth, 'verify_token', return_value=True), \
              patch.object(UserModelWeaviate, 'get_all_users',
-                         side_effect=Exception("Database error")):
+                         side_effect=Exception("Database error")), \
+             patch.object(ProviderModelWeaviate, 'get_all_providers', return_value=[]):
             
             response = await admin_service.get_stats(request)
             assert response.status == 500
@@ -329,7 +332,7 @@ class TestAdminServiceErrorHandling:
         
         with patch.object(AdminAuth, 'verify_token', return_value=True), \
              patch.object(NotificationService, 'send_to_multiple_users',
-                         side_effect=Exception("FCM error")):
+                         new_callable=AsyncMock, side_effect=Exception("FCM error")):
             
             response = await admin_service.send_notification(request)
             assert response.status == 500
@@ -370,7 +373,8 @@ class TestAdminServiceIntegration:
         request.remote = '127.0.0.1'
         request.query = Mock()
         request.query.get = Mock(return_value='10')
-        request.match_info = {'user_id': 'user123'}
+        request.match_info = Mock()
+        request.match_info.get = Mock(return_value='user123')
         request.json = AsyncMock(return_value={})
         
         with patch.dict(os.environ, {'ADMIN_SECRET_KEY': test_secret}):
