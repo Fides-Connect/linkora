@@ -481,7 +481,7 @@ RUN apt-get update && apt-get install -y \
 ### Troubleshooting Dev Container
 
 **Container Build Issues:**
-- Ensure Docker has enough RAM ressources (8GB+)
+- Ensure Docker has enough RAM resources (8GB+)
 - Close other resource-intensive applications
 
 **Flutter Doctor Issues:**
