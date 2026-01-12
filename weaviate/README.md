@@ -73,8 +73,6 @@ WEAVIATE_API_KEY=your-weaviate-cloud-api-key
 
 **Note**: Cloud config takes precedence over local `WEAVIATE_URL`
 
-**Note**: Cloud config takes precedence over local `WEAVIATE_URL`
-
 ## ⚙️ Configuration
 
 ### Data Schema

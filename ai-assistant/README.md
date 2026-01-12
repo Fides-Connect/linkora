@@ -139,11 +139,11 @@ GEMINI_API_KEY=your_gemini_api_key_here
 # Navigate to ai-assistant directory
 cd ai-assistant
 
-# Start the service
+# Start the service using docker-compose
 docker-compose up ai-assistant
 
-# Or using the run script
-./scripts/run.sh start
+# Or run locally (no container)
+python main.py
 ```
 
 **Production mode (with Weaviate):**
@@ -151,15 +151,17 @@ docker-compose up ai-assistant
 *Option A: Local Weaviate (self-hosted)*
 ```bash
 # Step 1: Start Weaviate services (in separate directory)
-cd /path/to/fides/weaviate
+cd ../weaviate
 docker-compose up -d
 
 # Step 2: Configure .env
 USE_WEAVIATE=true
+# When running AI-Assistant in Docker: use service name (auto-configured)
+# When running AI-Assistant locally (python main.py): use localhost:8090
 WEAVIATE_URL=http://localhost:8090
 
 # Step 3: Initialize database with test data
-cd /path/to/fides/ai-assistant
+cd ../ai-assistant
 python scripts/init_weaviate.py
 
 # Step 4: Start AI assistant
@@ -318,9 +320,6 @@ ai-assistant/
 ├── requirements.txt             # Python dependencies
 ├── .env.template                # Environment variable template
 ├── .gitignore                   # Git ignore rules
-├── scripts/
-│   ├── run.sh                   # Container management script
-│   └── cloud-deploy.sh          # Cloud deployment script
 ├── src/
 │   └── ai_assistant/
 │       ├── __init__.py          # Package initialization
@@ -417,20 +416,23 @@ python main.py
 
 ### Container Setup
 
-#### Using run.sh Script (Recommended)
+#### Using Docker Compose (Recommended)
 
 ```bash
-# Build container
-./scripts/run.sh build
+# Build image (optional)
+docker build -t ai-assistant -f Dockerfile .
 
-# Start service
-./scripts/run.sh start
+# Start service (foreground)
+docker-compose up ai-assistant
+
+# Start service (detached)
+docker-compose up -d ai-assistant
 
 # View logs
-./scripts/run.sh logs
+docker logs -f ai-assistant
 
 # Stop service
-./scripts/run.sh stop
+docker stop ai-assistant || docker rm -f ai-assistant
 ```
 
 #### Using Docker Directly
@@ -723,13 +725,13 @@ sox input.mp3 -r 16000 -c 1 -b 16 output.wav
 ### Test Workflow
 
 1. **Start the Service**
-   ```bash
-   # Local
-   python main.py
+  ```bash
+  # Local
+  python main.py
    
-   # Or container
-   ./scripts/run.sh start
-   ```
+  # Or container (docker-compose)
+  docker-compose up ai-assistant
+  ```
 
 2. **Run Test Client**
    ```bash
@@ -799,7 +801,7 @@ If test client can't connect:
 1. Check service is running: `curl http://localhost:8080/health`
 2. Verify WebSocket URL is correct
 3. Check firewall settings
-4. Review service logs: `./scripts/run.sh logs`
+4. Review service logs: `docker logs -f ai-assistant`
 
 #### Audio Issues
 
@@ -853,7 +855,7 @@ For CI/CD pipelines:
   run: python -m unittest discover tests/
 
 - name: Test Container Build
-  run: ./scripts/run.sh build
+  run: docker build -t ai-assistant -f Dockerfile .
 ```
 
 ### Common Test Scenarios
@@ -877,242 +879,91 @@ Consider adding:
 
 ## Deployment
 
-### Cloud Deployment to Google Cloud Platform
+### Cloud Deployment: GKE + Helm
 
-The AI Assistant includes an automated deployment script for Google Cloud Platform that handles all configuration and deployment steps.
+This repository uses Terraform + Helm to deploy the AI Assistant and Weaviate to Google Kubernetes Engine (GKE). A GitHub Actions workflow is included to build images, push them, and run Helm upgrades automatically when merges occur on `main`.
 
-#### Quick Start
+#### Quick (GitHub Actions)
 
-```bash
-# One-command deployment to Compute Engine
-./scripts/cloud-deploy.sh deploy
+1. Ensure the following repository secrets are set:
+  - `GOOGLE_SERVICE_ACCOUNT_JSON` (the service account JSON content)
+  - `GEMINI_API_KEY`
+  - `GOOGLE_OAUTH_CLIENT_ID`
+  - `ADMIN_SECRET_KEY`
 
-# Check deployment status
-./scripts/cloud-deploy.sh status
+2. Merge to `main` — the workflow will build, push, and deploy the `ai-assistant` Helm release.
 
-# View all available commands
-./scripts/cloud-deploy.sh help
-```
+See: [../.github/workflows/cloud-deploy.yml](../.github/workflows/cloud-deploy.yml)
 
-#### Prerequisites
+#### Manual (Terraform + Helm)
 
-1. **Install Google Cloud SDK**
-   ```bash
-   # macOS with Homebrew
-   brew install google-cloud-sdk
-   
-   # Add to ~/.zshrc
-   export PATH=/opt/homebrew/share/google-cloud-sdk/bin:"$PATH"
-   ```
-
-2. **Configure gcloud**
-   ```bash
-   gcloud auth login
-   gcloud config set project YOUR_PROJECT_ID
-   gcloud config set compute/region europe-west3
-   gcloud config set compute/zone europe-west3-a
-   gcloud auth configure-docker gcr.io
-   ```
-
-3. **Enable Required APIs** in Google Cloud Console:
-   - Compute Engine API
-   - Container Registry API
-   - Cloud Speech-to-Text API
-   - Cloud Text-to-Speech API
-
-4. **Set up environment variables** in `.env`:
-   ```bash
-   GEMINI_API_KEY=your-api-key
-   LANGUAGE_CODE=de-DE
-   VOICE_NAME=de-DE-Chirp3-HD-Sulafat
-   LOG_LEVEL=INFO
-   ```
-
-#### Deployment Script Commands
-
-| Command | Description |
-|---------|-------------|
-| `deploy` | Full deployment (build + push + deploy) |
-| `build` | Build container image for AMD64 |
-| `push` | Push image to Google Container Registry |
-| `deploy-ce [vm-name] [type]` | Deploy to Compute Engine |
-| `start [vm-name]` | Start a stopped VM |
-| `stop [vm-name]` | Stop a running VM |
-| `delete [vm-name]` | Delete a VM |
-| `status [vm-name]` | Show VM status and health |
-| `logs [vm-name]` | View VM logs |
-| `config` | Show current configuration |
-
-#### Platform Comparison
-
-| Platform | WebRTC Support | Cost | Best For |
-|----------|---------------|------|----------|
-| **Compute Engine** ✅ | Full (UDP+TCP) | ~$24/month | **Production** |
-| Cloud Run ❌ | TCP only | Pay-per-use | Testing only |
-
-**Why Compute Engine?** WebRTC requires UDP ports for peer-to-peer connections. Cloud Run only supports HTTP/HTTPS (TCP), making WebRTC impossible. The deployment script automatically:
-- Builds AMD64-compatible images
-- Configures firewall rules (TCP:8080, UDP:49152-65535)
-- Sets up service accounts
-- Validates deployment health
-
-#### Machine Types & Costs
-
-| Machine Type | vCPUs | Memory | Cost/Month* | Use Case |
-|--------------|-------|--------|-------------|----------|
-| e2-micro | 2 | 1 GB | ~$7 | Testing only |
-| e2-small | 2 | 2 GB | ~$13 | Light usage |
-| **e2-medium** | 2 | 4 GB | **~$24** | **Recommended** |
-| e2-standard-2 | 2 | 8 GB | ~$48 | Heavy usage |
-
-*Europe-west3 region, running 24/7. Stop VM when not in use to pay only storage costs (~$0.40/month).
-
-#### Daily Operations
+1. Bootstrap Terraform state (one-time):
 
 ```bash
-# Check status and get endpoints
-./scripts/cloud-deploy.sh status
-
-# Stop VM to save costs (when not in use)
-./scripts/cloud-deploy.sh stop
-
-# Start VM again
-./scripts/cloud-deploy.sh start
-
-# View logs
-./scripts/cloud-deploy.sh logs
+cd ../terraform/bootstrap
+terraform init
+terraform apply
 ```
 
-#### Deployment Output
+2. Provision the GKE network & cluster:
 
-After successful deployment, you'll receive:
-```
-External IP: 34.89.201.196
-Health endpoint: http://34.89.201.196:8080/health
-WebSocket endpoint: ws://34.89.201.196:8080/ws
-```
-
-Update your client `.env` file:
-```properties
-AI_ASSISTANT_SERVER_URL=ws://34.89.201.196:8080/ws
-```
-
-#### Custom Deployment
-
-Deploy with custom VM name and machine type:
 ```bash
-./scripts/cloud-deploy.sh deploy-ce my-ai-assistant e2-standard-2
+cd ..
+terraform init
+terraform apply
 ```
 
-#### Cost Optimization
+3. Build and push container image (locally):
 
-1. **Stop when not in use**: Reduces cost from ~$24/month to ~$0.40/month
-   ```bash
-   ./scripts/cloud-deploy.sh stop
-   ```
+```bash
+docker build -t gcr.io/YOUR_PROJECT_ID/ai-assistant:${TAG} -f ai-assistant/Dockerfile ./ai-assistant
+docker push gcr.io/YOUR_PROJECT_ID/ai-assistant:${TAG}
+```
 
-2. **Use smaller machine**: For testing/development
-   ```bash
-   ./scripts/cloud-deploy.sh deploy-ce ai-assistant-vm e2-small
-   ```
+4. Create Kubernetes secret for the GCP service account JSON then install Helm charts:
 
-3. **Delete when not needed**: Zero cost
-   ```bash
-   ./scripts/cloud-deploy.sh delete
-   ```
+```bash
+# Save your service account JSON locally then create secret
+kubectl create namespace production || true
+kubectl create secret generic ai-assistant-production-secrets \
+  --from-file=google-application-credentials=./service-account.json \
+  --from-literal=gemini-api-key="$GEMINI_API_KEY" \
+  --from-literal=google-oauth-client-id="$GOOGLE_OAUTH_CLIENT_ID" \
+  --from-literal=admin-secret-key="$ADMIN_SECRET_KEY" \
+  -n production
 
-### Local Development
+# Deploy Weaviate
+helm upgrade --install weaviate ./helm/weaviate -n production --create-namespace
+
+# Deploy AI Assistant (uses values/secret created above)
+helm upgrade --install ai-assistant ./helm/ai-assistant -n production --create-namespace
+```
+
+5. Verify pods and services:
+
+```bash
+kubectl get pods -n production
+kubectl get svc -n production
+kubectl logs -l app.kubernetes.io/name=ai-assistant -n production --tail=200
+```
+
+#### Notes & Prerequisites
+
+- Install: `gcloud` (and authenticate), `kubectl`, `helm`, and `terraform`.
+- Ensure the GCP service account used by the workflow/helm has permissions to create GKE, push to GCR, and manage secrets.
+- WebRTC requires UDP connectivity (for peer-to-peer). The Helm `Service` for `ai-assistant` is configured as `LoadBalancer` by default; ensure your cloud LB / firewall allows UDP ranges used by WebRTC (typically ephemeral high ports).
+
+#### Local Development
 
 For local development and testing:
 
 ```bash
-# Using the run script
-./scripts/run.sh start
+# Using docker-compose (recommended)
+docker-compose up ai-assistant
 
-# Or manually with Docker
-docker-compose up
+# Or run locally (no container)
+python main.py
 ```
-
-### Manual Cloud Deployment
-
-If you need custom configuration beyond the deployment script:
-
-#### Google Compute Engine (Manual)
-
-```bash
-# Build for AMD64 architecture (required for Cloud)
-docker build --platform linux/amd64 -t gcr.io/PROJECT_ID/ai-assistant -f Dockerfile .
-
-# Push to registry
-docker push gcr.io/PROJECT_ID/ai-assistant
-
-# Create VM with container
-gcloud compute instances create-with-container ai-assistant-vm \
-  --container-image=gcr.io/PROJECT_ID/ai-assistant \
-  --container-env=GEMINI_API_KEY=...,LANGUAGE_CODE=de-DE,VOICE_NAME=de-DE-Chirp3-HD-Sulafat \
-  --machine-type=e2-medium \
-  --zone=europe-west3-a \
-  --tags=ai-assistant \
-  --service-account=SERVICE_ACCOUNT@PROJECT_ID.iam.gserviceaccount.com \
-  --scopes=cloud-platform
-
-# Configure firewall for WebRTC
-gcloud compute firewall-rules create allow-ai-assistant \
-  --allow tcp:8080,udp:49152-65535 \
-  --target-tags=ai-assistant \
-  --source-ranges=0.0.0.0/0
-```
-
-#### Troubleshooting Deployment
-
-**Container won't start:**
-```bash
-# Check logs
-./scripts/cloud-deploy.sh logs
-
-# Wait 1-2 minutes for container to start
-./scripts/cloud-deploy.sh status
-```
-
-**Health check fails:**
-```bash
-# Verify firewall rules
-gcloud compute firewall-rules describe allow-ai-assistant
-
-# Test from local machine
-curl http://<EXTERNAL_IP>:8080/health
-```
-
-**WebRTC connection fails:**
-- Ensure firewall allows UDP ports 49152-65535
-- Verify VM has external IP
-- Check client can reach VM IP:8080
-- Verify NAT/firewall on client side allows UDP
-
-**Architecture mismatch:**
-The deployment script automatically builds for AMD64. If building manually on Apple Silicon (ARM64), always use:
-```bash
-docker build --platform linux/amd64 ...
-```
-
-### Scaling Considerations
-
-#### Horizontal Scaling
-- Service is stateless (except chat history)
-- Can run multiple instances behind load balancer
-- WebSocket connections sticky to single instance
-- Use Redis for shared chat history (optional)
-
-#### Vertical Scaling
-- Memory: 512MB minimum, 1-2GB recommended per instance
-- CPU: 1 vCPU minimum, 2 vCPU recommended
-- Network: Ensure sufficient bandwidth for audio streams
-
-#### Load Balancing
-- Use WebSocket-aware load balancer
-- Enable sticky sessions
-- Configure health checks
-- Set appropriate timeouts (>60s for WebSocket)
 
 ## Admin Debug Interface
 
@@ -1306,8 +1157,11 @@ cat .env | grep -v "^#"
 # Check port availability
 netstat -an | grep 8080
 
-# Restart container
-./run.sh restart
+# Restart container (docker)
+docker stop ai-assistant || true
+docker rm -f ai-assistant || true
+docker build -t ai-assistant -f Dockerfile .
+docker run -d --name ai-assistant -p 8080:8080 -v "$GOOGLE_SERVICE_ACCOUNT_JSON_PATH:/app/credentials.json:ro" -e GOOGLE_SERVICE_ACCOUNT_JSON_PATH=/app/credentials.json -e GEMINI_API_KEY="$GEMINI_API_KEY" ai-assistant
 ```
 
 #### WebSocket Connection Fails

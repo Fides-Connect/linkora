@@ -1,4 +1,4 @@
-name: Deploy AI Assistant to GKE
+name: Deploy AI Assistant to Google Cloud Platform
 
 on:
   workflow_run:
@@ -82,16 +82,16 @@ jobs:
       uses: azure/setup-helm@v4
       with:
         version: 'latest'
-
-    - name: Prepare service account for Helm
-      run: |
-        echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > /tmp/google-service-account.json
     
     - name: Deploy Weaviate to GKE
       run: |
         helm upgrade --install weaviate ./helm/weaviate \
           --namespace ${{ env.NAMESPACE }} \
           --create-namespace
+
+    - name: Prepare service account for Helm
+      run: |
+        echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > /tmp/google-service-account.json
     
     - name: Deploy AI Assistant to GKE
       run: |

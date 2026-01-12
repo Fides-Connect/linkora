@@ -43,9 +43,22 @@ Fides/
 │   ├── docker-compose.yml # Weaviate services
 │   └── README.md         # Weaviate setup guide
 │
-├── scripts/              # Utility scripts
-│   ├── generateOAuth2Token.py  # OAuth token generator
-│   └── dev-helper.sh    # Development helper script
+├── helm/                 # Kubernetes Helm charts
+│   ├── ai-assistant/     # AI-Assistant Helm chart
+│   └── weaviate/         # Weaviate Helm chart
+│   └── README.md         # Helm setup guide
+│
+├── terraform/            # Infrastructure as Code
+│   ├── main.tf           # GKE cluster configuration
+│   ├── variables.tf      # Terraform variables
+│   └── bootstrap/        # Terraform state backend setup
+│   └── README.md         # Terraform setup guide
+│
+├── .github/              # CI/CD workflows
+│   └── workflows/        # GitHub Actions
+│       ├── cloud-deploy.yml        # GKE deployment
+│       ├── ai-assistant-test.yml   # AI-Assistant tests
+│       └── connectx-test.yml       # ConnectX tests
 │
 ├── .devcontainer/        # VS Code Dev Container configuration
 │   ├── devcontainer.json
@@ -80,8 +93,8 @@ cp .env.template .env
 # Edit .env with your Google Cloud credentials and Gemini API key
 # USE_WEAVIATE=false (default for development)
 
-# Start server
-./scripts/run.sh start
+# Start server (docker-compose)
+docker-compose up ai-assistant
 
 # Server starts on localhost:8080
 ```
@@ -199,7 +212,6 @@ Each component has detailed documentation:
 - **[ConnectX Documentation](connectx/README.md)** - Flutter app setup, usage, and troubleshooting
 - **[AI-Assistant Documentation](ai-assistant/README.md)** - Server setup, configuration, deployment, and API reference
 - **[Weaviate Documentation](weaviate/README.md)** - Vector database setup, local and cloud deployment
-- **[Project Structure](PROJECT_STRUCTURE.md)** - Complete workspace organization guide
 
 ## 🔧 Configuration
 
@@ -281,17 +293,18 @@ flutter run
 
 ## 📦 Deployment
 
-### Deploy AI-Assistant Server
+### Local Development Deployment
 
-The server can be deployed using containers:
+**AI-Assistant Server:**
 
 ```bash
 cd ai-assistant
 
-# Build container
-docker build -t ai-assistant -f Dockerfile .
+# Using docker-compose (recommended)
+docker-compose up ai-assistant
 
-# Run container
+# Or build and run manually
+docker build -t ai-assistant -f Dockerfile .
 docker run -d \
   --name ai-assistant \
   -p 8080:8080 \
@@ -299,9 +312,7 @@ docker run -d \
   ai-assistant
 ```
 
-See [AI-Assistant Deployment Guide](ai-assistant/README.md#deployment) for production deployment options.
-
-### Build ConnectX for Production
+**ConnectX App:**
 
 ```bash
 cd connectx
