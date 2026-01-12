@@ -9,6 +9,13 @@ on:
       - 'ai-assistant/**'
       - 'helm/ai-assistant/**'
       - '.github/workflows/deploy-gke.yml'
+  workflow_run:
+    workflows: ["AI Assistant Integration Test"]
+    types:
+      - completed
+    branches:
+      - main
+      - feature/update-cloud-deployment
 
 env:
   PROJECT_ID: gen-lang-client-0859968110
@@ -19,6 +26,7 @@ env:
 
 jobs:
   build-and-deploy:
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     name: Build and Deploy to GKE
     runs-on: ubuntu-latest
     
