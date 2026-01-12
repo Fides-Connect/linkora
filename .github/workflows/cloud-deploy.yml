@@ -11,7 +11,7 @@ on:
     paths:
       - 'ai-assistant/**'
       - 'helm/ai-assistant/**'
-      - '.github/workflows/deploy-gke.yml'
+      - '.github/workflows/cloud-deploy.yml'
 
 env:
   PROJECT_ID: gen-lang-client-0859968110

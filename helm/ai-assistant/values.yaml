@@ -48,7 +48,7 @@ env:
 # Secrets - these will be created from GitHub Actions
 secrets:
   # GCP Service Account Key (JSON file content)
-  googleApplicationCredentialsJson: ""
+  googleServiceAccountJson: ""
   
   # Gemini API Key
   geminiApiKey: ""
