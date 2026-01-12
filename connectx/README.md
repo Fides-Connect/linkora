@@ -154,7 +154,7 @@ If you're using the AI-Assistant backend for token validation:
 1. Ensure the backend uses the **same Firebase project**
 2. In `ai-assistant/.env`, set:
    ```properties
-   GOOGLE_APPLICATION_CREDENTIALS=your-service-account.json
+   GOOGLE_SERVICE_ACCOUNT_JSON_PATH=your-service-account.json
    GOOGLE_OAUTH_CLIENT_ID=<same-client-id-as-flutter-app>
    ```
 3. The service account JSON must be from the same Firebase/GCP project

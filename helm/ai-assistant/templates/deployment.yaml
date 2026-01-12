@@ -27,7 +27,7 @@ spec:
           containerPort: {{ .Values.env.port }}
           protocol: TCP
         env:
-        - name: GOOGLE_APPLICATION_CREDENTIALS
+        - name: GOOGLE_SERVICE_ACCOUNT_JSON_PATH
           value: {{ .Values.env.googleApplicationCredentials }}
         - name: GEMINI_API_KEY
           valueFrom:
@@ -90,7 +90,7 @@ spec:
               name: {{ include "ai-assistant.fullname" . }}
               key: admin-secret-key
         volumeMounts:
-        - name: gcp-sa-key
+        - name: google-application-credentials
           mountPath: /app/secrets
           readOnly: true
         livenessProbe:
@@ -112,9 +112,9 @@ spec:
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
       volumes:
-      - name: gcp-sa-key
+      - name: google-application-credentials
         secret:
           secretName: {{ include "ai-assistant.fullname" . }}
           items:
-          - key: gcp-sa-key
-            path: gcp-sa-key.json
+          - key: google-application-credentials
+            path: google-application-credentials.json

@@ -38,7 +38,7 @@ jobs:
     - name: Authenticate to GCP
       uses: google-github-actions/auth@v1
       with:
-        credentials_json: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        credentials_json: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
     
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
@@ -66,11 +66,6 @@ jobs:
         
         echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
         echo "IMAGE_LATEST=$IMAGE_LATEST" >> $GITHUB_ENV
-
-    - name: Debug gcloud auth
-      run: |
-          gcloud auth list
-          gcloud config list --format=json
     
     - name: Push Docker image to GCR
       run: |
@@ -90,7 +85,7 @@ jobs:
 
     - name: Prepare service account for Helm
       run: |
-        echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > /tmp/gcp-sa-key.json
+        echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > /tmp/google-service-account.json
     
     - name: Deploy Weaviate to GKE
       run: |
@@ -104,11 +99,11 @@ jobs:
           --namespace ${{ env.NAMESPACE }} \
           --create-namespace \
           --set image.tag=${{ github.sha }} \
-          --set-file secrets.gcpServiceAccount=/tmp/gcp-sa-key.json \
+          --set-file secrets.googleServiceAccountJson=/tmp/google-service-account.json \
           --set secrets.geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
           --set secrets.googleOauthClientId="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
           --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}"
-        rm -f /tmp/gcp-sa-key.json
+        rm -f /tmp/google-service-account.json
 
     - name: Deployment Summary
       run: |

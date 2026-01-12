@@ -22,7 +22,7 @@ resources:
 
 env:
   # Google Cloud Configuration
-  googleApplicationCredentials: "/app/secrets/gcp-sa-key.json"
+  googleApplicationCredentials: "/app/secrets/google-application-credentials.json"
   
   # Language and Voice Configuration
   languageCode: "de-DE"
@@ -48,7 +48,7 @@ env:
 # Secrets - these will be created from GitHub Actions
 secrets:
   # GCP Service Account Key (JSON file content)
-  gcpServiceAccount: ""
+  googleApplicationCredentialsJson: ""
   
   # Gemini API Key
   geminiApiKey: ""

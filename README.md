@@ -214,7 +214,7 @@ AI_ASSISTANT_SERVER_URL=localhost:8080
 
 ```bash
 # ai-assistant/.env
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+GOOGLE_SERVICE_ACCOUNT_JSON_PATH=/path/to/service-account.json
 GEMINI_API_KEY=your_gemini_api_key_here
 LANGUAGE_CODE=de-DE
 VOICE_NAME=de-DE-Chirp3-HD-Sulafat

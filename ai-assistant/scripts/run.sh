@@ -31,8 +31,8 @@ fi
 source "$ENV_FILE"
 
 # Resolve credentials file to absolute path if not already
-if [[ "$GOOGLE_APPLICATION_CREDENTIALS" != /* ]]; then
-    GOOGLE_APPLICATION_CREDENTIALS="$PROJECT_ROOT/$GOOGLE_APPLICATION_CREDENTIALS"
+if [[ "$GOOGLE_SERVICE_ACCOUNT_JSON_PATH" != /* ]]; then
+    GOOGLE_SERVICE_ACCOUNT_JSON_PATH="$PROJECT_ROOT/$GOOGLE_SERVICE_ACCOUNT_JSON_PATH"
 fi
 
 # Check for required variables
@@ -41,13 +41,13 @@ if [ -z "$GEMINI_API_KEY" ] || [ "$GEMINI_API_KEY" = "your_gemini_api_key_here" 
     exit 1
 fi
 
-if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
+if [ -z "$GOOGLE_SERVICE_ACCOUNT_JSON_PATH" ]; then
     echo -e "${RED}Error: GOOGLE_APPLICATION_CREDENTIALS not set in .env file${NC}"
     exit 1
 fi
 
-if [ ! -f "$GOOGLE_APPLICATION_CREDENTIALS" ]; then
-    echo -e "${RED}Error: Google Cloud credentials file not found at: $GOOGLE_APPLICATION_CREDENTIALS${NC}"
+if [ ! -f "$GOOGLE_SERVICE_ACCOUNT_JSON_PATH" ]; then
+    echo -e "${RED}Error: Google Cloud credentials file not found at: $GOOGLE_SERVICE_ACCOUNT_JSON_PATH${NC}"
     exit 1
 fi
 
@@ -84,8 +84,8 @@ run() {
         docker run -d \
             --name ai-assistant \
             -p ${PORT:-8080}:${PORT:-8080} \
-            -v "$GOOGLE_APPLICATION_CREDENTIALS:/app/credentials.json:ro" \
-            -e GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json \
+            -v "$GOOGLE_SERVICE_ACCOUNT_JSON_PATH:/app/credentials.json:ro" \
+            -e GOOGLE_SERVICE_ACCOUNT_JSON_PATH=/app/credentials.json \
             -e GEMINI_API_KEY="$GEMINI_API_KEY" \
             -e LANGUAGE_CODE="${LANGUAGE_CODE:-de-DE}" \
             -e VOICE_NAME="${VOICE_NAME:-de-DE-Chirp3-HD-Sulafat}" \

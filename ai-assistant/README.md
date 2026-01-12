@@ -128,7 +128,7 @@ nano .env
 
 **Required in `.env`:**
 ```bash
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+GOOGLE_SERVICE_ACCOUNT_JSON_PATH=/path/to/service-account.json
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
@@ -400,7 +400,7 @@ gcloud services enable texttospeech.googleapis.com
 cp .env.template .env
 
 # Edit with your values
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+GOOGLE_SERVICE_ACCOUNT_JSON_PATH=/path/to/service-account.json
 GEMINI_API_KEY=your_api_key_here
 LANGUAGE_CODE=de-DE
 VOICE_NAME=de-DE-Chirp3-HD-Sulafat
@@ -469,7 +469,7 @@ docker-compose down
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to GCP service account JSON | `/app/credentials.json` |
+| `GOOGLE_SERVICE_ACCOUNT_JSON_PATH` | Path to GCP service account JSON | `/app/credentials.json` |
 | `GEMINI_API_KEY` | Google Gemini API key | `AIza...` |
 
 #### Optional Variables

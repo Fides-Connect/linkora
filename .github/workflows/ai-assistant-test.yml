@@ -75,8 +75,8 @@ jobs:
         working-directory: ai-assistant
         run: |
           # Create credentials file from secret
-          echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > google-credentials.json
-          echo "GOOGLE_CREDENTIALS_PATH=$(pwd)/google-credentials.json" >> $GITHUB_ENV
+          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > google-service-account.json
+          echo "GOOGLE_SERVICE_ACCOUNT_JSON_PATH=$(pwd)/google-service-account.json" >> $GITHUB_ENV
 
       - name: Create test environment file
         working-directory: ai-assistant
@@ -84,7 +84,7 @@ jobs:
           cat > .env << EOF
           # Test environment variables
           GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-          GOOGLE_APPLICATION_CREDENTIALS=${{ env.GOOGLE_CREDENTIALS_PATH }}
+          GOOGLE_SERVICE_ACCOUNT_JSON_PATH=${{ env.GOOGLE_SERVICE_ACCOUNT_JSON_PATH }}
           LOG_LEVEL=INFO
           HOST=0.0.0.0
           PORT=8080
