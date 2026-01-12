@@ -6,7 +6,6 @@ on:
       - main
       - feature/update-cloud-deployment
     paths:
-      - 'ai-assistant/**'
       - 'helm/ai-assistant/**'
       - '.github/workflows/deploy-gke.yml'
   workflow_run:
