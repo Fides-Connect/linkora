@@ -1,14 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "common.fullname" . }}
+  name: {{ .Chart.Name }}
   labels:
-    {{- include "common.labels" . | nindent 4 }}
+    helm.sh/chart: {{ .Chart.Name }}
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Chart.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: Helm
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "common.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/instance: {{ .Chart.Name }}
   template:
     metadata:
       annotations:
@@ -16,7 +21,8 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
       labels:
-        {{- include "common.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ .Chart.Name }}
+        app.kubernetes.io/instance: {{ .Chart.Name }}
     spec:
       containers:
       - name: {{ .Chart.Name }}
@@ -32,62 +38,62 @@ spec:
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: gemini-api-key
         - name: GOOGLE_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: google-oauth-client-id
         - name: USE_WEAVIATE
           valueFrom:
             configMapKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: use-weaviate
         - name: WEAVIATE_URL
           valueFrom:
             configMapKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: weaviate-url
         - name: LANGUAGE_CODE
           valueFrom:
             configMapKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: language-code
         - name: VOICE_NAME
           valueFrom:
             configMapKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: voice-name
         - name: HOST
           valueFrom:
             configMapKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: host
         - name: PORT
           valueFrom:
             configMapKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: port
         - name: LOG_LEVEL
           valueFrom:
             configMapKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: log-level
         - name: GOOGLE_TTS_API_CONCURRENCY
           valueFrom:
             configMapKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: google-tts-api-concurrency
         - name: DEBUG_RECORD_AUDIO
           valueFrom:
             configMapKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: debug-record-audio
         - name: ADMIN_SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: {{ include "common.fullname" . }}
+              name: {{ .Chart.Name }}
               key: admin-secret-key
         volumeMounts:
         - name: google-application-credentials
@@ -114,7 +120,7 @@ spec:
       volumes:
       - name: google-application-credentials
         secret:
-          secretName: {{ include "common.fullname" . }}
+          secretName: {{ .Chart.Name }}
           items:
           - key: google-application-credentials
             path: google-application-credentials.json
