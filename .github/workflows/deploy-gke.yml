@@ -7,7 +7,7 @@ on:
       - completed
   pull_request:
     branches:
-      - feature/update-cloud-deployment
+      - main
     paths:
       - 'ai-assistant/**'
       - 'helm/ai-assistant/**'
