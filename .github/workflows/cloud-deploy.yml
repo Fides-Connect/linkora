@@ -89,7 +89,7 @@ jobs:
           --namespace ${{ env.NAMESPACE }} \
           --create-namespace
 
-    - name: Prepare service account for Helm
+    - name: Prepare service account file for AI Assistant
       run: |
         echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > /tmp/google-service-account.json
     
@@ -109,6 +109,7 @@ jobs:
       run: |
         # Attempt secure deletion; fall back to simple removal if needed
         shred -u /tmp/google-service-account.json || rm -f /tmp/google-service-account.json
+        
     - name: Deployment Summary
       run: |
         echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
