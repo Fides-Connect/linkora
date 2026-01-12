@@ -29,9 +29,15 @@ spec:
         - name: GOOGLE_SERVICE_ACCOUNT_JSON_PATH
           value: {{ .Values.env.googleApplicationCredentials }}
         - name: GEMINI_API_KEY
-          value: {{ .Values.secrets.geminiApiKey | quote }}
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Chart.Name }}
+              key: gemini-api-key
         - name: GOOGLE_OAUTH_CLIENT_ID
-          value: {{ .Values.secrets.googleOauthClientId | quote }}
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Chart.Name }}
+              key: google-oauth-client-id
         - name: USE_WEAVIATE
           value: {{ .Values.env.useWeaviate | quote }}
         - name: WEAVIATE_URL
@@ -51,7 +57,10 @@ spec:
         - name: DEBUG_RECORD_AUDIO
           value: {{ .Values.env.debugRecordAudio | quote }}
         - name: ADMIN_SECRET_KEY
-          value: {{ .Values.secrets.adminSecretKey | quote }}
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Chart.Name }}
+              key: admin-secret-key
         volumeMounts:
         - name: google-application-credentials
           mountPath: /app/secrets
