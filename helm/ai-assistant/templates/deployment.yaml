@@ -3,11 +3,8 @@ kind: Deployment
 metadata:
   name: {{ .Chart.Name }}
   labels:
-    helm.sh/chart: {{ .Chart.Name }}
     app.kubernetes.io/name: {{ .Chart.Name }}
     app.kubernetes.io/instance: {{ .Chart.Name }}
-    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-    app.kubernetes.io/managed-by: Helm
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
@@ -16,10 +13,6 @@ spec:
       app.kubernetes.io/instance: {{ .Chart.Name }}
   template:
     metadata:
-      annotations:
-        # Force pod restart on config/secret changes
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
       labels:
         app.kubernetes.io/name: {{ .Chart.Name }}
         app.kubernetes.io/instance: {{ .Chart.Name }}
@@ -40,50 +33,23 @@ spec:
         - name: GOOGLE_OAUTH_CLIENT_ID
           value: {{ .Values.secrets.googleOauthClientId | quote }}
         - name: USE_WEAVIATE
-          valueFrom:
-            configMapKeyRef:
-              name: {{ .Chart.Name }}
-              key: use-weaviate
+          value: {{ .Values.env.useWeaviate | quote }}
         - name: WEAVIATE_URL
-          valueFrom:
-            configMapKeyRef:
-              name: {{ .Chart.Name }}
-              key: weaviate-url
+          value: {{ .Values.env.weaviateUrl | quote }}
         - name: LANGUAGE_CODE
-          valueFrom:
-            configMapKeyRef:
-              name: {{ .Chart.Name }}
-              key: language-code
+          value: {{ .Values.env.languageCode | quote }}
         - name: VOICE_NAME
-          valueFrom:
-            configMapKeyRef:
-              name: {{ .Chart.Name }}
-              key: voice-name
+          value: {{ .Values.env.voiceName | quote }}
         - name: HOST
-          valueFrom:
-            configMapKeyRef:
-              name: {{ .Chart.Name }}
-              key: host
+          value: {{ .Values.env.host | quote }}
         - name: PORT
-          valueFrom:
-            configMapKeyRef:
-              name: {{ .Chart.Name }}
-              key: port
+          value: {{ .Values.env.port | quote }}
         - name: LOG_LEVEL
-          valueFrom:
-            configMapKeyRef:
-              name: {{ .Chart.Name }}
-              key: log-level
+          value: {{ .Values.env.logLevel | quote }}
         - name: GOOGLE_TTS_API_CONCURRENCY
-          valueFrom:
-            configMapKeyRef:
-              name: {{ .Chart.Name }}
-              key: google-tts-api-concurrency
+          value: {{ .Values.env.googleTtsApiConcurrency | quote }}
         - name: DEBUG_RECORD_AUDIO
-          valueFrom:
-            configMapKeyRef:
-              name: {{ .Chart.Name }}
-              key: debug-record-audio
+          value: {{ .Values.env.debugRecordAudio | quote }}
         - name: ADMIN_SECRET_KEY
           value: {{ .Values.secrets.adminSecretKey | quote }}
         volumeMounts:
