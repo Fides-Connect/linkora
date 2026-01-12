@@ -6,10 +6,14 @@ on:
     paths:
       - 'ai-assistant/**'
       - '.github/workflows/ai-assistant-test.yml'
+      - 'helm/ai-assistant/**'
+      - '.github/workflows/deploy-gke.yml'
   pull_request:
     paths:
       - 'ai-assistant/**'
       - '.github/workflows/ai-assistant-test.yml'
+      - 'helm/ai-assistant/**'
+      - '.github/workflows/deploy-gke.yml'
 
 jobs:
   unit-test:

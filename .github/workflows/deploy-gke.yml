@@ -1,13 +1,6 @@
 name: Deploy AI Assistant to GKE
 
 on:
-  push:
-    branches:
-      - main
-      - feature/update-cloud-deployment
-    paths:
-      - 'helm/ai-assistant/**'
-      - '.github/workflows/deploy-gke.yml'
   workflow_run:
     workflows: ["AI Assistant Integration Test"]
     types:
