@@ -1,14 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "ai-assistant.name" -}}
+{{- define "common.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
 */}}
-{{- define "ai-assistant.fullname" -}}
+{{- define "common.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -24,16 +24,16 @@ Create a default fully qualified app name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "ai-assistant.chart" -}}
+{{- define "common.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "ai-assistant.labels" -}}
-helm.sh/chart: {{ include "ai-assistant.chart" . }}
-{{ include "ai-assistant.selectorLabels" . }}
+{{- define "common.labels" -}}
+helm.sh/chart: {{ include "common.chart" . }}
+{{ include "common.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -43,7 +43,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "ai-assistant.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "ai-assistant.name" . }}
+{{- define "common.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "common.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}

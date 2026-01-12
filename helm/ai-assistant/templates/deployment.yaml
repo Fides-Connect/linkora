@@ -1,14 +1,14 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "ai-assistant.fullname" . }}
+  name: {{ include "common.fullname" . }}
   labels:
-    {{- include "ai-assistant.labels" . | nindent 4 }}
+    {{- include "common.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "ai-assistant.selectorLabels" . | nindent 6 }}
+      {{- include "common.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
@@ -16,7 +16,7 @@ spec:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
       labels:
-        {{- include "ai-assistant.selectorLabels" . | nindent 8 }}
+        {{- include "common.selectorLabels" . | nindent 8 }}
     spec:
       containers:
       - name: {{ .Chart.Name }}
@@ -32,62 +32,62 @@ spec:
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: gemini-api-key
         - name: GOOGLE_OAUTH_CLIENT_ID
           valueFrom:
             secretKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: google-oauth-client-id
         - name: USE_WEAVIATE
           valueFrom:
             configMapKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: use-weaviate
         - name: WEAVIATE_URL
           valueFrom:
             configMapKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: weaviate-url
         - name: LANGUAGE_CODE
           valueFrom:
             configMapKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: language-code
         - name: VOICE_NAME
           valueFrom:
             configMapKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: voice-name
         - name: HOST
           valueFrom:
             configMapKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: host
         - name: PORT
           valueFrom:
             configMapKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: port
         - name: LOG_LEVEL
           valueFrom:
             configMapKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: log-level
         - name: GOOGLE_TTS_API_CONCURRENCY
           valueFrom:
             configMapKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: google-tts-api-concurrency
         - name: DEBUG_RECORD_AUDIO
           valueFrom:
             configMapKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: debug-record-audio
         - name: ADMIN_SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: {{ include "ai-assistant.fullname" . }}
+              name: {{ include "common.fullname" . }}
               key: admin-secret-key
         volumeMounts:
         - name: google-application-credentials
@@ -114,7 +114,7 @@ spec:
       volumes:
       - name: google-application-credentials
         secret:
-          secretName: {{ include "ai-assistant.fullname" . }}
+          secretName: {{ include "common.fullname" . }}
           items:
           - key: google-application-credentials
             path: google-application-credentials.json

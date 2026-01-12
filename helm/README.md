@@ -6,6 +6,7 @@ Kubernetes deployment charts for the Fides AI Assistant platform.
 
 - **`ai-assistant/`** - AI Assistant WebRTC server deployment
 - **`weaviate/`** - Weaviate vector database deployment
+- **`common/`** - Shared Helm library chart with reusable template helpers
 
 ## 🚀 Deployment
 

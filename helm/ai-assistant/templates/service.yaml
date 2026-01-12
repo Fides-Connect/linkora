@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "ai-assistant.fullname" . }}
+  name: {{ include "common.fullname" . }}
   labels:
-    {{- include "ai-assistant.labels" . | nindent 4 }}
+    {{- include "common.labels" . | nindent 4 }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -12,4 +12,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "ai-assistant.selectorLabels" . | nindent 4 }}
+    {{- include "common.selectorLabels" . | nindent 4 }}
