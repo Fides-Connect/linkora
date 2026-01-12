@@ -103,8 +103,12 @@ jobs:
           --set secrets.geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
           --set secrets.googleOauthClientId="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
           --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}"
-        rm -f /tmp/google-service-account.json
 
+    - name: Cleanup service account file
+      if: always()
+      run: |
+        # Attempt secure deletion; fall back to simple removal if needed
+        shred -u /tmp/google-service-account.json || rm -f /tmp/google-service-account.json
     - name: Deployment Summary
       run: |
         echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
