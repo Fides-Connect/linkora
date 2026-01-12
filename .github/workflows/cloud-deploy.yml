@@ -107,8 +107,7 @@ jobs:
     - name: Cleanup service account file
       if: always()
       run: |
-        # Attempt secure deletion; fall back to simple removal if needed
-        shred -u /tmp/google-service-account.json || rm -f /tmp/google-service-account.json
+        rm -f /tmp/google-service-account.json
         
     - name: Deployment Summary
       run: |
