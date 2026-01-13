@@ -17,12 +17,13 @@ from typing import Any, Callable, Optional
 from aiohttp import web
 from weaviate.classes.query import QueryReference
 
-from ai_assistant.hub_spoke_schema import get_competence_entry_collection
-from ai_assistant.services.notification_service import NotificationService
-from ai_assistant.weaviate_models import (
-    ProviderModelWeaviate, 
-    UserModelWeaviate
-)
+# need to avoid fails in CI pipelines due to moccking issue.
+# from ai_assistant.hub_spoke_schema import get_competence_entry_collection
+# from ai_assistant.services.notification_service import NotificationService
+# from ai_assistant.weaviate_models import (
+#     ProviderModelWeaviate, 
+#     UserModelWeaviate
+# )
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,8 @@ class AdminService:
         Get system statistics and metrics.
         """
         try:
+            from ai_assistant.weaviate_models import UserModelWeaviate, ProviderModelWeaviate
+            
             # Get database statistics
             users = UserModelWeaviate.get_all_users(limit=1000)
             providers = ProviderModelWeaviate.get_all_providers(limit=1000)
@@ -210,6 +213,9 @@ class AdminService:
         }
         """
         try:
+            from ai_assistant.services.notification_service import NotificationService
+            from ai_assistant.weaviate_models import UserModelWeaviate
+            
             body = await request.json()
             
             title = body.get('title')
@@ -285,6 +291,8 @@ class AdminService:
         List all users in the system.
         """
         try:
+            from ai_assistant.weaviate_models import UserModelWeaviate
+            
             limit = int(request.query.get('limit', 100))
             users = UserModelWeaviate.get_all_users(limit=limit)
             
@@ -325,6 +333,8 @@ class AdminService:
         Get detailed information about a specific user.
         """
         try:
+            from ai_assistant.weaviate_models import UserModelWeaviate
+            
             user_id = request.match_info.get('user_id')
             
             if not user_id:
@@ -372,6 +382,8 @@ class AdminService:
         List all competences (spokes) in the system.
         """
         try:
+            from ai_assistant.hub_spoke_schema import get_competence_entry_collection
+            
             limit = int(request.query.get('limit', 100))
             
             # Fetch competences with 'owned_by' reference to show who owns them
@@ -438,6 +450,8 @@ class AdminService:
         }
         """
         try:
+            from ai_assistant.services.notification_service import NotificationService
+            
             body = await request.json()
             
             fcm_token = body.get('fcm_token')
