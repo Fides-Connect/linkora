@@ -28,12 +28,14 @@ class SignalingServer:
         connection_id = id(ws)
         client_ip = request.remote
         
-        # Extract user_id from query parameters if provided
+        # Extract user_id and language from query parameters
         user_id = request.query.get('user_id')
+        language = request.query.get('language', 'de')  # Default to German
+        
         if user_id:
-            logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (user: {user_id})")
+            logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (user: {user_id}, language: {language})")
         else:
-            logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (no user_id)")
+            logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (no user_id, language: {language})")
         
         # Create peer connection handler
         logger.debug(f"Creating PeerConnectionHandler for {connection_id}")
@@ -41,7 +43,8 @@ class SignalingServer:
             connection_id=str(connection_id),
             ai_assistant=self.ai_assistant,
             websocket=ws,
-            user_id=user_id
+            user_id=user_id,
+            language=language
         )
         self.active_connections[str(connection_id)] = handler
         logger.debug(f"Active connections: {len(self.active_connections)}")

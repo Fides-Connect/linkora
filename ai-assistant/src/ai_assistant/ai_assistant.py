@@ -44,6 +44,7 @@ class AIAssistant:
         self.language_code = language_code
         self.voice_name = voice_name
         self.session_id = session_id or "default"
+        self.language = 'de'  # Default language, will be set by AudioProcessor
         
         # Initialize data provider
         self.data_provider = get_data_provider()
@@ -77,7 +78,8 @@ class AIAssistant:
             data_provider=self.data_provider,
             agent_name=AGENT_NAME,
             company_name=COMPANY_NAME,
-            max_providers=3
+            max_providers=3,
+            language=self.language
         )
         
         # Initialize orchestration services

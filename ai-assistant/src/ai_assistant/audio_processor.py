@@ -5,12 +5,14 @@ Handles the audio processing pipeline: STT -> LLM -> TTS
 import asyncio
 import logging
 import json
+import os
 import numpy as np
 from typing import Optional
 from aiortc import MediaStreamTrack
 from aiortc.mediastreams import MediaStreamError
 from av import AudioFrame
 
+from .ai_assistant import AIAssistant
 from .audio_track import AudioOutputTrack
 from .services.audio_frame_converter import AudioFrameConverter
 from .services.debug_recorder import DebugRecorder
@@ -20,18 +22,38 @@ from .services.tts_playback_manager import TTSPlaybackManager, SentenceParser
 logger = logging.getLogger(__name__)
 
 
+def get_language_config(language: str) -> tuple[str, str]:
+    """Get language code and voice name based on language. """
+    if language == 'en':
+        # English configuration
+        language_code = os.getenv('LANGUAGE_CODE_EN', 'en-US')
+        voice_name = os.getenv('VOICE_NAME_EN', 'en-US-Chirp3-HD')
+    else:
+        # German configuration (default)
+        language_code = os.getenv('LANGUAGE_CODE_DE', 'de-DE')
+        voice_name = os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat')
+    
+    return language_code, voice_name
+
+
 class AudioProcessor:
     """Processes audio through the STT -> LLM -> TTS pipeline."""
     
-    def __init__(self, connection_id: str, ai_assistant, input_track: MediaStreamTrack, user_id: Optional[str] = None):
+    def __init__(self, connection_id: str, ai_assistant, input_track: MediaStreamTrack, user_id: Optional[str] = None, language: str = 'de'):
         self.connection_id = connection_id
-        self.ai_assistant = ai_assistant
+        self.base_ai_assistant = ai_assistant  # Keep reference to base assistant
         self.input_track = input_track
         self.user_id = user_id
+        self.language = language
         self.output_track = AudioOutputTrack()
         self.running = False
         self.processing_task = None
         self.stt_task = None
+        
+        # Create language-specific AI assistant for this connection
+        self.ai_assistant = self._create_language_specific_assistant(language)
+        
+        logger.info(f"AudioProcessor created for connection {connection_id} with language: {language}")
         
         # Audio streaming for continuous STT
         self.audio_queue = asyncio.Queue()
@@ -40,9 +62,9 @@ class AudioProcessor:
         # Services
         self.frame_converter = AudioFrameConverter(self.sample_rate)
         self.debug_recorder = DebugRecorder(connection_id, self.sample_rate)
-        self.transcript_processor = TranscriptProcessor(ai_assistant.stt_service)
+        self.transcript_processor = TranscriptProcessor(self.ai_assistant.stt_service)
         self.tts_manager = TTSPlaybackManager(
-            ai_assistant.tts_service,
+            self.ai_assistant.tts_service,
             self._queue_audio_for_playback
         )
         
@@ -50,6 +72,29 @@ class AudioProcessor:
         self.is_ai_speaking = False  # True when generating OR playing AI response
         self.interrupt_event = asyncio.Event()
         self.data_channel = None
+
+    def _create_language_specific_assistant(self, language: str):
+        """Create a language-specific AI assistant instance."""
+        language_code, voice_name = get_language_config(language)
+        
+        logger.info(f"Creating language-specific AI assistant: language_code={language_code}, voice_name={voice_name}")
+        
+        # Create new AI assistant with language-specific configuration
+        assistant = AIAssistant(
+            gemini_api_key=os.getenv('GEMINI_API_KEY'),
+            language_code=language_code,
+            voice_name=voice_name,
+            session_id=self.connection_id
+        )
+        
+        # Set the language in the assistant for prompt generation
+        assistant.language = language
+        # Update the conversation service's language to match
+        assistant.conversation_service.language = language
+        
+        logger.info(f"AI Assistant language set to: {language}")
+        
+        return assistant
 
     def set_data_channel(self, channel):
         """Set the data channel for sending text messages."""

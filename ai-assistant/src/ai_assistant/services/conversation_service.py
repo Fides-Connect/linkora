@@ -11,7 +11,8 @@ from langchain_core.messages import HumanMessage, AIMessage
 from ..prompts_templates import (
     GREETING_AND_TRIAGE_PROMPT,
     TRIAGE_CONVERSATION_PROMPT,
-    FINALIZE_SERVICE_REQUEST_PROMPT
+    FINALIZE_SERVICE_REQUEST_PROMPT,
+    get_language_instruction
 )
 from ..test_data import detect_category
 from ..data_provider import DataProvider
@@ -31,8 +32,8 @@ class ConversationService:
     """Service for managing conversation flow and state."""
     
     def __init__(self, llm_service, data_provider: DataProvider,
-                 agent_name: str = "Elin", company_name: str = "FidesConnect",
-                 max_providers: int = 3):
+                 agent_name: str = "Elin", company_name: str = "Linkora",
+                 max_providers: int = 3, language: str = 'de'):
         """
         Initialize Conversation service.
         
@@ -42,12 +43,14 @@ class ConversationService:
             agent_name: Name of the AI agent
             company_name: Company name
             max_providers: Maximum number of providers to present
+            language: Language code ('de' or 'en')
         """
         self.llm_service = llm_service
         self.data_provider = data_provider
         self.agent_name = agent_name
         self.company_name = company_name
         self.max_providers = max_providers
+        self.language = language
         
         self.current_stage = ConversationStage.GREETING
         self.context: Dict[str, Any] = {
@@ -84,8 +87,13 @@ class ConversationService:
             ChatPromptTemplate for the stage
         """
         if stage == ConversationStage.GREETING:
+            language_instruction = get_language_instruction(self.language)
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
+                SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT).format(
+                    agent_name=self.agent_name,
+                    company_name=self.company_name,
+                    language_instruction=language_instruction
+                ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
             ])
@@ -102,11 +110,13 @@ class ConversationService:
         elif stage == ConversationStage.FINALIZE:
             provider_list_json = json.dumps(self.context["providers_found"], ensure_ascii=False)
             provider_count = len(self.context["providers_found"])
+            language_instruction = get_language_instruction(self.language)
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(FINALIZE_SERVICE_REQUEST_PROMPT).format(
                     agent_name=self.agent_name,
                     provider_list_json=provider_list_json,
                     provider_count=provider_count,
+                    language_instruction=language_instruction
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
@@ -199,6 +209,7 @@ class ConversationService:
             logger.info(f"🤖 generate_greeting called with user_name='{user_name}', has_open_request={has_open_request}")
             self.set_stage(ConversationStage.GREETING)
             
+            language_instruction = get_language_instruction(self.language)
             prompt_template = ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
                 HumanMessage(content=" ")
@@ -209,6 +220,7 @@ class ConversationService:
                 company_name=self.company_name,
                 user_name=user_name,
                 has_open_request="YES" if has_open_request else "NO",
+                language_instruction=language_instruction
             )
             
             logger.info(f"📨 Formatted prompt with user_name='{user_name}' for LLM")
