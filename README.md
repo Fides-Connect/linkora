@@ -324,10 +324,6 @@ flutter build apk --release
 flutter build ios --release
 ```
 
-## 🤝 Contributing
-
-We welcome contributions! Please feel free to submit issues and pull requests.
-
 ### Development Workflow
 
 1. Fork the repository
@@ -355,12 +351,6 @@ For issues or questions:
 2. Review troubleshooting sections
 3. Check server logs for error messages
 4. Verify all environment variables are configured correctly
-
----
-
-**Built with ❤️ for natural voice AI interactions**
-
----
 
 ## 📦 Flutter Development Container (Optional)
 
