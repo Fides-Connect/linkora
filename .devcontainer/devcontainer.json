@@ -1,7 +1,7 @@
 {
   "name": "Flutter Development",
   "build": {
-    "dockerfile": "Containerfile",
+    "dockerfile": "Dockerfile",
     "context": ".."
   },
   "runArgs": [

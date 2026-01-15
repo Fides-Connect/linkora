@@ -98,7 +98,7 @@ class AIAssistant:
     
     def _get_google_credentials(self):
         """Get Google Cloud credentials if available."""
-        credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+        credentials_path = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')
         if credentials_path and os.path.exists(credentials_path):
             logger.info(f"Using credentials from: {credentials_path}")
             from google.oauth2 import service_account

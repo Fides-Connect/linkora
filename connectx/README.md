@@ -131,7 +131,7 @@ cp template.env .env
 Edit `.env` and add your configuration:
 
 ```properties
-# AI-Assistant Server URL (without ws:// prefix for HTTP/HTTPS)
+# AI-Assistant Server URL (without ws:// prefix, without /ws suffix)
 # Local development (use your machine's IP for Android emulator):
 AI_ASSISTANT_SERVER_URL=192.168.1.100:8080
 
@@ -146,6 +146,8 @@ WEB_PORT=60099
 ```
 
 > **Important for Android Emulator:** Use your computer's local network IP (e.g., `192.168.1.100`), NOT `localhost`, because the emulator runs in a separate network namespace.
+> 
+> **Note:** The app automatically constructs the WebSocket URL as `ws://<AI_ASSISTANT_SERVER_URL>/ws`
 
 #### 2.7. Configure AI-Assistant Backend (if using)
 
@@ -154,7 +156,7 @@ If you're using the AI-Assistant backend for token validation:
 1. Ensure the backend uses the **same Firebase project**
 2. In `ai-assistant/.env`, set:
    ```properties
-   GOOGLE_APPLICATION_CREDENTIALS=your-service-account.json
+   GOOGLE_SERVICE_ACCOUNT_JSON_PATH=your-service-account.json
    GOOGLE_OAUTH_CLIENT_ID=<same-client-id-as-flutter-app>
    ```
 3. The service account JSON must be from the same Firebase/GCP project
@@ -190,11 +192,11 @@ cp template.env .env
 Verify all required variables are set:
 
 ```properties
-# AI-Assistant Server WebSocket URL
-AI_ASSISTANT_SERVER_URL=ws://localhost:8080/ws
+# AI-Assistant Server URL (without ws:// or /ws)
+AI_ASSISTANT_SERVER_URL=localhost:8080
 
 # For remote server, use your server's IP or domain
-# AI_ASSISTANT_SERVER_URL=ws://192.168.1.100:8080/ws
+# AI_ASSISTANT_SERVER_URL=192.168.1.100:8080
 ```
 
 ### 3. Start the AI-Assistant Server
@@ -204,13 +206,13 @@ Before running ConnectX, ensure the AI-Assistant server is running:
 ```bash
 cd ../ai-assistant
 
-# Using run script (recommended)
-./scripts/run.sh start
+# Using docker-compose (start AI-Assistant server)
+cd ../ai-assistant && docker-compose up ai-assistant
 
 # Or directly with Python
 python main.py
 
-# Server starts on ws://localhost:8080/ws
+# Server starts on localhost:8080
 ```
 
 See the [AI-Assistant README](../ai-assistant/README.md) for server setup instructions.
@@ -300,15 +302,16 @@ ConnectX uses a `.env` file for configuration. This file should be placed in the
 ### Required Variables
 
 ```properties
-# AI-Assistant Server WebSocket URL (Required)
-AI_ASSISTANT_SERVER_URL=ws://localhost:8080/ws
+# AI-Assistant Server URL (Required) - without ws:// prefix or /ws suffix
+# App will automatically construct: ws://<server-url>/ws
+AI_ASSISTANT_SERVER_URL=localhost:8080
 ```
 
 ### Configuration Tips
 
-- **Local Development**: Use `ws://localhost:8080/ws`
-- **Local Network**: Use `ws://192.168.x.x:8080/ws` (your computer's IP)
-- **Production**: Use `wss://your-domain.com/ws` (secure WebSocket)
+- **Local Development**: Use `localhost:8080` (constructs `ws://localhost:8080/ws`)
+- **Local Network**: Use `192.168.x.x:8080` (your computer's IP)
+- **Production**: Use `your-domain.com` or `your-domain.com:443` (constructs `ws://` or `wss://`)
 
 > **Note:** The `.env` file is excluded from version control via `.gitignore`. Never commit sensitive information to your repository.
 
