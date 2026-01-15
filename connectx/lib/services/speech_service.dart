@@ -17,7 +17,10 @@ class SpeechService {
 
   // Dependencies
   final PermissionWrapper _permissionWrapper;
-  final WebRTCService Function() _webRTCServiceFactory;
+  final WebRTCService Function(String) _webRTCServiceFactory;
+
+  // Language configuration
+  String _languageCode = 'de';
 
   // Callbacks
   OnSpeechStartCallback? onSpeechStart;
@@ -28,9 +31,15 @@ class SpeechService {
 
   SpeechService({
     PermissionWrapper? permissionWrapper,
-    WebRTCService Function()? webRTCServiceFactory,
+    WebRTCService Function(String)? webRTCServiceFactory,
   })  : _permissionWrapper = permissionWrapper ?? PermissionWrapper(),
-        _webRTCServiceFactory = webRTCServiceFactory ?? (() => WebRTCService());
+        _webRTCServiceFactory = webRTCServiceFactory ?? ((lang) => WebRTCService(languageCode: lang));
+
+  /// Set the language code for the AI Assistant
+  void setLanguageCode(String languageCode) {
+    _languageCode = languageCode;
+    debugPrint('SpeechService: Language set to $_languageCode');
+  }
 
   void stopSpeech() async {
     // Stop and clean up WebRTC service
@@ -80,9 +89,9 @@ class SpeechService {
   }
 
   void _initializeWebRTC() {
-    debugPrint('SpeechService: Initializing WebRTC service');
+    debugPrint('SpeechService: Initializing WebRTC service with language: $_languageCode');
     
-    _webrtcService = _webRTCServiceFactory();
+    _webrtcService = _webRTCServiceFactory(_languageCode);
     
     // Set up WebRTC callbacks
     _webrtcService!.onConnected = () async {

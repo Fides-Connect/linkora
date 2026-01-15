@@ -19,17 +19,18 @@ logger = logging.getLogger(__name__)
 class PeerConnectionHandler:
     """Handles WebRTC peer connection for a single client."""
     
-    def __init__(self, connection_id: str, ai_assistant, websocket, user_id: str = None):
+    def __init__(self, connection_id: str, ai_assistant, websocket, user_id: str = None, language: str = 'de'):
         self.connection_id = connection_id
         self.ai_assistant = ai_assistant
         self.websocket = websocket
         self.user_id = user_id
+        self.language = language
         self.pc = RTCPeerConnection()
         self.relay = MediaRelay()
         self.audio_processor = None
         self.track_ready = asyncio.Event()
         
-        logger.info(f"PeerConnectionHandler created for connection {connection_id}")
+        logger.info(f"PeerConnectionHandler created for connection {connection_id} with language: {language}")
         
         # Set up event handlers
         self._setup_event_handlers()
@@ -66,7 +67,8 @@ class PeerConnectionHandler:
                     connection_id=self.connection_id,
                     ai_assistant=self.ai_assistant,
                     input_track=track,
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    language=self.language
                 )
                 
                 # If we already have a data channel, pass it to the audio processor

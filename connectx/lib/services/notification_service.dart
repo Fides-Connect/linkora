@@ -62,7 +62,7 @@ class NotificationService {
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       'fides_notifications',
       'Fides Notifications',
-      description: 'Notifications from Fides AI Assistant',
+      description: 'Notifications from Linkora AI Assistant',
       importance: Importance.high,
     );
 
@@ -121,7 +121,7 @@ class NotificationService {
         AndroidNotificationDetails(
           'fides_notifications',
           'Fides Notifications',
-          channelDescription: 'Notifications from Fides AI Assistant',
+          channelDescription: 'Notifications from Linkora AI Assistant',
           importance: Importance.high,
           priority: Priority.high,
           showWhen: true,
@@ -164,7 +164,7 @@ class NotificationService {
   /// ```dart
   /// await notificationService.showAIResponseNotification(
   ///   'Hello! How can I help you today?',
-  ///   customTitle: 'Fides AI',
+  ///   customTitle: 'Linkora AI',
   /// );
   /// ```
   Future<void> showAIResponseNotification(

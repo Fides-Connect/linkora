@@ -41,6 +41,9 @@ class WebRTCService {
   final List<RTCIceCandidate> _iceCandidatesQueue = [];
   bool _remoteDescriptionSet = false;
 
+  // Language configuration
+  String _languageCode = 'de'; // Default to German
+
   // Dependencies
   final WebRTCWrapper _webRTCWrapper;
   final WebSocketChannel Function(Uri) _webSocketFactory;
@@ -51,10 +54,12 @@ class WebRTCService {
     WebSocketChannel Function(Uri)? webSocketFactory,
     FirebaseAuthWrapper? firebaseAuthWrapper,
     String? serverUrl,
+    String? languageCode,
   })  : _webRTCWrapper = webRTCWrapper ?? WebRTCWrapper(),
         _webSocketFactory =
             webSocketFactory ?? ((uri) => WebSocketChannel.connect(uri)),
-        _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper() {
+        _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper(),
+        _languageCode = languageCode ?? 'de' {
     // Load server URL from environment variable
     final String? rawServer = serverUrl ?? dotenv.env['AI_ASSISTANT_SERVER_URL'];
     if (rawServer == null || rawServer.isEmpty) {
@@ -202,6 +207,7 @@ class WebRTCService {
 
       final Uri wsUri = Uri.parse(_serverUrl).replace(queryParameters: {
         'user_id': userId,
+        'language': _languageCode,
       });
       _signaling = _webSocketFactory(wsUri);
 

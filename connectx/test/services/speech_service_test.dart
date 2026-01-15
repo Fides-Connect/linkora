@@ -19,7 +19,7 @@ void main() {
 
     speechService = SpeechService(
       permissionWrapper: mockPermissionWrapper,
-      webRTCServiceFactory: () => mockWebRTCService,
+      webRTCServiceFactory: (String languageCode) => mockWebRTCService,
     );
   });
 

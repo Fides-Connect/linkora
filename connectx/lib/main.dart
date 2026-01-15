@@ -213,6 +213,12 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       _statusText = localizations.tapMicrophoneToStart;
     }
 
+    // Set language code based on current locale
+    final locale = Localizations.localeOf(context);
+    final languageCode = locale.languageCode; // 'de' or 'en'
+    _speechService.setLanguageCode(languageCode);
+    debugPrint('Main: Set speech service language to $languageCode');
+
     // Subscribe to auth changes
     _user = _auth.currentUser;
     _userSub = _auth.onCurrentUserChanged.listen((u) {

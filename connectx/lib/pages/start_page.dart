@@ -122,9 +122,9 @@ class _StartPageState extends State<StartPage> {
                         width: 100,
                         height: 100,
                         child: Image.asset(
-                          'assets/images/FidesLogo.png',
+                          'assets/images/LinkoraLogo.png',
                           fit: BoxFit.contain,
-                          semanticLabel: 'Fides Logo',
+                          semanticLabel: 'Linkora Logo',
                         ),
                       ),
                       SizedBox(height: logoTextGap),
