@@ -47,8 +47,8 @@ async def main():
         logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
         return
     
-    # GOOGLE_APPLICATION_CREDENTIALS is optional in Cloud Run
-    credentials_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
+    # GOOGLE_SERVICE_ACCOUNT_JSON_PATH is optional in Cloud Run
+    credentials_path = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')
     if credentials_path and not os.path.exists(credentials_path):
         logger.warning(f"Credentials file not found: {credentials_path}, will use default credentials")
     
@@ -81,7 +81,7 @@ async def main():
     logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
     logger.info(f"  Google TTS API Concurrency: {os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5')}")
     logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
-    logger.debug(f"  Credentials: {os.getenv('GOOGLE_APPLICATION_CREDENTIALS')}")
+    logger.debug(f"  Credentials: {os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')}")
     
     # Initialize AI Assistant
     logger.info("Initializing AI Assistant...")

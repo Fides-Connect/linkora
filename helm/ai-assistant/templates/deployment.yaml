@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Chart.Name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/instance: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Chart.Name }}
+        app.kubernetes.io/instance: {{ .Chart.Name }}
+    spec:
+      containers:
+      - name: {{ .Chart.Name }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.env.port }}
+          protocol: TCP
+        env:
+        - name: GOOGLE_SERVICE_ACCOUNT_JSON_PATH
+          value: {{ .Values.env.googleApplicationCredentials }}
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Chart.Name }}
+              key: gemini-api-key
+        - name: GOOGLE_OAUTH_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Chart.Name }}
+              key: google-oauth-client-id
+        - name: USE_WEAVIATE
+          value: {{ .Values.env.useWeaviate | quote }}
+        - name: WEAVIATE_URL
+          value: {{ .Values.env.weaviateUrl | quote }}
+        - name: LANGUAGE_CODE
+          value: {{ .Values.env.languageCode | quote }}
+        - name: VOICE_NAME
+          value: {{ .Values.env.voiceName | quote }}
+        - name: HOST
+          value: {{ .Values.env.host | quote }}
+        - name: PORT
+          value: {{ .Values.env.port | quote }}
+        - name: LOG_LEVEL
+          value: {{ .Values.env.logLevel | quote }}
+        - name: GOOGLE_TTS_API_CONCURRENCY
+          value: {{ .Values.env.googleTtsApiConcurrency | quote }}
+        - name: DEBUG_RECORD_AUDIO
+          value: {{ .Values.env.debugRecordAudio | quote }}
+        - name: ADMIN_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Chart.Name }}
+              key: admin-secret-key
+        volumeMounts:
+        - name: google-application-credentials
+          mountPath: /app/secrets
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+      volumes:
+      - name: google-application-credentials
+        secret:
+          secretName: {{ .Chart.Name }}
+          items:
+          - key: google-application-credentials.json
+            path: google-application-credentials.json

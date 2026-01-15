@@ -1,0 +1,112 @@
+name: Deploy AI Assistant to Google Cloud Platform
+
+on:
+  workflow_run:
+    workflows: ["AI Assistant Integration Test"]
+    types:
+      - completed
+    branches:
+      - main
+
+env:
+  PROJECT_ID: gen-lang-client-0859968110
+  GKE_CLUSTER: fides-production
+  GKE_REGION: europe-west3
+  IMAGE_NAME: ai-assistant
+  NAMESPACE: production
+
+jobs:
+  build-and-deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    name: Build and Deploy to GKE
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to GCP
+      uses: google-github-actions/auth@v1
+      with:
+        credentials_json: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ env.PROJECT_ID }}
+
+    - name: Install gke-gcloud-auth-plugin & kubectl
+      run: |
+        gcloud components install gke-gcloud-auth-plugin kubectl --quiet || true
+    
+    - name: Configure Docker for GCR
+      run: |
+        gcloud auth configure-docker
+    
+    - name: Build Docker image
+      run: |
+        IMAGE_TAG="gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+        IMAGE_LATEST="gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:latest"
+        
+        docker build \
+          -f ai-assistant/Dockerfile \
+          -t "$IMAGE_TAG" \
+          -t "$IMAGE_LATEST" \
+          ai-assistant/
+        
+        echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+        echo "IMAGE_LATEST=$IMAGE_LATEST" >> $GITHUB_ENV
+    
+    - name: Push Docker image to GCR
+      run: |
+        docker push "${{ env.IMAGE_TAG }}"
+        docker push "${{ env.IMAGE_LATEST }}"
+    
+    - name: Get GKE credentials
+      run: |
+        gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
+          --region ${{ env.GKE_REGION }} \
+          --project ${{ env.PROJECT_ID }}
+    
+    - name: Install/Upgrade Helm
+      uses: azure/setup-helm@v4
+      with:
+        version: 'latest'
+    
+    - name: Deploy Weaviate to GKE
+      run: |
+        helm upgrade --install weaviate ./helm/weaviate \
+          --namespace ${{ env.NAMESPACE }} \
+          --create-namespace
+
+    - name: Prepare service account file for AI Assistant
+      run: |
+        echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > /tmp/google-service-account.json
+    
+    - name: Deploy AI Assistant to GKE
+      run: |
+        helm upgrade --install ai-assistant ./helm/ai-assistant \
+          --namespace ${{ env.NAMESPACE }} \
+          --create-namespace \
+          --set image.tag=${{ github.sha }} \
+          --set-file secrets.googleServiceAccountJson=/tmp/google-service-account.json \
+          --set secrets.geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
+          --set secrets.googleOauthClientId="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
+          --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}"
+
+    - name: Cleanup service account file
+      if: always()
+      run: |
+        rm -f /tmp/google-service-account.json
+        
+    - name: Deployment Summary
+      run: |
+        echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ **Deployment successful!**" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Project:** ${{ env.PROJECT_ID }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Cluster:** ${{ env.GKE_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Region:** ${{ env.GKE_REGION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Image:** gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
