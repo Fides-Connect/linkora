@@ -1,3 +1,19 @@
+def get_language_instruction(language: str = 'de') -> str:
+    """
+    Get the language instruction for prompts based on the selected language.
+    
+    Args:
+        language: Language code ('de' or 'en')
+        
+    Returns:
+        Language instruction string
+    """
+    if language == 'en':
+        return "Your response must be in English."
+    else:
+        return "Your response must be in German."
+
+
 GREETING_AND_TRIAGE_PROMPT = """
 You are {agent_name}, a friendly and helpful assistant for {company_name}.
 Your goal is to greet the user personally by name and triage their need. You will be given the user's name as `{user_name}` (may be empty or None) and 
@@ -19,7 +35,7 @@ their request status as `{has_open_request}` (a 'Yes' or 'No' string).
 2. Ask an open, friendly question: "How can I help you today?"
 
 **Constraints:**
-* Your response must be in German.
+* {language_instruction}
 * Your response must be short and concise (maximum 2-3 sentences).
 * After generating this greeting, STOP. Wait for the user's reply.
 """
@@ -83,7 +99,7 @@ When you first enter this stage (immediately after searching the database), you 
 4.  Close: "Thank you very much for your patience and for the chat. Have a great day! [Friendly, warm closing]"
 
 **RESPONSE FORMAT:**
-- Your response must be in German.
+- {language_instruction}
 - Speak in natural, conversational sentences.
 - Be warm and professional.
 """
