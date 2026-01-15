@@ -4,6 +4,7 @@ Pytest configuration and shared fixtures.
 import pytest
 import asyncio
 import socket
+from unittest.mock import Mock, patch
 
 
 def is_weaviate_available(host='localhost', port=8090, timeout=1):
@@ -30,6 +31,21 @@ def event_loop():
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def mock_weaviate_connection():
+    """Mock Weaviate connections for all tests to avoid connection errors in CI."""
+    # Create a mock client that doesn't try to connect
+    mock_client = Mock()
+    mock_client.is_ready.return_value = True
+    mock_client.collections = Mock()
+    
+    # Patch the HubSpokeConnection to return our mock client
+    with patch('ai_assistant.hub_spoke_schema.HubSpokeConnection.get_client', return_value=mock_client), \
+         patch('ai_assistant.hub_spoke_schema.weaviate.connect_to_custom', return_value=mock_client), \
+         patch('ai_assistant.hub_spoke_schema.weaviate.connect_to_wcs', return_value=mock_client):
+        yield mock_client
 
 
 @pytest.fixture(autouse=True)
