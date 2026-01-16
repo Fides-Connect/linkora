@@ -9,13 +9,7 @@ from typing import List, Dict, Optional, Any
 from weaviate.classes.query import Filter
 from .weaviate_config import get_users_collection, get_providers_collection
 
-# Handle both package and direct imports for hub_spoke
-try:
-    from .hub_spoke_ingestion import HubSpokeIngestion
-    from .hub_spoke_search import HubSpokeSearch
-except ImportError:
-    from hub_spoke_ingestion import HubSpokeIngestion
-    from hub_spoke_search import HubSpokeSearch
+from ai_assistant.hub_spoke_search import HubSpokeSearch
 
 logger = logging.getLogger(__name__)
 
