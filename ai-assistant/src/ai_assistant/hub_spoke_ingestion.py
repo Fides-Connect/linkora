@@ -12,17 +12,10 @@ import logging
 from datetime import datetime, UTC
 from typing import List, Dict, Any, Optional
 
-# Handle both package and direct imports
-try:
-    from .hub_spoke_schema import (
-        get_unified_profile_collection,
-        get_competence_entry_collection
-    )
-except ImportError:
-    from hub_spoke_schema import (
-        get_unified_profile_collection,
-        get_competence_entry_collection
-    )
+from ai_assistant.hub_spoke_schema import (
+    get_unified_profile_collection,
+    get_competence_entry_collection
+)
 
 logger = logging.getLogger(__name__)
 
