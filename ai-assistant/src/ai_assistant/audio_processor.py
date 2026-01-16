@@ -25,9 +25,9 @@ logger = logging.getLogger(__name__)
 def get_language_config(language: str) -> tuple[str, str]:
     """Get language code and voice name based on language. """
     if language == 'en':
-        # English configuration
+        # English configuration - using Chirp3-HD voice with full identifier
         language_code = os.getenv('LANGUAGE_CODE_EN', 'en-US')
-        voice_name = os.getenv('VOICE_NAME_EN', 'en-US-Chirp3-HD')
+        voice_name = os.getenv('VOICE_NAME_EN', 'en-US-Chirp3-HD-Sulafat')
     else:
         # German configuration (default)
         language_code = os.getenv('LANGUAGE_CODE_DE', 'de-DE')
