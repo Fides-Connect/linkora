@@ -143,14 +143,21 @@ class TestProblemDescriptionAccumulation:
         ai_assistant.conversation_service.accumulate_problem_description.assert_called_once_with(user_input)
     
     @pytest.mark.asyncio
-    async def test_provider_search_called(self, ai_assistant, mock_data_provider):
-        """Test that provider search is called during accumulation."""
+    async def test_accumulate_does_not_search_providers(self, ai_assistant, mock_data_provider):
+        """Test that provider search is NOT called during accumulation in TRIAGE stage."""
         user_input = "Ich brauche einen Elektriker"
         
+        # Setup mock
         ai_assistant.conversation_service.accumulate_problem_description = AsyncMock()
+        
+        # Execute accumulation
         await ai_assistant._accumulate_problem_description(user_input)
         
+        # Verify accumulation was called
         ai_assistant.conversation_service.accumulate_problem_description.assert_called_once_with(user_input)
+        
+        # Verify search was NOT called (search happens in FINALIZE stage, not TRIAGE)
+        mock_data_provider.search_providers.assert_not_called()
 
 
 class TestSpeechToText:
