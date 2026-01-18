@@ -63,9 +63,10 @@ class HubSpokeSearch:
             # Calculate cutoff date for ghost filtering
             cutoff_date = datetime.now(UTC) - timedelta(days=max_inactive_days)
             
-            # Build query with ghost filtering
-            # Filter: owned_by.last_active_date >= cutoff_date
-            filter_clause = Filter.by_ref("owned_by").by_property("last_active_date").greater_or_equal(cutoff_date)
+            # Build query with ghost filtering and provider filtering
+            # Filter: owned_by.last_active_date >= cutoff_date AND owned_by.is_provider == True
+            filter_clause = Filter.by_ref("owned_by").by_property("last_active_date").greater_or_equal(cutoff_date) & \
+                           Filter.by_ref("owned_by").by_property("is_provider").equal(True)
             
             if group_by_profile:
                 # Note: Weaviate's GroupBy doesn't work with reference properties,
@@ -78,7 +79,7 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["name", "email", "type", "last_active_date"]
+                        return_properties=["name", "email", "type", "is_provider", "last_active_date"]
                     )
                 )
                 
@@ -101,6 +102,7 @@ class HubSpokeSearch:
                                 'name': profile.get('name'),
                                 'email': profile.get('email'),
                                 'type': profile.get('type'),
+                                'is_provider': profile.get('is_provider', False),
                                 'last_active_date': profile.get('last_active_date'),
                             }
                     
@@ -124,7 +126,7 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["name", "email", "type", "last_active_date"]
+                        return_properties=["name", "email", "type", "is_provider", "last_active_date"]
                     )
                 )
                 

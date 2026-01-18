@@ -18,6 +18,7 @@ USER_A_PROFILE = {
     "name": "Alice Professional",
     "email": "alice@example.com",
     "type": "user",
+    "is_provider": True,  # Service provider
     "fcm_token": "token_alice",
     "has_open_request": False,
     "last_active_date": 1,  # Active 1 day ago
@@ -39,6 +40,7 @@ USER_B_PROFILE = {
     "name": "Bob Spammer",
     "email": "bob@example.com",
     "type": "user",
+    "is_provider": True,  # Service provider
     "fcm_token": "token_bob",
     "has_open_request": False,
     "last_active_date": 5,  # Active 5 days ago
@@ -60,6 +62,7 @@ USER_C_PROFILE = {
     "name": "Charlie Ghost",
     "email": "charlie@example.com",
     "type": "user",
+    "is_provider": True,  # Service provider
     "fcm_token": "token_charlie",
     "has_open_request": False,
     "last_active_date": 365,  # Inactive for 365 days
@@ -81,6 +84,7 @@ USER_D_PROFILE = {
     "name": "David Generalist",
     "email": "david@example.com",
     "type": "user",
+    "is_provider": True,  # Service provider
     "fcm_token": "token_david",
     "has_open_request": False,
     "last_active_date": 10,  # Active 10 days ago
@@ -102,6 +106,7 @@ USER_E_PROFILE = {
     "name": "Eva Enthusiast",
     "email": "eva@example.com",
     "type": "user",
+    "is_provider": True,  # Service provider
     "fcm_token": "token_eva",
     "has_open_request": False,
     "last_active_date": 3,  # Active 3 days ago
