@@ -151,7 +151,8 @@ class ConversationService:
             ]
             if any(keyword in response_lower for keyword in transition_keywords):
                 logger.info("Detected transition trigger to FINALIZE stage")
-                await self.accumulate_problem_description(user_input)
+                # Just accumulate the description, search will happen in FINALIZE stage
+                self.context["user_problem"] += " " + user_input
                 return ConversationStage.FINALIZE
         
         # Detect transition from FINALIZE to COMPLETED
@@ -169,7 +170,8 @@ class ConversationService:
     
     async def accumulate_problem_description(self, user_input: str):
         """
-        Accumulate user's problem description and search for providers.
+        Accumulate user's problem description.
+        Note: Provider search is now performed in FINALIZE stage.
         
         Args:
             user_input: User's problem description
@@ -181,6 +183,13 @@ class ConversationService:
         if category:
             self.context["detected_category"] = category
             logger.info(f"Detected category: {category}")
+    
+    async def search_providers_for_request(self):
+        """
+        Search for providers based on accumulated problem description.
+        Called when entering FINALIZE stage.
+        """
+        logger.info(f"Searching providers for request: '{self.context['user_problem'][:100]}...'")
         
         # Search for providers
         providers = await self.data_provider.search_providers(

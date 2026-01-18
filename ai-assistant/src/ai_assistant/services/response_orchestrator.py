@@ -78,8 +78,12 @@ class ResponseOrchestrator:
             if new_stage:
                 await self._handle_stage_transition(new_stage, session_id)
                 
-                # Generate additional response if transitioning to finalize
+                # Perform provider search and generate presentation when entering finalize
                 if new_stage == ConversationStage.FINALIZE:
+                    # Search for providers based on the accumulated request summary
+                    await self.conversation_service.search_providers_for_request()
+                    
+                    # Generate provider presentation
                     async for chunk in self._generate_finalize_presentation(session_id):
                         yield chunk
             

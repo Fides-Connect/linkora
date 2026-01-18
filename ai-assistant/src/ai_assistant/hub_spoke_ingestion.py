@@ -145,6 +145,7 @@ class HubSpokeIngestion:
                     "name": profile_data.get("name"),
                     "email": profile_data.get("email"),
                     "type": profile_data.get("type", "user"),
+                    "is_provider": profile_data.get("is_provider", False),
                     "fcm_token": profile_data.get("fcm_token", ""),
                     "created_at": profile_data.get("created_at", datetime.now(UTC)),
                     "has_open_request": profile_data.get("has_open_request", False),

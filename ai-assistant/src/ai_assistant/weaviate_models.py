@@ -30,6 +30,7 @@ class UserModelWeaviate:
                     "name": user_data.get("name") or user_data.get("display_name", ""),
                     "email": user_data.get("email"),
                     "type": "client",  # Default type for users
+                    "is_provider": user_data.get("is_provider", False),  # Default False for regular users
                     "photo_url": user_data.get("photo_url", ""),
                     "fcm_token": user_data.get("fcm_token", ""),
                     "has_open_request": user_data.get("has_open_request", False),
