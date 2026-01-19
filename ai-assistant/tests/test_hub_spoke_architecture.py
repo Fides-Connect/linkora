@@ -415,6 +415,200 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         logger.info("  ✓ Enrichment working")
         
         logger.info("✓ All helper functions working correctly")
+    
+    def test_update_competences_by_user_id(self):
+        """
+        Test updating competences for a user by user_id.
+        Should be able to update existing competences with new data.
+        """
+        logger.info("\n" + "=" * 80)
+        logger.info("TEST: Update Competences by User ID")
+        logger.info("=" * 80)
+        
+        # Get User A's data
+        user_a = self.personas_map['User A (The Pro)']
+        profile_collection = get_unified_profile_collection()
+        
+        # Get the user_id
+        profile_result = profile_collection.query.fetch_object_by_id(
+            uuid=user_a['profile_uuid']
+        )
+        user_id = profile_result.properties.get('user_id')
+        
+        # Original competence data
+        logger.info(f"User ID: {user_id}")
+        original_competences = HubSpokeSearch.get_profile_competences(user_a['profile_uuid'])
+        logger.info(f"Original competences count: {len(original_competences)}")
+        
+        # Update with a single string
+        new_competence = "Updated: Expert in Home Renovation"
+        logger.info(f"\nUpdating with single string: '{new_competence}'")
+        result = HubSpokeIngestion.update_competences_by_user_id(
+            user_id=user_id,
+            competences=new_competence
+        )
+        
+        self.assertTrue(result['success'], "Update should succeed")
+        self.assertEqual(len(result['updated_uuids']), 1, "Should update one competence")
+        
+        # Verify the update
+        time.sleep(1)  # Wait for indexing
+        updated_competences = HubSpokeSearch.get_profile_competences(user_a['profile_uuid'])
+        found_updated = any("Home Renovation" in c.get('description', '') for c in updated_competences)
+        self.assertTrue(found_updated, "Should find updated competence")
+        
+        # Update with a list of strings
+        new_competences_list = [
+            "Master Plumber with 10 years experience",
+            "Specialized in Bathroom Renovations"
+        ]
+        logger.info(f"\nUpdating with list: {new_competences_list}")
+        result = HubSpokeIngestion.update_competences_by_user_id(
+            user_id=user_id,
+            competences=new_competences_list
+        )
+        
+        self.assertTrue(result['success'], "Update should succeed")
+        self.assertEqual(len(result['updated_uuids']), 2, "Should update two competences")
+        
+        logger.info("✓ Update competences by user_id working correctly")
+    
+    def test_delete_competences_by_user_id(self):
+        """
+        Test deleting specific competences for a user by user_id.
+        Should be able to delete one or more competences without deleting the user.
+        """
+        logger.info("\n" + "=" * 80)
+        logger.info("TEST: Delete Competences by User ID")
+        logger.info("=" * 80)
+        
+        # Get User B's data
+        user_b = self.personas_map['User B (The Spammer)']
+        profile_collection = get_unified_profile_collection()
+        
+        # Get the user_id
+        profile_result = profile_collection.query.fetch_object_by_id(
+            uuid=user_b['profile_uuid']
+        )
+        user_id = profile_result.properties.get('user_id')
+        
+        logger.info(f"User ID: {user_id}")
+        original_competences = HubSpokeSearch.get_profile_competences(user_b['profile_uuid'])
+        original_count = len(original_competences)
+        logger.info(f"Original competences count: {original_count}")
+        logger.info(f"Original competences:")
+        for i, comp in enumerate(original_competences):
+            logger.info(f"  {i+1}. Title: {comp.get('title')}")
+            logger.info(f"     Description: {comp.get('description')[:80]}...")
+            logger.info(f"     Category: {comp.get('category')}")
+        
+        # Delete a single competence by title/description pattern
+        # User B has "Everything Services" with "Electrician" in description and category "General"
+        competence_to_delete = "Everything"  # This will match the title
+        logger.info(f"\nDeleting competence matching: '{competence_to_delete}'")
+        result = HubSpokeIngestion.delete_competences_by_user_id(
+            user_id=user_id,
+            competences=competence_to_delete
+        )
+        
+        self.assertTrue(result['success'], "Delete should succeed")
+        self.assertGreater(len(result['deleted_uuids']), 0, "Should delete at least one competence")
+        
+        # Verify deletion
+        time.sleep(1)  # Wait for indexing
+        remaining_competences = HubSpokeSearch.get_profile_competences(user_b['profile_uuid'])
+        self.assertLess(len(remaining_competences), original_count, "Should have fewer competences")
+        
+        # Verify profile still exists
+        profile_result = profile_collection.query.fetch_object_by_id(
+            uuid=user_b['profile_uuid']
+        )
+        self.assertIsNotNone(profile_result, "Profile should still exist")
+        
+        # Delete multiple competences with a list
+        remaining_count = len(remaining_competences)
+        if remaining_count >= 2:
+            competences_to_delete = [
+                remaining_competences[0].get('title', ''),
+                remaining_competences[1].get('title', '')
+            ]
+            logger.info(f"\nDeleting multiple competences: {competences_to_delete}")
+            result = HubSpokeIngestion.delete_competences_by_user_id(
+                user_id=user_id,
+                competences=competences_to_delete
+            )
+            
+            self.assertTrue(result['success'], "Delete should succeed")
+            self.assertEqual(len(result['deleted_uuids']), 2, "Should delete two competences")
+        
+        logger.info("✓ Delete competences by user_id working correctly")
+    
+    def test_add_competences_by_user_id(self):
+        """
+        Test adding new competences to an existing user by user_id.
+        """
+        logger.info("\n" + "=" * 80)
+        logger.info("TEST: Add Competences by User ID")
+        logger.info("=" * 80)
+        
+        # Get User C's data
+        user_c = self.personas_map.get('User C (The Ghost)')
+        if not user_c:
+            self.skipTest("User C not found in test data")
+        
+        profile_collection = get_unified_profile_collection()
+        
+        # Get the user_id
+        profile_result = profile_collection.query.fetch_object_by_id(
+            uuid=user_c['profile_uuid']
+        )
+        user_id = profile_result.properties.get('user_id')
+        
+        logger.info(f"User ID: {user_id}")
+        logger.info(f"Profile properties: {profile_result.properties}")
+        if not user_id:
+            self.skipTest(f"User C profile missing user_id field. Properties: {profile_result.properties}")
+        original_competences = HubSpokeSearch.get_profile_competences(user_c['profile_uuid'])
+        original_count = len(original_competences)
+        logger.info(f"Original competences count: {original_count}")
+        
+        # Add a single competence
+        new_competence = "Expert in Kitchen Remodeling"
+        logger.info(f"\nAdding single competence: '{new_competence}'")
+        result = HubSpokeIngestion.add_competences_by_user_id(
+            user_id=user_id,
+            competences=new_competence,
+            category="Renovation"
+        )
+        
+        self.assertTrue(result['success'], "Add should succeed")
+        self.assertEqual(len(result['added_uuids']), 1, "Should add one competence")
+        
+        # Verify addition
+        time.sleep(1)  # Wait for indexing
+        updated_competences = HubSpokeSearch.get_profile_competences(user_c['profile_uuid'])
+        self.assertEqual(len(updated_competences), original_count + 1, "Should have one more competence")
+        
+        # Add multiple competences with a list
+        new_competences_list = [
+            "Flooring Installation Expert",
+            "Tile Work Specialist"
+        ]
+        logger.info(f"\nAdding multiple competences: {new_competences_list}")
+        result = HubSpokeIngestion.add_competences_by_user_id(
+            user_id=user_id,
+            competences=new_competences_list,
+            category="Flooring"
+        )
+        
+        self.assertTrue(result['success'], "Add should succeed")
+        self.assertEqual(len(result['added_uuids']), 2, "Should add two competences")
+        
+        # Final verification
+        final_competences = HubSpokeSearch.get_profile_competences(user_c['profile_uuid'])
+        self.assertEqual(len(final_competences), original_count + 3, "Should have three more competences total")
+        
+        logger.info("✓ Add competences by user_id working correctly")
 
 
 def run_tests():

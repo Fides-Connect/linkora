@@ -17,6 +17,7 @@ from datetime import datetime, UTC, timedelta
 USER_A_PROFILE = {
     "name": "Alice Professional",
     "email": "alice@example.com",
+    "user_id": "user_alice_001",
     "type": "user",
     "is_provider": True,  # Service provider
     "fcm_token": "token_alice",
@@ -39,6 +40,7 @@ USER_A_COMPETENCES = [
 USER_B_PROFILE = {
     "name": "Bob Spammer",
     "email": "bob@example.com",
+    "user_id": "user_bob_002",
     "type": "user",
     "is_provider": True,  # Service provider
     "fcm_token": "token_bob",
@@ -61,6 +63,7 @@ USER_B_COMPETENCES = [
 USER_C_PROFILE = {
     "name": "Charlie Ghost",
     "email": "charlie@example.com",
+    "user_id": "user_charlie_003",
     "type": "user",
     "is_provider": True,  # Service provider
     "fcm_token": "token_charlie",
@@ -83,6 +86,7 @@ USER_C_COMPETENCES = [
 USER_D_PROFILE = {
     "name": "David Generalist",
     "email": "david@example.com",
+    "user_id": "user_david_004",
     "type": "user",
     "is_provider": True,  # Service provider
     "fcm_token": "token_david",
@@ -105,6 +109,7 @@ USER_D_COMPETENCES = [
 USER_E_PROFILE = {
     "name": "Eva Enthusiast",
     "email": "eva@example.com",
+    "user_id": "user_eva_005",
     "type": "user",
     "is_provider": True,  # Service provider
     "fcm_token": "token_eva",
