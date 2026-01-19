@@ -113,6 +113,7 @@ def init_hub_spoke_schema():
                     ),
                     Property(name="category", data_type=DataType.TEXT),
                     Property(name="price_range", data_type=DataType.TEXT),
+                    Property(name="availability", data_type=DataType.TEXT),  # When service is available
                 ],
             )
             logger.info(f"Created collection with vectorization: {COMPETENCE_ENTRY_COLLECTION}")

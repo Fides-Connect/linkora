@@ -2,6 +2,7 @@
 Data Provider Interface
 Provides a clean abstraction for switching between Weaviate vector database and local test data.
 """
+import json
 import logging
 import os
 from typing import List, Dict, Any, Optional
@@ -44,12 +45,56 @@ class WeaviateDataProvider(DataProvider):
     
     async def search_providers(self, query_text: str, category: Optional[str] = None, limit: int = 3) -> List[Dict[str, Any]]:
         """
-        Search providers using Weaviate vector search.
-        Weaviate automatically generates embeddings for the query.
-        """
-        logger.info(f"Searching providers with query: '{query_text[:50]}...'")
+        Search providers using Weaviate hybrid search.
+        Supports both simple text queries and structured JSON queries.
         
-        # Use Weaviate's hybrid search (combines vector and keyword search)
+        Args:
+            query_text: Search query - can be plain text or JSON string with structure:
+                {
+                    "available_time": "when service is needed",
+                    "category": "service category",
+                    "location": "where service is needed",
+                    "criterions": ["criterion 1", "criterion 2", ...]
+                }
+            category: Optional category filter (legacy, overridden by JSON structure)
+            limit: Maximum number of results
+        """
+        logger.info(f"Searching providers with query: '{query_text[:100]}...'")
+        
+        # Try to parse query_text as JSON for structured search
+        try:
+            search_request = json.loads(query_text)
+            if isinstance(search_request, dict): #and any(k in search_request for k in ['category', 'location', 'available_time', 'criterions'])
+                # Use structured hybrid search
+                logger.info(f"Using structured hybrid search with request: {search_request}")
+                from .hub_spoke_search import HubSpokeSearch
+                providers = HubSpokeSearch.hybrid_search_providers(
+                    search_request=search_request,
+                    limit=limit
+                )
+                
+                # Map to provider format for backward compatibility
+                mapped_providers = []
+                for result in providers:
+                    profile = result.get('profile', {})
+                    provider = {
+                        'provider_id': profile.get('uuid'),
+                        'name': profile.get('name'),
+                        'category': result.get('category'),
+                        'description': result.get('description'),
+                        'availability': result.get('availability'),
+                        'skills': result.get('keywords', []),
+                        'score': result.get('score', 0),
+                    }
+                    mapped_providers.append(provider)
+                
+                logger.info(f"Returning {len(mapped_providers)} providers from structured search")
+                return mapped_providers
+        except (json.JSONDecodeError, ValueError):
+            # Not JSON, use simple text search
+            logger.info("Query is not JSON, using simple vector search")
+        
+        # Fallback to simple vector search
         providers = self.provider_model.vector_search_providers(query_text, limit)
         
         logger.info(f"Returning {len(providers)} providers from search")

@@ -609,6 +609,168 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         self.assertEqual(len(final_competences), original_count + 3, "Should have three more competences total")
         
         logger.info("✓ Add competences by user_id working correctly")
+    
+    def test_hybrid_search_providers_with_availability(self):
+        """Test hybrid_search_providers with availability filtering."""
+        logger.info("\n" + "=" * 80)
+        logger.info("TEST: Hybrid Search with Availability Filter")
+        logger.info("=" * 80)
+        
+        # Search request with availability filter
+        search_request = {
+            "available_time": "heute",
+            "category": "Klempner",
+            "criterions": ["Notfall", "schnell"]
+        }
+        
+        logger.info(f"Search request: {search_request}")
+        results = HubSpokeSearch.hybrid_search_providers(
+            search_request=search_request,
+            limit=5
+        )
+        
+        self.assertIsInstance(results, list, "Should return a list")
+        logger.info(f"Found {len(results)} providers")
+        
+        # Verify results structure
+        for result in results:
+            self.assertIn('uuid', result, "Result should have uuid")
+            self.assertIn('score', result, "Result should have score")
+            self.assertIn('profile', result, "Result should have profile")
+            self.assertIn('category', result, "Result should have category")
+            
+            # Verify profile structure
+            profile = result['profile']
+            self.assertIn('uuid', profile, "Profile should have uuid")
+            self.assertIn('name', profile, "Profile should have name")
+            self.assertTrue(profile.get('is_provider', False), "Profile should be a provider")
+        
+        logger.info("✓ Hybrid search with availability filter working correctly")
+    
+    def test_hybrid_search_providers_category_only(self):
+        """Test hybrid_search_providers with category only."""
+        logger.info("\n" + "=" * 80)
+        logger.info("TEST: Hybrid Search with Category Only")
+        logger.info("=" * 80)
+        
+        search_request = {
+            "category": "Elektriker",
+            "criterions": []
+        }
+        
+        logger.info(f"Search request: {search_request}")
+        results = HubSpokeSearch.hybrid_search_providers(
+            search_request=search_request,
+            limit=5
+        )
+        
+        self.assertIsInstance(results, list, "Should return a list")
+        logger.info(f"Found {len(results)} providers for category: Elektriker")
+        
+        # Verify results are sorted by score
+        if len(results) > 1:
+            for i in range(len(results) - 1):
+                self.assertGreaterEqual(
+                    results[i].get('score', 0),
+                    results[i + 1].get('score', 0),
+                    "Results should be sorted by score descending"
+                )
+        
+        logger.info("✓ Category-only search working correctly")
+    
+    def test_hybrid_search_providers_with_criterions(self):
+        """Test hybrid_search_providers with multiple criterions."""
+        logger.info("\n" + "=" * 80)
+        logger.info("TEST: Hybrid Search with Multiple Criterions")
+        logger.info("=" * 80)
+        
+        search_request = {
+            "category": "Reinigung",
+            "criterions": [
+                "umweltfreundlich",
+                "gründlich",
+                "zuverlässig"
+            ]
+        }
+        
+        logger.info(f"Search request: {search_request}")
+        results = HubSpokeSearch.hybrid_search_providers(
+            search_request=search_request,
+            limit=5
+        )
+        
+        self.assertIsInstance(results, list, "Should return a list")
+        logger.info(f"Found {len(results)} providers matching criterions")
+        
+        # Verify no duplicate profiles
+        profile_uuids = [r['profile']['uuid'] for r in results if 'profile' in r]
+        self.assertEqual(len(profile_uuids), len(set(profile_uuids)), 
+                        "Should not have duplicate profiles")
+        
+        logger.info("✓ Search with criterions working correctly")
+    
+    def test_hybrid_search_providers_flexible_availability(self):
+        """Test that flexible availability doesn't filter results."""
+        logger.info("\n" + "=" * 80)
+        logger.info("TEST: Hybrid Search with Flexible Availability")
+        logger.info("=" * 80)
+        
+        # Search with flexible availability (should not filter)
+        search_request_flexible = {
+            "available_time": "flexibel",
+            "category": "Elektriker",
+            "criterions": []
+        }
+        
+        results_flexible = HubSpokeSearch.hybrid_search_providers(
+            search_request=search_request_flexible,
+            limit=10
+        )
+        
+        # Search without availability (should also not filter)
+        search_request_no_filter = {
+            "category": "Elektriker",
+            "criterions": []
+        }
+        
+        results_no_filter = HubSpokeSearch.hybrid_search_providers(
+            search_request=search_request_no_filter,
+            limit=10
+        )
+        
+        # Both should return similar results (no availability filtering)
+        self.assertEqual(
+            len(results_flexible),
+            len(results_no_filter),
+            "Flexible availability should not reduce results"
+        )
+        
+        logger.info("✓ Flexible availability handling working correctly")
+    
+    def test_hybrid_search_providers_empty_query(self):
+        """Test hybrid_search_providers with minimal query."""
+        logger.info("\n" + "=" * 80)
+        logger.info("TEST: Hybrid Search with Empty Query")
+        logger.info("=" * 80)
+        
+        search_request = {
+            "category": "",
+            "criterions": []
+        }
+        
+        logger.info(f"Search request: {search_request}")
+        results = HubSpokeSearch.hybrid_search_providers(
+            search_request=search_request,
+            limit=5
+        )
+        
+        self.assertIsInstance(results, list, "Should return a list")
+        logger.info(f"Found {len(results)} providers with empty query")
+        
+        # Should still return results (fallback to "service provider")
+        self.assertGreater(len(results), 0, "Should return some providers even with empty query")
+        
+        logger.info("✓ Empty query handling working correctly")
 
 
 def run_tests():
