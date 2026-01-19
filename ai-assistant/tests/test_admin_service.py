@@ -174,8 +174,7 @@ class TestAdminService:
         admin_service = AdminService()
         request = Mock()
         request.remote = '127.0.0.1'
-        request.match_info = Mock()
-        request.match_info.get = Mock(return_value='user123')
+        request.match_info = {'user_id': 'user123'}
         
         mock_user = {
             'user_id': 'user123',
@@ -186,7 +185,7 @@ class TestAdminService:
         }
         
         with patch.object(AdminAuth, 'verify_token', return_value=True), \
-             patch.object(UserModelWeaviate, 'get_user_by_id', return_value=mock_user):
+             patch('ai_assistant.weaviate_models.UserModelWeaviate.get_user_by_id', return_value=mock_user):
             
             response = await admin_service.get_user_detail(request)
             assert response.status == 200
@@ -197,8 +196,7 @@ class TestAdminService:
         admin_service = AdminService()
         request = Mock()
         request.remote = '127.0.0.1'
-        request.match_info = Mock()
-        request.match_info.get = Mock(return_value='nonexistent')
+        request.match_info = {'user_id': 'nonexistent'}
         
         with patch.object(AdminAuth, 'verify_token', return_value=True), \
              patch.object(UserModelWeaviate, 'get_user_by_id', return_value=None):
@@ -310,10 +308,10 @@ class TestAdminServiceErrorHandling:
         request = Mock()
         request.remote = '127.0.0.1'
         
+        # Mock get_all_users to raise an exception that won't be caught internally
         with patch.object(AdminAuth, 'verify_token', return_value=True), \
-             patch.object(UserModelWeaviate, 'get_all_users',
-                         side_effect=Exception("Database error")), \
-             patch.object(ProviderModelWeaviate, 'get_all_providers', return_value=[]):
+             patch('ai_assistant.weaviate_models.UserModelWeaviate.get_all_users',
+                   side_effect=Exception("Database error")):
             
             response = await admin_service.get_stats(request)
             assert response.status == 500
@@ -330,9 +328,10 @@ class TestAdminServiceErrorHandling:
             'body': 'Test message'
         })
         
+        # Mock send_to_multiple_users to raise an exception
         with patch.object(AdminAuth, 'verify_token', return_value=True), \
-             patch.object(NotificationService, 'send_to_multiple_users',
-                         new_callable=AsyncMock, side_effect=Exception("FCM error")):
+             patch('ai_assistant.services.notification_service.NotificationService.send_to_multiple_users',
+                   new_callable=AsyncMock, side_effect=Exception("FCM error")):
             
             response = await admin_service.send_notification(request)
             assert response.status == 500
