@@ -34,18 +34,27 @@ def event_loop():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def mock_weaviate_connection():
-    """Mock Weaviate connections for all tests to avoid connection errors in CI."""
-    # Create a mock client that doesn't try to connect
-    mock_client = Mock()
-    mock_client.is_ready.return_value = True
-    mock_client.collections = Mock()
+def mock_weaviate_connection(weaviate_available):
+    """Mock Weaviate connections only when Weaviate is not available (e.g., in CI).
     
-    # Patch the HubSpokeConnection to return our mock client
-    with patch('ai_assistant.hub_spoke_schema.HubSpokeConnection.get_client', return_value=mock_client), \
-         patch('ai_assistant.hub_spoke_schema.weaviate.connect_to_custom', return_value=mock_client), \
-         patch('ai_assistant.hub_spoke_schema.weaviate.connect_to_wcs', return_value=mock_client):
-        yield mock_client
+    This fixture automatically applies to all tests. When Weaviate is running locally,
+    it does nothing and allows real connections. When Weaviate is unavailable (CI),
+    it mocks the connection to prevent test failures.
+    """
+    if weaviate_available:
+        # Weaviate is running, don't mock - allow real connections
+        yield None
+    else:
+        # Weaviate is not available, use mocks
+        mock_client = Mock()
+        mock_client.is_ready.return_value = True
+        mock_client.collections = Mock()
+        
+        # Patch the HubSpokeConnection to return our mock client
+        with patch('ai_assistant.hub_spoke_schema.HubSpokeConnection.get_client', return_value=mock_client), \
+             patch('ai_assistant.hub_spoke_schema.weaviate.connect_to_custom', return_value=mock_client), \
+             patch('ai_assistant.hub_spoke_schema.weaviate.connect_to_wcs', return_value=mock_client):
+            yield mock_client
 
 
 @pytest.fixture(autouse=True)
