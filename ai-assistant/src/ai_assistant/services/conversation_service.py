@@ -186,74 +186,73 @@ class ConversationService:
             self.context["detected_category"] = category
             logger.info(f"Detected category: {category}")
     
+    def _get_problem_summary(self) -> str:
+        """Extract problem summary from conversation context."""
+        ai_responses = self.context.get("ai_responses", [])
+        if len(ai_responses) >= 2:
+            return ai_responses[-2]
+        elif len(ai_responses) == 1:
+            return ai_responses[0]
+        else:
+            return " ".join(self.context["user_problem"])
+    
+    def _clean_json_response(self, json_str: str) -> str:
+        """Clean up JSON response by removing markdown code blocks."""
+        json_str = json_str.strip()
+        if json_str.startswith("```json"):
+            json_str = json_str[7:]
+        if json_str.startswith("```"):
+            json_str = json_str[3:]
+        if json_str.endswith("```"):
+            json_str = json_str[:-3]
+        return json_str.strip()
+    
+    async def _generate_structured_query(self, problem_summary: str) -> str:
+        """
+        Generate structured JSON query from problem summary.
+        
+        Args:
+            problem_summary: The user's problem description
+            
+        Returns:
+            JSON string of structured query, or original summary on error
+        """
+        from ..prompts_templates import STRUCTURED_QUERY_EXTRACTION_PROMPT
+        
+        language_instruction = get_language_instruction(self.language)
+        extraction_prompt = STRUCTURED_QUERY_EXTRACTION_PROMPT.format(
+            problem_summary=problem_summary,
+            language_instruction=language_instruction
+        )
+        
+        try:
+            json_response = await self.llm_service.generate([HumanMessage(content=extraction_prompt)])
+            json_str = self._clean_json_response(json_response)
+            
+            # Validate JSON
+            structured_query = json.loads(json_str)
+            logger.info(f"Generated structured query: {json.dumps(structured_query, ensure_ascii=False)}")
+            
+            return json.dumps(structured_query, ensure_ascii=False)
+            
+        except Exception as e:
+            logger.error(f"Error generating structured query: {e}", exc_info=True)
+            logger.info("Falling back to original summary for search")
+            return problem_summary
+    
     async def search_providers_for_request(self):
         """
         Search for providers based on the agent's conversational summary.
         Called when entering FINALIZE stage.
-        Uses the summary that the agent created during the triage conversation.
         Generates a structured JSON query for hybrid search.
         """
-        ai_responses = self.context.get("ai_responses", [])
-        if len(ai_responses) >= 2:
-            problem_summary = ai_responses[-2]
-        elif len(ai_responses) == 1:
-            problem_summary = ai_responses[0]
-        else:
-            # Fallback to user problem if no AI responses
-            problem_summary = " ".join(self.context["user_problem"])
-        
+        problem_summary = self._get_problem_summary()
         logger.info(f"Generating structured search query from summary: '{problem_summary[:100]}...'")
         
-        # Create prompt to extract structured information for hybrid search
-        language_instruction = get_language_instruction(self.language)
-        extraction_prompt = f"""Based on the following user request summary, extract and structure the information into a JSON format for searching service providers.
-
-User Request Summary:
-{problem_summary}
-
-Extract the following information and return ONLY a valid JSON object (no additional text):
-{{
-    "available_time": "when the user needs the service (e.g., 'heute', 'morgen', 'nächste Woche', 'flexibel')",
-    "category": "the service category (e.g., 'Klempner', 'Elektriker', 'Reinigung')",
-    "location": "address where the service is needed",
-    "criterions": [
-        "criterion 1: specific requirement or preference",
-        "criterion 2: another requirement",
-        "..."
-    ]
-}}
-
-{language_instruction}
-Return ONLY the JSON object, no other text."""
-
-        try:
-            # Generate structured JSON query (hidden from user, not sent to TTS)
-            json_response = await self.llm_service.generate([HumanMessage(content=extraction_prompt)])
-            
-            # Clean up the response to extract JSON
-            json_str = json_response.strip()
-            if json_str.startswith("```json"):
-                json_str = json_str[7:]
-            if json_str.startswith("```"):
-                json_str = json_str[3:]
-            if json_str.endswith("```"):
-                json_str = json_str[:-3]
-            json_str = json_str.strip()
-            
-            # Validate it's valid JSON
-            structured_query = json.loads(json_str)
-            logger.info(f"Generated structured query: {json.dumps(structured_query, ensure_ascii=False)}")
-            
-            # Use the JSON string as query text
-            query_text = json.dumps(structured_query, ensure_ascii=False)
-            
-        except Exception as e:
-            logger.error(f"Error generating structured query: {e}", exc_info=True)
-            # Fallback to original summary
-            query_text = problem_summary
-            logger.info(f"Falling back to original summary for search")
+        # Generate structured query
+        query_text = await self._generate_structured_query(problem_summary)
         
-        # Search for providers using the structured query
+        # Search for providers
         self.context["request_summary"] = query_text
         providers = await self.data_provider.search_providers(
             query_text=query_text,
