@@ -215,7 +215,7 @@ Extract the following information and return ONLY a valid JSON object (no additi
 {{
     "available_time": "when the user needs the service (e.g., 'heute', 'morgen', 'nächste Woche', 'flexibel')",
     "category": "the service category (e.g., 'Klempner', 'Elektriker', 'Reinigung')",
-    "location": "where the service is needed (e.g., 'Berlin', 'München', or 'not specified')",
+    "location": "address where the service is needed",
     "criterions": [
         "criterion 1: specific requirement or preference",
         "criterion 2: another requirement",
@@ -254,6 +254,7 @@ Return ONLY the JSON object, no other text."""
             logger.info(f"Falling back to original summary for search")
         
         # Search for providers using the structured query
+        self.context["request_summary"] = query_text
         providers = await self.data_provider.search_providers(
             query_text=query_text,
             category=self.context["detected_category"],
