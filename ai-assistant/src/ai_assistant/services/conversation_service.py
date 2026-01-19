@@ -54,7 +54,9 @@ class ConversationService:
         
         self.current_stage = ConversationStage.GREETING
         self.context: Dict[str, Any] = {
-            "user_problem": "",
+            "user_problem": [],
+            "ai_responses": [],
+            "request_summary": "",
             "detected_category": None,
             "providers_found": [],
             "current_provider_index": 0,
@@ -137,8 +139,8 @@ class ConversationService:
         Returns:
             New stage name if transition detected, None otherwise
         """
-        user_lower = user_input.lower()
         response_lower = ai_response.lower()
+        self.context["ai_responses"].append(ai_response)
         
         # Detect transition from TRIAGE to FINALIZE
         if self.current_stage == ConversationStage.TRIAGE:
@@ -151,8 +153,8 @@ class ConversationService:
             ]
             if any(keyword in response_lower for keyword in transition_keywords):
                 logger.info("Detected transition trigger to FINALIZE stage")
-                # Just accumulate the description, search will happen in FINALIZE stage
-                self.context["user_problem"] += " " + user_input
+                # Accumulate the final user input
+
                 return ConversationStage.FINALIZE
         
         # Detect transition from FINALIZE to COMPLETED
@@ -176,24 +178,33 @@ class ConversationService:
         Args:
             user_input: User's problem description
         """
-        self.context["user_problem"] += " " + user_input
+        self.context["user_problem"].append(user_input)
         
         # Detect category
-        category = detect_category(self.context["user_problem"])
+        category = detect_category(" ".join(self.context["user_problem"]))
         if category:
             self.context["detected_category"] = category
             logger.info(f"Detected category: {category}")
     
     async def search_providers_for_request(self):
         """
-        Search for providers based on accumulated problem description.
+        Search for providers based on the agent's conversational summary.
         Called when entering FINALIZE stage.
+        Uses the summary that the agent created during the triage conversation.
         """
-        logger.info(f"Searching providers for request: '{self.context['user_problem'][:100]}...'")
+        ai_responses = self.context.get("ai_responses", [])
+        if len(ai_responses) >= 2:
+            ai_response = ai_responses[-2]
+        elif len(ai_responses) == 1:
+            ai_response = ai_responses[0]
+        else:
+            # Fallback to user problem if no AI responses
+            ai_response = " ".join(self.context["user_problem"])
+        logger.info(f"Searching providers using summary: '{ai_response[:100]}...'")
         
-        # Search for providers
+        # Search for providers using the agent's conversational summary
         providers = await self.data_provider.search_providers(
-            query_text=self.context["user_problem"],
+            query_text=ai_response,
             category=self.context["detected_category"],
             limit=self.max_providers
         )

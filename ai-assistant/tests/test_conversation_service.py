@@ -61,16 +61,17 @@ class TestProviderSearchMethod:
     @pytest.mark.asyncio
     async def test_search_providers_for_request_basic(self, conversation_service, mock_data_provider):
         """Test basic provider search functionality."""
-        # Setup: accumulate some problem description
-        conversation_service.context["user_problem"] = "Ich brauche einen Klempner für mein Badezimmer"
+        # Setup: simulate the agent's conversational summary (captured during triage)
+        conversation_service.context["user_problem"] = ["Ich brauche einen Klempner für mein Badezimmer"]
+        conversation_service.context["ai_responses"] = ["User needs a plumber for bathroom repair", "Latest message"]
         conversation_service.context["detected_category"] = "plumbing"
         
         # Execute
         await conversation_service.search_providers_for_request()
         
-        # Verify: search was called with correct parameters
+        # Verify: search was called with the agent's conversational summary
         mock_data_provider.search_providers.assert_called_once_with(
-            query_text="Ich brauche einen Klempner für mein Badezimmer",
+            query_text="User needs a plumber for bathroom repair",
             category="plumbing",
             limit=3
         )
@@ -82,16 +83,17 @@ class TestProviderSearchMethod:
     @pytest.mark.asyncio
     async def test_search_providers_with_no_category(self, conversation_service, mock_data_provider):
         """Test provider search when no category is detected."""
-        # Setup: problem description without detected category
-        conversation_service.context["user_problem"] = "I need help with something"
+        # Setup: agent's conversational summary without detected category
+        conversation_service.context["user_problem"] = ["I need help with something"]
+        conversation_service.context["ai_responses"] = ["User needs general assistance", "Latest message"]
         conversation_service.context["detected_category"] = None
         
         # Execute
         await conversation_service.search_providers_for_request()
         
-        # Verify: search was called with None category
+        # Verify: search was called with conversational summary and None category
         mock_data_provider.search_providers.assert_called_once_with(
-            query_text="I need help with something",
+            query_text="User needs general assistance",
             category=None,
             limit=3
         )
@@ -101,7 +103,8 @@ class TestProviderSearchMethod:
         """Test provider search when no providers are found."""
         # Setup: mock empty results
         mock_data_provider.search_providers.return_value = []
-        conversation_service.context["user_problem"] = "Very specific request"
+        conversation_service.context["user_problem"] = ["Very specific request"]
+        conversation_service.context["ai_responses"] = ["Specific service needed", "Latest message"]
         
         # Execute
         await conversation_service.search_providers_for_request()
@@ -114,7 +117,8 @@ class TestProviderSearchMethod:
         """Test that search respects the max_providers limit."""
         # Setup
         conversation_service.max_providers = 5
-        conversation_service.context["user_problem"] = "Need electrician"
+        conversation_service.context["user_problem"] = ["Need electrician"]
+        conversation_service.context["ai_responses"] = ["Electrician needed urgently", "Latest message"]
         
         # Execute
         await conversation_service.search_providers_for_request()
@@ -132,7 +136,7 @@ class TestAccumulateProblemDescription:
     async def test_accumulate_problem_description(self, conversation_service):
         """Test that problem description is accumulated correctly."""
         # Initial state
-        assert conversation_service.context["user_problem"] == ""
+        assert conversation_service.context["user_problem"] == []
         
         # Execute: accumulate first input
         await conversation_service.accumulate_problem_description("Mein Wasserhahn tropft")
@@ -150,9 +154,9 @@ class TestAccumulateProblemDescription:
         
         # Verify: all inputs are accumulated
         problem = conversation_service.context["user_problem"]
-        assert "Klempner" in problem
-        assert "dringend" in problem
-        assert "Badezimmer" in problem
+        assert any("Klempner" in item for item in problem)
+        assert any("dringend" in item for item in problem)
+        assert any("Badezimmer" in item for item in problem)
     
     @pytest.mark.asyncio
     async def test_accumulate_detects_category(self, conversation_service):
@@ -259,16 +263,28 @@ class TestConversationFlow:
         mock_data_provider.search_providers.assert_not_called()
         
         # Verify: problem description accumulated
-        assert "Wasserhahn" in conversation_service.context["user_problem"]
-        assert "Badezimmer" in conversation_service.context["user_problem"]
+        problem = conversation_service.context["user_problem"]
+        assert any("Wasserhahn" in item for item in problem)
+        assert any("Badezimmer" in item for item in problem)
         
-        # Step 3: Transition to FINALIZE detected
+        # Step 3: Simulate earlier conversation (to populate ai_responses list)
+        conversation_service.context["ai_responses"].append("Earlier conversation message")
+        
+        # Step 4: Detect transition - agent creates summary as part of conversation
+        user_input = "Ja, es ist dringend"
+        ai_response = "Verstanden: Sie haben einen tropfenden Wasserhahn im Badezimmer und es ist dringend. Einen Moment bitte, ich durchsuche die Datenbank."
+        new_stage = await conversation_service.detect_stage_transition(user_input, ai_response)
+        
+        # Verify: transition detected and summary captured (now has 2 items)
+        assert new_stage == ConversationStage.FINALIZE
+        assert len(conversation_service.context["ai_responses"]) == 2
+        assert "durchsuche" in conversation_service.context["ai_responses"][-1]
+        
+        # Step 5: Set stage and search for providers
         conversation_service.set_stage(ConversationStage.FINALIZE)
-        
-        # Step 4: Now search for providers
         await conversation_service.search_providers_for_request()
         
-        # Verify: search WAS called
+        # Verify: search WAS called with the agent's summary from conversation
         mock_data_provider.search_providers.assert_called_once()
         
         # Verify: providers are in context
