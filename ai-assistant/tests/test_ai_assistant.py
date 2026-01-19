@@ -56,7 +56,7 @@ def ai_assistant(mock_data_provider):
         # Setup conversation service properties
         mock_conv_instance.get_current_stage = Mock(return_value=ConversationStage.GREETING)
         mock_conv_instance.context = {
-            "user_problem": "",
+            "user_problem": [],
             "detected_category": None,
             "providers_found": [],
             "current_provider_index": 0,
@@ -84,7 +84,7 @@ class TestAIAssistantInitialization:
     
     def test_conversation_context_initialized(self, ai_assistant):
         """Test that conversation context is properly initialized."""
-        assert ai_assistant.conversation_context['user_problem'] == ""
+        assert ai_assistant.conversation_context['user_problem'] == []
         assert ai_assistant.conversation_context['detected_category'] is None
         assert ai_assistant.conversation_context['providers_found'] == []
         assert ai_assistant.conversation_context['current_provider_index'] == 0
