@@ -201,6 +201,105 @@ class HubSpokeSearch:
             return []
     
     @staticmethod
+    def _build_filters_and_query(
+        search_request: Dict[str, Any],
+        max_inactive_days: int
+    ) -> tuple[Filter, str, str]:
+        """
+        Build search filters and query text from search request.
+        
+        Returns:
+            Tuple of (filter_clause, query_text, available_time)
+        """
+        # Build base filter: ghost filtering + provider filtering
+        cutoff_date = datetime.now(UTC) - timedelta(days=max_inactive_days)
+        filter_clause = (
+            Filter.by_ref("owned_by").by_property("last_active_date").greater_or_equal(cutoff_date) &
+            Filter.by_ref("owned_by").by_property("is_provider").equal(True)
+        )
+        
+        # Extract and normalize availability
+        available_time = search_request.get("available_time") or ""
+        if isinstance(available_time, str):
+            available_time = available_time.strip()
+        else:
+            available_time = ""
+        
+        # Add availability filter if specified and not flexible
+        if available_time and available_time.lower() not in ["flexibel", "flexible", "any", ""]:
+            filter_clause = filter_clause & Filter.by_property("availability").contains_any([available_time])
+            logger.info(f"Added availability filter: {available_time}")
+        
+        # Build query text from category and criterions
+        category = search_request.get("category") or ""
+        if isinstance(category, str):
+            category = category.strip()
+        else:
+            category = ""
+        
+        criterions = search_request.get("criterions") or []
+        if not isinstance(criterions, list):
+            criterions = []
+        
+        # Combine into query parts
+        query_parts = []
+        if category:
+            query_parts.append(category)
+        
+        for criterion in criterions:
+            if criterion and isinstance(criterion, str):
+                criterion_clean = criterion.strip()
+                if criterion_clean:
+                    query_parts.append(criterion_clean)
+        
+        query_text = " ".join(query_parts) if query_parts else "service provider"
+        
+        return filter_clause, query_text, available_time
+    
+    @staticmethod
+    def _process_search_results(response, limit: int) -> List[Dict[str, Any]]:
+        """
+        Process search results: extract data, group by profile, sort by score.
+        
+        Args:
+            response: Weaviate query response
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of provider results sorted by relevance
+        """
+        seen_profiles = {}
+        
+        for obj in response.objects:
+            competence = obj.properties.copy()
+            competence['uuid'] = str(obj.uuid)
+            competence['score'] = obj.metadata.score if obj.metadata else 0
+            
+            # Extract profile info from references
+            profile_uuid = None
+            if obj.references and 'owned_by' in obj.references:
+                owned_by_refs = obj.references['owned_by'].objects
+                if owned_by_refs:
+                    profile = owned_by_refs[0].properties
+                    profile_uuid = str(owned_by_refs[0].uuid)
+                    competence['profile'] = {
+                        'uuid': profile_uuid,
+                        'name': profile.get('name'),
+                        'email': profile.get('email'),
+                        'type': profile.get('type'),
+                        'is_provider': profile.get('is_provider', False),
+                        'last_active_date': profile.get('last_active_date'),
+                    }
+            
+            # Keep only the best-scoring competence per profile
+            if profile_uuid:
+                if profile_uuid not in seen_profiles or competence['score'] > seen_profiles[profile_uuid]['score']:
+                    seen_profiles[profile_uuid] = competence
+        
+        # Sort by score and limit
+        return sorted(seen_profiles.values(), key=lambda x: x.get('score', 0), reverse=True)[:limit]
+    
+    @staticmethod
     def hybrid_search_providers(
         search_request: Dict[str, Any],
         limit: int = 10,
@@ -230,61 +329,15 @@ class HubSpokeSearch:
         try:
             competence_collection = get_competence_entry_collection()
             
-            # Calculate cutoff date for ghost filtering
-            cutoff_date = datetime.now(UTC) - timedelta(days=max_inactive_days)
-            
-            # Build base filter: ghost filtering + provider filtering
-            filter_clause = (
-                Filter.by_ref("owned_by").by_property("last_active_date").greater_or_equal(cutoff_date) &
-                Filter.by_ref("owned_by").by_property("is_provider").equal(True)
+            # Build filters and query text
+            filter_clause, query_text, available_time = HubSpokeSearch._build_filters_and_query(
+                search_request, max_inactive_days
             )
-            
-            # Add availability filter if specified
-            available_time = search_request.get("available_time") or ""
-            if isinstance(available_time, str):
-                available_time = available_time.strip()
-            else:
-                available_time = ""
-            
-            if available_time and available_time.lower() not in ["flexibel", "flexible", "any", ""]:
-                # For availability, we can use contains to check if the time matches
-                # This is a simple implementation - could be enhanced with date parsing
-                filter_clause = filter_clause & Filter.by_property("availability").contains_any([available_time])
-                logger.info(f"Added availability filter: {available_time}")
-            
-            # Build combined query text for vector search
-            category = search_request.get("category") or ""
-            if isinstance(category, str):
-                category = category.strip()
-            else:
-                category = ""
-            
-            criterions = search_request.get("criterions") or []
-            # Ensure criterions is a list
-            if not isinstance(criterions, list):
-                criterions = []
-            
-            # Combine category and criterions into a single query
-            query_parts = []
-            if category:
-                query_parts.append(category)
-            if criterions:
-                # Join all criterions, handling None values
-                for criterion in criterions:
-                    if criterion and isinstance(criterion, str):
-                        criterion_stripped = criterion.strip()
-                        if criterion_stripped:
-                            query_parts.append(criterion_stripped)
-            
-            query_text = " ".join(query_parts)
-            
-            if not query_text:
-                query_text = "service provider"  # Fallback if no query text
             
             logger.info(f"Hybrid search query: '{query_text[:100]}...'")
             logger.info(f"Active filters: availability={available_time or 'none'}")
             
-            # Perform hybrid search with filters
+            # Execute hybrid search
             response = competence_collection.query.hybrid(
                 query=query_text,
                 limit=limit * 10,  # Fetch more for client-side grouping
@@ -297,36 +350,8 @@ class HubSpokeSearch:
                 )
             )
             
-            # Client-side grouping: Keep only the best competence per profile
-            seen_profiles = {}
-            for obj in response.objects:
-                competence = obj.properties.copy()
-                competence['uuid'] = str(obj.uuid)
-                competence['score'] = obj.metadata.score if obj.metadata else 0
-                
-                # Extract profile info from references
-                profile_uuid = None
-                if obj.references and 'owned_by' in obj.references:
-                    owned_by_refs = obj.references['owned_by'].objects
-                    if owned_by_refs:
-                        profile = owned_by_refs[0].properties
-                        profile_uuid = str(owned_by_refs[0].uuid)
-                        competence['profile'] = {
-                            'uuid': profile_uuid,
-                            'name': profile.get('name'),
-                            'email': profile.get('email'),
-                            'type': profile.get('type'),
-                            'is_provider': profile.get('is_provider', False),
-                            'last_active_date': profile.get('last_active_date'),
-                        }
-                
-                # Keep only the best-scoring competence per profile
-                if profile_uuid:
-                    if profile_uuid not in seen_profiles or competence['score'] > seen_profiles[profile_uuid]['score']:
-                        seen_profiles[profile_uuid] = competence
-            
-            # Sort by score (descending) and limit results
-            results = sorted(seen_profiles.values(), key=lambda x: x.get('score', 0), reverse=True)[:limit]
+            # Process results: group by profile and sort
+            results = HubSpokeSearch._process_search_results(response, limit)
             
             logger.info(f"Hybrid search found {len(results)} unique providers")
             return results
