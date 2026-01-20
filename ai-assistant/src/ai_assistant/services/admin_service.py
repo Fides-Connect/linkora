@@ -19,6 +19,7 @@ from weaviate.classes.query import QueryReference
 
 from ai_assistant.hub_spoke_schema import get_competence_entry_collection
 from ai_assistant.services.notification_service import NotificationService
+from ai_assistant.data_provider import get_data_provider
 from ai_assistant.weaviate_models import (
     ProviderModelWeaviate, 
     UserModelWeaviate
@@ -423,6 +424,60 @@ class AdminService:
                 "error": "Failed to list competences",
                 "message": str(e)
             }, status=500)
+
+    @AdminAuth.require_auth
+    async def search_providers(self, request: web.Request) -> web.Response:
+        """
+        POST /admin/search/providers
+        Search for providers using the data provider's search method.
+        
+        Request body (at least one field required):
+        {
+            "category": "Plumber",
+            "criterions": ["fast", "cheap"],
+            "available_time": "weekend",
+            "limit": 10  // optional, default 10
+        }
+        """
+        try:
+            body = await request.json()
+            
+            # Basic validation
+            if not body:
+                return web.json_response({
+                    "error": "Missing request body"
+                }, status=400)
+            
+            # Extract search parameters
+            search_request = {
+                "category": body.get("category"),
+                "criterions": body.get("criterions", []),
+                "available_time": body.get("available_time")
+            }
+            
+            # Convert to JSON string for data provider
+            import json
+            query_text = json.dumps(search_request)
+            
+            # Execute search via data provider
+            data_provider = get_data_provider()
+            results = await data_provider.search_providers(
+                query_text=query_text,
+                limit=body.get("limit", 10)
+            )
+            
+            return web.json_response({
+                "results": results,
+                "count": len(results),
+                "query": search_request
+            })
+            
+        except Exception as e:
+            logger.error(f"Error searching providers: {e}")
+            return web.json_response({
+                "error": "Failed to search providers",
+                "message": str(e)
+            }, status=500)
     
     @AdminAuth.require_auth
     async def test_notification(self, request: web.Request) -> web.Response:
@@ -519,6 +574,7 @@ class AdminService:
         
         # Competence management (Hub & Spoke)
         app.router.add_get('/admin/competences', self.list_competences)
+        app.router.add_post('/admin/search/providers', self.search_providers)
         
         # Notifications
         app.router.add_post('/admin/notifications/send', self.send_notification)
