@@ -153,6 +153,20 @@ async def run_tests():
             if 'data' in result:
                 print(f"Response data: {result['data']}")
         
+        # Test 4b: Search Providers
+        print_header("Test 4b: Search Providers")
+        search_payload = {
+            "category": "Electrical",
+            "criterions": ["fast"],
+            "available_time": "flexible"
+        }
+        result = await test_endpoint(session, 'POST', '/admin/search/providers', data=search_payload)
+        if result['success']:
+             print_success(f"Search found {result['data'].get('count', 0)} providers")
+             print_result(result['data'])
+        else:
+             print_error(f"Search providers failed: {result.get('error', 'Unknown error')}")
+        
         # Test 5: Unauthorized Access (should fail)
         print_header("Test 5: Unauthorized Access (Expected to Fail)")
         headers_no_auth = {}
