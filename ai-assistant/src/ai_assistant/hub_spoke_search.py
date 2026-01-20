@@ -231,6 +231,8 @@ class HubSpokeSearch:
             logger.info(f"Added availability filter: {available_time}")
         
         # Build query text from category and criterions
+        # STRATEGY: Combine category and criteria into a natural language sentence
+        # to avoid semantic dilution in vector space while retaining keywords.
         category = search_request.get("category") or ""
         if isinstance(category, str):
             category = category.strip()
@@ -238,21 +240,21 @@ class HubSpokeSearch:
             category = ""
         
         criterions = search_request.get("criterions") or []
-        if not isinstance(criterions, list):
-            criterions = []
-        
-        # Combine into query parts
-        query_parts = []
-        if category:
-            query_parts.append(category)
-        
-        for criterion in criterions:
-            if criterion and isinstance(criterion, str):
-                criterion_clean = criterion.strip()
-                if criterion_clean:
-                    query_parts.append(criterion_clean)
-        
-        query_text = " ".join(query_parts) if query_parts else "service provider"
+        # specific clean up for criterions
+        clean_criterions = []
+        for crit in criterions:
+            if crit and isinstance(crit, str) and crit.strip():
+                clean_criterions.append(crit.strip())
+
+        # Construct query: "Category. Features: criterion, criterion."
+        if category and clean_criterions:
+            query_text = f"{category}. Features: {', '.join(clean_criterions)}"
+        elif category:
+            query_text = category
+        elif clean_criterions:
+            query_text = ", ".join(clean_criterions)
+        else:
+            query_text = "service provider"
         
         return filter_clause, query_text, available_time
     
@@ -338,11 +340,16 @@ class HubSpokeSearch:
             logger.info(f"Active filters: availability={available_time or 'none'}")
             
             # Execute hybrid search
+            # STRATEGY: Use query_properties to boost title and category matches.
+            # This ensures that even with long criteria lists, the core "what" (category/title) remains dominant.
+            # We include price_range and availability in search scope to catch keywords like "cheap" or "weekend".
             response = competence_collection.query.hybrid(
                 query=query_text,
                 limit=limit * 10,  # Fetch more for client-side grouping
                 filters=filter_clause,
                 alpha=alpha,
+                # Boost title and category to prioritize exact service matches over peripheral criteria
+                query_properties=["title^2", "category^2", "description", "price_range", "availability"],
                 return_metadata=MetadataQuery(score=True),
                 return_references=QueryReference(
                     link_on="owned_by",
