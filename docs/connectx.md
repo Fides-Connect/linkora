@@ -1,6 +1,6 @@
 # ConnectX - Mobile Application
 
-ConnectX is the Flutter-based mobile application for the Fides AI Voice Assistant platform, providing real-time voice interaction capabilities on iOS and Android devices.
+ConnectX is the Flutter-based mobile application for the Linkora AI Voice Assistant platform, providing real-time voice interaction capabilities on iOS and Android devices.
 
 ## 📋 Table of Contents
 

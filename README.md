@@ -1,4 +1,4 @@
-# Fides - AI Voice Assistant Platform
+# Linkora - AI Voice Assistant Platform
 
 A complete voice-based AI assistant platform built with Flutter and Python, featuring real-time WebRTC audio streaming and AI-powered conversations.
 
@@ -17,9 +17,9 @@ A complete voice-based AI assistant platform built with Flutter and Python, feat
 - **[Helm Charts](docs/helm.md)** - Kubernetes deployment
 - **[Terraform](docs/terraform.md)** - Infrastructure as code
 
-## 🎯 What is Fides?
+## 🎯 What is Linkora?
 
-Fides is a modern AI voice assistant platform that enables natural voice conversations with AI. The platform consists of three main components:
+Linkora is a modern AI voice assistant platform that enables natural voice conversations with AI. The platform consists of three main components:
 
 1. **ConnectX** - Flutter mobile application (iOS/Android)
 2. **AI-Assistant** - Python WebRTC server for AI processing
@@ -170,20 +170,20 @@ All documentation is organized in the [`/docs`](docs/) directory with a consiste
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Fides Platform                            │
+│                  Linkora Platform                           │
 ├─────────────────────────────────────────────────────────────┤
-│                                                               │
-│  ┌───────────────┐         ┌──────────────────┐            │
-│  │   ConnectX    │◄───────►│  AI-Assistant    │            │
-│  │  (Flutter)    │  WebRTC │  (Python)        │            │
-│  │               │  Audio  │                  │            │
-│  │  - iOS        │  Stream │  - STT           │            │
-│  │  - Android    │         │  - LLM (Gemini)  │            │
-│  │  - WebRTC     │         │  - TTS           │            │
-│  │  - Firebase   │         │  - WebRTC Server │            │
-│  └───────────────┘         └─────────┬────────┘            │
-│                                       │                      │
-│                                       ▼                      │
+│                                                             │
+│   ┌───────────────┐         ┌──────────────────┐            │
+│   │   ConnectX    │◄───────►│  AI-Assistant    │            │
+│   │  (Flutter)    │  WebRTC │  (Python)        │            │
+│   │               │  Audio  │                  │            │
+│   │  - iOS        │  Stream │  - STT           │            │
+│   │  - Android    │         │  - LLM (Gemini)  │            │
+│   │  - WebRTC     │         │  - TTS           │            │
+│   │  - Firebase   │         │  - WebRTC Server │            │
+│   └───────────────┘         └─────────┬────────┘            │
+│                                       │                     │
+│                                       ▼                     │
 │                            ┌──────────────────┐             │
 │                            │    Weaviate      │             │
 │                            │  (Vector DB)     │             │

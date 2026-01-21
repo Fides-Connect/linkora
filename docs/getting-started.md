@@ -1,10 +1,10 @@
-# Getting Started with Fides
+# Getting Started with Linkora
 
-This guide will help you get the Fides AI Voice Assistant platform up and running quickly.
+This guide will help you get the Linkora AI Voice Assistant platform up and running quickly.
 
-## 🎯 What is Fides?
+## 🎯 What is Linkora?
 
-Fides is a complete voice-based AI assistant platform that enables natural voice conversations with AI. The platform consists of:
+Linkora is a complete voice-based AI assistant platform that enables natural voice conversations with AI. The platform consists of:
 
 1. **ConnectX** - Flutter mobile application (iOS/Android)
 2. **AI-Assistant** - Python WebRTC server for AI processing

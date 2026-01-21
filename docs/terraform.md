@@ -1,6 +1,6 @@
 # Terraform Infrastructure Documentation
 
-This document covers infrastructure provisioning using Terraform for the Fides AI Voice Assistant platform on Google Cloud Platform (GKE).
+This document covers infrastructure provisioning using Terraform for the Linkora AI Voice Assistant platform on Google Cloud Platform (GKE).
 
 ## 📋 Table of Contents
 
@@ -17,7 +17,7 @@ This document covers infrastructure provisioning using Terraform for the Fides A
 
 ## 🎯 Overview
 
-The Fides platform uses Terraform to provision and manage Google Cloud Platform (GKE) infrastructure, providing:
+The Linkora platform uses Terraform to provision and manage Google Cloud Platform (GKE) infrastructure, providing:
 - **Infrastructure as Code**: Version-controlled, reproducible infrastructure
 - **GKE Autopilot Cluster**: Managed Kubernetes with auto-scaling
 - **Network Configuration**: Custom VPC with optimized pod/service ranges

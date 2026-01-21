@@ -1,6 +1,6 @@
 # AI-Assistant - Backend Server
 
-The AI-Assistant is the Python-based WebRTC server that powers the Fides voice interaction platform, handling speech recognition, AI processing, and audio synthesis.
+The AI-Assistant is the Python-based WebRTC server that powers the Linkora voice interaction platform, handling speech recognition, AI processing, and audio synthesis.
 
 ## 📋 Table of Contents
 

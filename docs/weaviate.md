@@ -1,6 +1,6 @@
 # Weaviate Vector Database
 
-Weaviate is the vector database infrastructure for the Fides AI-Assistant, providing semantic search capabilities for intelligent service provider matching.
+Weaviate is the vector database infrastructure for the Linkora AI-Assistant, providing semantic search capabilities for intelligent service provider matching.
 
 ## 📋 Table of Contents
 

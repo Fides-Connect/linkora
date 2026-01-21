@@ -1,6 +1,6 @@
-# Fides - AI Voice Assistant Platform Documentation
+# Linkora - AI Voice Assistant Platform Documentation
 
-Welcome to the Fides platform documentation. This directory contains comprehensive guides for all components of the system.
+Welcome to the Linkora platform documentation. This directory contains comprehensive guides for all components of the system.
 
 ## 📚 Documentation Structure
 

@@ -1,6 +1,6 @@
 # Helm Charts Documentation
 
-This document covers Kubernetes deployment using Helm charts for the Fides AI Voice Assistant platform.
+This document covers Kubernetes deployment using Helm charts for the Linkora AI Voice Assistant platform.
 
 ## 📋 Table of Contents
 
@@ -15,7 +15,7 @@ This document covers Kubernetes deployment using Helm charts for the Fides AI Vo
 
 ## 🎯 Overview
 
-The Fides platform uses Helm charts for Kubernetes deployment, providing:
+The Linkora platform uses Helm charts for Kubernetes deployment, providing:
 - Declarative infrastructure management
 - Version-controlled deployments
 - Easy rollbacks and updates
