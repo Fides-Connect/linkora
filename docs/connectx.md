@@ -1,0 +1,588 @@
+# ConnectX - Mobile Application
+
+ConnectX is the Flutter-based mobile application for the Fides AI Voice Assistant platform, providing real-time voice interaction capabilities on iOS and Android devices.
+
+## 📋 Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Project Structure](#project-structure)
+- [Development](#development)
+- [Testing](#testing)
+- [Building for Production](#building-for-production)
+- [Troubleshooting](#troubleshooting)
+
+## 🎯 Overview
+
+ConnectX is a lightweight mobile client that:
+- Captures user voice input via microphone
+- Streams audio to AI-Assistant server via WebRTC
+- Receives and plays AI-generated voice responses
+- Manages user authentication with Firebase
+- Provides intuitive UI for voice conversations
+
+### Architecture
+
+```
+┌─────────────────────────────────────┐
+│         ConnectX App                │
+├─────────────────────────────────────┤
+│  UI Layer (Pages & Widgets)         │
+│  ├── Login Page                     │
+│  ├── Chat Page                      │
+│  └── Settings Page                  │
+├─────────────────────────────────────┤
+│  Service Layer                      │
+│  ├── AuthService                    │
+│  ├── WebRTCService                  │
+│  ├── SpeechService                  │
+│  ├── NotificationService            │
+│  └── UserService                    │
+├─────────────────────────────────────┤
+│  WebRTC Layer                       │
+│  └── flutter_webrtc                 │
+├─────────────────────────────────────┤
+│  Authentication Layer               │
+│  └── Firebase Auth                  │
+└─────────────────────────────────────┘
+         ↕ WebRTC Audio Stream
+┌─────────────────────────────────────┐
+│      AI-Assistant Server            │
+└─────────────────────────────────────┘
+```
+
+## ✨ Features
+
+- **Voice Input**: Real-time audio capture and streaming
+- **Voice Output**: Playback of AI-generated responses
+- **Authentication**: Google Sign-In, Email/Password, Phone Auth
+- **WebRTC**: Direct peer-to-peer audio streaming
+- **Visual Feedback**: Audio visualization during recording
+- **Chat History**: Conversation transcript display
+- **Cross-Platform**: Runs on iOS and Android
+- **Responsive UI**: Adaptive layout for different screen sizes
+
+## 📋 Prerequisites
+
+### Development Tools
+- **Flutter SDK**: 3.9.2 or higher
+- **Dart SDK**: Included with Flutter
+- **IDE**: VS Code or Android Studio with Flutter plugin
+
+### Platform-Specific Requirements
+
+**For iOS Development:**
+- macOS with Xcode 14.0+
+- CocoaPods
+- iOS device or simulator (iOS 12.0+)
+
+**For Android Development:**
+- Android Studio or Android SDK
+- Java Development Kit (JDK 11+)
+- Android device or emulator (API 21+)
+
+### External Services
+- Running AI-Assistant server (see [AI-Assistant Documentation](ai-assistant.md))
+- Firebase project with Authentication enabled
+
+## 🚀 Installation
+
+### Step 1: Install Dependencies
+
+```bash
+cd connectx
+flutter pub get
+```
+
+### Step 2: Firebase Configuration
+
+#### Create Firebase Project
+
+1. Go to [Firebase Console](https://console.firebase.google.com)
+2. Click "Add project" or select existing Google Cloud project
+3. Complete Firebase setup wizard
+
+> **Important**: Use the same Google Cloud project as your AI-Assistant backend for seamless token validation.
+
+#### Enable Authentication Methods
+
+1. In Firebase Console → Authentication → Sign-in method
+2. Enable desired methods:
+   - **Google**: Enable and add support email
+   - **Email/Password**: Enable
+   - **Phone**: Enable and configure reCAPTCHA
+
+#### Configure OAuth Client
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Navigate to APIs & Services → Credentials
+3. Create OAuth 2.0 Client ID:
+   - Type: Web application
+   - Authorized redirect URIs: `http://localhost:60099`
+4. Copy the Client ID (format: `XXXXXXXX-XXXXXXXX.apps.googleusercontent.com`)
+
+#### Run FlutterFire Configure
+
+```bash
+# Install FlutterFire CLI if not already installed
+dart pub global activate flutterfire_cli
+
+# Configure Firebase for your platforms
+flutterfire configure --project=<your-project-id>
+
+# Select platforms: android, ios, web
+# This generates lib/firebase_options.dart
+```
+
+#### Android Setup
+
+**Add SHA-1 Fingerprint:**
+
+```bash
+# Get debug keystore SHA-1
+keytool -list -v -alias androiddebugkey \
+  -keystore ~/.android/debug.keystore \
+  -storepass android -keypass android | grep SHA1
+```
+
+Then:
+1. Copy the SHA-1 fingerprint
+2. In Firebase Console → Project Settings → Your apps → Android app
+3. Click "Add fingerprint"
+4. Paste SHA-1 and save
+
+**Download google-services.json:**
+
+1. In Firebase Console → Project Settings → Your apps
+2. Find Android app (`com.fides.connectx`)
+3. Download `google-services.json`
+4. Place in: `connectx/android/app/google-services.json`
+
+### Step 3: Environment Configuration
+
+```bash
+# Copy template
+cp template.env .env
+
+# Edit configuration
+nano .env
+```
+
+**Required Environment Variables:**
+
+```properties
+# AI-Assistant Server URL (without ws:// prefix or /ws suffix)
+# Local development (use your machine's IP for Android emulator):
+AI_ASSISTANT_SERVER_URL=192.168.1.100:8080
+
+# For physical devices on same network:
+# AI_ASSISTANT_SERVER_URL=192.168.1.100:8080
+
+# Production deployment:
+# AI_ASSISTANT_SERVER_URL=your-server-domain.com:8080
+
+# Google OAuth Client ID (from Firebase setup)
+GOOGLE_OAUTH_CLIENT_ID=XXXXXXXX-XXXXXXXX.apps.googleusercontent.com
+
+# Web Port (must match OAuth redirect URI)
+WEB_PORT=60099
+```
+
+> **Android Emulator Note**: Use your computer's network IP (e.g., `192.168.1.100`), NOT `localhost`, because the Android emulator runs in a separate network namespace.
+
+## 📁 Project Structure
+
+```
+connectx/
+├── lib/
+│   ├── main.dart                      # App entry point
+│   ├── firebase_options.dart          # Firebase configuration
+│   ├── theme.dart                     # App theme and styling
+│   │
+│   ├── models/                        # Data models
+│   │   ├── message.dart               # Chat message model
+│   │   └── user_model.dart            # User data model
+│   │
+│   ├── pages/                         # Screen-level widgets
+│   │   ├── login_page.dart            # Authentication screen
+│   │   ├── chat_page.dart             # Main conversation screen
+│   │   └── settings_page.dart         # User settings
+│   │
+│   ├── services/                      # Business logic
+│   │   ├── auth_service.dart          # Firebase authentication
+│   │   ├── signaling_service.dart     # WebSocket signaling
+│   │   ├── peer_connection_handler.dart # WebRTC management
+│   │   └── audio_processor.dart       # Audio handling
+│   │
+│   ├── widgets/                       # Reusable components
+│   │   ├── audio_visualizer.dart      # Visual feedback
+│   │   ├── chat_bubble.dart           # Message display
+│   │   └── mic_button.dart            # Recording button
+│   │
+│   └── localization/                  # Internationalization
+│       └── app_localizations.dart
+│
+├── android/                           # Android platform files
+│   ├── app/
+│   │   ├── build.gradle.kts
+│   │   ├── google-services.json       # Firebase config
+│   │   └── src/
+│   └── build.gradle.kts
+│
+├── ios/                               # iOS platform files
+│   ├── Runner/
+│   │   └── Info.plist
+│   └── Runner.xcodeproj/
+│
+├── test/                              # Unit and widget tests
+│   └── widget_test.dart
+│
+├── pubspec.yaml                       # Dependencies
+├── .env                               # Environment variables
+└── README.md                          # This file
+```
+
+## 🛠️ Development
+
+### Running the App
+
+**On Connected Device:**
+```bash
+flutter run
+```
+
+**On Specific Device:**
+```bash
+# List devices
+flutter devices
+
+# Run on specific device
+flutter run -d <device-id>
+```
+
+**Platform-Specific:**
+```bash
+# iOS
+flutter run -d ios
+
+# Android
+flutter run -d android
+
+# Web (for testing)
+flutter run -d chrome
+```
+
+### Hot Reload
+
+During development, use hot reload for instant updates:
+- Press `r` in terminal for hot reload
+- Press `R` for hot restart
+- Press `q` to quit
+
+### Key Services
+
+#### AuthService
+
+Handles Firebase authentication:
+
+```dart
+class AuthService {
+  Future<User?> signInWithGoogle();
+  Future<User?> signInWithEmail(String email, String password);
+  Future<void> signOut();
+  Stream<User?> get authStateChanges;
+}
+```
+
+#### PeerConnectionHandler
+
+Manages WebRTC connections:
+
+```dart
+class PeerConnectionHandler {
+  Future<void> initialize();
+  Future<void> createOffer();
+  Future<void> handleAnswer(String sdp);
+  Future<void> addIceCandidate(String candidate);
+  void startAudioStreaming();
+  void stopAudioStreaming();
+}
+```
+
+#### SignalingService
+
+WebSocket communication with server:
+
+```dart
+class SignalingService {
+  Future<void> connect(String url);
+  void sendMessage(Map<String, dynamic> message);
+  Stream<Map<String, dynamic>> get messages;
+  void disconnect();
+}
+```
+
+### WebRTC Implementation
+
+**Connection Flow:**
+
+```dart
+// 1. Initialize peer connection
+await peerConnectionHandler.initialize();
+
+// 2. Connect to signaling server
+await signalingService.connect(serverUrl);
+
+// 3. Create and send offer
+final offer = await peerConnectionHandler.createOffer();
+signalingService.sendMessage({
+  'type': 'offer',
+  'sdp': offer.sdp,
+});
+
+// 4. Receive answer
+signalingService.messages.listen((message) {
+  if (message['type'] == 'answer') {
+    peerConnectionHandler.handleAnswer(message['sdp']);
+  }
+});
+
+// 5. Start audio streaming
+peerConnectionHandler.startAudioStreaming();
+```
+
+## 🧪 Testing
+
+### Run All Tests
+
+```bash
+flutter test
+```
+
+### Run Specific Test
+
+```bash
+flutter test test/widget_test.dart
+```
+
+### Test Coverage
+
+```bash
+flutter test --coverage
+genhtml coverage/lcov.info -o coverage/html
+open coverage/html/index.html
+```
+
+### Widget Testing Example
+
+```dart
+testWidgets('MicButton shows recording state', (WidgetTester tester) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: MicButton(
+          isRecording: true,
+          onPressed: () {},
+        ),
+      ),
+    ),
+  );
+
+  expect(find.byIcon(Icons.stop), findsOneWidget);
+});
+```
+
+## 📦 Building for Production
+
+### Android Release Build
+
+```bash
+# Build APK
+flutter build apk --release
+
+# Build App Bundle (recommended for Play Store)
+flutter build appbundle --release
+
+# Output: build/app/outputs/bundle/release/app-release.aab
+```
+
+### iOS Release Build
+
+```bash
+# Build for iOS
+flutter build ios --release
+
+# Archive in Xcode
+open ios/Runner.xcworkspace
+# Product → Archive → Distribute App
+```
+
+### Configuration for Production
+
+**Update Environment:**
+```properties
+AI_ASSISTANT_SERVER_URL=production-server.com:8080
+```
+
+**Android Signing:**
+
+Create `android/key.properties`:
+```properties
+storePassword=<keystore-password>
+keyPassword=<key-password>
+keyAlias=upload
+storeFile=<path-to-keystore>
+```
+
+**iOS Signing:**
+- Configure signing in Xcode
+- Select appropriate provisioning profile
+- Set up App Store Connect
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+#### Firebase Authentication Fails
+
+**Symptoms**: "Developer console not set up correctly" error
+
+**Solution**:
+1. Verify SHA-1 fingerprint added to Firebase Console
+2. Check `GOOGLE_OAUTH_CLIENT_ID` in `.env`
+3. Ensure `google-services.json` is in correct location
+4. Verify Firebase project matches backend
+
+#### WebRTC Connection Failed
+
+**Symptoms**: No audio streaming, connection timeout
+
+**Solution**:
+1. Check `AI_ASSISTANT_SERVER_URL` in `.env`
+2. For Android emulator, use machine IP, not `localhost`
+3. Verify AI-Assistant server is running: `curl http://<server>:8080/health`
+4. Check firewall rules and network connectivity
+5. Review server logs for connection errors
+
+#### Build Fails on iOS
+
+**Symptoms**: CocoaPods errors, signing issues
+
+**Solution**:
+```bash
+cd ios
+pod deintegrate
+pod install
+cd ..
+flutter clean
+flutter pub get
+flutter build ios
+```
+
+#### Audio Not Working
+
+**Symptoms**: Microphone permission denied, no audio playback
+
+**Solution**:
+1. Verify microphone permissions granted in device settings
+2. Check `Info.plist` contains microphone usage description
+3. Restart app after granting permissions
+4. Test with different audio input/output devices
+
+#### Hot Reload Not Working
+
+**Symptoms**: Changes not reflected after hot reload
+
+**Solution**:
+- Use hot restart (`R`) instead of hot reload (`r`)
+- Some changes require full rebuild:
+  - Native code changes
+  - Asset changes
+  - Dependency changes
+
+### Debug Mode
+
+Enable detailed logging:
+
+```dart
+// In main.dart
+void main() {
+  // Enable verbose logging
+  Logger.root.level = Level.ALL;
+  Logger.root.onRecord.listen((record) {
+    print('${record.level.name}: ${record.time}: ${record.message}');
+  });
+  
+  runApp(MyApp());
+}
+```
+
+### Performance Profiling
+
+```bash
+# Run with performance overlay
+flutter run --profile
+
+# Open DevTools
+flutter pub global activate devtools
+flutter pub global run devtools
+```
+
+## 📱 Platform-Specific Notes
+
+### iOS Considerations
+
+- **Minimum Version**: iOS 12.0+
+- **Permissions**: Microphone access required
+- **Background Audio**: Requires background modes capability
+- **App Transport Security**: Configure for non-HTTPS servers in development
+
+### Android Considerations
+
+- **Minimum SDK**: API 21 (Android 5.0)
+- **Permissions**: Microphone, internet
+- **ProGuard**: Configure rules for release builds
+- **Network Security**: Allow cleartext traffic in development
+
+## 🚀 Best Practices
+
+### Code Organization
+
+- Keep widgets small and focused
+- Extract reusable components
+- Use services for business logic
+- Implement proper error handling
+
+### State Management
+
+- Use Provider for app-wide state
+- Keep local state in StatefulWidget when appropriate
+- Avoid unnecessary rebuilds
+
+### Performance
+
+- Dispose controllers and streams properly
+- Use `const` constructors where possible
+- Implement lazy loading for large lists
+- Profile regularly to identify bottlenecks
+
+### Security
+
+- Never commit `.env` file
+- Use secure storage for sensitive data
+- Validate all user inputs
+- Keep dependencies updated
+
+## 🔗 Related Documentation
+
+- [Getting Started Guide](getting-started.md) - Initial setup
+- [AI-Assistant Documentation](ai-assistant.md) - Backend server
+- [API Reference](api-reference.md) - Integration details
+- [Troubleshooting Guide](troubleshooting.md) - Common issues
+
+---
+
+**Next Steps**: [AI-Assistant Documentation](ai-assistant.md) | [Testing Guide](testing.md)

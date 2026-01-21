@@ -1,0 +1,64 @@
+# Fides - AI Voice Assistant Platform Documentation
+
+Welcome to the Fides platform documentation. This directory contains comprehensive guides for all components of the system.
+
+## 📚 Documentation Structure
+
+### Core Documentation
+- [**Getting Started**](getting-started.md) - Quick start guide for new developers
+- [**Architecture Overview**](architecture.md) - System architecture and design decisions
+
+### Component Documentation
+- [**ConnectX (Mobile App)**](connectx.md) - Flutter mobile application documentation
+- [**AI-Assistant (Backend)**](ai-assistant.md) - Python WebRTC server documentation
+- [**Weaviate (Database)**](weaviate.md) - Vector database setup and configuration
+
+### Infrastructure Documentation
+- [**Helm Charts**](helm.md) - Kubernetes deployment configuration
+- [**Terraform**](terraform.md) - Infrastructure as code documentation
+
+## 🎯 Quick Links
+
+### For New Developers
+1. Start with [Getting Started](getting-started.md)
+2. Review [Architecture Overview](architecture.md)
+
+### For Mobile Developers
+- [ConnectX Documentation](connectx.md)
+
+### For Backend Developers
+- [AI-Assistant Documentation](ai-assistant.md)
+- [Weaviate Documentation](weaviate.md)
+
+### For DevOps
+- [Helm Charts](helm.md)
+- [Terraform](terraform.md)
+
+## 🔗 Repository Structure
+
+```
+Fides/
+├── docs/                 # 📖 This documentation directory
+├── connectx/             # 📱 Flutter mobile application
+├── ai-assistant/         # 🤖 Python WebRTC server
+├── weaviate/             # 🗄️ Vector database infrastructure
+├── helm/                 # ☸️ Kubernetes Helm charts
+├── terraform/            # 🏗️ Infrastructure as Code
+└── .github/workflows/    # 🔄 CI/CD pipelines
+```
+
+## 📝 Document Conventions
+
+All documentation follows these conventions:
+- **Headers**: Use emoji for section identification
+- **Code blocks**: Include language identifiers for syntax highlighting
+- **Links**: Use relative paths within documentation
+- **Examples**: Provide working, copy-pasteable examples
+- **Updates**: Keep documentation in sync with code changes
+
+## 🆘 Getting Help
+
+If you can't find what you're looking for:
+1. Review component-specific documentation
+2. Search the repository issues
+3. Create a new issue with the `documentation` label
