@@ -36,7 +36,7 @@ Fides/
 │   ├── src/              # Python source code
 │   ├── scripts/          # Initialization scripts
 │   ├── Dockerfile        # Container definition
-│   ├── requirements.txt  # Python dependencies
+│   ├── pyproject.toml    # Python package configuration & dependencies
 │   └── README.md         # AI-Assistant documentation
 │
 ├── weaviate/             # Vector database infrastructure

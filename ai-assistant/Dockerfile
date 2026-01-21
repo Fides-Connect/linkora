@@ -19,9 +19,9 @@ RUN useradd -m -u 1000 appuser && \
 
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY --chown=appuser:appuser requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy pyproject for dependency caching and install package
+COPY --chown=appuser:appuser pyproject.toml .
+RUN pip install --no-cache-dir .
 
 # Copy application source code
 COPY --chown=appuser:appuser src/ ./src/

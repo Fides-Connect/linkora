@@ -408,7 +408,6 @@ connectx/
 ├── template.env                    # Environment template
 ├── pubspec.yaml                    # Dependencies
 └── README.md                       # This file
-├── requirements.txt                # Python dependencies
 ```
 
 ### Running Tests
