@@ -152,7 +152,6 @@ All documentation is organized in the [`/docs`](docs/) directory with a consiste
 ### Getting Started
 - **[Getting Started Guide](docs/getting-started.md)** - Quick start for new developers
 - **[Architecture Overview](docs/architecture.md)** - System design and technical implementation
-- **[Installation Guide](docs/installation.md)** - Comprehensive setup instructions
 
 ### Components
 - **[ConnectX](docs/connectx.md)** - Mobile application (Flutter)
@@ -162,7 +161,6 @@ All documentation is organized in the [`/docs`](docs/) directory with a consiste
 ### Infrastructure
 - **[Helm Charts](docs/helm.md)** - Kubernetes deployment
 - **[Terraform](docs/terraform.md)** - Infrastructure provisioning
-- **[CI/CD Pipeline](docs/ci-cd.md)** - Automated deployment
 
 ## 🏗️ Architecture
 
