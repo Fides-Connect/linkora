@@ -19,12 +19,12 @@ RUN useradd -m -u 1000 appuser && \
 
 WORKDIR /app
 
-# Copy pyproject for dependency caching and install package
+# Copy pyproject and source for dependency caching and install package
 COPY --chown=appuser:appuser pyproject.toml .
+COPY --chown=appuser:appuser src/ ./src/
 RUN pip install --no-cache-dir .
 
 # Copy application source code
-COPY --chown=appuser:appuser src/ ./src/
 COPY --chown=appuser:appuser main.py .
 
 # Switch to non-root user
