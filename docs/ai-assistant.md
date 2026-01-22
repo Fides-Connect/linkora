@@ -231,7 +231,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 # Authentication (for ConnectX integration)
 GOOGLE_OAUTH_CLIENT_ID=your-oauth-client-id.apps.googleusercontent.com
 
-# Weaviate Configuration (REQUIRED - must be running)
+# Weaviate Configuration
 # Local Weaviate (self-hosted)
 WEAVIATE_URL=http://localhost:8090
 
@@ -256,7 +256,7 @@ LOG_LEVEL=INFO
 
 ### Weaviate Configuration
 
-**Weaviate is REQUIRED** - The AI Assistant exclusively uses Weaviate for provider search and data persistence.
+The AI Assistant uses Weaviate for provider search and data persistence.
 
 **Deployment Options:**
 

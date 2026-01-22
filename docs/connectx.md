@@ -580,5 +580,4 @@ flutter pub global run devtools
 
 - [Getting Started Guide](getting-started.md) - Initial setup
 - [AI-Assistant Documentation](ai-assistant.md) - Backend server
-- [API Reference](api-reference.md) - Integration details
-- [Troubleshooting Guide](troubleshooting.md) - Common issues
+- [Architecture Overview](architecture.md) - System design

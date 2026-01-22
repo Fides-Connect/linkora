@@ -214,7 +214,7 @@ DataProvider
 │ TRIAGE   │  Asks scoping questions (size, timing, etc.)
 └────┬─────┘
      │ User provides details
-     │ Agent says "Datenbank durchsuchen"
+     │ Agent says "search database"
      ▼
 ┌──────────┐
 │ FINALIZE │  Presents matched providers, handles feedback

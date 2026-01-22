@@ -32,11 +32,11 @@ The Linkora platform uses Helm charts for Kubernetes deployment, providing:
 ### Tools Required
 - **kubectl**: Kubernetes command-line tool
 - **Helm**: Version 3.0 or higher
-- **gcloud CLI**: For GKE access (if using Google Cloud)
+- **gcloud CLI**: For GKE access
 
 ### Infrastructure
-- Kubernetes cluster (GKE, EKS, AKS, or local)
-- Container registry (GCR, Docker Hub, etc.)
+- Kubernetes cluster (GKE)
+- Container registry (GCR)
 - Load balancer support (for external access)
 
 ### Install Tools

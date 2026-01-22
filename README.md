@@ -127,22 +127,23 @@ flutter run
 ```
 
 **See**: [ConnectX Documentation](docs/connectx.md) for detailed setup including Firebase configuration.
-### 3. Start Weaviate (REQUIRED)
 
-The AI Assistant requires Weaviate to be running for provider search and data persistence:
+### 3. Start Weaviate
+
+The AI Assistant requires Weaviate for provider search and data persistence:
 
 ```bash
 # Start Weaviate
 cd weaviate
 docker-compose up -d
 
-# Initialize database schema
+# Initialize database
 cd ../ai-assistant
 python scripts/init_hub_spoke_schema.py --load-test-data
 
 ```
 
-**See**: [Weaviate Documentation](docs/weaviate.md) for detailed configuration and cloud deployment options.
+**See**: [Weaviate Documentation](docs/weaviate.md) for detailed configuration.
 
 ## 📚 Documentation Overview
 

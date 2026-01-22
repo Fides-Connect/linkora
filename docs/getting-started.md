@@ -222,8 +222,6 @@ cd connectx
 flutter test
 ```
 
-See [Testing Guide](testing.md) for comprehensive testing documentation.
-
 ## 🐛 Common Issues
 
 ### Port Already in Use
@@ -250,8 +248,6 @@ docker-compose build --no-cache
 - Check `GOOGLE_OAUTH_CLIENT_ID` in `.env`
 - Ensure backend and app use same Firebase project
 
-See [Troubleshooting Guide](troubleshooting.md) for more solutions.
-
 ## 📚 Next Steps
 
 ### For Developers
@@ -264,10 +260,7 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
    - [AI-Assistant Documentation](ai-assistant.md) - Backend details
    - [Weaviate Documentation](weaviate.md) - Database details
 
-3. **Learn the API**  
-   Review [API Reference](api-reference.md) for integration details
-
-4. **Set Up Your IDE**  
+3. **Set Up Your IDE**  
    - VS Code: Install Flutter, Python, Docker extensions
    - Configure code formatters and linters
 
