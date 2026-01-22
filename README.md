@@ -127,23 +127,22 @@ flutter run
 ```
 
 **See**: [ConnectX Documentation](docs/connectx.md) for detailed setup including Firebase configuration.
+### 3. Start Weaviate (REQUIRED)
 
-### 3. (Optional) Enable Provider Search
-
-For production with semantic provider matching:
+The AI Assistant requires Weaviate to be running for provider search and data persistence:
 
 ```bash
 # Start Weaviate
 cd weaviate
 docker-compose up -d
 
-# Initialize database
+# Initialize database schema
 cd ../ai-assistant
 python scripts/init_hub_spoke_schema.py --load-test-data
 
 ```
 
-**See**: [Weaviate Documentation](docs/weaviate.md) for detailed configuration.
+**See**: [Weaviate Documentation](docs/weaviate.md) for detailed configuration and cloud deployment options.
 
 ## 📚 Documentation Overview
 

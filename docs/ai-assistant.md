@@ -62,7 +62,7 @@ The AI-Assistant server is a containerized service that:
 │ TRIAGE   │  Service coordinator - asks scoping questions
 └────┬─────┘  (not diagnostics)
      │
-     │ Auto-transition on "database durchsuchen"
+     │ Auto-transition on search database
      ▼
 ┌──────────┐
 │ FINALIZE │  Presents matched providers, handles feedback
@@ -231,12 +231,21 @@ GEMINI_API_KEY=your_gemini_api_key_here
 # Authentication (for ConnectX integration)
 GOOGLE_OAUTH_CLIENT_ID=your-oauth-client-id.apps.googleusercontent.com
 
-# Local Weaviate
+# Weaviate Configuration (REQUIRED - must be running)
+# Local Weaviate (self-hosted)
 WEAVIATE_URL=http://localhost:8090
 
-# Cloud Weaviate (optional, takes precedence over WEAVIATE_URL)
+# Cloud Weaviate (Weaviate Cloud Services - takes precedence over local WEAVIATE_URL)
 # WEAVIATE_CLUSTER_URL=https://your-cluster.weaviate.network
 # WEAVIATE_API_KEY=your-weaviate-cloud-api-key
+
+# Language and Voice Configuration
+# German configuration
+LANGUAGE_CODE_DE=de-DE
+VOICE_NAME_DE=de-DE-Chirp3-HD-Sulafat
+# English configuration
+LANGUAGE_CODE_EN=en-US
+VOICE_NAME_EN=en-US-Chirp3-HD-Sulafat
 
 # Server Configuration
 PORT=8080
@@ -247,42 +256,66 @@ LOG_LEVEL=INFO
 
 ### Weaviate Configuration
 
-**Production Mode (With Weaviate):**
+**Weaviate is REQUIRED** - The AI Assistant exclusively uses Weaviate for provider search and data persistence.
+
+**Deployment Options:**
+
+**Option 1: Local/Self-Hosted (Development)**
 ```bash
 WEAVIATE_URL=http://localhost:8090
 ```
-- Full provider search
-- Persistent data
-- Semantic matching
-- Requires Weaviate running
+- Start local Weaviate in Docker: `cd weaviate && docker-compose up`
+- See [Weaviate Documentation](weaviate.md) for detailed setup
 
-See [Weaviate Documentation](weaviate.md) for database setup.
+**Option 2: Weaviate Cloud Services (Production)**
+```bash
+WEAVIATE_CLUSTER_URL=https://your-cluster.weaviate.network
+WEAVIATE_API_KEY=your-weaviate-cloud-api-key
+```
+- Create cluster at https://console.weaviate.cloud/
+- Takes precedence over local WEAVIATE_URL if both are set
+
+**Features:**
+- Semantic provider matching using vector embeddings
+- Persistent data storage
+- Hybrid search (vector + keyword)
+- Support for both local and cloud deployments
 
 ### Voice Configuration
 
-**Language & Voice Settings:**
+**Supported Languages:**
+- German (`de-DE`) - Configured via `LANGUAGE_CODE_DE` and `VOICE_NAME_DE`
+- English (`en-US`) - Configured via `LANGUAGE_CODE_EN` and `VOICE_NAME_EN`
 
-```python
-# In src/ai_assistant/ai_assistant.py (AIAssistant.__init__)
+**Configuration:**
 
-# Language code (BCP-47)
-LANGUAGE_CODE = "de-DE"  # German
-# LANGUAGE_CODE = "en-US"  # English
+Set language and voice parameters in `.env`:
 
-# TTS voice configuration (passed to AIAssistant constructor)
-voice_name = 'de-DE-Chirp3-HD-Sulafat'  # Current default
+```bash
+# German configuration
+LANGUAGE_CODE_DE=de-DE
+VOICE_NAME_DE=de-DE-Chirp3-HD-Sulafat
 
-# Alternative voices:
-# voice_name = 'de-DE-Neural2-D'  # Male voice
-# voice_name = 'de-DE-Neural2-C'  # Female voice
+# English configuration
+LANGUAGE_CODE_EN=en-US
+VOICE_NAME_EN=en-US-Chirp3-HD-Sulafat
 ```
 
 **Available Voices:**
-- `de-DE-Chirp3-HD-Sulafat` - Chirp3 HD model (current default)
+
+**German (de-DE):**
+- `de-DE-Chirp3-HD-Sulafat` - Chirp3 HD model (recommended)
 - `de-DE-Neural2-A` - Female
 - `de-DE-Neural2-B` - Male
 - `de-DE-Neural2-C` - Female
 - `de-DE-Neural2-D` - Male
+
+**English (en-US):**
+- `en-US-Chirp3-HD-Kore` - Chirp3 HD model (recommended)
+- `en-US-Neural2-A` - Female
+- `en-US-Neural2-C` - Male
+- `en-US-Neural2-E` - Female
+- `en-US-Neural2-F` - Male
 
 See [Google TTS Voice List](https://cloud.google.com/text-to-speech/docs/voices) for more options.
 
