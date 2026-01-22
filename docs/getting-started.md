@@ -67,7 +67,6 @@ cp .env.template .env
 # Edit .env and add your credentials:
 # - GOOGLE_SERVICE_ACCOUNT_JSON_PATH
 # - GEMINI_API_KEY
-# Set USE_WEAVIATE=false for development mode
 nano .env
 
 # Start server with Docker
@@ -195,7 +194,6 @@ python scripts/init_hub_spoke_schema.py --load-test-data
 
 Edit `ai-assistant/.env`:
 ```bash
-USE_WEAVIATE=true
 WEAVIATE_URL=http://localhost:8090  # When running locally
 ```
 

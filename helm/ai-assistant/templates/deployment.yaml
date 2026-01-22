@@ -38,8 +38,6 @@ spec:
             secretKeyRef:
               name: {{ .Chart.Name }}
               key: google-oauth-client-id
-        - name: USE_WEAVIATE
-          value: {{ .Values.env.useWeaviate | quote }}
         - name: WEAVIATE_URL
           value: {{ .Values.env.weaviateUrl | quote }}
         - name: LANGUAGE_CODE

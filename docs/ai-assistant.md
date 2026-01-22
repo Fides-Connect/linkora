@@ -231,9 +231,6 @@ GEMINI_API_KEY=your_gemini_api_key_here
 # Authentication (for ConnectX integration)
 GOOGLE_OAUTH_CLIENT_ID=your-oauth-client-id.apps.googleusercontent.com
 
-# Weaviate Configuration
-USE_WEAVIATE=true  # Required: System exclusively uses Weaviate
-
 # Local Weaviate
 WEAVIATE_URL=http://localhost:8090
 
@@ -248,20 +245,10 @@ LOG_LEVEL=INFO
 
 ## ⚙️ Configuration
 
-### Development vs Production
-
-**Development Mode (No Database):**
-```bash
-USE_WEAVIATE=false
-```
-- Uses in-memory test data
-- No Weaviate dependency
-- Fast startup
-- Good for testing
+### Weaviate Configuration
 
 **Production Mode (With Weaviate):**
 ```bash
-USE_WEAVIATE=true
 WEAVIATE_URL=http://localhost:8090
 ```
 - Full provider search
@@ -526,22 +513,12 @@ See [Helm Documentation](helm.md) for detailed deployment instructions.
 
 ### Environment-Specific Configuration
 
-**Development:**
-```yaml
-replicas: 1
-resources:
-  cpu: 500m
-  memory: 1Gi
-USE_WEAVIATE: false
-```
-
 **Production:**
 ```yaml
 replicas: 3
 resources:
   cpu: 1000m
   memory: 2Gi
-USE_WEAVIATE: true
 WEAVIATE_URL: http://weaviate-service:80
 ```
 

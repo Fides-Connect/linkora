@@ -110,7 +110,6 @@ python scripts/init_hub_spoke_schema.py --load-test-data
 
 Edit `ai-assistant/.env`:
 ```bash
-USE_WEAVIATE=true
 WEAVIATE_URL=http://localhost:8090
 ```
 
@@ -141,7 +140,6 @@ docker-compose up -d
 
 **Configuration (in `ai-assistant/.env`):**
 ```bash
-USE_WEAVIATE=true
 WEAVIATE_URL=http://localhost:8090
 ```
 
@@ -172,7 +170,6 @@ WEAVIATE_URL=http://localhost:8090
 
 3. **Configure AI-Assistant (in `.env`):**
    ```bash
-   USE_WEAVIATE=true
    WEAVIATE_CLUSTER_URL=https://your-cluster.weaviate.network
    WEAVIATE_API_KEY=your-weaviate-cloud-api-key
    ```

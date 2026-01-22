@@ -215,7 +215,6 @@ resources:
     memory: 512Mi
 
 env:
-  USE_WEAVIATE: "false"
   LOG_LEVEL: "DEBUG"
 
 autoscaling:
@@ -238,7 +237,6 @@ resources:
     memory: 2Gi
 
 env:
-  USE_WEAVIATE: "true"
   WEAVIATE_URL: "http://weaviate-service:80"
   LOG_LEVEL: "INFO"
 

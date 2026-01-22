@@ -132,7 +132,6 @@ class AdminService:
                 "language_code": os.getenv('LANGUAGE_CODE', 'de-DE'),
                 "voice_name": os.getenv('VOICE_NAME', 'de-DE-Chirp3-HD-Sulafat'),
                 "log_level": os.getenv('LOG_LEVEL', 'INFO'),
-                "use_weaviate": os.getenv('USE_WEAVIATE', 'true'),
                 "debug_record_audio": os.getenv('DEBUG_RECORD_AUDIO', 'false'),
             }
         }

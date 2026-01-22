@@ -141,8 +141,6 @@ docker-compose up -d
 cd ../ai-assistant
 python scripts/init_hub_spoke_schema.py --load-test-data
 
-# Configure AI-Assistant
-# Edit .env: USE_WEAVIATE=true
 ```
 
 **See**: [Weaviate Documentation](docs/weaviate.md) for detailed configuration.

@@ -64,6 +64,5 @@ def reset_environment(monkeypatch):
     monkeypatch.setenv('GEMINI_API_KEY', 'test-api-key')
     monkeypatch.setenv('LANGUAGE_CODE', 'de-DE')
     monkeypatch.setenv('VOICE_NAME', 'de-DE-Test-Voice')
-    monkeypatch.setenv('USE_WEAVIATE', 'false')
     monkeypatch.setenv('DEBUG_RECORD_AUDIO', 'false')
     monkeypatch.setenv('GOOGLE_TTS_API_CONCURRENCY', '5')
