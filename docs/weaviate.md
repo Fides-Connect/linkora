@@ -685,9 +685,4 @@ results = client.query.get(
 
 - [AI-Assistant Documentation](ai-assistant.md) - Backend integration
 - [Architecture Overview](architecture.md) - System design
-- [Troubleshooting Guide](troubleshooting.md) - Common issues
 - [Weaviate Official Docs](https://weaviate.io/developers/weaviate)
-
----
-
-**Next Steps**: [AI-Assistant Documentation](ai-assistant.md) | [Helm Documentation](helm.md)

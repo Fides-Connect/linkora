@@ -756,7 +756,3 @@ logger.info(f"TTS latency: {tts_time:.2f}s")
 - [Weaviate Documentation](weaviate.md) - Database setup
 - [ConnectX Documentation](connectx.md) - Mobile client
 - [Architecture Overview](architecture.md) - System design
-
----
-
-**Next Steps**: [Weaviate Documentation](weaviate.md) | [ConnectX Documentation](connectx.md)

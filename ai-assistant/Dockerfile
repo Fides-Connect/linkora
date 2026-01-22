@@ -21,11 +21,10 @@ WORKDIR /app
 
 # Copy pyproject and source for dependency caching and install package
 COPY --chown=appuser:appuser pyproject.toml .
+COPY --chown=appuser:appuser main.py .
 COPY --chown=appuser:appuser src/ ./src/
 RUN pip install --no-cache-dir .
 
-# Copy application source code
-COPY --chown=appuser:appuser main.py .
 
 # Switch to non-root user
 USER appuser

@@ -275,31 +275,6 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 
 ### For DevOps
 
-1. **Infrastructure Setup**  
-   - [Terraform Documentation](terraform.md) - GKE cluster provisioning
-   - [Helm Documentation](helm.md) - Kubernetes deployments
-
-2. **CI/CD Pipeline**  
-   Read [CI/CD Documentation](ci-cd.md) for GitHub Actions setup
-
-3. **Production Deployment**  
-   Follow [Installation Guide](installation.md) for production deployment
-
-## 🤝 Contributing
-
-Want to contribute? Check out our [Contributing Guide](contributing.md) for:
-- Code style guidelines
-- Pull request process
-- Development workflow
-- Testing requirements
-
-## 🆘 Need Help?
-
-- **Documentation**: Check component-specific docs
-- **Troubleshooting**: See [Troubleshooting Guide](troubleshooting.md)
-- **Issues**: Search or create GitHub issues
-- **Architecture Questions**: Review [Architecture Overview](architecture.md)
-
----
-
-**Next:** [Architecture Overview](architecture.md) | [Installation Guide](installation.md)
+**Infrastructure Setup**  
+- [Terraform Documentation](terraform.md) - GKE cluster provisioning
+- [Helm Documentation](helm.md) - Kubernetes deployments

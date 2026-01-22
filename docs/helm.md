@@ -569,10 +569,5 @@ kubectl logs -l app=ai-assistant --tail=100
 ## 🔗 Related Documentation
 
 - [Terraform Documentation](terraform.md) - Infrastructure provisioning
-- [CI/CD Documentation](ci-cd.md) - Automated deployment
 - [AI-Assistant Documentation](ai-assistant.md) - Backend server
 - [Weaviate Documentation](weaviate.md) - Vector database
-
----
-
-**Next Steps**: [Terraform Documentation](terraform.md) | [CI/CD Documentation](ci-cd.md)

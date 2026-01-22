@@ -608,10 +608,6 @@ The Terraform infrastructure is managed separately from application deployment:
 - Infrastructure changes via Terraform
 - Requires manual `terraform apply`
 
-**Automated Deployment:**
-- Application deployment via GitHub Actions
-- See [CI/CD Documentation](ci-cd.md)
-
 **Workflow:**
 1. Update Terraform configuration
 2. Run `terraform plan` to review
@@ -621,10 +617,5 @@ The Terraform infrastructure is managed separately from application deployment:
 ## 🔗 Related Documentation
 
 - [Helm Documentation](helm.md) - Kubernetes deployment
-- [CI/CD Documentation](ci-cd.md) - Automated deployment
 - [Architecture Overview](architecture.md) - System design
 - [Getting Started](getting-started.md) - Initial setup
-
----
-
-**Next Steps**: [Helm Documentation](helm.md) | [CI/CD Documentation](ci-cd.md)

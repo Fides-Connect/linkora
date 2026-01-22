@@ -582,7 +582,3 @@ flutter pub global run devtools
 - [AI-Assistant Documentation](ai-assistant.md) - Backend server
 - [API Reference](api-reference.md) - Integration details
 - [Troubleshooting Guide](troubleshooting.md) - Common issues
-
----
-
-**Next Steps**: [AI-Assistant Documentation](ai-assistant.md) | [Testing Guide](testing.md)
