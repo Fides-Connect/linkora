@@ -25,8 +25,13 @@ env:
   googleApplicationCredentials: "/app/secrets/google-application-credentials.json"
   
   # Language and Voice Configuration
-  languageCode: "de-DE"
-  voiceName: "de-DE-Chirp3-HD-Sulafat"
+  languageCodeDe: "de-DE"
+  voiceNameDe: "de-DE-Chirp3-HD-Sulafat"
+  languageCodeEn: "en-US"
+  voiceNameEn: "en-US-Chirp3-HD-Sulafat"
+
+  # Gemini LLM Model
+  geminiModel: "gemini-3-flash-preview"
   
   # Server Configuration
   host: "0.0.0.0"

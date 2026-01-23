@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class LLMService:
     """Service for language model interactions using LangChain and Gemini."""
     
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash-exp",
+    def __init__(self, api_key: str, model: str = "gemini-3-flash-preview",
                  temperature: float = 0.9, max_output_tokens: int = 512):
         """
         Initialize LLM service.
@@ -67,6 +67,30 @@ class LLMService:
         history = self.get_session_history(session_id)
         history.add_message(message)
         logger.debug(f"Added message to session {session_id}: {type(message).__name__}")
+
+    @staticmethod
+    def _content_to_text(content: Any) -> str:
+        """Normalize chunk content to plain text for models that return structured parts."""
+        if isinstance(content, str):
+            return content
+
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    # Gemini can return part dicts like {"text": "..."}
+                    text = item.get("text")
+                    if text:
+                        parts.append(text)
+                else:
+                    text = getattr(item, "text", None)
+                    if text:
+                        parts.append(text)
+            return "".join(parts)
+
+        return str(content)
     
     def create_chain_with_history(self, prompt_template: ChatPromptTemplate, session_id: str):
         """
@@ -114,8 +138,10 @@ class LLMService:
                 config={"configurable": {"session_id": session_id}}
             ):
                 if chunk.content:
-                    logger.debug(f"LLM stream chunk: '{chunk.content}'")
-                    yield chunk.content
+                    text = self._content_to_text(chunk.content)
+                    logger.debug(f"LLM stream chunk: '{text}'")
+                    if text:
+                        yield text
             
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)
@@ -135,7 +161,7 @@ class LLMService:
             full_response = ""
             async for chunk in self.llm.astream(messages):
                 if chunk.content:
-                    full_response += chunk.content
+                    full_response += self._content_to_text(chunk.content)
             
             logger.debug(f"Generated response: '{full_response[:100]}...'")
             return full_response.strip()

@@ -38,14 +38,18 @@ spec:
             secretKeyRef:
               name: {{ .Chart.Name }}
               key: google-oauth-client-id
-        - name: USE_WEAVIATE
-          value: {{ .Values.env.useWeaviate | quote }}
         - name: WEAVIATE_URL
           value: {{ .Values.env.weaviateUrl | quote }}
-        - name: LANGUAGE_CODE
-          value: {{ .Values.env.languageCode | quote }}
-        - name: VOICE_NAME
-          value: {{ .Values.env.voiceName | quote }}
+        - name: LANGUAGE_CODE_DE
+          value: {{ .Values.env.languageCodeDe | quote }}
+        - name: VOICE_NAME_DE
+          value: {{ .Values.env.voiceNameDe | quote }}
+        - name: LANGUAGE_CODE_EN
+          value: {{ .Values.env.languageCodeEn | quote }}
+        - name: VOICE_NAME_EN
+          value: {{ .Values.env.voiceNameEn | quote }}
+        - name: GEMINI_MODEL
+          value: {{ .Values.env.geminiModel | quote }}
         - name: HOST
           value: {{ .Values.env.host | quote }}
         - name: PORT
