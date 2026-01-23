@@ -51,7 +51,7 @@ User speaks → ConnectX captures audio → WebRTC stream → AI-Assistant
                                                               ↓
                                                       Text transcript
                                                               ↓
-                                                    Gemini 2.0 LLM
+                                                    Gemini LLM
                                                               ↓
                                                       AI response text
                                                               ↓
@@ -149,7 +149,7 @@ Server → Network → RTC DataChannel → AudioTrack → Speaker
 - **Language**: Python 3.11+
 - **Framework**: FastAPI (async)
 - **WebRTC**: aiortc library
-- **APIs**: Google Cloud STT/TTS, Gemini 2.0
+- **APIs**: Google Cloud STT/TTS, Gemini
 - **Database**: Weaviate (vector search)
 - **Container**: Docker
 
@@ -320,7 +320,7 @@ search_providers(query, filters)
    Audio Stream → Google Cloud STT (gRPC) → Text Transcript
 
 5. LLM Processing
-   Transcript → Gemini 2.0 Flash (streaming) → AI Response
+   Transcript → Gemini → AI Response
 
 6. Provider Search (if needed)
    Query → Weaviate Hybrid Search → Top Providers

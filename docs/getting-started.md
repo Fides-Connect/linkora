@@ -15,7 +15,7 @@ Linkora is a complete voice-based AI assistant platform that enables natural voi
 - 🎙️ Real-time voice interaction with minimal latency
 - 🔒 Secure architecture (API keys stay on server)
 - ⚡ WebRTC streaming for low latency
-- 🤖 Powered by Google Gemini 2.0, Cloud Speech-to-Text, and TTS
+- 🤖 Powered by Google Gemini, Cloud Speech-to-Text, and TTS
 - 📱 Cross-platform (iOS and Android)
 - 🐳 Containerized for easy deployment
 - 🚀 Horizontally scalable stateless design

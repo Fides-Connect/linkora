@@ -21,7 +21,7 @@ The AI-Assistant is the Python-based WebRTC server that powers the Linkora voice
 The AI-Assistant server is a containerized service that:
 - Receives audio streams from clients via WebRTC
 - Converts speech to text using Google Cloud Speech API
-- Processes queries using Google Gemini 2.0 Flash
+- Processes queries using Google Gemini 3.0 Flash
 - Generates natural-sounding responses using Google Cloud TTS
 - Streams audio responses back to clients
 - Manages multi-stage conversations
@@ -144,7 +144,7 @@ AudioProcessor
             │   ├─→ Stage Management
             │   └─→ Context Tracking
             │
-            ├─→ Gemini 2.0 (Streaming)
+            ├─→ Gemini 3.0 (Streaming)
             │       ↓
             │   AI Response Stream
             │
