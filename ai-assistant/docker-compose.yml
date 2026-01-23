@@ -20,7 +20,6 @@ services:
       - PORT=8080
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - GOOGLE_TTS_API_CONCURRENCY=${GOOGLE_TTS_API_CONCURRENCY:-5}
-      - USE_WEAVIATE=${USE_WEAVIATE:-true}
       - WEAVIATE_URL=${WEAVIATE_URL:-http://weaviate:8080}
     restart: unless-stopped
     networks:
