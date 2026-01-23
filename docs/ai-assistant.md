@@ -607,27 +607,6 @@ TIMEOUT_SECONDS = 300
 - LLM: Depends on Google API
 - Recommended: 1 CPU per instance
 
-### Scaling Strategy
-
-**Horizontal Scaling:**
-```bash
-# Increase replicas
-kubectl scale deployment ai-assistant --replicas=5
-```
-
-**Load Balancing:**
-- Use Kubernetes LoadBalancer service
-- No session affinity required (stateless)
-- Health checks on `/health` endpoint
-
-**Auto-Scaling:**
-```yaml
-# HorizontalPodAutoscaler
-minReplicas: 2
-maxReplicas: 10
-targetCPUUtilizationPercentage: 70
-```
-
 ## 🐛 Troubleshooting
 
 ### Common Issues
