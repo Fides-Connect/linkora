@@ -14,8 +14,11 @@ services:
     environment:
       - GOOGLE_SERVICE_ACCOUNT_JSON_PATH=/app/credentials.json
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - LANGUAGE_CODE=${LANGUAGE_CODE:-de-DE}
-      - VOICE_NAME=${VOICE_NAME:-de-DE-Chirp3-HD-Sulafat}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - LANGUAGE_CODE_DE=${LANGUAGE_CODE_DE:-de-DE}
+      - VOICE_NAME_DE=${VOICE_NAME_DE:-de-DE-Chirp3-HD-Sulafat}
+      - LANGUAGE_CODE_EN=${LANGUAGE_CODE_EN:-en-US}
+      - VOICE_NAME_EN=${VOICE_NAME_EN:-en-US-Chirp3-HD-Sulafat}
       - HOST=0.0.0.0
       - PORT=8080
       - LOG_LEVEL=${LOG_LEVEL:-INFO}

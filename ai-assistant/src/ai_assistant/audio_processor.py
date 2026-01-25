@@ -84,7 +84,7 @@ class AudioProcessor:
             gemini_api_key=os.getenv('GEMINI_API_KEY'),
             language_code=language_code,
             voice_name=voice_name,
-            llm_model=os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview'),
+            llm_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
             session_id=self.connection_id
         )
         
