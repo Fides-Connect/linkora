@@ -86,18 +86,9 @@ async def main():
     logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}")
     logger.debug(f"  Credentials: {os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')}")
     
-    # Initialize AI Assistant
-    logger.info("Initializing AI Assistant...")
-    ai_assistant = AIAssistant(
-        gemini_api_key=os.getenv('GEMINI_API_KEY'),
-        language_code=os.getenv('LANGUAGE_CODE_DE', 'de-DE'),
-        voice_name=os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat'),
-        llm_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
-    )
-    
     # Initialize signaling server
     logger.info("Initializing signaling server...")
-    signaling_server = SignalingServer(ai_assistant)
+    signaling_server = SignalingServer()
     
     # Initialize admin service
     logger.info("Initializing admin service...")

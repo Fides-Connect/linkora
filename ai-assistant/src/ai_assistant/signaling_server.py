@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 class SignalingServer:
     """Manages WebSocket connections and WebRTC signaling."""
     
-    def __init__(self, ai_assistant):
-        self.ai_assistant = ai_assistant
+    def __init__(self):
         self.active_connections: Dict[str, PeerConnectionHandler] = {}
         
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
@@ -41,7 +40,6 @@ class SignalingServer:
         logger.debug(f"Creating PeerConnectionHandler for {connection_id}")
         handler = PeerConnectionHandler(
             connection_id=str(connection_id),
-            ai_assistant=self.ai_assistant,
             websocket=ws,
             user_id=user_id,
             language=language

@@ -64,8 +64,7 @@ def ai_assistant(mock_data_provider):
         
         assistant = AIAssistant(
             gemini_api_key='test-api-key',
-            language_code='de-DE',
-            voice_name='de-DE-Test-Voice',
+            language='de',
             session_id='test-session'
         )
         
@@ -78,7 +77,7 @@ class TestAIAssistantInitialization:
     def test_initialization_with_defaults(self, ai_assistant):
         """Test that AI Assistant initializes with default values."""
         assert ai_assistant.language_code == 'de-DE'
-        assert ai_assistant.voice_name == 'de-DE-Test-Voice'
+        assert ai_assistant.voice_name == 'de-DE-Chirp3-HD-Sulafat'
         assert ai_assistant.session_id == 'test-session'
         assert ai_assistant.current_stage == ConversationStage.GREETING
     

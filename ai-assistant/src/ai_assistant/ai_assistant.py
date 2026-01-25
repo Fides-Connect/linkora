@@ -23,14 +23,27 @@ AGENT_NAME = "Elin"
 COMPANY_NAME = "FidesConnect"
 USER_NAME_PLACEHOLDER = ""
 
+
+def get_language_config(language: str) -> tuple[str, str]:
+    """Get language code and voice name based on language."""
+    if language == 'en':
+        # English configuration - using Chirp3-HD voice with full identifier
+        language_code = os.getenv('LANGUAGE_CODE_EN', 'en-US')
+        voice_name = os.getenv('VOICE_NAME_EN', 'en-US-Chirp3-HD-Sulafat')
+    else:
+        # German configuration (default)
+        language_code = os.getenv('LANGUAGE_CODE_DE', 'de-DE')
+        voice_name = os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat')
+    
+    return language_code, voice_name
+
 class AIAssistant:
     """
     AI Assistant orchestrator that coordinates services.
     This class acts as a facade, delegating work to specialized services.
     """
     
-    def __init__(self, gemini_api_key: str, language_code: str = 'de-DE', 
-                 voice_name: str = 'de-DE-Chirp3-HD-Sulafat',
+    def __init__(self, gemini_api_key: str, language: str = 'de',
                  llm_model: str = 'gemini-2.5-flash',
                  session_id: Optional[str] = None):
         """
@@ -38,15 +51,15 @@ class AIAssistant:
         
         Args:
             gemini_api_key: API key for Gemini LLM
-            language_code: Language code for STT/TTS
-            voice_name: Voice name for TTS
+            language: Language code ('de' or 'en')
             llm_model: LLM model name
             session_id: Session identifier
         """
-        self.language_code = language_code
-        self.voice_name = voice_name
+        self.language = language
         self.session_id = session_id or "default"
-        self.language = 'de'  # Default language, will be set by AudioProcessor
+        
+        # Get language-specific configuration
+        self.language_code, self.voice_name = get_language_config(language)
         
         # Initialize data provider
         self.data_provider = get_data_provider()
@@ -56,14 +69,14 @@ class AIAssistant:
         
         # Initialize services
         self.stt_service = SpeechToTextService(
-            language_code=language_code,
+            language_code=self.language_code,
             credentials=credentials
         )
         
         max_concurrency = int(os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5'))
         self.tts_service = TextToSpeechService(
-            language_code=language_code,
-            voice_name=voice_name,
+            language_code=self.language_code,
+            voice_name=self.voice_name,
             max_concurrent_requests=max_concurrency,
             credentials=credentials
         )
