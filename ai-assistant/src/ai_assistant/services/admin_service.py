@@ -129,8 +129,11 @@ class AdminService:
             "uptime_human": str(uptime),
             "startup_time": self.startup_time.isoformat(),
             "environment": {
-                "language_code": os.getenv('LANGUAGE_CODE', 'de-DE'),
-                "voice_name": os.getenv('VOICE_NAME', 'de-DE-Chirp3-HD-Sulafat'),
+                "gemini_model": os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
+                "language_code_de": os.getenv('LANGUAGE_CODE_DE', 'de-DE'),
+                "voice_name_de": os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat'),
+                "language_code_en": os.getenv('LANGUAGE_CODE_EN', 'en-US'),
+                "voice_name_en": os.getenv('VOICE_NAME_EN', 'en-US-Chirp3-HD-Sulafat'),
                 "log_level": os.getenv('LOG_LEVEL', 'INFO'),
                 "debug_record_audio": os.getenv('DEBUG_RECORD_AUDIO', 'false'),
             }

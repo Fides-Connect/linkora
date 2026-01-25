@@ -74,23 +74,25 @@ async def main():
     
     # Log configuration
     logger.info("Configuration:")
-    logger.info(f"  Language: {os.getenv('LANGUAGE_CODE', 'de-DE')}")
-    logger.info(f"  Voice: {os.getenv('VOICE_NAME', 'de-DE-Chirp3-HD-Sulafat')}")
+    logger.info(f"  Language DE: {os.getenv('LANGUAGE_CODE_DE', 'de-DE')}")
+    logger.info(f"  Voice DE: {os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat')}")
+    logger.info(f"  Language EN: {os.getenv('LANGUAGE_CODE_EN', 'en-US')}")
+    logger.info(f"  Voice EN: {os.getenv('VOICE_NAME_EN', 'en-US-Chirp3-HD-Sulafat')}")
     logger.info(f"  Host: {os.getenv('HOST', '0.0.0.0')}")
     logger.info(f"  Port: {os.getenv('PORT', 8080)}")
     logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
     logger.info(f"  Google TTS API Concurrency: {os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5')}")
     logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
-    logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview')}")
+    logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}")
     logger.debug(f"  Credentials: {os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')}")
     
     # Initialize AI Assistant
     logger.info("Initializing AI Assistant...")
     ai_assistant = AIAssistant(
         gemini_api_key=os.getenv('GEMINI_API_KEY'),
-        language_code=os.getenv('LANGUAGE_CODE', 'de-DE'),
-        voice_name=os.getenv('VOICE_NAME', 'de-DE-Chirp3-HD-Sulafat'),
-        llm_model=os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview')
+        language_code=os.getenv('LANGUAGE_CODE_DE', 'de-DE'),
+        voice_name=os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat'),
+        llm_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
     )
     
     # Initialize signaling server

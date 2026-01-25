@@ -89,8 +89,8 @@ class TestAdminService:
         mock_signaling_server.total_connections = 10
         
         with patch.dict(os.environ, {
-            'LANGUAGE_CODE': 'en-US',
-            'VOICE_NAME': 'en-US-Neural2-C',
+            'LANGUAGE_CODE_EN': 'en-US',
+            'VOICE_NAME_EN': 'en-US-Neural2-C',
         }):
             admin_service = AdminService(signaling_server=mock_signaling_server)
             info = admin_service.get_system_info()
@@ -98,7 +98,7 @@ class TestAdminService:
             assert info['status'] == 'running'
             assert info['version'] == '1.0.0'
             assert 'uptime_seconds' in info
-            assert info['environment']['language_code'] == 'en-US'
+            assert info['environment']['language_code_en'] == 'en-US'
             assert info['websocket_connections']['active'] == 3
     
     @pytest.mark.asyncio

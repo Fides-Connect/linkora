@@ -31,7 +31,7 @@ class AIAssistant:
     
     def __init__(self, gemini_api_key: str, language_code: str = 'de-DE', 
                  voice_name: str = 'de-DE-Chirp3-HD-Sulafat',
-                 llm_model: str = 'gemini-3-flash-preview',
+                 llm_model: str = 'gemini-2.5-flash',
                  session_id: Optional[str] = None):
         """
         Initialize AI Assistant with all required services.
@@ -40,6 +40,7 @@ class AIAssistant:
             gemini_api_key: API key for Gemini LLM
             language_code: Language code for STT/TTS
             voice_name: Voice name for TTS
+            llm_model: LLM model name
             session_id: Session identifier
         """
         self.language_code = language_code
@@ -70,8 +71,8 @@ class AIAssistant:
         self.llm_service = LLMService(
             api_key=gemini_api_key,
             model=llm_model,
-            temperature=0.9,
-            max_output_tokens=512
+            temperature=0.2,
+            max_output_tokens=2048
         )
         
         self.conversation_service = ConversationService(
