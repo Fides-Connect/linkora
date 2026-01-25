@@ -81,7 +81,7 @@ async def main():
     logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
     logger.info(f"  Google TTS API Concurrency: {os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5')}")
     logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
-    logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview')}")
+    logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}")
     logger.debug(f"  Credentials: {os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')}")
     
     # Initialize AI Assistant
@@ -90,7 +90,7 @@ async def main():
         gemini_api_key=os.getenv('GEMINI_API_KEY'),
         language_code=os.getenv('LANGUAGE_CODE', 'de-DE'),
         voice_name=os.getenv('VOICE_NAME', 'de-DE-Chirp3-HD-Sulafat'),
-        llm_model=os.getenv('GEMINI_MODEL', 'gemini-3-flash-preview')
+        llm_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
     )
     
     # Initialize signaling server
