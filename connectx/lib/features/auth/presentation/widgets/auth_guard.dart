@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../services/auth_service.dart';
+import '../../../../services/auth_service.dart';
 
 // A widget that guards its child by checking if the user is authenticated.
 // If not authenticated, it redirects to the /start page.

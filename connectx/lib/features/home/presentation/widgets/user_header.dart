@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import '../../services/auth_service.dart';
+import '../../../../services/auth_service.dart';
 
 class UserHeader extends StatelessWidget {
   final User? user;

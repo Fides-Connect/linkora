@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_signin_button/flutter_signin_button.dart';
 
-import '../services/auth_service.dart';
-import '../theme.dart';
-import '../widgets/app_background.dart';
-import '../localization/app_localizations.dart';
-import '../main.dart';
+import '../../../../services/auth_service.dart';
+import '../../../../theme.dart';
+import '../../../../core/widgets/app_background.dart';
+import '../../../../localization/app_localizations.dart';
+import '../../../../main.dart';
 
 class StartPage extends StatefulWidget {
   const StartPage({super.key});
