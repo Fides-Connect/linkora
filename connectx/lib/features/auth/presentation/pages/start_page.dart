@@ -2,61 +2,23 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_signin_button/flutter_signin_button.dart';
+import 'package:provider/provider.dart';
 
-import '../../../../services/auth_service.dart';
+import '../../../../core/providers/user_provider.dart';
 import '../../../../theme.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../main.dart';
 
-class StartPage extends StatefulWidget {
+class StartPage extends StatelessWidget {
   const StartPage({super.key});
 
-  @override
-  State<StartPage> createState() => _StartPageState();
-}
-
-class _StartPageState extends State<StartPage> {
-  final AuthService _auth = AuthService();
-  
-  bool _loading = false;
-  bool _initialized = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    // Initialize AuthService
-    _auth
-        .initialize()
-        .then((_) {
-          if (!mounted) return;
-          setState(() {
-            _initialized = true;
-          });
-        })
-        .catchError((e) {
-          if (mounted) setState(() => _error = 'Init failed: $e');
-        });
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
-  Future<void> _onGoogleSignInPressed() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-
+  Future<void> _onGoogleSignInPressed(BuildContext context) async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
     try {
-      await _auth.signInWithGoogle();
+      await userProvider.signInWithGoogle();
     } catch (e) {
-      setState(() => _error = 'Sign-in failed: $e');
-    } finally {
-      setState(() => _loading = false);
+      // Error is stored in provider, ui updates automatically via Consumer
     }
   }
 
@@ -98,61 +60,66 @@ class _StartPageState extends State<StartPage> {
             const AppBackground(),
             SafeArea(
               child: Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        localizations?.welcomeTitle ?? 'Welcome to ConnectX',
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        localizations?.welcomeMessage ?? 'Sign in to start communicating with the AI assistant',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      SizedBox(height: logoTextGap),
-                      SizedBox(
-                        width: 100,
-                        height: 100,
-                        child: Image.asset(
-                          'assets/images/LinkoraLogo.png',
-                          fit: BoxFit.contain,
-                          semanticLabel: 'Linkora Logo',
-                        ),
-                      ),
-                      SizedBox(height: logoTextGap),
-                      if (!_initialized)
-                        const SizedBox(
-                          width: 220,
-                          height: 48,
-                          child: Center(child: CircularProgressIndicator()),
-                        )
-                      else ...[
-                        // Google Sign-In Button
-                        SignInButton(
-                          Buttons.GoogleDark,
-                          onPressed: _loading ? null : _onGoogleSignInPressed,
-                        ),
-                      ],
-                      if (_error != null) ...[
-                        const SizedBox(height: 12),
-                        Text(
-                          _error!,
-                          style: TextStyle(
-                            color: _error!.contains('Code sent') ? Colors.green : Colors.red,
+                child: Consumer<UserProvider>(
+                    builder: (context, userProvider, _) {
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                localizations?.welcomeTitle ?? 'Welcome to ConnectX',
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                localizations?.welcomeMessage ?? 'Sign in to start communicating with the AI assistant',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                              SizedBox(height: logoTextGap),
+                              SizedBox(
+                                width: 100,
+                                height: 100,
+                                child: Image.asset(
+                                  'assets/images/LinkoraLogo.png',
+                                  fit: BoxFit.contain,
+                                  semanticLabel: 'Linkora Logo',
+                                ),
+                              ),
+                              SizedBox(height: logoTextGap),
+                              
+                              if (userProvider.isLoading)
+                                const SizedBox(
+                                  width: 220,
+                                  height: 48,
+                                  child: Center(child: CircularProgressIndicator()),
+                                )
+                              else ...[
+                                // Google Sign-In Button
+                                SignInButton(
+                                  Buttons.GoogleDark,
+                                  onPressed: () => _onGoogleSignInPressed(context),
+                                ),
+                              ],
+                              if (userProvider.error != null) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  userProvider.error!,
+                                  style: TextStyle(
+                                    color: userProvider.error!.contains('Code sent') ? Colors.green : Colors.red,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ],
                           ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ],
-                  ),
+                        );
+                    }
                 ),
               ),
             ),

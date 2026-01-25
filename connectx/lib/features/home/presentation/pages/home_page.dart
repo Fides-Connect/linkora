@@ -1,76 +1,70 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/app_types.dart';
-import '../../../../models/chat_message.dart';
-import '../../../../services/auth_service.dart';
 import '../../../../services/notification_service.dart';
-import '../../../../services/speech_service.dart';
 import '../../../../utils/constants.dart';
 import '../../../../utils/permission_helper.dart';
+import '../viewmodels/home_view_model.dart';
 import '../widgets/ai_neural_visualizer.dart';
 import '../widgets/chat_display.dart';
 import '../widgets/mic_button.dart';
 import '../widgets/user_header.dart';
 
-class ConnectXHomePage extends StatefulWidget {
+class ConnectXHomePage extends StatelessWidget {
   const ConnectXHomePage({super.key});
 
   @override
-  State<ConnectXHomePage> createState() => _ConnectXHomePageState();
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => HomeViewModel(),
+      child: const _ConnectXHomePageContent(),
+    );
+  }
 }
 
-class _ConnectXHomePageState extends State<ConnectXHomePage> {
-  late SpeechService _speechService;
-  final AuthService _auth = AuthService();
-  User? _user;
+class _ConnectXHomePageContent extends StatefulWidget {
+  const _ConnectXHomePageContent();
 
-  StreamSubscription<User?>? _userSub;
+  @override
+  State<_ConnectXHomePageContent> createState() => _ConnectXHomePageContentState();
+}
 
-  ConversationState _conversationState = ConversationState.idle;
-  final List<ChatMessage> _chatMessages = [];
-  String _currentMessage = '';
-  String _statusText = '';
-  bool _isInitialized = false;
-
-  bool _lastMessageWasUser = false;
-
+class _ConnectXHomePageContentState extends State<_ConnectXHomePageContent> {
   @override
   void initState() {
     super.initState();
-    // Request permissions after widget is built and user has signed in
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await PermissionHelper.requestMicrophonePermission(context);
       await PermissionHelper.requestNotificationPermission(context);
-    });
-  }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_isInitialized) {
-      _initializeServices();
-      _isInitialized = true;
-    }
+      if (mounted) {
+        final localizations = AppLocalizations.of(context);
+        final locale = Localizations.localeOf(context);
+        context.read<HomeViewModel>().initialize(
+              localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
+              locale.languageCode,
+            );
+      }
+    });
+
+    _setupForegroundMessageHandler();
   }
 
   void _setupForegroundMessageHandler() {
-    // Handle foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       debugPrint('Foreground message received: ${message.messageId}');
       debugPrint('Title: ${message.notification?.title}');
       debugPrint('Body: ${message.notification?.body}');
-      
-      // Show notification using NotificationService
+
       if (message.notification != null) {
         final notification = message.notification!;
-        // Use message hashCode as notification ID to ensure uniqueness
-        final notificationId = message.messageId?.hashCode ?? DateTime.now().millisecondsSinceEpoch;
+        final notificationId = message.messageId?.hashCode ??
+            DateTime.now().millisecondsSinceEpoch;
         NotificationService().showNotification(
           id: notificationId,
           title: notification.title ?? 'New Message',
@@ -79,184 +73,53 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       }
     });
 
-    // Handle notification taps when app is in foreground or background
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       debugPrint('Notification opened from background: ${message.messageId}');
-      // Handle navigation or custom action when user taps notification
-      if (message.data.isNotEmpty) {
-        debugPrint('Message data: ${message.data}');
-        // You can navigate to specific screens based on message.data
-      }
     });
   }
 
-
-  void _initializeServices() {
-    _speechService = SpeechService();
-
-    // Initialize status text with localization
+  void _handleError(String error) {
     final localizations = AppLocalizations.of(context);
-    if (localizations != null) {
-      _statusText = localizations.tapMicrophoneToStart;
-    }
-
-    // Set language code based on current locale
-    final locale = Localizations.localeOf(context);
-    final languageCode = locale.languageCode; // 'de' or 'en'
-    _speechService.setLanguageCode(languageCode);
-    debugPrint('Main: Set speech service language to $languageCode');
-
-    // Subscribe to auth changes
-    _user = _auth.currentUser;
-    _userSub = _auth.onCurrentUserChanged.listen((u) {
-      setState(() => _user = u);
-    });
-
-    // Set up FCM foreground message handler
-    _setupForegroundMessageHandler();
-
-    // Set up speech service callbacks
-    _speechService.onSpeechStart = () {
-      setState(() {
-        _conversationState = ConversationState.listening;
-      });
-    };
-
-    _speechService.onConnected = () {
-      setState(() {
-        // Clear status text so chat messages appear immediately
-        _statusText = '';
-      });
-    };
-
-    _speechService.onSpeechEnd = () {
-      setState(() {
-        _conversationState = ConversationState.idle;
-      });
-    };
-
-    _speechService.onDisconnected = () {
-      setState(() {
-        _conversationState = ConversationState.idle;
-      });
-    };
-
-    _speechService.onChatMessage = (String text, bool isUser, bool isChunk) {
-      setState(() {
-        if (isUser) {
-          _currentMessage = text;
-          _chatMessages.add(ChatMessage(text: text, isUser: true));
-          _lastMessageWasUser = true;
-          _conversationState = ConversationState.processing;
-        } else {
-          // AI Message
-          if (_lastMessageWasUser || _chatMessages.isEmpty || _chatMessages.last.isUser) {
-            // New AI response starting (after user message OR first message OR last was user)
-            _currentMessage = text;
-            _chatMessages.add(ChatMessage(text: text, isUser: false));
-            _lastMessageWasUser = false;
-            _conversationState = ConversationState.listening; // AI is speaking
-          } else {
-            // Appending chunks to existing AI response
-            _currentMessage += text;
-            // Update the last message in the list
-            if (_chatMessages.isNotEmpty && !_chatMessages.last.isUser) {
-              _chatMessages[_chatMessages.length - 1] = ChatMessage(text: _currentMessage, isUser: false);
-            }
-          }
-        }
-      });
-    };
-
-    // end _initializeServices
-  }
-
-
-  @override
-  void dispose() {
-    _userSub?.cancel();
-    super.dispose();
-  }
-
-
-  void _startChat() async {
-    final localizations = AppLocalizations.of(context);
-    try {
-      await _speechService.startSpeech();
-    } catch (e) {
-      final errorMsg = e.toString();
-      setState(() {
-        _statusText = 'Error: $errorMsg';
-        _conversationState = ConversationState.idle;
-      });
-      // Show error dialog
-      if (mounted && localizations != null) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(localizations.errorTitle),
-            content: Text('${localizations.errorOccurred}\n\n$errorMsg'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(localizations.okButton),
-              ),
-            ],
+    if (localizations == null) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(localizations.errorTitle),
+        content: Text('${localizations.errorOccurred}\n\n$error'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.read<HomeViewModel>().clearError();
+            },
+            child: Text(localizations.okButton),
           ),
-        );
-      }
-    }
+        ],
+      ),
+    );
   }
-
-
-  Future<void> _stopChat() async {
-    // Provide haptic feedback
-    HapticFeedback.mediumImpact();
-    try {
-      _speechService.stopSpeech();
-    } catch (e) {
-      debugPrint('Error stopping chat: $e');
-    }
-
-    setState(() {
-      _conversationState = ConversationState.idle;
-      _currentMessage = '';
-      _chatMessages.clear();
-      // Reset to initial status text
-      final localizations = AppLocalizations.of(context);
-      if (localizations != null) {
-        _statusText = localizations.tapMicrophoneToStart;
-      }
-    });
-  }
-
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('Building ConnectXHomePage with user: $_user');
+    // Watch the VM state
+    final viewModel = context.watch<HomeViewModel>();
+
     return Scaffold(
       body: SafeArea(
         child: Stack(
           children: [
-            // Background gradient
             const AppBackground(),
+            const UserHeader(),
 
-            // User avatar and logout button (top-right)
-            UserHeader(user: _user, auth: _auth),
-
-            // Main Layout
             Column(
               children: [
-                // const SizedBox(height: 20),
-                // Topics List (Bullet points style)
-                //TopicsList(topics: _topics),
-
-                // AI Neural Visualizer
                 Expanded(
                   child: Center(
                     child: AINeuralVisualizer(
-                      isListening: _conversationState == ConversationState.listening,
-                      isProcessing: _conversationState == ConversationState.processing,
+                      isListening:
+                          viewModel.conversationState == ConversationState.listening,
+                      isProcessing:
+                          viewModel.conversationState == ConversationState.processing,
                       size: AppConstants.neuralVisualizerSize,
                       primaryColor: AppConstants.primaryCyan,
                       secondaryColor: AppConstants.primaryPurple,
@@ -264,21 +127,31 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
                     ),
                   ),
                 ),
-
-                // Two Liners Chat Text
                 ChatDisplay(
-                  messages: _chatMessages,
-                  statusText: _statusText,
+                  messages: viewModel.chatMessages,
+                  statusText: viewModel.statusText,
                 ),
-
                 const SizedBox(height: 40),
-
-                // Mic Button
                 MicButton(
-                  state: _conversationState,
-                  onTap: _conversationState != ConversationState.idle ? _stopChat : _startChat,
+                  state: viewModel.conversationState,
+                  onTap: () async {
+                    if (viewModel.conversationState != ConversationState.idle) {
+                      HapticFeedback.mediumImpact();
+                      final localizations = AppLocalizations.of(context);
+                      await viewModel.stopChat(
+                          localizations?.tapMicrophoneToStart ??
+                              'Tap microphone to start');
+                    } else {
+                      await viewModel.startChat();
+                      if (context.mounted) {
+                        final err = viewModel.error;
+                        if (err != null) {
+                          _handleError(err);
+                        }
+                      }
+                    }
+                  },
                 ),
-
                 const SizedBox(height: 60),
               ],
             ),

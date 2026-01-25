@@ -1,33 +1,30 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../../../../services/auth_service.dart';
+import 'package:provider/provider.dart';
+import '../../../../core/providers/user_provider.dart';
 
 // A widget that guards its child by checking if the user is authenticated.
 // If not authenticated, it redirects to the /start page.
 class AuthGuard extends StatelessWidget {
   final Widget child;
-  final AuthService auth;
 
-  const AuthGuard({required this.child, required this.auth, super.key});
+  const AuthGuard({required this.child, super.key});
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<User?>(
-      stream: auth.onCurrentUserChanged,
-      initialData: auth.currentUser,
-      builder: (context, snapshot) {
-        final user = snapshot.data;
-
-        if (user == null) {
+    return Consumer<UserProvider>(
+      builder: (context, userProvider, _) {
+        if (!userProvider.isAuthenticated && !userProvider.isLoading) {
           debugPrint('AuthGuard: No user logged in, redirecting to /start');
-          // Redirect to /start if the user is not logged in
           WidgetsBinding.instance.addPostFrameCallback((_) {
             Navigator.of(context).pushNamedAndRemoveUntil('/start', (route) => false);
           });
-          return const SizedBox(); // Return an empty widget while redirecting
+          return const SizedBox();
         }
-        debugPrint('AuthGuard: User is logged in: ${user.email}');
-        // If the user is logged in, show the child widget
+        
+        if (userProvider.isLoading && !userProvider.isAuthenticated) {
+             return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+
         return child;
       },
     );

@@ -5,13 +5,14 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
 
+import 'core/providers/user_provider.dart';
 import 'features/auth/presentation/pages/start_page.dart';
 import 'features/auth/presentation/widgets/auth_guard.dart';
 import 'features/home/presentation/pages/home_page.dart';
 import 'firebase_options.dart';
 import 'localization/app_localizations.dart';
-import 'services/auth_service.dart';
 import 'theme.dart';
 
 /// Background message handler - must be top-level function
@@ -35,20 +36,18 @@ void main() async {
   // Set up background message handler
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  // Create a single AuthService instance and initialize it.
-  final auth = AuthService();
-  try {
-    await auth.initialize();
-  } catch (e) {
-    debugPrint('Error initializing AuthService: $e');
-  }
-
-  runApp(ConnectXApp(auth: auth));
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => UserProvider()),
+      ],
+      child: const ConnectXApp(),
+    ),
+  );
 }
 
 class ConnectXApp extends StatefulWidget {
-  final AuthService auth;
-  const ConnectXApp({required this.auth, super.key});
+  const ConnectXApp({super.key});
 
   @override
   State<ConnectXApp> createState() => _ConnectXAppState();
@@ -85,35 +84,25 @@ class _ConnectXAppState extends State<ConnectXApp> {
         Locale('en', ''),
         Locale('de', ''),
       ],
-      home: StreamBuilder(
-        stream: widget.auth.onCurrentUserChanged,
-        initialData: widget.auth.currentUser,
-        builder: (context, snapshot) {
-          // Log the connection state and data
-          debugPrint('Auth StreamBuilder - ConnectionState: ${snapshot.connectionState}, HasData: ${snapshot.hasData}, User: ${snapshot.data?.email}');
-          
-          // Wait for the stream to be ready
-          if (snapshot.connectionState == ConnectionState.waiting && snapshot.data == null) {
+      home: Consumer<UserProvider>(
+        builder: (context, userProvider, child) {
+          if (userProvider.isLoading && userProvider.user == null) {
             return const Scaffold(
               body: Center(child: CircularProgressIndicator()),
             );
           }
           
-          final user = snapshot.data;
-          if (user != null) {
-            debugPrint('User is signed in: ${user.email}');
+          if (userProvider.isAuthenticated) {
             return const ConnectXHomePage();
           } else {
-            debugPrint('No user signed in, showing StartPage');
             return const StartPage();
           }
         },
       ),
       routes: {
         '/start': (context) => const StartPage(),
-        '/home': (context) => AuthGuard(
-              auth: widget.auth,
-              child: const ConnectXHomePage(),
+        '/home': (context) => const AuthGuard(
+              child: ConnectXHomePage(),
             ),
       },
       debugShowCheckedModeBanner: false,
