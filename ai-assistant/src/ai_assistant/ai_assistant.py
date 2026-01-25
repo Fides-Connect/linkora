@@ -40,6 +40,7 @@ class AIAssistant:
             gemini_api_key: API key for Gemini LLM
             language_code: Language code for STT/TTS
             voice_name: Voice name for TTS
+            llm_model: LLM model name
             session_id: Session identifier
         """
         self.language_code = language_code
