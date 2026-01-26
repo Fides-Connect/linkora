@@ -66,4 +66,15 @@ class MessagesEN {
   static const String addCompetence = 'Add Competence';
   static const String enterCompetence = 'Enter competence';
   static const String delete = 'Delete';
+
+  // Self Introduction
+  static const String selfIntroductionTitle = 'Self Introduction';
+  static const String editIntroduction = 'Edit Introduction';
+  static const String enterIntroduction = 'Enter your introduction';
+
+  // Feedback
+  static const String feedbackTitle = 'Feedback';
+  static const String averageRating = 'Average Rating';
+  static const String positiveFeedback = 'Positive Feedback';
+  static const String negativeFeedback = 'Negative Feedback';
 }

@@ -324,6 +324,57 @@ class AppLocalizations {
     }
     return MessagesEN.delete;
   }
+
+  // Self Introduction
+  String get selfIntroductionTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.selfIntroductionTitle;
+    }
+    return MessagesEN.selfIntroductionTitle;
+  }
+
+  String get editIntroduction {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.editIntroduction;
+    }
+    return MessagesEN.editIntroduction;
+  }
+
+  String get enterIntroduction {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.enterIntroduction;
+    }
+    return MessagesEN.enterIntroduction;
+  }
+
+  // Feedback
+  String get feedbackTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.feedbackTitle;
+    }
+    return MessagesEN.feedbackTitle;
+  }
+
+  String get averageRating {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.averageRating;
+    }
+    return MessagesEN.averageRating;
+  }
+
+  String get positiveFeedback {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.positiveFeedback;
+    }
+    return MessagesEN.positiveFeedback;
+  }
+
+  String get negativeFeedback {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.negativeFeedback;
+    }
+    return MessagesEN.negativeFeedback;
+  }
 }
 
 class _AppLocalizationsDelegate

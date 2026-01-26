@@ -12,11 +12,13 @@ class SupporterProfilePage extends StatefulWidget {
 
 class _SupporterProfilePageState extends State<SupporterProfilePage> {
   // Temporary local state for competencies (ideally this would come from a backend)
+  String _introduction = "Hello, I'm Thomas! I have a deep passion for Japanese culture and helpful technology. In my free time, you can find me tending to my garden, fixing smaller things around the house, or relaxing with my cats.";
   final List<String> _competencies = [
-    'Flutter Development',
-    'Dart',
-    'Firebase',
-    'UI/UX Design',
+    'Japanese Culture',
+    'Computer',
+    'Cats',
+    'Home Repair',
+    'Gardening',
   ];
 
   void _addCompetence(String competence) {
@@ -30,6 +32,43 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
     setState(() {
       _competencies.removeAt(index);
     });
+  }
+
+  Future<void> _showEditIntroductionDialog() async {
+    final TextEditingController controller = TextEditingController(text: _introduction);
+    final localizations = AppLocalizations.of(context);
+
+    return showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(localizations?.editIntroduction ?? 'Edit Introduction'),
+          content: TextField(
+            controller: controller,
+            decoration: InputDecoration(
+              hintText: localizations?.enterIntroduction ?? 'Enter your introduction',
+            ),
+            maxLines: 5,
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(localizations?.cancelButton ?? 'Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _introduction = controller.text;
+                });
+                Navigator.pop(context);
+              },
+              child: Text(localizations?.okButton ?? 'OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Future<void> _showAddCompetenceDialog() async {
@@ -81,72 +120,252 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showAddCompetenceDialog,
-        child: const Icon(Icons.add),
-      ),
       body: Stack(
         children: [
           const AppBackground(),
           SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                    localizations?.competenciesTitle ?? 'Competencies',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Self Introduction Section
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          localizations?.selfIntroductionTitle ?? 'Self Introduction',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.white70),
+                          onPressed: _showEditIntroductionDialog,
+                        ),
+                      ],
                     ),
                   ),
-                ),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: _competencies.length,
-                    itemBuilder: (context, index) {
-                      final competence = _competencies[index];
-                      return Dismissible(
-                        key: Key(competence),
-                        background: Container(
-                          color: Colors.red,
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 20),
-                          child: const Icon(Icons.delete, color: Colors.white),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        _introduction,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          height: 1.5,
                         ),
-                        direction: DismissDirection.endToStart,
-                        onDismissed: (direction) {
-                          _removeCompetence(index);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('${localizations?.delete} $competence'),
-                            ),
-                          );
-                        },
-                        child: Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          color: Colors.white.withOpacity(0.1),
-                          child: ListTile(
-                            title: Text(
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Text(
+                      localizations?.competenciesTitle ?? 'Competencies',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Wrap(
+                      spacing: 8.0,
+                      runSpacing: 8.0,
+                      children: [
+                        ..._competencies.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final competence = entry.value;
+                          return InputChip(
+                            label: Text(
                               competence,
                               style: const TextStyle(color: Colors.white),
                             ),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.white70),
-                              onPressed: () => _removeCompetence(index),
+                            backgroundColor: Colors.white.withOpacity(0.1),
+                            deleteIcon: const Icon(
+                              Icons.close,
+                              size: 18,
+                              color: Colors.white70,
                             ),
+                            onDeleted: () => _removeCompetence(index),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              side: BorderSide(
+                                color: Colors.white.withOpacity(0.2),
+                              ),
+                            ),
+                          );
+                        }),
+                        ActionChip(
+                          label: const Icon(Icons.add,
+                              color: Colors.white, size: 20),
+                          backgroundColor: Colors.white.withOpacity(0.1),
+                          onPressed: _showAddCompetenceDialog,
+                          shape: const CircleBorder(),
+                          padding: const EdgeInsets.all(8),
+                          side: BorderSide(
+                            color: Colors.white.withOpacity(0.2),
                           ),
                         ),
-                      );
-                    },
+                      ],
+                    ),
                   ),
-                ),
-              ],
+
+                  // Feedback Section
+                  const SizedBox(height: 32),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Text(
+                      localizations?.feedbackTitle ?? 'Feedback',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Average Rating
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            localizations?.averageRating ?? 'Average Rating',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.7),
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Text(
+                                '4.8',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const Icon(Icons.star, color: Colors.amber, size: 28),
+                              const Icon(Icons.star, color: Colors.amber, size: 28),
+                              const Icon(Icons.star, color: Colors.amber, size: 28),
+                              const Icon(Icons.star, color: Colors.amber, size: 28),
+                              const Icon(Icons.star_half, color: Colors.amber, size: 28),
+                              const SizedBox(width: 8),
+                              Text(
+                                '(124)', // Hardcoded review count
+                                style: TextStyle(
+                                  color: Colors.white.withOpacity(0.5),
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+                  
+                  // Positive Feedback
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          localizations?.positiveFeedback ?? 'Positive Feedback',
+                          style: const TextStyle(
+                            color: Colors.greenAccent,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: const [
+                            Chip(
+                              label: Text('Friendly'),
+                              backgroundColor: Color(0x3369F0AE),
+                              labelStyle: TextStyle(color: Colors.white),
+                            ),
+                            Chip(
+                              label: Text('Patient'),
+                              backgroundColor: Color(0x3369F0AE),
+                              labelStyle: TextStyle(color: Colors.white),
+                            ),
+                            Chip(
+                              label: Text('Calm'),
+                              backgroundColor: Color(0x3369F0AE),
+                              labelStyle: TextStyle(color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  // Negative Feedback
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                         Text(
+                          localizations?.negativeFeedback ?? 'Negative Feedback',
+                          style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: const [
+                            Chip(
+                              label: Text('Too Late'),
+                              backgroundColor: Color(0x33FF5252),
+                              labelStyle: TextStyle(color: Colors.white),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

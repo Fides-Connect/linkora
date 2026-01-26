@@ -66,4 +66,15 @@ class MessagesDE {
   static const String addCompetence = 'Kompetenz hinzufügen';
   static const String enterCompetence = 'Kompetenz eingeben';
   static const String delete = 'Löschen';
+
+  // Self Introduction
+  static const String selfIntroductionTitle = 'Selbstvorstellung';
+  static const String editIntroduction = 'Vorstellung bearbeiten';
+  static const String enterIntroduction = 'Geben Sie Ihre Vorstellung ein';
+
+  // Feedback
+  static const String feedbackTitle = 'Feedback';
+  static const String averageRating = 'Durchschnittliche Bewertung';
+  static const String positiveFeedback = 'Positives Feedback';
+  static const String negativeFeedback = 'Negatives Feedback';
 }
