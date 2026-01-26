@@ -30,10 +30,14 @@ ConnectX is a lightweight mobile client that:
 ┌─────────────────────────────────────┐
 │         ConnectX App                │
 ├─────────────────────────────────────┤
-│  UI Layer (Pages & Widgets)         │
-│  ├── Login Page                     │
-│  ├── Chat Page                      │
-│  └── Settings Page                  │
+│  Presentation Layer (MVVM)          │
+│  ├── Pages (Views)                  │
+│  ├── ViewModels (State Mgmt)        │
+│  └── Widgets                        │
+├─────────────────────────────────────┤
+│  Data Layer                         │
+│  ├── Repositories                   │
+│  └── Data Sources (API/Mock)        │
 ├─────────────────────────────────────┤
 │  Service Layer                      │
 │  ├── AuthService                    │
@@ -202,25 +206,31 @@ connectx/
 │   ├── firebase_options.dart          # Firebase configuration
 │   ├── theme.dart                     # App theme and styling
 │   │
-│   ├── models/                        # Data models
-│   │   ├── message.dart               # Chat message model
-│   │   └── user_model.dart            # User data model
+│   ├── core/                          # Core utilities & widgets
+│   │   ├── providers/                 # Global providers (UserProvider)
+│   │   └── widgets/                   # Shared widgets (AppBackground)
 │   │
-│   ├── pages/                         # Screen-level widgets
-│   │   ├── login_page.dart            # Authentication screen
-│   │   ├── chat_page.dart             # Main conversation screen
-│   │   └── settings_page.dart         # User settings
+│   ├── features/                      # Feature-based organization
+│   │   ├── auth/                      # Authentication feature
+│   │       └── presentation/
+│   │   └── home/                      # Main Home feature
+│   │       ├── data/                  # Repositories & Mock Data
+│   │       └── presentation/
+│   │           ├── pages/             # Home, Search, Favorites Pages
+│   │           └── viewmodels/        # HomeTab & Search ViewModels
+│   │
+│   ├── models/                        # Data models
+│   │   ├── chat_message.dart          # Chat message model
+│   │   ├── service_request.dart       # Service request model
+│   │   └── supporter_profile.dart     # Profile & favorites model
 │   │
 │   ├── services/                      # Business logic
 │   │   ├── auth_service.dart          # Firebase authentication
-│   │   ├── signaling_service.dart     # WebSocket signaling
-│   │   ├── peer_connection_handler.dart # WebRTC management
-│   │   └── audio_processor.dart       # Audio handling
+│   │   ├── speech_service.dart        # Speech recognition
+│   │   └── webrtc_service.dart        # WebRTC management
 │   │
-│   ├── widgets/                       # Reusable components
-│   │   ├── audio_visualizer.dart      # Visual feedback
-│   │   ├── chat_bubble.dart           # Message display
-│   │   └── mic_button.dart            # Recording button
+│   ├── utils/                         # Helper methods
+│   │   └── constants.dart             # App constants
 │   │
 │   └── localization/                  # Internationalization
 │       └── app_localizations.dart
