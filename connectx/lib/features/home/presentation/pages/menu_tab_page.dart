@@ -5,6 +5,7 @@ import '../../../../core/providers/user_provider.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../main.dart';
+import 'supporter_profile_page.dart';
 
 class MenuTabPage extends StatelessWidget {
   const MenuTabPage({super.key});
@@ -97,6 +98,20 @@ class MenuTabPage extends StatelessWidget {
                    ),
                   const SizedBox(height: 40),
                   
+                  
+                  _MenuItem(
+                    icon: Icons.person_outline,
+                    title: localizations?.menuSupporterProfile ?? 'Supporter Profile',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SupporterProfilePage(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 16),
                   _MenuItem(
                     icon: Icons.language,
                     title: localizations?.menuLanguage ?? 'Language',

@@ -288,6 +288,42 @@ class AppLocalizations {
     }
     return MessagesEN.languageGerman;
   }
+
+  // Supporter Profile
+  String get menuSupporterProfile {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.menuSupporterProfile;
+    }
+    return MessagesEN.menuSupporterProfile;
+  }
+
+  String get competenciesTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.competenciesTitle;
+    }
+    return MessagesEN.competenciesTitle;
+  }
+
+  String get addCompetence {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.addCompetence;
+    }
+    return MessagesEN.addCompetence;
+  }
+
+  String get enterCompetence {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.enterCompetence;
+    }
+    return MessagesEN.enterCompetence;
+  }
+
+  String get delete {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.delete;
+    }
+    return MessagesEN.delete;
+  }
 }
 
 class _AppLocalizationsDelegate

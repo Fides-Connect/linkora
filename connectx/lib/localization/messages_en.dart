@@ -59,4 +59,11 @@ class MessagesEN {
   static const String menuLanguage = 'Language';
   static const String languageEnglish = 'English';
   static const String languageGerman = 'German';
+
+  // Supporter Profile
+  static const String menuSupporterProfile = 'Supporter Profile';
+  static const String competenciesTitle = 'Competencies';
+  static const String addCompetence = 'Add Competence';
+  static const String enterCompetence = 'Enter competence';
+  static const String delete = 'Delete';
 }
