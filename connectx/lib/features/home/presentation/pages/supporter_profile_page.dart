@@ -13,6 +13,8 @@ class SupporterProfilePage extends StatefulWidget {
 class _SupporterProfilePageState extends State<SupporterProfilePage> {
   // Temporary local state for competencies (ideally this would come from a backend)
   String _introduction = "Hello, I'm Thomas! I have a deep passion for Japanese culture and helpful technology. In my free time, you can find me tending to my garden, fixing smaller things around the house, or relaxing with my cats.";
+  late TextEditingController _introController;
+
   final List<String> _competencies = [
     'Japanese Culture',
     'Computer',
@@ -20,6 +22,18 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
     'Home Repair',
     'Gardening',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _introController = TextEditingController(text: _introduction);
+  }
+
+  @override
+  void dispose() {
+    _introController.dispose();
+    super.dispose();
+  }
 
   void _addCompetence(String competence) {
     if (competence.trim().isEmpty) return;
@@ -32,43 +46,6 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
     setState(() {
       _competencies.removeAt(index);
     });
-  }
-
-  Future<void> _showEditIntroductionDialog() async {
-    final TextEditingController controller = TextEditingController(text: _introduction);
-    final localizations = AppLocalizations.of(context);
-
-    return showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(localizations?.editIntroduction ?? 'Edit Introduction'),
-          content: TextField(
-            controller: controller,
-            decoration: InputDecoration(
-              hintText: localizations?.enterIntroduction ?? 'Enter your introduction',
-            ),
-            maxLines: 5,
-            autofocus: true,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(localizations?.cancelButton ?? 'Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _introduction = controller.text;
-                });
-                Navigator.pop(context);
-              },
-              child: Text(localizations?.okButton ?? 'OK'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   Future<void> _showAddCompetenceDialog() async {
@@ -132,22 +109,13 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                   // Self Introduction Section
                   Padding(
                     padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          localizations?.selfIntroductionTitle ?? 'Self Introduction',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.white70),
-                          onPressed: _showEditIntroductionDialog,
-                        ),
-                      ],
+                    child: Text(
+                      localizations?.selfIntroductionTitle ?? 'Self Introduction',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                   Padding(
@@ -158,13 +126,23 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                         color: Colors.white.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(
-                        _introduction,
+                      child: TextField(
+                        controller: _introController,
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 16,
                           height: 1.5,
                         ),
+                        maxLines: null,
+                        keyboardType: TextInputType.multiline,
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        onChanged: (value) {
+                          _introduction = value;
+                        },
                       ),
                     ),
                   ),
@@ -324,6 +302,11 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                             ),
                             Chip(
                               label: Text('Calm'),
+                              backgroundColor: Color(0x3369F0AE),
+                              labelStyle: TextStyle(color: Colors.white),
+                            ),
+                            Chip(
+                              label: Text('Awesome Cat Sitter'),
                               backgroundColor: Color(0x3369F0AE),
                               labelStyle: TextStyle(color: Colors.white),
                             ),
