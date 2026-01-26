@@ -23,8 +23,9 @@ class HomeViewModel extends ChangeNotifier {
 
   // Initialize
   void initialize(String localStatusText, String languageCode) {
-    if (_statusText.isEmpty) {
+    if (_statusText.isEmpty || (_chatMessages.isEmpty && _conversationState == ConversationState.idle)) {
       _statusText = localStatusText;
+      notifyListeners();
     }
     _speechService.setLanguageCode(languageCode);
     _setupCallbacks();

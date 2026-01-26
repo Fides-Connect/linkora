@@ -19,10 +19,7 @@ class AiAssistantPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => HomeViewModel(),
-      child: const _AiAssistantPageContent(),
-    );
+    return const _AiAssistantPageContent();
   }
 }
 
@@ -41,18 +38,20 @@ class _AiAssistantPageContentState extends State<_AiAssistantPageContent> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await PermissionHelper.requestMicrophonePermission(context);
       await PermissionHelper.requestNotificationPermission(context);
-
-      if (mounted) {
-        final localizations = AppLocalizations.of(context);
-        final locale = Localizations.localeOf(context);
-        context.read<HomeViewModel>().initialize(
-          localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
-          locale.languageCode,
-        );
-      }
     });
 
     _setupForegroundMessageHandler();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final localizations = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context);
+    context.read<HomeViewModel>().initialize(
+          localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
+          locale.languageCode,
+        );
   }
 
   void _setupForegroundMessageHandler() {

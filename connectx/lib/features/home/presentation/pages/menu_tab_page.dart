@@ -110,6 +110,8 @@ class MenuTabPage extends StatelessWidget {
                       await context.read<UserProvider>().signOut();
                     },
                     isDestructive: true,
+                    showArrow: false,
+                    centered: true,
                   ),
                 ],
               ),
@@ -126,12 +128,16 @@ class _MenuItem extends StatelessWidget {
   final String title;
   final VoidCallback onTap;
   final bool isDestructive;
+  final bool showArrow;
+  final bool centered;
 
   const _MenuItem({
     required this.icon,
     required this.title,
     required this.onTap,
     this.isDestructive = false,
+    this.showArrow = true,
+    this.centered = false,
   });
 
   @override
@@ -145,6 +151,7 @@ class _MenuItem extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
+            mainAxisAlignment: centered ? MainAxisAlignment.center : MainAxisAlignment.start,
             children: [
               Icon(
                 icon,
@@ -159,12 +166,14 @@ class _MenuItem extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              const Spacer(),
-              Icon(
-                Icons.arrow_forward_ios,
-                color: isDestructive ? Colors.redAccent : Colors.white70,
-                size: 16,
-              ),
+              if (showArrow) ...[
+                const Spacer(),
+                Icon(
+                  Icons.arrow_forward_ios,
+                  color: isDestructive ? Colors.redAccent : Colors.white70,
+                  size: 16,
+                ),
+              ],
             ],
           ),
         ),
