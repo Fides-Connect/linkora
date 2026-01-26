@@ -18,6 +18,8 @@ class MessagesEN {
 
   // Common button labels
   static const String okButton = 'OK';
+  static const String requestServiceButton = 'Request Service';
+  static const String featureNotAvailable = 'This feature is not available yet';
   static const String cancelButton = 'Cancel';
   static const String allowButton = 'Allow';
   static const String denyButton = 'Deny';

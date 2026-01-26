@@ -382,6 +382,20 @@ class AppLocalizations {
     }
     return MessagesEN.removeFromFavorites;
   }
+
+  String get requestServiceButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.requestServiceButton;
+    }
+    return MessagesEN.requestServiceButton;
+  }
+
+  String get featureNotAvailable {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.featureNotAvailable;
+    }
+    return MessagesEN.featureNotAvailable;
+  }
 }
 
 class _AppLocalizationsDelegate
