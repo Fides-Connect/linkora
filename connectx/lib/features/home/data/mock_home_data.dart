@@ -1,16 +1,17 @@
-import 'package:flutter/material.dart';
 import '../../../../models/service_request.dart';
 import '../../../../models/supporter_profile.dart';
+import '../../../../models/service_category.dart';
 
-final List<ServiceRequest> mockRequests = [
+// Mutable lists to allow runtime updates during mock session
+List<ServiceRequest> mockRequests = [
   ServiceRequest(
     id: '1',
     title: 'Teach Japanese Tea Ceremony',
-    amount: '+ 159.00 €',
-    date: '25. February 2026',
+    amountValue: 159.00,
+    startDate: DateTime(2026, 2, 25),
     userName: 'Paul Shatner',
     userInitials: 'PS',
-    icon: Icons.restaurant,
+    category: ServiceCategory.other, // Icons.restaurant mapped to other or restaurant? Let's say other or new category
     type: RequestType.incoming,
     status: RequestStatus.pending,
     description: 'I would like to learn the traditional Japanese tea ceremony. I have some basic knowledge but want to deepen my understanding and practice.',
@@ -19,11 +20,11 @@ final List<ServiceRequest> mockRequests = [
   ServiceRequest(
     id: '2',
     title: 'Cat Sitting',
-    amount: '- 59.00 €',
-    date: '19. December 2025',
+    amountValue: 59.00,
+    startDate: DateTime(2025, 12, 19),
     userName: 'Aron Neil',
     userInitials: 'AN',
-    icon: Icons.pets,
+    category: ServiceCategory.pets,
     type: RequestType.outgoing,
     status: RequestStatus.waitingForAnswer,
     updateText: '1 Update',
@@ -33,12 +34,12 @@ final List<ServiceRequest> mockRequests = [
   ServiceRequest(
     id: '3',
     title: 'Housekeeping',
-    amount: '- 365.12 €',
-    date: 'From: 19. December 2025',
-    secondDateLine: 'To:     03. January 2026',
+    amountValue: 365.12,
+    startDate: DateTime(2025, 12, 19),
+    endDate: DateTime(2026, 1, 3),
     userName: 'Jared Dang',
     userInitials: 'JD',
-    icon: Icons.home,
+    category: ServiceCategory.housekeeping,
     type: RequestType.outgoing,
     status: RequestStatus.completed,
     description: 'General housekeeping including cleaning, laundry, and plant care during my holiday vacation.',
@@ -46,7 +47,7 @@ final List<ServiceRequest> mockRequests = [
   ),
 ];
 
-final List<SupporterProfile> mockFavorites = [
+List<SupporterProfile> mockFavorites = [
   SupporterProfile(
     name: "Sarah Miller",
     introduction: "I love helping seniors with their daily grocery shopping and providing company. I'm a patient listener and enjoy knitting.",
@@ -76,7 +77,8 @@ final List<SupporterProfile> mockFavorites = [
   ),
 ];
 
-final SupporterProfile mockSupporterProfile = SupporterProfile(
+// Mutable to allow updates
+SupporterProfile mockSupporterProfile = SupporterProfile(
   name: "Thomas",
   introduction: "Hello, I'm Thomas! I have a deep passion for Japanese culture and helpful technology. In my free time, you can find me tending to my garden, fixing smaller things around the house, or relaxing with my cats.",
   competencies: [
@@ -91,3 +93,36 @@ final SupporterProfile mockSupporterProfile = SupporterProfile(
   positiveFeedback: ['Friendly', 'Patient', 'Knowledgeable', 'Good Communicator'],
   negativeFeedback: ['Too late'],
 );
+
+final Map<String, SupporterProfile> mockUserProfiles = {
+  'Paul Shatner': const SupporterProfile(
+    name: 'Paul Shatner',
+    introduction:
+        "I am fascinated by Japanese culture and have always wanted to learn the authentic tea ceremony. I am respectful and eager to learn.",
+    competencies: ["Japanese Culture Enthusiast", "Tea Lover", "Student"],
+    rating: 5.0,
+    reviewCount: 3,
+    positiveFeedback: ["Very polite", "Eager learner"],
+    negativeFeedback: [],
+  ),
+  'Aron Neil': const SupporterProfile(
+    name: 'Aron Neil',
+    introduction:
+        "I own two lovely cats and often need reliable sitters when I travel for work. I value communication and reliability.",
+    competencies: ["Cat Owner", "Business Traveller", "Responsive"],
+    rating: 4.8,
+    reviewCount: 12,
+    positiveFeedback: ["Clear instructions", "Friendly"],
+    negativeFeedback: [],
+  ),
+  'Jared Dang': const SupporterProfile(
+    name: 'Jared Dang',
+    introduction:
+        "I travel often and need help keeping my home in order. I appreciate attention to detail.",
+    competencies: ["Home Owner", "Frequent Traveler"],
+    rating: 4.9,
+    reviewCount: 28,
+    positiveFeedback: ["Generous", "Fair"],
+    negativeFeedback: [],
+  ),
+};

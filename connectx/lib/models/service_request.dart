@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'service_category.dart';
 
 enum RequestType { incoming, outgoing }
 enum RequestStatus { pending, waitingForAnswer, completed, accepted, rejected }
@@ -6,12 +7,13 @@ enum RequestStatus { pending, waitingForAnswer, completed, accepted, rejected }
 class ServiceRequest {
   final String id;
   final String title;
-  final String amount;
-  final String date;
-  final String? secondDateLine; // For "To: ..."
+  final double amountValue;
+  final String currency;
+  final DateTime startDate;
+  final DateTime? endDate;
   final String userName;
   final String userInitials;
-  final IconData icon;
+  final ServiceCategory category;
   final RequestType type;
   final RequestStatus status;
   final String? updateText;
@@ -21,16 +23,85 @@ class ServiceRequest {
   const ServiceRequest({
     required this.id,
     required this.title,
-    required this.amount,
-    required this.date,
-    this.secondDateLine,
+    required this.amountValue,
+    this.currency = '€',
+    required this.startDate,
+    this.endDate,
     required this.userName,
     required this.userInitials,
-    required this.icon,
+    required this.category,
     required this.type,
     required this.status,
     this.updateText,
     required this.description,
     required this.location,
   });
+
+  // Backward compatibility getters
+  IconData get icon => category.icon;
+  
+  String get amount {
+    final prefix = type == RequestType.incoming ? '+ ' : '- ';
+    return '$prefix${amountValue.toStringAsFixed(2)} $currency';
+  }
+
+  String get date {
+    if (endDate == null) {
+      return _formatDate(startDate);
+    }
+    return 'From: ${_formatDate(startDate)}';
+  }
+
+  String? get secondDateLine {
+    if (endDate == null) return null;
+    return 'To:     ${_formatDate(endDate!)}';
+  }
+
+  String _formatDate(DateTime dt) {
+    // Simple formatter to avoid intl dependency issues
+    // Format: 25. February 2026
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return '${dt.day}. ${months[dt.month - 1]} ${dt.year}';
+  }
+
+  factory ServiceRequest.fromJson(Map<String, dynamic> json) {
+    return ServiceRequest(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      amountValue: (json['amount_value'] as num).toDouble(),
+      currency: json['currency'] as String? ?? '€',
+      startDate: DateTime.parse(json['start_date'] as String),
+      endDate: json['end_date'] != null ? DateTime.parse(json['end_date'] as String) : null,
+      userName: json['user_name'] as String,
+      userInitials: json['user_initials'] as String,
+      category: ServiceCategoryExtension.fromJson(json['category'] as String),
+      type: RequestType.values.byName(json['type'] as String),
+      status: RequestStatus.values.byName(json['status'] as String),
+      updateText: json['update_text'] as String?,
+      description: json['description'] as String,
+      location: json['location'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'amount_value': amountValue,
+      'currency': currency,
+      'start_date': startDate.toIso8601String(),
+      'end_date': endDate?.toIso8601String(),
+      'user_name': userName,
+      'user_initials': userInitials,
+      'category': category.toJson(),
+      'type': type.name,
+      'status': status.name,
+      'update_text': updateText,
+      'description': description,
+      'location': location,
+    };
+  }
 }

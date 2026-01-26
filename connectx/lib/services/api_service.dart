@@ -1,0 +1,108 @@
+import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
+
+class ApiException implements Exception {
+  final String message;
+  final int? statusCode;
+
+  ApiException(this.message, {this.statusCode});
+
+  @override
+  String toString() => 'ApiException: $message (Status: $statusCode)';
+}
+
+class ApiService {
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  late final String _baseUrl;
+
+  ApiService() {
+    final serverUrl = dotenv.env['AI_ASSISTANT_SERVER_URL'] ?? 'localhost:8080';
+    // If only domain is provided, assume http
+    _baseUrl = serverUrl.startsWith('http') ? serverUrl : 'http://$serverUrl';
+  }
+
+  Future<Map<String, String>> _getHeaders() async {
+    final headers = {
+      'Content-Type': 'application/json',
+    };
+
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        final token = await user.getIdToken();
+        if (token != null) {
+          headers['Authorization'] = 'Bearer $token';
+        }
+      }
+    } catch (e) {
+      debugPrint('Error getting auth token: $e');
+    }
+
+    return headers;
+  }
+
+  Future<dynamic> get(String endpoint) async {
+    final url = Uri.parse('$_baseUrl$endpoint');
+    final headers = await _getHeaders();
+
+    debugPrint('GET $url');
+    final response = await http.get(url, headers: headers);
+    return _processResponse(response);
+  }
+
+  Future<dynamic> post(String endpoint, {dynamic body}) async {
+    final url = Uri.parse('$_baseUrl$endpoint');
+    final headers = await _getHeaders();
+
+    debugPrint('POST $url');
+    final response = await http.post(
+      url,
+      headers: headers,
+      body: body != null ? jsonEncode(body) : null,
+    );
+    return _processResponse(response);
+  }
+
+  Future<dynamic> put(String endpoint, {dynamic body}) async {
+    final url = Uri.parse('$_baseUrl$endpoint');
+    final headers = await _getHeaders();
+
+    debugPrint('PUT $url');
+    final response = await http.put(
+      url,
+      headers: headers,
+      body: body != null ? jsonEncode(body) : null,
+    );
+    return _processResponse(response);
+  }
+
+  Future<dynamic> delete(String endpoint) async {
+    final url = Uri.parse('$_baseUrl$endpoint');
+    final headers = await _getHeaders();
+
+    debugPrint('DELETE $url');
+    final response = await http.delete(url, headers: headers);
+    return _processResponse(response);
+  }
+
+  dynamic _processResponse(http.Response response) {
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (response.body.isEmpty) return null;
+      try {
+        return jsonDecode(response.body);
+      } catch (e) {
+        // Prepare for non-json response?
+        return response.body;
+      }
+    } else {
+      debugPrint('API Error: ${response.statusCode} ${response.body}');
+      throw ApiException(
+        'Request failed: ${response.body}',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+}

@@ -3,6 +3,7 @@ import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/service_request.dart';
 import '../../../../models/supporter_profile.dart';
+import '../../data/mock_home_data.dart';
 import 'profile_detail_page.dart';
 
 class RequestDetailPage extends StatelessWidget {
@@ -315,48 +316,11 @@ class RequestDetailPage extends StatelessWidget {
   }
 
   SupporterProfile _getMockProfileForRequest(ServiceRequest request) {
-    // Generate mock profile based on the request user
-    if (request.userName == 'Paul Shatner') {
-      return SupporterProfile(
-        name: request.userName,
-        introduction: "I am fascinated by Japanese culture and have always wanted to learn the authentic tea ceremony. I am respectful and eager to learn.",
-        competencies: ["Japanese Culture Enthusiast", "Tea Lover", "Student"],
-        rating: 5.0,
-        reviewCount: 3,
-        positiveFeedback: ["Very polite", "Eager learner"],
-        negativeFeedback: [],
-      );
-    } else if (request.userName == 'Aron Neil') {
-      return SupporterProfile(
-        name: request.userName,
-        introduction: "I own two lovely cats and often need reliable sitters when I travel for work. I value communication and reliability.",
-        competencies: ["Cat Owner", "Business Traveller", "Responsive"],
-        rating: 4.8,
-        reviewCount: 12,
-        positiveFeedback: ["Clear instructions", "Friendly"],
-        negativeFeedback: [],
-      );
-    } else if (request.userName == 'Jared Dang') {
-      return SupporterProfile(
-        name: request.userName,
-        introduction: "Busy professional looking for help with household chores. I appreciate thoroughness and punctuality.",
-        competencies: ["Home Owner", "Busy Professional", "Punctual"],
-        rating: 4.5,
-        reviewCount: 8,
-        positiveFeedback: ["Fair payer", "Direct communication"],
-        negativeFeedback: ["High standards"],
-      );
+    if (mockUserProfiles.containsKey(request.userName)) {
+      return mockUserProfiles[request.userName]!;
     }
 
     // Default fallback
-    return SupporterProfile(
-      name: request.userName,
-      introduction: "This is a user of the ConnectX platform.",
-      competencies: ["Community Member"],
-      rating: 0.0,
-      reviewCount: 0,
-      positiveFeedback: [],
-      negativeFeedback: [],
-    );
+    return mockUserProfiles.values.first;
   }
 }

@@ -17,6 +17,30 @@ class SupporterProfile {
     required this.negativeFeedback,
   });
 
+  factory SupporterProfile.fromJson(Map<String, dynamic> json) {
+    return SupporterProfile(
+      name: json['name'] as String,
+      introduction: json['introduction'] as String,
+      competencies: (json['competencies'] as List).cast<String>(),
+      rating: (json['rating'] as num).toDouble(),
+      reviewCount: json['review_count'] as int,
+      positiveFeedback: (json['positive_feedback'] as List).cast<String>(),
+      negativeFeedback: (json['negative_feedback'] as List).cast<String>(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'introduction': introduction,
+      'competencies': competencies,
+      'rating': rating,
+      'review_count': reviewCount,
+      'positive_feedback': positiveFeedback,
+      'negative_feedback': negativeFeedback,
+    };
+  }
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
