@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/supporter_profile.dart';
-import '../../data/mock_home_data.dart';
+import '../viewmodels/home_tab_view_model.dart';
 import 'profile_detail_page.dart';
 
 class FavoritesTabPage extends StatelessWidget {
@@ -11,28 +12,34 @@ class FavoritesTabPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final viewModel = context.watch<HomeTabViewModel>();
+    final favorites = viewModel.favorites;
+
     return Scaffold(
       body: SafeArea(
         child: Stack(
           children: [
             const AppBackground(),
-            mockFavorites.isEmpty
-                ? Center(
-                    child: Text(
-                      AppLocalizations.of(context)?.favoritesScreenEmpty ??
-                          'Favorites Screen (Empty)',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  )
-                : ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: mockFavorites.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 16),
-                    itemBuilder: (context, index) {
-                      final profile = mockFavorites[index];
-                      return _buildFavoriteCard(context, profile);
-                    },
-                  ),
+            if (viewModel.isLoading)
+              const Center(child: CircularProgressIndicator())
+            else if (favorites.isEmpty)
+              Center(
+                child: Text(
+                  AppLocalizations.of(context)?.favoritesScreenEmpty ??
+                      'Favorites Screen (Empty)',
+                  style: const TextStyle(color: Colors.white),
+                ),
+              )
+            else
+              ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: favorites.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 16),
+                itemBuilder: (context, index) {
+                  final profile = favorites[index];
+                  return _buildFavoriteCard(context, profile);
+                },
+              ),
           ],
         ),
       ),

@@ -9,7 +9,7 @@ import '../../../../models/app_types.dart';
 import '../../../../services/notification_service.dart';
 import '../../../../utils/constants.dart';
 import '../../../../utils/permission_helper.dart';
-import '../viewmodels/home_view_model.dart';
+import '../viewmodels/search_tab_view_model.dart';
 import '../widgets/ai_neural_visualizer.dart';
 import '../widgets/chat_display.dart';
 import '../widgets/mic_button.dart';
@@ -48,10 +48,12 @@ class _SearchTabPageContentState extends State<_SearchTabPageContent> {
     super.didChangeDependencies();
     final localizations = AppLocalizations.of(context);
     final locale = Localizations.localeOf(context);
-    context.read<HomeViewModel>().initialize(
-          localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
-          locale.languageCode,
-        );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SearchTabViewModel>().initialize(
+            localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
+            locale.languageCode,
+          );
+    });
   }
 
   void _setupForegroundMessageHandler() {
@@ -90,7 +92,7 @@ class _SearchTabPageContentState extends State<_SearchTabPageContent> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              context.read<HomeViewModel>().clearError();
+              context.read<SearchTabViewModel>().clearError();
             },
             child: Text(localizations.okButton),
           ),
@@ -102,7 +104,7 @@ class _SearchTabPageContentState extends State<_SearchTabPageContent> {
   @override
   Widget build(BuildContext context) {
     // Watch the VM state
-    final viewModel = context.watch<HomeViewModel>();
+    final viewModel = context.watch<SearchTabViewModel>();
 
     return Scaffold(
       body: SafeArea(

@@ -38,7 +38,6 @@ class SpeechService {
   /// Set the language code for the AI Assistant
   void setLanguageCode(String languageCode) {
     _languageCode = languageCode;
-    debugPrint('SpeechService: Language set to $_languageCode');
   }
 
   void stopSpeech() async {

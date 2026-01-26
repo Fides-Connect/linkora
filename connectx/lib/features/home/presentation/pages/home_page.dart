@@ -3,7 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../../../../localization/app_localizations.dart';
 import '../../../../utils/constants.dart';
-import '../viewmodels/home_view_model.dart';
+import '../viewmodels/search_tab_view_model.dart';
+import '../viewmodels/home_tab_view_model.dart';
 import 'search_tab_page.dart';
 
 import 'favorites_tab_page.dart';
@@ -19,7 +20,8 @@ class ConnectXHomePage extends StatefulWidget {
 
 class _ConnectXHomePageState extends State<ConnectXHomePage> {
   int _selectedIndex = 0;
-  late HomeViewModel _homeViewModel;
+  late SearchTabViewModel _searchViewModel;
+  late HomeTabViewModel _homeTabViewModel;
 
   final List<Widget> _pages = [
     const HomeTabPage(),
@@ -31,12 +33,14 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   @override
   void initState() {
     super.initState();
-    _homeViewModel = HomeViewModel();
+    _searchViewModel = SearchTabViewModel();
+    _homeTabViewModel = HomeTabViewModel()..loadData();
   }
 
   @override
   void dispose() {
-    _homeViewModel.dispose();
+    _searchViewModel.dispose();
+    _homeTabViewModel.dispose();
     super.dispose();
   }
 
@@ -44,7 +48,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     // If leaving the Search page (index 1), stop the chat
     if (_selectedIndex == 1 && index != 1) {
       final localizations = AppLocalizations.of(context);
-      await _homeViewModel.stopChat(
+      await _searchViewModel.stopChat(
           localizations?.tapMicrophoneToStart ?? 'Tap microphone to start');
     }
 
@@ -57,8 +61,11 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
 
-    return ChangeNotifierProvider.value(
-      value: _homeViewModel,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: _searchViewModel),
+        ChangeNotifierProvider.value(value: _homeTabViewModel),
+      ],
       child: Scaffold(
         body: IndexedStack(
           index: _selectedIndex,

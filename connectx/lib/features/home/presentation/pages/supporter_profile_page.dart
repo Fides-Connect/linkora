@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
-import '../../data/mock_home_data.dart';
+import '../viewmodels/home_tab_view_model.dart';
 
 class SupporterProfilePage extends StatefulWidget {
   const SupporterProfilePage({super.key});
@@ -20,9 +21,14 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
   @override
   void initState() {
     super.initState();
-    _introduction = mockSupporterProfile.introduction;
+    final viewModel = context.read<HomeTabViewModel>();
+    final profile = viewModel.userProfile;
+    
+    // Fallback if profile not loaded yet (though it should be)
+    _introduction = profile?.introduction ?? '';
+    _competencies = List.from(profile?.competencies ?? []);
+    
     _introController = TextEditingController(text: _introduction);
-    _competencies = List.from(mockSupporterProfile.competencies);
   }
 
   @override
@@ -81,6 +87,8 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
+    final viewModel = context.watch<HomeTabViewModel>();
+    final profile = viewModel.userProfile;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -237,7 +245,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                           Row(
                             children: [
                               Text(
-                                mockSupporterProfile.rating.toString(),
+                                profile?.rating.toString() ?? '0.0',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 32,
@@ -252,7 +260,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                               const Icon(Icons.star_half, color: Colors.amber, size: 28),
                               const SizedBox(width: 8),
                               Text(
-                                '(${mockSupporterProfile.reviewCount})', 
+                                '(${profile?.reviewCount ?? 0})', 
                                 style: TextStyle(
                                   color: Colors.white.withOpacity(0.5),
                                   fontSize: 14,
@@ -285,7 +293,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: mockSupporterProfile.positiveFeedback.map((feedback) {
+                          children: (profile?.positiveFeedback ?? []).map((feedback) {
                             return Chip(
                               label: Text(feedback),
                               backgroundColor: const Color(0x3369F0AE),
@@ -300,7 +308,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                   const SizedBox(height: 24),
 
                   // Negative Feedback
-                  if (mockSupporterProfile.negativeFeedback.isNotEmpty)
+                  if (profile != null && profile.negativeFeedback.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
                       child: Column(
@@ -318,7 +326,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,
-                            children: mockSupporterProfile.negativeFeedback.map((feedback) {
+                            children: profile.negativeFeedback.map((feedback) {
                               return Chip(
                                 label: Text(feedback),
                                 backgroundColor: const Color(0x33FF5252),

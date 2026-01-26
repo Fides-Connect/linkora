@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/service_request.dart';
-import '../../data/mock_home_data.dart';
+import '../viewmodels/home_tab_view_model.dart';
 import 'request_detail_page.dart';
 
 class HomeTabPage extends StatelessWidget {
@@ -12,12 +13,14 @@ class HomeTabPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
-    final incomingRequests = mockRequests
-        .where((r) => r.type == RequestType.incoming)
-        .toList();
-    final outgoingRequests = mockRequests
-        .where((r) => r.type == RequestType.outgoing)
-        .toList();
+    final viewModel = context.watch<HomeTabViewModel>();
+    
+    final incomingRequests = viewModel.incomingRequests;
+    final outgoingRequests = viewModel.outgoingRequests;
+    
+    if (viewModel.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     return Scaffold(
       body: Stack(

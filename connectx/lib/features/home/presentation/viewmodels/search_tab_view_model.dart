@@ -3,7 +3,7 @@ import '../../../../services/speech_service.dart';
 import '../../../../models/chat_message.dart';
 import '../../../../models/app_types.dart';
 
-class HomeViewModel extends ChangeNotifier {
+class SearchTabViewModel extends ChangeNotifier {
   final SpeechService _speechService = SpeechService();
   
   // State

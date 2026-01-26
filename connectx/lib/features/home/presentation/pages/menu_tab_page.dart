@@ -5,6 +5,7 @@ import '../../../../core/providers/user_provider.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../main.dart';
+import '../viewmodels/home_tab_view_model.dart';
 import 'supporter_profile_page.dart';
 
 class MenuTabPage extends StatelessWidget {
@@ -103,10 +104,14 @@ class MenuTabPage extends StatelessWidget {
                     icon: Icons.person_outline,
                     title: localizations?.menuSupporterProfile ?? 'Supporter Profile',
                     onTap: () {
+                      final viewModel = context.read<HomeTabViewModel>();
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => const SupporterProfilePage(),
+                          builder: (context) => ChangeNotifierProvider.value(
+                            value: viewModel,
+                            child: const SupporterProfilePage(),
+                          ),
                         ),
                       );
                     },
