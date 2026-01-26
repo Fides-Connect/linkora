@@ -22,26 +22,11 @@ from .services.tts_playback_manager import TTSPlaybackManager, SentenceParser
 logger = logging.getLogger(__name__)
 
 
-def get_language_config(language: str) -> tuple[str, str]:
-    """Get language code and voice name based on language. """
-    if language == 'en':
-        # English configuration - using Chirp3-HD voice with full identifier
-        language_code = os.getenv('LANGUAGE_CODE_EN', 'en-US')
-        voice_name = os.getenv('VOICE_NAME_EN', 'en-US-Chirp3-HD-Sulafat')
-    else:
-        # German configuration (default)
-        language_code = os.getenv('LANGUAGE_CODE_DE', 'de-DE')
-        voice_name = os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat')
-    
-    return language_code, voice_name
-
-
 class AudioProcessor:
     """Processes audio through the STT -> LLM -> TTS pipeline."""
     
-    def __init__(self, connection_id: str, ai_assistant, input_track: MediaStreamTrack, user_id: Optional[str] = None, language: str = 'de'):
+    def __init__(self, connection_id: str, input_track: MediaStreamTrack, user_id: Optional[str] = None, language: str = 'de'):
         self.connection_id = connection_id
-        self.base_ai_assistant = ai_assistant  # Keep reference to base assistant
         self.input_track = input_track
         self.user_id = user_id
         self.language = language
@@ -75,25 +60,17 @@ class AudioProcessor:
 
     def _create_language_specific_assistant(self, language: str):
         """Create a language-specific AI assistant instance."""
-        language_code, voice_name = get_language_config(language)
-        
-        logger.info(f"Creating language-specific AI assistant: language_code={language_code}, voice_name={voice_name}")
+        logger.info(f"Creating language-specific AI assistant for language: {language}")
         
         # Create new AI assistant with language-specific configuration
         assistant = AIAssistant(
             gemini_api_key=os.getenv('GEMINI_API_KEY'),
-            language_code=language_code,
-            voice_name=voice_name,
+            language=language,
             llm_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
             session_id=self.connection_id
         )
         
-        # Set the language in the assistant for prompt generation
-        assistant.language = language
-        # Update the conversation service's language to match
-        assistant.conversation_service.language = language
-        
-        logger.info(f"AI Assistant language set to: {language}")
+        logger.info(f"AI Assistant created with language '{language}': {assistant.language_code}, {assistant.voice_name}")
         
         return assistant
 

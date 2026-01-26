@@ -27,17 +27,16 @@ async def async_audio_gen():
 
 
 @pytest.fixture
-def signaling_server(mock_ai_assistant):
+def signaling_server():
     """Create SignalingServer instance."""
-    return SignalingServer(mock_ai_assistant)
+    return SignalingServer()
 
 
 class TestSignalingServerInitialization:
     """Test SignalingServer initialization."""
     
-    def test_initialization(self, signaling_server, mock_ai_assistant):
+    def test_initialization(self, signaling_server):
         """Test that SignalingServer initializes correctly."""
-        assert signaling_server.ai_assistant is mock_ai_assistant
         assert isinstance(signaling_server.active_connections, dict)
         assert len(signaling_server.active_connections) == 0
 

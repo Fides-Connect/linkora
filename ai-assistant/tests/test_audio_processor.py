@@ -64,14 +64,13 @@ def mock_input_track():
 
 
 @pytest.fixture
-def audio_processor(mock_ai_assistant, mock_input_track):
+def audio_processor(mock_input_track):
     """Create AudioProcessor instance."""
     # Mock Google Cloud clients to avoid credential issues in tests
     with patch('ai_assistant.services.speech_to_text_service.SpeechAsyncClient'), \
          patch('ai_assistant.services.text_to_speech_service.TextToSpeechAsyncClient'):
         processor = AudioProcessor(
             connection_id='test-123',
-            ai_assistant=mock_ai_assistant,
             input_track=mock_input_track
         )
     return processor
@@ -210,12 +209,9 @@ class TestDebugRecording:
         with patch.dict('os.environ', {'DEBUG_RECORD_AUDIO': 'false'}), \
              patch('ai_assistant.services.speech_to_text_service.SpeechAsyncClient'), \
              patch('ai_assistant.services.text_to_speech_service.TextToSpeechAsyncClient'):
-            mock_assistant = Mock()
-            mock_assistant.stt_service = Mock()
-            mock_assistant.tts_service = Mock()
             mock_track = Mock()
             
-            processor = AudioProcessor('test', mock_assistant, mock_track)
+            processor = AudioProcessor('test', mock_track)
             assert processor.debug_recorder.enabled is False
     
     def test_debug_recording_enabled_via_env(self):
@@ -223,12 +219,9 @@ class TestDebugRecording:
         with patch.dict('os.environ', {'DEBUG_RECORD_AUDIO': 'true'}), \
              patch('ai_assistant.services.speech_to_text_service.SpeechAsyncClient'), \
              patch('ai_assistant.services.text_to_speech_service.TextToSpeechAsyncClient'):
-            mock_assistant = Mock()
-            mock_assistant.stt_service = Mock()
-            mock_assistant.tts_service = Mock()
             mock_track = Mock()
             
-            processor = AudioProcessor('test', mock_assistant, mock_track)
+            processor = AudioProcessor('test', mock_track)
             assert processor.debug_recorder.enabled is True
     
     def test_save_debug_recording_with_frames(self, audio_processor):
