@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../../../../utils/constants.dart';
 import 'ai_assistant_page.dart';
+
 import 'favorites_tab_page.dart';
 import 'home_tab_page.dart';
 import 'menu_tab_page.dart';
@@ -56,7 +58,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
           ),
         ],
         currentIndex: _selectedIndex,
-        selectedItemColor: Theme.of(context).primaryColor,
+        selectedItemColor: AppConstants.primaryCyan,
         onTap: _onItemTapped,
       ),
     );
