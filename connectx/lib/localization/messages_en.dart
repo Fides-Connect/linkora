@@ -77,4 +77,5 @@ class MessagesEN {
   static const String averageRating = 'Average Rating';
   static const String positiveFeedback = 'Positive Feedback';
   static const String negativeFeedback = 'Negative Feedback';
+  static const String removeFromFavorites = 'Remove from Favorites';
 }

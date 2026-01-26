@@ -375,6 +375,13 @@ class AppLocalizations {
     }
     return MessagesEN.negativeFeedback;
   }
+
+  String get removeFromFavorites {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.removeFromFavorites;
+    }
+    return MessagesEN.removeFromFavorites;
+  }
 }
 
 class _AppLocalizationsDelegate

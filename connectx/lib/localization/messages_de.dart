@@ -77,4 +77,5 @@ class MessagesDE {
   static const String averageRating = 'Durchschnittliche Bewertung';
   static const String positiveFeedback = 'Positives Feedback';
   static const String negativeFeedback = 'Negatives Feedback';
+  static const String removeFromFavorites = 'Aus Favoriten entfernen';
 }
