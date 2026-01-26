@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
-import '../widgets/user_header.dart';
 
 class FavoritesTabPage extends StatelessWidget {
   const FavoritesTabPage({super.key});
@@ -14,7 +13,6 @@ class FavoritesTabPage extends StatelessWidget {
         child: Stack(
           children: [
             const AppBackground(),
-            const UserHeader(),
             Center(
               child: Text(
                 AppLocalizations.of(context)?.favoritesScreenEmpty ??

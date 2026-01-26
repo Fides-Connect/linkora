@@ -53,4 +53,10 @@ class MessagesDE {
   static const String homeScreenEmpty = 'Startbildschirm (Leer)';
   static const String favoritesScreenEmpty = 'Favoritenbildschirm (Leer)';
   static const String menuScreenEmpty = 'Menübildschirm (Leer)';
+
+  // Menu items
+  static const String menuLogout = 'Abmelden';
+  static const String menuLanguage = 'Sprache';
+  static const String languageEnglish = 'Englisch';
+  static const String languageGerman = 'Deutsch';
 }

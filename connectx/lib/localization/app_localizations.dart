@@ -259,6 +259,35 @@ class AppLocalizations {
     }
     return MessagesEN.menuScreenEmpty;
   }
+
+  // Menu items
+  String get menuLogout {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.menuLogout;
+    }
+    return MessagesEN.menuLogout;
+  }
+
+  String get menuLanguage {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.menuLanguage;
+    }
+    return MessagesEN.menuLanguage;
+  }
+
+  String get languageEnglish {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.languageEnglish;
+    }
+    return MessagesEN.languageEnglish;
+  }
+
+  String get languageGerman {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.languageGerman;
+    }
+    return MessagesEN.languageGerman;
+  }
 }
 
 class _AppLocalizationsDelegate

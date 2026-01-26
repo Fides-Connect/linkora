@@ -13,7 +13,6 @@ import '../viewmodels/home_view_model.dart';
 import '../widgets/ai_neural_visualizer.dart';
 import '../widgets/chat_display.dart';
 import '../widgets/mic_button.dart';
-import '../widgets/user_header.dart';
 
 class AiAssistantPage extends StatelessWidget {
   const AiAssistantPage({super.key});
@@ -31,7 +30,8 @@ class _AiAssistantPageContent extends StatefulWidget {
   const _AiAssistantPageContent();
 
   @override
-  State<_AiAssistantPageContent> createState() => _AiAssistantPageContentState();
+  State<_AiAssistantPageContent> createState() =>
+      _AiAssistantPageContentState();
 }
 
 class _AiAssistantPageContentState extends State<_AiAssistantPageContent> {
@@ -46,9 +46,9 @@ class _AiAssistantPageContentState extends State<_AiAssistantPageContent> {
         final localizations = AppLocalizations.of(context);
         final locale = Localizations.localeOf(context);
         context.read<HomeViewModel>().initialize(
-              localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
-              locale.languageCode,
-            );
+          localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
+          locale.languageCode,
+        );
       }
     });
 
@@ -63,7 +63,8 @@ class _AiAssistantPageContentState extends State<_AiAssistantPageContent> {
 
       if (message.notification != null) {
         final notification = message.notification!;
-        final notificationId = message.messageId?.hashCode ??
+        final notificationId =
+            message.messageId?.hashCode ??
             DateTime.now().millisecondsSinceEpoch;
         NotificationService().showNotification(
           id: notificationId,
@@ -109,7 +110,6 @@ class _AiAssistantPageContentState extends State<_AiAssistantPageContent> {
         child: Stack(
           children: [
             const AppBackground(),
-            const UserHeader(),
 
             Column(
               children: [
@@ -117,9 +117,11 @@ class _AiAssistantPageContentState extends State<_AiAssistantPageContent> {
                   child: Center(
                     child: AINeuralVisualizer(
                       isListening:
-                          viewModel.conversationState == ConversationState.listening,
+                          viewModel.conversationState ==
+                          ConversationState.listening,
                       isProcessing:
-                          viewModel.conversationState == ConversationState.processing,
+                          viewModel.conversationState ==
+                          ConversationState.processing,
                       size: AppConstants.neuralVisualizerSize,
                       primaryColor: AppConstants.primaryCyan,
                       secondaryColor: AppConstants.primaryPurple,
@@ -139,8 +141,9 @@ class _AiAssistantPageContentState extends State<_AiAssistantPageContent> {
                       HapticFeedback.mediumImpact();
                       final localizations = AppLocalizations.of(context);
                       await viewModel.stopChat(
-                          localizations?.tapMicrophoneToStart ??
-                              'Tap microphone to start');
+                        localizations?.tapMicrophoneToStart ??
+                            'Tap microphone to start',
+                      );
                     } else {
                       await viewModel.startChat();
                       if (context.mounted) {
