@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
-import 'requests_data.dart';
 import 'request_detail_page.dart';
 
 class HomeTabPage extends StatelessWidget {

@@ -14,24 +14,24 @@ import '../widgets/ai_neural_visualizer.dart';
 import '../widgets/chat_display.dart';
 import '../widgets/mic_button.dart';
 
-class AiAssistantPage extends StatelessWidget {
-  const AiAssistantPage({super.key});
+class SearchTabPage extends StatelessWidget {
+  const SearchTabPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const _AiAssistantPageContent();
+    return const _SearchTabPageContent();
   }
 }
 
-class _AiAssistantPageContent extends StatefulWidget {
-  const _AiAssistantPageContent();
+class _SearchTabPageContent extends StatefulWidget {
+  const _SearchTabPageContent();
 
   @override
-  State<_AiAssistantPageContent> createState() =>
-      _AiAssistantPageContentState();
+  State<_SearchTabPageContent> createState() =>
+      _SearchTabPageContentState();
 }
 
-class _AiAssistantPageContentState extends State<_AiAssistantPageContent> {
+class _SearchTabPageContentState extends State<_SearchTabPageContent> {
   @override
   void initState() {
     super.initState();

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
-import 'favorites_data.dart';
+import 'favorites_tab_page.dart';
 
-class FavoriteProfileDetailPage extends StatelessWidget {
+class ProfileDetailPage extends StatelessWidget {
   final FavoriteProfile profile;
 
-  const FavoriteProfileDetailPage({
+  const ProfileDetailPage({
     super.key,
     required this.profile,
   });

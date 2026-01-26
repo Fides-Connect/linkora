@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../utils/constants.dart';
 import '../viewmodels/home_view_model.dart';
-import 'ai_assistant_page.dart';
+import 'search_tab_page.dart';
 
 import 'favorites_tab_page.dart';
 import 'home_tab_page.dart';
@@ -23,7 +23,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
   final List<Widget> _pages = [
     const HomeTabPage(),
-    const AiAssistantPage(),
+    const SearchTabPage(),
     const FavoritesTabPage(),
     const MenuTabPage(),
   ];
@@ -41,7 +41,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   }
 
   void _onItemTapped(int index) async {
-    // If leaving the AI Assistant page (index 1), stop the chat
+    // If leaving the Search page (index 1), stop the chat
     if (_selectedIndex == 1 && index != 1) {
       final localizations = AppLocalizations.of(context);
       await _homeViewModel.stopChat(
