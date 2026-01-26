@@ -20,6 +20,24 @@ class MessagesDE {
   static const String okButton = 'OK';
   static const String requestServiceButton = 'Dienstleistung anfragen';
   static const String featureNotAvailable = 'Diese Funktion ist noch nicht verfügbar';
+
+  // Requests
+  static const String incomingRequestsTitle = 'Eingehende Anfragen';
+  static const String yourLastRequestsTitle = 'Ihre letzten Anfragen';
+  static const String openDetailsButton = 'Details öffnen';
+  static const String waitingForAnswer = 'Warten auf Antwort';
+  static const String completed = 'Abgeschlossen';
+  static const String acceptButton = 'Annehmen';
+  static const String rejectButton = 'Ablehnen';
+  static const String cancelRequestButton = 'Anfrage zurückziehen';
+  static const String location = 'Ort';
+  static const String date = 'Datum';
+  static const String amount = 'Betrag';
+  static const String description = 'Beschreibung';
+
+  static const String addToFavorites = 'Zu Favoriten hinzufügen';
+  static const String removeFromFavorites = 'Aus Favoriten entfernen';
+
   static const String cancelButton = 'Abbrechen';
   static const String allowButton = 'Erlauben';
   static const String denyButton = 'Ablehnen';
@@ -79,5 +97,4 @@ class MessagesDE {
   static const String averageRating = 'Durchschnittliche Bewertung';
   static const String positiveFeedback = 'Positives Feedback';
   static const String negativeFeedback = 'Negatives Feedback';
-  static const String removeFromFavorites = 'Aus Favoriten entfernen';
 }

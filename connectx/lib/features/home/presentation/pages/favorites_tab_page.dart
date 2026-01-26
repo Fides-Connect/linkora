@@ -5,14 +5,9 @@ import '../../../../localization/app_localizations.dart';
 import 'favorites_data.dart';
 import 'favorite_profile_detail_page.dart';
 
-class FavoritesTabPage extends StatefulWidget {
+class FavoritesTabPage extends StatelessWidget {
   const FavoritesTabPage({super.key});
 
-  @override
-  State<FavoritesTabPage> createState() => _FavoritesTabPageState();
-}
-
-class _FavoritesTabPageState extends State<FavoritesTabPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -50,16 +45,13 @@ class _FavoritesTabPageState extends State<FavoritesTabPage> {
       elevation: 0,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () async {
-          final result = await Navigator.push(
+        onTap: () {
+          Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => FavoriteProfileDetailPage(profile: profile),
             ),
           );
-          if (result == true) {
-            setState(() {});
-          }
         },
         child: Padding(
           padding: const EdgeInsets.all(16.0),

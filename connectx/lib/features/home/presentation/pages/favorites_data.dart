@@ -16,6 +16,16 @@ class FavoriteProfile {
     required this.positiveFeedback,
     required this.negativeFeedback,
   });
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FavoriteProfile &&
+          runtimeType == other.runtimeType &&
+          name == other.name;
+
+  @override
+  int get hashCode => name.hashCode;
 }
 
 final List<FavoriteProfile> mockFavorites = [

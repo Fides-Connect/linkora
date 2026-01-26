@@ -20,6 +20,24 @@ class MessagesEN {
   static const String okButton = 'OK';
   static const String requestServiceButton = 'Request Service';
   static const String featureNotAvailable = 'This feature is not available yet';
+  
+  // Requests
+  static const String incomingRequestsTitle = 'Incoming Requests';
+  static const String yourLastRequestsTitle = 'Your Last Requests';
+  static const String openDetailsButton = 'Open Details';
+  static const String waitingForAnswer = 'Waiting for Answer';
+  static const String completed = 'Completed';
+  static const String acceptButton = 'Accept';
+  static const String rejectButton = 'Reject';
+  static const String cancelRequestButton = 'Cancel Request';
+  static const String location = 'Location';
+  static const String date = 'Date';
+  static const String amount = 'Amount';
+  static const String description = 'Description';
+  
+  static const String addToFavorites = 'Add to Favorites';
+  static const String removeFromFavorites = 'Remove from Favorites';
+
   static const String cancelButton = 'Cancel';
   static const String allowButton = 'Allow';
   static const String denyButton = 'Deny';
@@ -79,5 +97,4 @@ class MessagesEN {
   static const String averageRating = 'Average Rating';
   static const String positiveFeedback = 'Positive Feedback';
   static const String negativeFeedback = 'Negative Feedback';
-  static const String removeFromFavorites = 'Remove from Favorites';
 }

@@ -14,6 +14,7 @@ class FavoriteProfileDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
+    final isFavorite = mockFavorites.contains(profile);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -290,14 +291,14 @@ class FavoriteProfileDetailPage extends StatelessWidget {
 
                   const SizedBox(height: 48),
 
-                  // Remove Button
+                  // Favorite Button
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     child: SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.redAccent.withOpacity(0.8),
+                          backgroundColor: isFavorite ? Colors.redAccent.withOpacity(0.8) : Colors.greenAccent.withOpacity(0.8),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
@@ -305,11 +306,17 @@ class FavoriteProfileDetailPage extends StatelessWidget {
                           ),
                         ),
                         onPressed: () {
-                          mockFavorites.remove(profile);
-                          Navigator.of(context).pop(true);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(localizations?.featureNotAvailable ?? 'Feature not available yet'),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
                         },
                         child: Text(
-                          localizations?.removeFromFavorites ?? 'Remove from Favorites',
+                          isFavorite
+                              ? (localizations?.removeFromFavorites ?? 'Remove from Favorites')
+                              : (localizations?.addToFavorites ?? 'Add to Favorites'),
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,

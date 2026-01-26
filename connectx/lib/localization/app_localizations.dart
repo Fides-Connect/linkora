@@ -396,6 +396,98 @@ class AppLocalizations {
     }
     return MessagesEN.featureNotAvailable;
   }
+
+  // Requests
+  String get incomingRequestsTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.incomingRequestsTitle;
+    }
+    return MessagesEN.incomingRequestsTitle;
+  }
+
+  String get yourLastRequestsTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.yourLastRequestsTitle;
+    }
+    return MessagesEN.yourLastRequestsTitle;
+  }
+
+  String get openDetailsButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.openDetailsButton;
+    }
+    return MessagesEN.openDetailsButton;
+  }
+
+  String get waitingForAnswer {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.waitingForAnswer;
+    }
+    return MessagesEN.waitingForAnswer;
+  }
+
+  String get completed {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.completed;
+    }
+    return MessagesEN.completed;
+  }
+
+  String get acceptButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.acceptButton;
+    }
+    return MessagesEN.acceptButton;
+  }
+
+  String get rejectButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.rejectButton;
+    }
+    return MessagesEN.rejectButton;
+  }
+
+  String get cancelRequestButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.cancelRequestButton;
+    }
+    return MessagesEN.cancelRequestButton;
+  }
+  
+  String get location {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.location;
+    }
+    return MessagesEN.location;
+  }
+
+  String get date {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.date;
+    }
+    return MessagesEN.date;
+  }
+
+  String get amount {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.amount;
+    }
+    return MessagesEN.amount;
+  }
+
+  String get description {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.description;
+    }
+    return MessagesEN.description;
+  }
+
+  String get addToFavorites {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.addToFavorites;
+    }
+    return MessagesEN.addToFavorites;
+  }
 }
 
 class _AppLocalizationsDelegate
