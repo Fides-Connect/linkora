@@ -40,7 +40,6 @@ def peer_handler(mock_ai_assistant, mock_websocket):
         
         handler = PeerConnectionHandler(
             connection_id='test-123',
-            ai_assistant=mock_ai_assistant,
             websocket=mock_websocket
         )
         handler.pc = mock_pc_instance
@@ -50,10 +49,9 @@ def peer_handler(mock_ai_assistant, mock_websocket):
 class TestPeerConnectionHandlerInitialization:
     """Test PeerConnectionHandler initialization."""
     
-    def test_initialization(self, peer_handler, mock_ai_assistant, mock_websocket):
+    def test_initialization(self, peer_handler, mock_websocket):
         """Test that PeerConnectionHandler initializes correctly."""
         assert peer_handler.connection_id == 'test-123'
-        assert peer_handler.ai_assistant is mock_ai_assistant
         assert peer_handler.websocket is mock_websocket
         assert peer_handler.pc is not None
         assert peer_handler.audio_processor is None

@@ -19,9 +19,8 @@ logger = logging.getLogger(__name__)
 class PeerConnectionHandler:
     """Handles WebRTC peer connection for a single client."""
     
-    def __init__(self, connection_id: str, ai_assistant, websocket, user_id: str = None, language: str = 'de'):
+    def __init__(self, connection_id: str, websocket, user_id: str = None, language: str = 'de'):
         self.connection_id = connection_id
-        self.ai_assistant = ai_assistant
         self.websocket = websocket
         self.user_id = user_id
         self.language = language
@@ -65,7 +64,6 @@ class PeerConnectionHandler:
                 # Create audio processor for this track
                 self.audio_processor = AudioProcessor(
                     connection_id=self.connection_id,
-                    ai_assistant=self.ai_assistant,
                     input_track=track,
                     user_id=self.user_id,
                     language=self.language
