@@ -11,7 +11,7 @@ List<ServiceRequest> mockRequests = [
     startDate: DateTime(2026, 2, 25),
     userName: 'Paul Shatner',
     userInitials: 'PS',
-    category: ServiceCategory.other, // Icons.restaurant mapped to other or restaurant? Let's say other or new category
+    category: ServiceCategory.restaurant,
     type: RequestType.incoming,
     status: RequestStatus.pending,
     description: 'I would like to learn the traditional Japanese tea ceremony. I have some basic knowledge but want to deepen my understanding and practice.',
