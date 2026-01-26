@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
+import '../../../../models/supporter_profile.dart';
+import '../../data/mock_home_data.dart';
 import 'profile_detail_page.dart';
 
 class FavoritesTabPage extends StatelessWidget {
@@ -37,7 +39,7 @@ class FavoritesTabPage extends StatelessWidget {
     );
   }
 
-  Widget _buildFavoriteCard(BuildContext context, FavoriteProfile profile) {
+  Widget _buildFavoriteCard(BuildContext context, SupporterProfile profile) {
     return Card(
       color: Colors.white.withOpacity(0.1),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -123,63 +125,3 @@ class FavoritesTabPage extends StatelessWidget {
     );
   }
 }
-
-class FavoriteProfile {
-  final String name;
-  final String introduction;
-  final List<String> competencies;
-  final double rating;
-  final int reviewCount;
-  final List<String> positiveFeedback;
-  final List<String> negativeFeedback;
-
-  const FavoriteProfile({
-    required this.name,
-    required this.introduction,
-    required this.competencies,
-    required this.rating,
-    required this.reviewCount,
-    required this.positiveFeedback,
-    required this.negativeFeedback,
-  });
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is FavoriteProfile &&
-          runtimeType == other.runtimeType &&
-          name == other.name;
-
-  @override
-  int get hashCode => name.hashCode;
-}
-
-final List<FavoriteProfile> mockFavorites = [
-  FavoriteProfile(
-    name: "Sarah Miller",
-    introduction: "I love helping seniors with their daily grocery shopping and providing company. I'm a patient listener and enjoy knitting.",
-    competencies: ["Grocery Shopping", "Knitting", "Listening", "Patience"],
-    rating: 4.9,
-    reviewCount: 45,
-    positiveFeedback: ["Very kind", "Punctual", "Great listener"],
-    negativeFeedback: [],
-  ),
-  FavoriteProfile(
-    name: "David Chen",
-    introduction: "Tech enthusiast who enjoys teaching others how to use smartphones and tablets. I can also help with minor computer repairs.",
-    competencies: ["Smartphone Setup", "Tablet Basics", "Computer Repair", "WiFi Troubleshooting"],
-    rating: 4.7,
-    reviewCount: 32,
-    positiveFeedback: ["Knowledgeable", "Patient teacher"],
-    negativeFeedback: ["Talks fast"],
-  ),
-  FavoriteProfile(
-    name: "Maria Garcia",
-    introduction: "Certified nurse assistant with experience in elderly care. I can help with mobility, medication reminders, and light housekeeping.",
-    competencies: ["Elderly Care", "Medication Reminders", "Mobility Assistance", "Housekeeping"],
-    rating: 5.0,
-    reviewCount: 15,
-    positiveFeedback: ["Angel", "Professional", "Caring"],
-    negativeFeedback: [],
-  ),
-];

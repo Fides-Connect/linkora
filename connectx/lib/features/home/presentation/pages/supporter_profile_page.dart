@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
+import '../../data/mock_home_data.dart';
 
 class SupporterProfilePage extends StatefulWidget {
   const SupporterProfilePage({super.key});
@@ -11,22 +12,17 @@ class SupporterProfilePage extends StatefulWidget {
 }
 
 class _SupporterProfilePageState extends State<SupporterProfilePage> {
-  // Temporary local state for competencies (ideally this would come from a backend)
-  String _introduction = "Hello, I'm Thomas! I have a deep passion for Japanese culture and helpful technology. In my free time, you can find me tending to my garden, fixing smaller things around the house, or relaxing with my cats.";
+  // Temporary local state for competencies (seeded from mock data)
+  late String _introduction;
   late TextEditingController _introController;
-
-  final List<String> _competencies = [
-    'Japanese Culture',
-    'Computer',
-    'Cats',
-    'Home Repair',
-    'Gardening',
-  ];
+  late List<String> _competencies;
 
   @override
   void initState() {
     super.initState();
+    _introduction = mockSupporterProfile.introduction;
     _introController = TextEditingController(text: _introduction);
+    _competencies = List.from(mockSupporterProfile.competencies);
   }
 
   @override
@@ -240,9 +236,9 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                           const SizedBox(height: 8),
                           Row(
                             children: [
-                              const Text(
-                                '4.8',
-                                style: TextStyle(
+                              Text(
+                                mockSupporterProfile.rating.toString(),
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 32,
                                   fontWeight: FontWeight.bold,
@@ -256,7 +252,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                               const Icon(Icons.star_half, color: Colors.amber, size: 28),
                               const SizedBox(width: 8),
                               Text(
-                                '(124)', // Hardcoded review count
+                                '(${mockSupporterProfile.reviewCount})', 
                                 style: TextStyle(
                                   color: Colors.white.withOpacity(0.5),
                                   fontSize: 14,
@@ -289,28 +285,13 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: const [
-                            Chip(
-                              label: Text('Friendly'),
-                              backgroundColor: Color(0x3369F0AE),
-                              labelStyle: TextStyle(color: Colors.white),
-                            ),
-                            Chip(
-                              label: Text('Patient'),
-                              backgroundColor: Color(0x3369F0AE),
-                              labelStyle: TextStyle(color: Colors.white),
-                            ),
-                            Chip(
-                              label: Text('Calm'),
-                              backgroundColor: Color(0x3369F0AE),
-                              labelStyle: TextStyle(color: Colors.white),
-                            ),
-                            Chip(
-                              label: Text('Awesome Cat Sitter'),
-                              backgroundColor: Color(0x3369F0AE),
-                              labelStyle: TextStyle(color: Colors.white),
-                            ),
-                          ],
+                          children: mockSupporterProfile.positiveFeedback.map((feedback) {
+                            return Chip(
+                              label: Text(feedback),
+                              backgroundColor: const Color(0x3369F0AE),
+                              labelStyle: const TextStyle(color: Colors.white),
+                            );
+                          }).toList(),
                         ),
                       ],
                     ),
@@ -319,34 +300,35 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                   const SizedBox(height: 24),
 
                   // Negative Feedback
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                         Text(
-                          localizations?.negativeFeedback ?? 'Negative Feedback',
-                          style: const TextStyle(
-                            color: Colors.redAccent,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: const [
-                            Chip(
-                              label: Text('Too Late'),
-                              backgroundColor: Color(0x33FF5252),
-                              labelStyle: TextStyle(color: Colors.white),
+                  if (mockSupporterProfile.negativeFeedback.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            localizations?.negativeFeedback ?? 'Negative Feedback',
+                            style: const TextStyle(
+                              color: Colors.redAccent,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
                             ),
-                          ],
-                        ),
-                      ],
+                          ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: mockSupporterProfile.negativeFeedback.map((feedback) {
+                              return Chip(
+                                label: Text(feedback),
+                                backgroundColor: const Color(0x33FF5252),
+                                labelStyle: const TextStyle(color: Colors.white),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
