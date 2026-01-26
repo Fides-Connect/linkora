@@ -12,7 +12,6 @@ import firebase_admin
 from firebase_admin import credentials
 
 from .signaling_server import SignalingServer
-from .ai_assistant import AIAssistant
 from .common_endpoints import sign_in_google, setup_cors
 from .user_endpoints import user_sync, user_logout
 from .services.admin_service import AdminService
