@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../core/widgets/app_background.dart';
+import '../../../../localization/app_localizations.dart';
 import '../widgets/user_header.dart';
 
 class HomeTabPage extends StatelessWidget {
@@ -8,16 +9,17 @@ class HomeTabPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: SafeArea(
         child: Stack(
           children: [
-            AppBackground(),
-            UserHeader(),
+            const AppBackground(),
+            const UserHeader(),
             Center(
               child: Text(
-                'Home Screen (Empty)',
-                style: TextStyle(color: Colors.white),
+                AppLocalizations.of(context)?.homeScreenEmpty ??
+                    'Home Screen (Empty)',
+                style: const TextStyle(color: Colors.white),
               ),
             ),
           ],

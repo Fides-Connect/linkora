@@ -42,4 +42,15 @@ class MessagesEN {
   static const String connectionLostMessage = 'The connection to AI-Assistant has been closed.';
   static const String errorTitle = 'Error';
   static const String errorOccurred = 'An error occurred while connecting to AI-Assistant.';
+
+  // Navigation Bar
+  static const String navHome = 'Home';
+  static const String navSearch = 'Search';
+  static const String navFavorites = 'Favorites';
+  static const String navMenu = 'Menu';
+
+  // Placeholder pages
+  static const String homeScreenEmpty = 'Home Screen (Empty)';
+  static const String favoritesScreenEmpty = 'Favorites Screen (Empty)';
+  static const String menuScreenEmpty = 'Menu Screen (Empty)';
 }

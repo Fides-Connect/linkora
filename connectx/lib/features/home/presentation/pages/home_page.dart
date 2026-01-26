@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../localization/app_localizations.dart';
 import '../../../../utils/constants.dart';
 import 'ai_assistant_page.dart';
 
@@ -32,6 +33,8 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context);
+
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
@@ -39,22 +42,22 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed, // Needed for 4+ items
-        items: const <BottomNavigationBarItem>[
+        items: <BottomNavigationBarItem>[
           BottomNavigationBarItem(
-            icon: Icon(Icons.home),
-            label: 'Home',
+            icon: const Icon(Icons.home),
+            label: localizations?.navHome ?? 'Home',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.search),
-            label: 'Search',
+            icon: const Icon(Icons.search),
+            label: localizations?.navSearch ?? 'Search',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.favorite),
-            label: 'Favorites',
+            icon: const Icon(Icons.favorite),
+            label: localizations?.navFavorites ?? 'Favorites',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.menu),
-            label: 'Menu',
+            icon: const Icon(Icons.menu),
+            label: localizations?.navMenu ?? 'Menu',
           ),
         ],
         currentIndex: _selectedIndex,

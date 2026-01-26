@@ -208,6 +208,57 @@ class AppLocalizations {
     }
     return MessagesEN.errorOccurred;
   }
+
+  // Navigation Bar
+  String get navHome {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.navHome;
+    }
+    return MessagesEN.navHome;
+  }
+
+  String get navSearch {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.navSearch;
+    }
+    return MessagesEN.navSearch;
+  }
+
+  String get navFavorites {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.navFavorites;
+    }
+    return MessagesEN.navFavorites;
+  }
+
+  String get navMenu {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.navMenu;
+    }
+    return MessagesEN.navMenu;
+  }
+
+  // Placeholder pages
+  String get homeScreenEmpty {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.homeScreenEmpty;
+    }
+    return MessagesEN.homeScreenEmpty;
+  }
+
+  String get favoritesScreenEmpty {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.favoritesScreenEmpty;
+    }
+    return MessagesEN.favoritesScreenEmpty;
+  }
+
+  String get menuScreenEmpty {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.menuScreenEmpty;
+    }
+    return MessagesEN.menuScreenEmpty;
+  }
 }
 
 class _AppLocalizationsDelegate

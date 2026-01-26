@@ -42,4 +42,15 @@ class MessagesDE {
   static const String connectionLostMessage = 'Die Verbindung zum KI-Assistenten wurde getrennt.';
   static const String errorTitle = 'Fehler';
   static const String errorOccurred = 'Beim Verbinden mit dem KI-Assistenten ist ein Fehler aufgetreten.';
+
+  // Navigation Bar
+  static const String navHome = 'Startseite';
+  static const String navSearch = 'Suche';
+  static const String navFavorites = 'Favoriten';
+  static const String navMenu = 'Menü';
+
+  // Placeholder pages
+  static const String homeScreenEmpty = 'Startbildschirm (Leer)';
+  static const String favoritesScreenEmpty = 'Favoritenbildschirm (Leer)';
+  static const String menuScreenEmpty = 'Menübildschirm (Leer)';
 }
