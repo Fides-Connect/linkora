@@ -4,9 +4,6 @@ import '../../../../models/service_request.dart';
 import '../../../../models/supporter_profile.dart';
 import '../mock_home_data.dart';
 
-/// Repository class specifically for managing home feed data, user profiles,
-/// and service requests. It acts as the single source of truth for the Home Feature,
-/// abstracting away whether data comes from a real API or a mock source.
 class HomeRepository {
   final ApiService _apiService;
 
@@ -14,7 +11,6 @@ class HomeRepository {
       : _apiService = apiService ?? ApiService();
 
   /// Fetches the list of incoming and outgoing service requests.
-  /// Used to populate the main feed in `HomeReplica`.
   /// Wraps API call to `GET /requests`.
   Future<List<ServiceRequest>> getRequests() async {
     try {
