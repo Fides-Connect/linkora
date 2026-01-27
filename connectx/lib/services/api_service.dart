@@ -17,6 +17,7 @@ class ApiException implements Exception {
 class ApiService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   late final String _baseUrl;
+  static const Duration _timeout = Duration(seconds: 30);
 
   ApiService() {
     final serverUrl = dotenv.env['AI_ASSISTANT_SERVER_URL'] ?? 'localhost:8080';
@@ -49,7 +50,7 @@ class ApiService {
     final headers = await _getHeaders();
 
     debugPrint('GET $url');
-    final response = await http.get(url, headers: headers);
+    final response = await http.get(url, headers: headers).timeout(_timeout);
     return _processResponse(response);
   }
 
@@ -62,7 +63,7 @@ class ApiService {
       url,
       headers: headers,
       body: body != null ? jsonEncode(body) : null,
-    );
+    ).timeout(_timeout);
     return _processResponse(response);
   }
 
@@ -75,7 +76,7 @@ class ApiService {
       url,
       headers: headers,
       body: body != null ? jsonEncode(body) : null,
-    );
+    ).timeout(_timeout);
     return _processResponse(response);
   }
 
@@ -84,7 +85,7 @@ class ApiService {
     final headers = await _getHeaders();
 
     debugPrint('DELETE $url');
-    final response = await http.delete(url, headers: headers);
+    final response = await http.delete(url, headers: headers).timeout(_timeout);
     return _processResponse(response);
   }
 
