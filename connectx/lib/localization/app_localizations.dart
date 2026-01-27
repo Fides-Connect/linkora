@@ -421,6 +421,13 @@ class AppLocalizations {
     return MessagesEN.openDetailsButton;
   }
 
+  String get pending {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.pending;
+    }
+    return MessagesEN.pending;
+  }
+
   String get waitingForAnswer {
     if (locale.languageCode == 'de') {
       return MessagesDE.waitingForAnswer;
@@ -433,6 +440,13 @@ class AppLocalizations {
       return MessagesDE.completed;
     }
     return MessagesEN.completed;
+  }
+
+  String get unknown {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.unknown;
+    }
+    return MessagesEN.unknown;
   }
 
   String get acceptButton {

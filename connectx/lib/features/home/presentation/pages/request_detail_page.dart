@@ -290,7 +290,7 @@ class RequestDetailPage extends StatelessWidget {
     switch (request.status) {
       case RequestStatus.pending:
         color = Colors.orange;
-        text = 'Pending';
+        text = localizations?.pending ?? 'Pending';
         break;
       case RequestStatus.waitingForAnswer:
         color = Colors.blue;
@@ -302,7 +302,7 @@ class RequestDetailPage extends StatelessWidget {
         break;
       default:
         color = Colors.grey;
-        text = 'Unknown';
+        text = localizations?.unknown ?? 'Unknown';
     }
     
     return Container(
