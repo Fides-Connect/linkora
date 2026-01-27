@@ -43,7 +43,8 @@ class UserProvider extends ChangeNotifier {
 
     try {
       await _authService.signInWithGoogle();
-      // The stream listener will handle the user update
+      _isLoading = false;
+      notifyListeners();
     } catch (e) {
       _error = e.toString();
       _isLoading = false;
