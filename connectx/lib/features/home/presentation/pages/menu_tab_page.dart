@@ -66,7 +66,7 @@ class MenuTabPage extends StatelessWidget {
                         children: [
                           CircleAvatar(
                             radius: 50,
-                            backgroundColor: Colors.white.withOpacity(0.1),
+                            backgroundColor: Colors.white.withValues(alpha: 0.1),
                             backgroundImage: user.photoURL != null 
                               ? NetworkImage(user.photoURL!) 
                               : null,
@@ -88,7 +88,7 @@ class MenuTabPage extends StatelessWidget {
                             Text(
                               user.email!,
                               style: TextStyle(
-                                color: Colors.white.withOpacity(0.7),
+                                color: Colors.white.withValues(alpha: 0.7),
                                 fontSize: 14,
                               ),
                             ),
@@ -163,7 +163,7 @@ class _MenuItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withOpacity(0.1),
+      color: Colors.white.withValues(alpha: 0.1),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,

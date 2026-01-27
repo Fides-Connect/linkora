@@ -127,7 +127,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
+                        color: Colors.white.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: TextField(
@@ -177,7 +177,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                               competence,
                               style: const TextStyle(color: Colors.white),
                             ),
-                            backgroundColor: Colors.white.withOpacity(0.1),
+                            backgroundColor: Colors.white.withValues(alpha: 0.1),
                             deleteIcon: const Icon(
                               Icons.close,
                               size: 18,
@@ -187,7 +187,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
-                                color: Colors.white.withOpacity(0.2),
+                                color: Colors.white.withValues(alpha: 0.2),
                               ),
                             ),
                           );
@@ -195,12 +195,12 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                         ActionChip(
                           label: const Icon(Icons.add,
                               color: Colors.white, size: 20),
-                          backgroundColor: Colors.white.withOpacity(0.1),
+                          backgroundColor: Colors.white.withValues(alpha: 0.1),
                           onPressed: _showAddCompetenceDialog,
                           shape: const CircleBorder(),
                           padding: const EdgeInsets.all(8),
                           side: BorderSide(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.2),
                           ),
                         ),
                       ],
@@ -228,7 +228,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
+                        color: Colors.white.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Column(
@@ -237,7 +237,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                           Text(
                             localizations?.averageRating ?? 'Average Rating',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
+                              color: Colors.white.withValues(alpha: 0.7),
                               fontSize: 14,
                             ),
                           ),
@@ -262,7 +262,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                               Text(
                                 '(${profile?.reviewCount ?? 0})', 
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.5),
+                                  color: Colors.white.withValues(alpha: 0.5),
                                   fontSize: 14,
                                 ),
                               ),

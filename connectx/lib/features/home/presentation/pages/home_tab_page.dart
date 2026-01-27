@@ -46,7 +46,7 @@ class HomeTabPage extends StatelessWidget {
                   if (incomingRequests.isEmpty)
                     Text(
                       'No incoming requests',
-                      style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
                     )
                   else
                     ...incomingRequests.map(
@@ -73,7 +73,7 @@ class HomeTabPage extends StatelessWidget {
                   if (outgoingRequests.isEmpty)
                     Text(
                       'No requests yet',
-                      style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
                     )
                   else
                     ...outgoingRequests.map(
@@ -143,7 +143,7 @@ class HomeTabPage extends StatelessWidget {
                   children: [
                     CircleAvatar(
                       radius: 20,
-                      backgroundColor: Colors.white.withOpacity(0.2),
+                      backgroundColor: Colors.white.withValues(alpha: 0.2),
                       child: Text(
                         request.userInitials,
                         style: const TextStyle(color: Colors.white),
@@ -153,7 +153,7 @@ class HomeTabPage extends StatelessWidget {
                     Text(
                       request.userName,
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                         fontSize: 12,
                       ),
                     ),
@@ -177,7 +177,7 @@ class HomeTabPage extends StatelessWidget {
                 Text(
                   request.date,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 14,
                   ),
                 ),
@@ -270,7 +270,7 @@ class HomeTabPage extends StatelessWidget {
                         Text(
                           request.updateText!,
                           style: TextStyle(
-                            color: Colors.white.withOpacity(0.5),
+                            color: Colors.white.withValues(alpha: 0.5),
                             fontSize: 12,
                           ),
                         ),
@@ -314,7 +314,7 @@ class HomeTabPage extends StatelessWidget {
                     Text(
                       request.date,
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
+                        color: Colors.white.withValues(alpha: 0.5),
                         fontSize: 14,
                       ),
                     ),
@@ -322,7 +322,7 @@ class HomeTabPage extends StatelessWidget {
                       Text(
                         request.secondDateLine!,
                         style: TextStyle(
-                          color: Colors.white.withOpacity(0.5),
+                          color: Colors.white.withValues(alpha: 0.5),
                           fontSize: 14,
                         ),
                       ),

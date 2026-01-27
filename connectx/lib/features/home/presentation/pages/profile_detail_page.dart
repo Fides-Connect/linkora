@@ -45,7 +45,7 @@ class ProfileDetailPage extends StatelessWidget {
                         children: [
                           CircleAvatar(
                             radius: 50,
-                            backgroundColor: Colors.white.withOpacity(0.2),
+                            backgroundColor: Colors.white.withValues(alpha: 0.2),
                             child: Text(
                               profile.name[0],
                               style: const TextStyle(
@@ -114,7 +114,7 @@ class ProfileDetailPage extends StatelessWidget {
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.1),
+                            color: Colors.white.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -153,7 +153,7 @@ class ProfileDetailPage extends StatelessWidget {
                           children: profile.competencies.map((competency) {
                             return Chip(
                               label: Text(competency),
-                              backgroundColor: Colors.white.withOpacity(0.2),
+                              backgroundColor: Colors.white.withValues(alpha: 0.2),
                               labelStyle: const TextStyle(color: Colors.white),
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                             );
@@ -185,7 +185,7 @@ class ProfileDetailPage extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
+                        color: Colors.white.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Column(
@@ -194,7 +194,7 @@ class ProfileDetailPage extends StatelessWidget {
                           Text(
                             localizations?.averageRating ?? 'Average Rating',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
+                              color: Colors.white.withValues(alpha: 0.7),
                               fontSize: 14,
                             ),
                           ),
@@ -215,7 +215,7 @@ class ProfileDetailPage extends StatelessWidget {
                               Text(
                                 '(${profile.reviewCount})',
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.5),
+                                  color: Colors.white.withValues(alpha: 0.5),
                                   fontSize: 14,
                                 ),
                               ),
@@ -299,7 +299,7 @@ class ProfileDetailPage extends StatelessWidget {
                       width: double.infinity,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: isFavorite ? Colors.redAccent.withOpacity(0.8) : Colors.greenAccent.withOpacity(0.8),
+                          backgroundColor: isFavorite ? Colors.redAccent.withValues(alpha: 0.8) : Colors.greenAccent.withValues(alpha: 0.8),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(

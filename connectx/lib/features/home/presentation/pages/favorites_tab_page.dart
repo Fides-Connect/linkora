@@ -48,7 +48,7 @@ class FavoritesTabPage extends StatelessWidget {
 
   Widget _buildFavoriteCard(BuildContext context, SupporterProfile profile) {
     return Card(
-      color: Colors.white.withOpacity(0.1),
+      color: Colors.white.withValues(alpha: 0.1),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 0,
       clipBehavior: Clip.antiAlias,
@@ -68,7 +68,7 @@ class FavoritesTabPage extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 30,
-                backgroundColor: Colors.white.withOpacity(0.2),
+                backgroundColor: Colors.white.withValues(alpha: 0.2),
                 child: Text(
                   profile.name[0],
                   style: const TextStyle(
@@ -97,7 +97,7 @@ class FavoritesTabPage extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                         fontSize: 14,
                       ),
                     ),
@@ -109,9 +109,9 @@ class FavoritesTabPage extends StatelessWidget {
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
+                                color: Colors.white.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
                           child: Text(
                             comp,
                             style: const TextStyle(

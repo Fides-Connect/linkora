@@ -43,7 +43,7 @@ class RequestDetailPage extends StatelessWidget {
                     width: double.infinity,
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
+                      color: Colors.white.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Column(
@@ -99,7 +99,7 @@ class RequestDetailPage extends StatelessWidget {
                         children: [
                           CircleAvatar(
                             radius: 25,
-                            backgroundColor: Colors.white.withOpacity(0.2),
+                            backgroundColor: Colors.white.withValues(alpha: 0.2),
                             child: Text(
                               request.userInitials,
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
@@ -116,7 +116,7 @@ class RequestDetailPage extends StatelessWidget {
                                 ),
                                 Text(
                                   request.type == RequestType.incoming ? 'Requester' : 'Provider',
-                                  style: TextStyle(color: Colors.white.withOpacity(0.7)),
+                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
                                 ),
                               ],
                             ),
@@ -155,7 +155,7 @@ class RequestDetailPage extends StatelessWidget {
                   Text(
                     request.description,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.9),
+                      color: Colors.white.withValues(alpha: 0.9),
                       fontSize: 16,
                       height: 1.5,
                     ),
@@ -170,7 +170,7 @@ class RequestDetailPage extends StatelessWidget {
                         Expanded(
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.redAccent.withOpacity(0.8),
+                              backgroundColor: Colors.redAccent.withValues(alpha: 0.8),
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12)),
@@ -222,7 +222,7 @@ class RequestDetailPage extends StatelessWidget {
                       width: double.infinity,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.redAccent.withOpacity(0.8),
+                          backgroundColor: Colors.redAccent.withValues(alpha: 0.8),
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12)),
@@ -276,9 +276,9 @@ class RequestDetailPage extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.2),
+        color: color.withValues(alpha: 0.2),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.5)),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
       ),
       child: Text(
         text,
@@ -296,7 +296,7 @@ class RequestDetailPage extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.6),
+              color: Colors.white.withValues(alpha: 0.6),
               fontSize: 16,
             ),
           ),
