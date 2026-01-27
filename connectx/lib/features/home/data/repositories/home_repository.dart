@@ -50,7 +50,7 @@ class HomeRepository {
   Future<void> addFavorite(SupporterProfile profile) async {
     try {
       // Assuming we have an ID or use name as ID for mock
-      await _apiService.post('/favorites/${profile.name}'); 
+      await _apiService.post('/favorites/${Uri.encodeComponent(profile.name)}'); 
       return;
     } catch (e) {
       debugPrint('API failed for addFavorite (using mock data): $e');
@@ -67,7 +67,7 @@ class HomeRepository {
   /// Wraps API call to `DELETE /favorites/{id}`.
   Future<void> removeFavorite(SupporterProfile profile) async {
     try {
-      await _apiService.delete('/favorites/${profile.name}');
+      await _apiService.delete('/favorites/${Uri.encodeComponent(profile.name)}');
       return;
     } catch (e) {
       debugPrint('API failed for removeFavorite (using mock data): $e');
@@ -142,7 +142,7 @@ class HomeRepository {
   Future<void> removeCompetence(String competence) async {
     try {
       // Assuming RESTful design: /profile/competencies/Gardening
-      await _apiService.delete('/profile/competencies/$competence');
+      await _apiService.delete('/profile/competencies/${Uri.encodeComponent(competence)}');
       return;
     } catch (e) {
        debugPrint('API failed for removeCompetence (using mock data): $e');
