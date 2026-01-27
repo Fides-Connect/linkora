@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'service_category.dart';
 
 enum RequestType { incoming, outgoing }
@@ -58,13 +59,9 @@ class ServiceRequest {
   }
 
   String _formatDate(DateTime dt) {
-    // Simple formatter to avoid intl dependency issues
-    // Format: 25. February 2026
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    return '${dt.day}. ${months[dt.month - 1]} ${dt.year}';
+    // Uses the default locale which is set by the app (flutter_localizations)
+    // Ensures month names and format structure respect the user's language setting.
+    return DateFormat.yMMMMd().format(dt);
   }
 
   factory ServiceRequest.fromJson(Map<String, dynamic> json) {

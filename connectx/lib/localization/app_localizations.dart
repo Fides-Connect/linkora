@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'messages_de.dart';
 import 'messages_en.dart';
 
@@ -501,6 +503,16 @@ class _AppLocalizationsDelegate
 
   @override
   Future<AppLocalizations> load(Locale locale) async {
+    final String localeName = locale.countryCode == null || locale.countryCode!.isEmpty
+        ? locale.languageCode
+        : locale.toString();
+    
+    // Initialize date formatting for the active locale
+    await initializeDateFormatting(localeName);
+    
+    // Set the default locale for Intl (DateFormat uses this by default)
+    Intl.defaultLocale = localeName;
+    
     return AppLocalizations(locale);
   }
 
