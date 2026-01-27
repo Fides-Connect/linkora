@@ -3,8 +3,6 @@ import 'package:provider/provider.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/service_request.dart';
-import '../../../../models/supporter_profile.dart';
-import '../../data/mock_home_data.dart';
 import '../viewmodels/home_tab_view_model.dart';
 import 'profile_detail_page.dart';
 
@@ -85,18 +83,46 @@ class RequestDetailPage extends StatelessWidget {
 
                   // User Info
                   InkWell(
-                    onTap: () {
-                      final profile = _getMockProfileForRequest(request);
+                    onTap: () async {
                       final viewModel = context.read<HomeTabViewModel>();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChangeNotifierProvider.value(
-                            value: viewModel,
-                            child: ProfileDetailPage(profile: profile),
-                          ),
-                        ),
+                      
+                      // Show loading indicator
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) => const Center(child: CircularProgressIndicator()),
                       );
+                      
+                      try {
+                        final profile = await viewModel.getOtherProfile(request.userName);
+                        
+                        // Close loading indicator
+                        if (context.mounted) Navigator.pop(context);
+                        
+                        if (profile != null && context.mounted) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChangeNotifierProvider.value(
+                                value: viewModel,
+                                child: ProfileDetailPage(profile: profile),
+                              ),
+                            ),
+                          );
+                        } else if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(localizations?.featureNotAvailable ?? 'Profile not found')),
+                          );
+                        }
+                      } catch (e) {
+                         // Close loading indicator
+                        if (context.mounted) Navigator.pop(context);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Error: $e')),
+                          );
+                        }
+                      }
                     },
                     borderRadius: BorderRadius.circular(12),
                     child: Padding(
@@ -319,14 +345,5 @@ class RequestDetailPage extends StatelessWidget {
         ),
       ],
     );
-  }
-
-  SupporterProfile _getMockProfileForRequest(ServiceRequest request) {
-    if (mockUserProfiles.containsKey(request.userName)) {
-      return mockUserProfiles[request.userName]!;
-    }
-
-    // Default fallback
-    return mockUserProfiles.values.first;
   }
 }

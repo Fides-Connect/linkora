@@ -58,4 +58,8 @@ class HomeTabViewModel extends ChangeNotifier {
     _favorites = await _repository.getFavorites();
     notifyListeners();
   }
+
+  Future<SupporterProfile?> getOtherProfile(String userId) {
+    return _repository.getOtherProfile(userId);
+  }
 }
