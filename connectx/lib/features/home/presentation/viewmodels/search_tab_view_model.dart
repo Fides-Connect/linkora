@@ -12,6 +12,7 @@ class SearchTabViewModel extends ChangeNotifier {
   String _currentMessage = '';
   String _statusText = '';
   bool _lastMessageWasUser = false;
+  bool _areCallbacksSetup = false;
   String? _error; // For UI to consume (e.g. show dialog)
 
   // Getters
@@ -28,7 +29,11 @@ class SearchTabViewModel extends ChangeNotifier {
       notifyListeners();
     }
     _speechService.setLanguageCode(languageCode);
-    _setupCallbacks();
+    
+    if (!_areCallbacksSetup) {
+      _setupCallbacks();
+      _areCallbacksSetup = true;
+    }
   }
 
   void _setupCallbacks() {
