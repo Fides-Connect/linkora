@@ -99,10 +99,14 @@ class HomeTabPage extends StatelessWidget {
   ) {
     return GestureDetector(
       onTap: () {
+        final viewModel = context.read<HomeTabViewModel>();
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => RequestDetailPage(request: request),
+            builder: (_) => ChangeNotifierProvider.value(
+              value: viewModel,
+              child: RequestDetailPage(request: request),
+            ),
           ),
         );
       },
@@ -225,10 +229,14 @@ class HomeTabPage extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
+        final viewModel = context.read<HomeTabViewModel>();
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => RequestDetailPage(request: request),
+            builder: (_) => ChangeNotifierProvider.value(
+              value: viewModel,
+              child: RequestDetailPage(request: request),
+            ),
           ),
         );
       },
@@ -281,7 +289,7 @@ class HomeTabPage extends StatelessWidget {
                   children: [
                     CircleAvatar(
                       radius: 20,
-                      backgroundColor: Colors.white.withOpacity(0.2),
+                      backgroundColor: Colors.white.withValues(alpha: 0.2),
                       child: Text(
                         request.userInitials,
                         style: const TextStyle(color: Colors.white),
@@ -291,7 +299,7 @@ class HomeTabPage extends StatelessWidget {
                     Text(
                       request.userName,
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
+                        color: Colors.white.withValues(alpha: 0.7),
                         fontSize: 12,
                       ),
                     ),

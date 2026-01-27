@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/service_request.dart';
 import '../../../../models/supporter_profile.dart';
 import '../../data/mock_home_data.dart';
+import '../viewmodels/home_tab_view_model.dart';
 import 'profile_detail_page.dart';
 
 class RequestDetailPage extends StatelessWidget {
@@ -85,10 +87,14 @@ class RequestDetailPage extends StatelessWidget {
                   InkWell(
                     onTap: () {
                       final profile = _getMockProfileForRequest(request);
+                      final viewModel = context.read<HomeTabViewModel>();
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => ProfileDetailPage(profile: profile),
+                          builder: (_) => ChangeNotifierProvider.value(
+                            value: viewModel,
+                            child: ProfileDetailPage(profile: profile),
+                          ),
                         ),
                       );
                     },

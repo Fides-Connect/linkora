@@ -54,10 +54,14 @@ class FavoritesTabPage extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {
+          final viewModel = context.read<HomeTabViewModel>();
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => ProfileDetailPage(profile: profile),
+              builder: (_) => ChangeNotifierProvider.value(
+                value: viewModel,
+                child: ProfileDetailPage(profile: profile),
+              ),
             ),
           );
         },

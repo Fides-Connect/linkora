@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/supporter_profile.dart';
-import '../../data/mock_home_data.dart';
+import '../viewmodels/home_tab_view_model.dart';
 
 class ProfileDetailPage extends StatelessWidget {
   final SupporterProfile profile;
@@ -15,7 +16,11 @@ class ProfileDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
-    final isFavorite = mockFavorites.contains(profile);
+    // Use select to listen only to changes in specific parts if needed, 
+    // or watch to rebuild when the model changes.
+    // Note: This requires HomeTabViewModel to be provided above this widget.
+    final viewModel = context.watch<HomeTabViewModel>();
+    final isFavorite = viewModel.isFavorite(profile);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -307,12 +312,7 @@ class ProfileDetailPage extends StatelessWidget {
                           ),
                         ),
                         onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(localizations?.featureNotAvailable ?? 'Feature not available yet'),
-                              duration: const Duration(seconds: 2),
-                            ),
-                          );
+                          viewModel.toggleFavorite(profile);
                         },
                         child: Text(
                           isFavorite

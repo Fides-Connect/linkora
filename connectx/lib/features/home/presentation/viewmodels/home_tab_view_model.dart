@@ -43,4 +43,19 @@ class HomeTabViewModel extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  bool isFavorite(SupporterProfile profile) {
+    return _favorites.any((p) => p.name == profile.name);
+  }
+
+  Future<void> toggleFavorite(SupporterProfile profile) async {
+    if (isFavorite(profile)) {
+      await _repository.removeFavorite(profile);
+    } else {
+      await _repository.addFavorite(profile);
+    }
+    // Refresh list
+    _favorites = await _repository.getFavorites();
+    notifyListeners();
+  }
 }
