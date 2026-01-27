@@ -16,7 +16,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
   // Temporary local state for competencies (seeded from mock data)
   late String _introduction;
   late TextEditingController _introController;
-  late List<String> _competencies;
+  // late List<String> _competencies; // No longer needed as we use provider directly
 
   @override
   void initState() {
@@ -26,7 +26,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
     
     // Fallback if profile not loaded yet (though it should be)
     _introduction = profile?.introduction ?? '';
-    _competencies = List.from(profile?.competencies ?? []);
+    // _competencies = List.from(profile?.competencies ?? []);
     
     _introController = TextEditingController(text: _introduction);
   }
@@ -39,15 +39,11 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
 
   void _addCompetence(String competence) {
     if (competence.trim().isEmpty) return;
-    setState(() {
-      _competencies.add(competence.trim());
-    });
+    context.read<HomeTabViewModel>().addCompetence(competence.trim());
   }
 
-  void _removeCompetence(int index) {
-    setState(() {
-      _competencies.removeAt(index);
-    });
+  void _removeCompetence(String competence) {
+    context.read<HomeTabViewModel>().removeCompetence(competence);
   }
 
   Future<void> _showAddCompetenceDialog() async {
@@ -151,6 +147,28 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  
+                  // Save Button for Introduction
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blueAccent,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () {
+                          viewModel.updateIntroduction(_introduction);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Profile saved')),
+                          );
+                        },
+                        child: Text(localizations?.saveButton ?? 'Save'),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
                   Padding(
                     padding: const EdgeInsets.all(16.0),
@@ -169,9 +187,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                       spacing: 8.0,
                       runSpacing: 8.0,
                       children: [
-                        ..._competencies.asMap().entries.map((entry) {
-                          final index = entry.key;
-                          final competence = entry.value;
+                        ...?profile?.competencies.map((competence) {
                           return InputChip(
                             label: Text(
                               competence,
@@ -183,7 +199,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                               size: 18,
                               color: Colors.white70,
                             ),
-                            onDeleted: () => _removeCompetence(index),
+                            onDeleted: () => _removeCompetence(competence),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(

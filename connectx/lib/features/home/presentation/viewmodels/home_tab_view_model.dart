@@ -62,4 +62,46 @@ class HomeTabViewModel extends ChangeNotifier {
   Future<SupporterProfile?> getOtherProfile(String userId) {
     return _repository.getOtherProfile(userId);
   }
+
+  Future<void> updateIntroduction(String introduction) async {
+    if (_userProfile == null) return;
+    
+    final updatedProfile = SupporterProfile(
+      name: _userProfile!.name,
+      introduction: introduction,
+      competencies: _userProfile!.competencies,
+      rating: _userProfile!.rating,
+      reviewCount: _userProfile!.reviewCount,
+      positiveFeedback: _userProfile!.positiveFeedback,
+      negativeFeedback: _userProfile!.negativeFeedback
+    );
+
+    await _repository.updateSupporterProfile(updatedProfile);
+    _userProfile = updatedProfile;
+    notifyListeners();
+  }
+
+  Future<void> addCompetence(String competence) async {
+    if (_userProfile == null) return;
+    
+    await _repository.addCompetence(competence);
+    
+    // Optimistic update or fetch again
+    // For simplicity, we manually update local state since repository methods usually return void
+    // But repository implementation for addCompetence just posts and fallsback.
+    // In a real app we might reload the profile or trust the repository updated something if it's shared state.
+    // However, the repository methods (as seen before) update the mock data but don't return the new profile.
+    
+    // Let's reload profile to be safe and consistent with repository
+    _userProfile = await _repository.getSupporterProfile();
+    notifyListeners();
+  }
+
+  Future<void> removeCompetence(String competence) async {
+    if (_userProfile == null) return;
+    
+    await _repository.removeCompetence(competence);
+    _userProfile = await _repository.getSupporterProfile();
+    notifyListeners();
+  }
 }

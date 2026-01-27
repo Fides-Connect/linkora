@@ -83,6 +83,13 @@ class AppLocalizations {
     return MessagesEN.okButton;
   }
 
+  String get saveButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.saveButton;
+    }
+    return MessagesEN.saveButton;
+  }
+
   String get cancelButton {
     if (locale.languageCode == 'de') {
       return MessagesDE.cancelButton;

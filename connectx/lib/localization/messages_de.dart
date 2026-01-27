@@ -37,6 +37,8 @@ class MessagesDE {
   static const String amount = 'Betrag';
   static const String description = 'Beschreibung';
 
+  static const String saveButton = 'Speichern';
+
   static const String addToFavorites = 'Zu Favoriten hinzufügen';
   static const String removeFromFavorites = 'Aus Favoriten entfernen';
 
