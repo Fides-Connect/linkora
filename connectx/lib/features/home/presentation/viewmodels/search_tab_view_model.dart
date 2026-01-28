@@ -4,7 +4,10 @@ import '../../../../models/chat_message.dart';
 import '../../../../models/app_types.dart';
 
 class SearchTabViewModel extends ChangeNotifier {
-  final SpeechService _speechService = SpeechService();
+  final SpeechService _speechService;
+
+  SearchTabViewModel({SpeechService? speechService})
+      : _speechService = speechService ?? SpeechService();
   
   // State
   ConversationState _conversationState = ConversationState.idle;

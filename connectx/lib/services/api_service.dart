@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'wrappers.dart';
 
 class ApiException implements Exception {
   final String message;
@@ -17,14 +18,20 @@ class ApiException implements Exception {
 }
 
 class ApiService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseAuthWrapper _auth;
+  final http.Client _client;
   late final String _baseUrl;
   static const Duration _timeout = Duration(seconds: 30);
 
-  ApiService() {
-    final serverUrl = dotenv.env['AI_ASSISTANT_SERVER_URL'] ?? 'localhost:8080';
-    // If only domain is provided, assume http
-    _baseUrl = serverUrl.startsWith('http') ? serverUrl : 'http://$serverUrl';
+  ApiService({FirebaseAuthWrapper? auth, http.Client? client, String? baseUrl})
+      : _auth = auth ?? FirebaseAuthWrapper(),
+        _client = client ?? http.Client() {
+    if (baseUrl != null) {
+      _baseUrl = baseUrl;
+    } else {
+      final serverUrl = dotenv.env['AI_ASSISTANT_SERVER_URL'] ?? 'localhost:8080';
+      _baseUrl = serverUrl.startsWith('http') ? serverUrl : 'http://$serverUrl';
+    }
   }
 
   Future<Map<String, String>> _getHeaders() async {
@@ -52,7 +59,7 @@ class ApiService {
     final headers = await _getHeaders();
 
     debugPrint('GET $url');
-    return _performRequest(() => http.get(url, headers: headers).timeout(_timeout));
+    return _performRequest(() => _client.get(url, headers: headers).timeout(_timeout));
   }
 
   Future<dynamic> post(String endpoint, {dynamic body}) async {
@@ -60,7 +67,7 @@ class ApiService {
     final headers = await _getHeaders();
 
     debugPrint('POST $url');
-    return _performRequest(() => http.post(
+    return _performRequest(() => _client.post(
       url,
       headers: headers,
       body: body != null ? jsonEncode(body) : null,
@@ -72,7 +79,7 @@ class ApiService {
     final headers = await _getHeaders();
 
     debugPrint('PUT $url');
-    return _performRequest(() => http.put(
+    return _performRequest(() => _client.put(
       url,
       headers: headers,
       body: body != null ? jsonEncode(body) : null,
@@ -84,7 +91,7 @@ class ApiService {
     final headers = await _getHeaders();
 
     debugPrint('DELETE $url');
-    return _performRequest(() => http.delete(url, headers: headers).timeout(_timeout));
+    return _performRequest(() => _client.delete(url, headers: headers).timeout(_timeout));
   }
 
   Future<dynamic> _performRequest(Future<http.Response> Function() request) async {

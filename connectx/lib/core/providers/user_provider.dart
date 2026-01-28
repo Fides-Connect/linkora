@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/auth_service.dart';
 
 class UserProvider extends ChangeNotifier {
-  final AuthService _authService = AuthService();
+  final AuthService _authService;
   User? _user;
   bool _isLoading = true;
   String? _error;
@@ -15,7 +15,8 @@ class UserProvider extends ChangeNotifier {
   String? get error => _error;
   bool get isAuthenticated => _user != null;
 
-  UserProvider() {
+  UserProvider({AuthService? authService}) 
+      : _authService = authService ?? AuthService() {
     _init();
   }
   
