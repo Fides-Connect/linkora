@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'service_category.dart';
 
-enum RequestType { incoming, outgoing }
-enum RequestStatus { pending, waitingForAnswer, completed, accepted, rejected }
+enum RequestType { incoming, outgoing, unknown }
+enum RequestStatus { pending, waitingForAnswer, completed, accepted, rejected, unknown }
 
 class ServiceRequest {
   final String id;
@@ -75,8 +75,10 @@ class ServiceRequest {
       userName: json['user_name'] as String,
       userInitials: json['user_initials'] as String,
       category: ServiceCategoryExtension.fromJson(json['category'] as String),
-      type: RequestType.values.byName(json['type'] as String),
-      status: RequestStatus.values.byName(json['status'] as String),
+      type: RequestType.values.asNameMap()[json['type'] as String] ??
+          RequestType.unknown,
+      status: RequestStatus.values.asNameMap()[json['status'] as String] ??
+          RequestStatus.unknown,
       updateText: json['update_text'] as String?,
       description: json['description'] as String,
       location: json['location'] as String,
