@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class SupporterProfile {
   final String name;
   final String introduction;
@@ -42,12 +44,27 @@ class SupporterProfile {
   }
 
   @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is SupporterProfile &&
-          runtimeType == other.runtimeType &&
-          name == other.name;
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+
+    return other is SupporterProfile &&
+        other.name == name &&
+        other.introduction == introduction &&
+        listEquals(other.competencies, competencies) &&
+        other.rating == rating &&
+        other.reviewCount == reviewCount &&
+        listEquals(other.positiveFeedback, positiveFeedback) &&
+        listEquals(other.negativeFeedback, negativeFeedback);
+  }
 
   @override
-  int get hashCode => name.hashCode;
+  int get hashCode => Object.hash(
+        name,
+        introduction,
+        Object.hashAll(competencies),
+        rating,
+        reviewCount,
+        Object.hashAll(positiveFeedback),
+        Object.hashAll(negativeFeedback),
+      );
 }
