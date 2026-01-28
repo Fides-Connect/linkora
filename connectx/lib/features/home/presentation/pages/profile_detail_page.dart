@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/widgets/app_background.dart';
+import '../../../../core/widgets/star_rating.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/supporter_profile.dart';
 import '../viewmodels/home_tab_view_model.dart';
@@ -215,7 +216,7 @@ class ProfileDetailPage extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              const Icon(Icons.star, color: Colors.amber, size: 28),
+                              StarRating(rating: profile.rating),
                               const SizedBox(width: 8),
                               Text(
                                 '(${profile.reviewCount})',

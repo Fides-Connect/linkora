@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_background.dart';
+import '../../../../core/widgets/star_rating.dart';
 import '../../../../localization/app_localizations.dart';
 import '../viewmodels/home_tab_view_model.dart';
 
@@ -269,11 +270,10 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              const Icon(Icons.star, color: Colors.amber, size: 28),
-                              const Icon(Icons.star, color: Colors.amber, size: 28),
-                              const Icon(Icons.star, color: Colors.amber, size: 28),
-                              const Icon(Icons.star, color: Colors.amber, size: 28),
-                              const Icon(Icons.star_half, color: Colors.amber, size: 28),
+                              StarRating(
+                                rating: profile?.rating ?? 0.0,
+                                size: 28,
+                              ),
                               const SizedBox(width: 8),
                               Text(
                                 '(${profile?.reviewCount ?? 0})', 
