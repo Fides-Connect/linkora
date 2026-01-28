@@ -25,6 +25,7 @@ class MessagesEN {
   static const String incomingRequestsTitle = 'Incoming Requests';
   static const String yourLastRequestsTitle = 'Your Last Requests';
   static const String openDetailsButton = 'Open Details';
+  static const String actionNeededButton = 'Action Needed';
   static const String pending = 'Pending';
   static const String waitingForAnswer = 'Waiting for Answer';
   static const String completed = 'Completed';

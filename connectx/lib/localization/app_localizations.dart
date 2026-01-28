@@ -428,6 +428,13 @@ class AppLocalizations {
     return MessagesEN.openDetailsButton;
   }
 
+  String get actionNeededButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.actionNeededButton;
+    }
+    return MessagesEN.actionNeededButton;
+  }
+
   String get pending {
     if (locale.languageCode == 'de') {
       return MessagesDE.pending;
