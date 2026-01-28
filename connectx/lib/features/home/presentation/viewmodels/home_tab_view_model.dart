@@ -86,12 +86,6 @@ class HomeTabViewModel extends ChangeNotifier {
     
     await _repository.addCompetence(competence);
     
-    // Optimistic update or fetch again
-    // For simplicity, we manually update local state since repository methods usually return void
-    // But repository implementation for addCompetence just posts and fallsback.
-    // In a real app we might reload the profile or trust the repository updated something if it's shared state.
-    // However, the repository methods (as seen before) update the mock data but don't return the new profile.
-    
     // Let's reload profile to be safe and consistent with repository
     _userProfile = await _repository.getSupporterProfile();
     notifyListeners();
