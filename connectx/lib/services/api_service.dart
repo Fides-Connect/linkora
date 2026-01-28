@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
@@ -50,8 +52,7 @@ class ApiService {
     final headers = await _getHeaders();
 
     debugPrint('GET $url');
-    final response = await http.get(url, headers: headers).timeout(_timeout);
-    return _processResponse(response);
+    return _performRequest(() => http.get(url, headers: headers).timeout(_timeout));
   }
 
   Future<dynamic> post(String endpoint, {dynamic body}) async {
@@ -59,12 +60,11 @@ class ApiService {
     final headers = await _getHeaders();
 
     debugPrint('POST $url');
-    final response = await http.post(
+    return _performRequest(() => http.post(
       url,
       headers: headers,
       body: body != null ? jsonEncode(body) : null,
-    ).timeout(_timeout);
-    return _processResponse(response);
+    ).timeout(_timeout));
   }
 
   Future<dynamic> put(String endpoint, {dynamic body}) async {
@@ -72,12 +72,11 @@ class ApiService {
     final headers = await _getHeaders();
 
     debugPrint('PUT $url');
-    final response = await http.put(
+    return _performRequest(() => http.put(
       url,
       headers: headers,
       body: body != null ? jsonEncode(body) : null,
-    ).timeout(_timeout);
-    return _processResponse(response);
+    ).timeout(_timeout));
   }
 
   Future<dynamic> delete(String endpoint) async {
@@ -85,8 +84,24 @@ class ApiService {
     final headers = await _getHeaders();
 
     debugPrint('DELETE $url');
-    final response = await http.delete(url, headers: headers).timeout(_timeout);
-    return _processResponse(response);
+    return _performRequest(() => http.delete(url, headers: headers).timeout(_timeout));
+  }
+
+  Future<dynamic> _performRequest(Future<http.Response> Function() request) async {
+    try {
+      final response = await request();
+      return _processResponse(response);
+    } on TimeoutException {
+      debugPrint('API Error: Request timed out');
+      throw ApiException('Request timed out', statusCode: 408);
+    } on SocketException {
+      debugPrint('API Error: Network connection failed');
+      throw ApiException('Network connection failed');
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      debugPrint('API Error: Unexpected error $e');
+      throw ApiException('Unexpected error: $e');
+    }
   }
 
   dynamic _processResponse(http.Response response) {
