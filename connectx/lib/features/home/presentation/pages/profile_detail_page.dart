@@ -54,7 +54,7 @@ class ProfileDetailPage extends StatelessWidget {
                             radius: 50,
                             backgroundColor: Colors.white.withValues(alpha: 0.2),
                             child: Text(
-                              profile.name[0],
+                              profile.name.isNotEmpty ? profile.name[0] : '?',
                               style: const TextStyle(
                                 fontSize: 40,
                                 color: Colors.white,

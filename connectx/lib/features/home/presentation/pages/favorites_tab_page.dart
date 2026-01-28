@@ -74,7 +74,7 @@ class FavoritesTabPage extends StatelessWidget {
                 radius: 30,
                 backgroundColor: Colors.white.withValues(alpha: 0.2),
                 child: Text(
-                  profile.name[0],
+                  profile.name.isNotEmpty ? profile.name[0] : '?',
                   style: const TextStyle(
                     fontSize: 24,
                     color: Colors.white,
