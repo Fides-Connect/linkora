@@ -117,7 +117,7 @@ class ApiService {
       try {
         return jsonDecode(response.body);
       } catch (e) {
-        // Prepare for non-json response?
+        // If the response body is not valid JSON, return it as a raw string.
         return response.body;
       }
     } else {

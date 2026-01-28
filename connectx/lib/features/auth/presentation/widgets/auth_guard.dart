@@ -22,7 +22,7 @@ class AuthGuard extends StatelessWidget {
         }
         
         if (userProvider.isLoading && !userProvider.isAuthenticated) {
-             return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
         return child;
