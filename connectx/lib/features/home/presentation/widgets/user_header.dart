@@ -13,6 +13,26 @@ class UserHeader extends StatelessWidget {
         final user = userProvider.user;
         if (user == null) return const SizedBox.shrink();
 
+        Widget buildFallback() {
+          return CircleAvatar(
+            radius: 16,
+            backgroundColor: const Color(0xFF6C63FF),
+            child: Text(
+              (user.displayName ?? '')
+                  .split(' ')
+                  .where((s) => s.isNotEmpty)
+                  .map((s) => s[0])
+                  .take(2)
+                  .join()
+                  .toUpperCase(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+              ),
+            ),
+          );
+        }
+
         return Positioned(
           top: 20,
           right: 20,
@@ -28,26 +48,12 @@ class UserHeader extends StatelessWidget {
                     width: 32,
                     height: 32,
                     fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) =>
+                        buildFallback(),
                   ),
                 )
               else
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: const Color(0xFF6C63FF),
-                  child: Text(
-                    (user.displayName ?? '')
-                        .split(' ')
-                        .where((s) => s.isNotEmpty)
-                        .map((s) => s[0])
-                        .take(2)
-                        .join()
-                        .toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
+                buildFallback(),
               IconButton(
                 icon: const Icon(Icons.logout),
                 onPressed: () async {
