@@ -6,7 +6,7 @@ import '../../services/auth_service.dart';
 class UserProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
   User? _user;
-  bool _isLoading = false;
+  bool _isLoading = true;
   String? _error;
   StreamSubscription<User?>? _authSubscription;
 
@@ -20,8 +20,6 @@ class UserProvider extends ChangeNotifier {
   }
   
   Future<void> _init() async {
-    _isLoading = true;
-    notifyListeners();
     try {
       await _authService.initialize();
       _authSubscription = _authService.onCurrentUserChanged.listen((user) {
