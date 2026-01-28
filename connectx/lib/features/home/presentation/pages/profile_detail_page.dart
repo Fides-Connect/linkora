@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/widgets/app_background.dart';
+import '../../../../core/widgets/feedback_display.dart';
 import '../../../../core/widgets/star_rating.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/supporter_profile.dart';
@@ -232,69 +233,19 @@ class ProfileDetailPage extends StatelessWidget {
                     ),
                   ),
 
-                  if (profile.positiveFeedback.isNotEmpty) ...[
-                    const SizedBox(height: 24),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            localizations?.positiveFeedback ?? 'Positive Feedback',
-                            style: const TextStyle(
-                              color: Colors.greenAccent,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: profile.positiveFeedback.map((tag) {
-                              return Chip(
-                                label: Text(tag),
-                                backgroundColor: const Color(0x3369F0AE),
-                                labelStyle: const TextStyle(color: Colors.white),
-                              );
-                            }).toList(),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  FeedbackDisplay(
+                    title: localizations?.positiveFeedback ?? 'Positive Feedback',
+                    feedbackItems: profile.positiveFeedback,
+                    titleColor: Colors.greenAccent,
+                    chipColor: const Color(0x3369F0AE),
+                  ),
 
-                  if (profile.negativeFeedback.isNotEmpty) ...[
-                    const SizedBox(height: 24),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            localizations?.negativeFeedback ?? 'Negative Feedback',
-                            style: const TextStyle(
-                              color: Colors.redAccent,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: profile.negativeFeedback.map((tag) {
-                              return Chip(
-                                label: Text(tag),
-                                backgroundColor: const Color(0x33FF5252),
-                                labelStyle: const TextStyle(color: Colors.white),
-                              );
-                            }).toList(),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  FeedbackDisplay(
+                    title: localizations?.negativeFeedback ?? 'Negative Feedback',
+                    feedbackItems: profile.negativeFeedback,
+                    titleColor: Colors.redAccent,
+                    chipColor: const Color(0x33FF5252),
+                  ),
 
                   const SizedBox(height: 48),
 

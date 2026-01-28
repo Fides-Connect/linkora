@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_background.dart';
+import '../../../../core/widgets/feedback_display.dart';
 import '../../../../core/widgets/star_rating.dart';
 import '../../../../localization/app_localizations.dart';
 import '../viewmodels/home_tab_view_model.dart';
@@ -14,10 +15,9 @@ class SupporterProfilePage extends StatefulWidget {
 }
 
 class _SupporterProfilePageState extends State<SupporterProfilePage> {
-  // Temporary local state for competencies (seeded from mock data)
+
   late String _introduction;
   late TextEditingController _introController;
-  // late List<String> _competencies; // No longer needed as we use provider directly
 
   @override
   void initState() {
@@ -27,7 +27,6 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
     
     // Fallback if profile not loaded yet (though it should be)
     _introduction = profile?.introduction ?? '';
-    // _competencies = List.from(profile?.competencies ?? []);
     
     _introController = TextEditingController(text: _introduction);
   }
@@ -289,70 +288,19 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                     ),
                   ),
 
-                  const SizedBox(height: 24),
-                  
-                  // Positive Feedback
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          localizations?.positiveFeedback ?? 'Positive Feedback',
-                          style: const TextStyle(
-                            color: Colors.greenAccent,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: (profile?.positiveFeedback ?? []).map((feedback) {
-                            return Chip(
-                              label: Text(feedback),
-                              backgroundColor: const Color(0x3369F0AE),
-                              labelStyle: const TextStyle(color: Colors.white),
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ),
+                  FeedbackDisplay(
+                    title: localizations?.positiveFeedback ?? 'Positive Feedback',
+                    feedbackItems: profile?.positiveFeedback ?? [],
+                    titleColor: Colors.greenAccent,
+                    chipColor: const Color(0x3369F0AE),
                   ),
 
-                  const SizedBox(height: 24),
-
-                  // Negative Feedback
-                  if (profile != null && profile.negativeFeedback.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            localizations?.negativeFeedback ?? 'Negative Feedback',
-                            style: const TextStyle(
-                              color: Colors.redAccent,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: profile.negativeFeedback.map((feedback) {
-                              return Chip(
-                                label: Text(feedback),
-                                backgroundColor: const Color(0x33FF5252),
-                                labelStyle: const TextStyle(color: Colors.white),
-                              );
-                            }).toList(),
-                          ),
-                        ],
-                      ),
-                    ),
+                  FeedbackDisplay(
+                    title: localizations?.negativeFeedback ?? 'Negative Feedback',
+                    feedbackItems: profile?.negativeFeedback ?? [],
+                    titleColor: Colors.redAccent,
+                    chipColor: const Color(0x33FF5252),
+                  ),
                 ],
               ),
             ),
