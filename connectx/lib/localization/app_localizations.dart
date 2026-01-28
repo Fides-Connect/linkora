@@ -430,9 +430,9 @@ class AppLocalizations {
 
   String get actionNeededButton {
     if (locale.languageCode == 'de') {
-      return MessagesDE.actionNeededButton;
+      return MessagesDE.actionRequired;
     }
-    return MessagesEN.actionNeededButton;
+    return MessagesEN.actionRequired;
   }
 
   String get pending {
@@ -489,6 +489,20 @@ class AppLocalizations {
       return MessagesDE.location;
     }
     return MessagesEN.location;
+  }
+  
+  String get dateFrom {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.dateFrom;
+    }
+    return MessagesEN.dateFrom;
+  }
+  
+  String get dateTo {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.dateTo;
+    }
+    return MessagesEN.dateTo;
   }
 
   String get date {

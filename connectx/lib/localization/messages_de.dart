@@ -25,7 +25,7 @@ class MessagesDE {
   static const String incomingRequestsTitle = 'Eingehende Anfragen';
   static const String yourLastRequestsTitle = 'Ihre letzten Anfragen';
   static const String openDetailsButton = 'Details öffnen';
-  static const String actionNeededButton = 'Handlungsbedarf';
+  static const String actionRequired = 'Aktion nötig';
   static const String pending = 'Ausstehend';
   static const String waitingForAnswer = 'Warten auf Antwort';
   static const String completed = 'Abgeschlossen';
@@ -34,6 +34,8 @@ class MessagesDE {
   static const String rejectButton = 'Ablehnen';
   static const String cancelRequestButton = 'Anfrage zurückziehen';
   static const String location = 'Ort';
+  static const String dateFrom = 'Von';
+  static const String dateTo = 'Bis';
   static const String date = 'Datum';
   static const String amount = 'Betrag';
   static const String description = 'Beschreibung';

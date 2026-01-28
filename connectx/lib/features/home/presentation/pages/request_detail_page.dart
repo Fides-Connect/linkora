@@ -115,7 +115,7 @@ class RequestDetailPage extends StatelessWidget {
                           );
                         }
                       } catch (e) {
-                         // Close loading indicator
+                        // Close loading indicator
                         if (context.mounted) Navigator.pop(context);
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -162,11 +162,11 @@ class RequestDetailPage extends StatelessWidget {
                   const Divider(color: Colors.white24, height: 32),
 
                   // Details
-                  _buildDetailRow(context, localizations?.date ?? 'Date', request.date),
-                   if (request.secondDateLine != null)
+                  _buildDetailRow(context, localizations?.date ?? 'Date', request.getDate(localizations)),
+                   if (request.getSecondDateLine(localizations) != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 4.0),
-                      child: _buildDetailRow(context, '', request.secondDateLine!),
+                      child: _buildDetailRow(context, '', request.getSecondDateLine(localizations)!),
                     ),
                   
                   const SizedBox(height: 16),

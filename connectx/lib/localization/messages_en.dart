@@ -25,7 +25,7 @@ class MessagesEN {
   static const String incomingRequestsTitle = 'Incoming Requests';
   static const String yourLastRequestsTitle = 'Your Last Requests';
   static const String openDetailsButton = 'Open Details';
-  static const String actionNeededButton = 'Action Needed';
+  static const String actionRequired = 'Action Required';
   static const String pending = 'Pending';
   static const String waitingForAnswer = 'Waiting for Answer';
   static const String completed = 'Completed';
@@ -34,6 +34,8 @@ class MessagesEN {
   static const String rejectButton = 'Reject';
   static const String cancelRequestButton = 'Cancel Request';
   static const String location = 'Location';
+  static const String dateFrom = 'From';
+  static const String dateTo = 'To';
   static const String date = 'Date';
   static const String amount = 'Amount';
   static const String description = 'Description';

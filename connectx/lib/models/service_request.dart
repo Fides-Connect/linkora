@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../localization/app_localizations.dart';
 import 'service_category.dart';
 
 enum RequestType { incoming, outgoing, unknown }
@@ -46,16 +47,19 @@ class ServiceRequest {
     return '$prefix${amountValue.toStringAsFixed(2)} $currency';
   }
 
-  String get date {
+  String getDate(AppLocalizations? localizations) {
     if (endDate == null) {
       return _formatDate(startDate);
     }
-    return 'From: ${_formatDate(startDate)}';
+    final from = localizations?.dateFrom ?? 'From';
+    // Keeping simple spacing as alignment depends on font and language
+    return '$from: ${_formatDate(startDate)}';
   }
 
-  String? get secondDateLine {
+  String? getSecondDateLine(AppLocalizations? localizations) {
     if (endDate == null) return null;
-    return 'To:     ${_formatDate(endDate!)}';
+    final to = localizations?.dateTo ?? 'To';
+    return '$to: ${_formatDate(endDate!)}';
   }
 
   String _formatDate(DateTime dt) {

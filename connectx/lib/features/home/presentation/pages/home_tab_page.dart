@@ -179,7 +179,7 @@ class HomeTabPage extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  request.date,
+                  request.getDate(localizations),
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.5),
                     fontSize: 14,
@@ -317,15 +317,15 @@ class HomeTabPage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      request.date,
+                      request.getDate(localizations),
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.5),
                         fontSize: 14,
                       ),
                     ),
-                    if (request.secondDateLine != null)
+                    if (request.getSecondDateLine(localizations) != null)
                       Text(
-                        request.secondDateLine!,
+                        request.getSecondDateLine(localizations)!,
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.5),
                           fontSize: 14,
