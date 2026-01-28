@@ -7,8 +7,16 @@ import '../mock_home_data.dart';
 class HomeRepository {
   final ApiService _apiService;
 
+  late List<ServiceRequest> _localMockRequests;
+  late List<SupporterProfile> _localMockFavorites;
+  late SupporterProfile _localMockSupporterProfile;
+
   HomeRepository({ApiService? apiService})
-      : _apiService = apiService ?? ApiService();
+      : _apiService = apiService ?? ApiService() {
+    _localMockRequests = List.from(mockRequests);
+    _localMockFavorites = List.from(mockFavorites);
+    _localMockSupporterProfile = mockSupporterProfile;
+  }
 
   /// Fetches the list of incoming and outgoing service requests.
   /// Wraps API call to `GET /requests`.
@@ -24,7 +32,7 @@ class HomeRepository {
     
     // Fallback if API fails or is not implemented
     await Future.delayed(const Duration(milliseconds: 500));
-    return mockRequests;
+    return _localMockRequests;
   }
 
   /// Fetches the current user's favorite supporters.
@@ -42,7 +50,7 @@ class HomeRepository {
     
     // Fallback if API fails or is not implemented
     await Future.delayed(const Duration(milliseconds: 500));
-    return mockFavorites;
+    return _localMockFavorites;
   }
 
   /// Adds a supporter to favorites.
@@ -58,8 +66,8 @@ class HomeRepository {
 
     // Fallback
     await Future.delayed(const Duration(milliseconds: 200));
-    if (!mockFavorites.any((p) => p.name == profile.name)) {
-      mockFavorites.add(profile);
+    if (!_localMockFavorites.any((p) => p.name == profile.name)) {
+      _localMockFavorites.add(profile);
     }
   }
 
@@ -75,7 +83,7 @@ class HomeRepository {
 
     // Fallback
     await Future.delayed(const Duration(milliseconds: 200));
-    mockFavorites.removeWhere((p) => p.name == profile.name);
+    _localMockFavorites.removeWhere((p) => p.name == profile.name);
   }
 
   /// Fetches the logged-in user's own supporter profile.
@@ -93,7 +101,7 @@ class HomeRepository {
     
     // Fallback if API fails or is not implemented
     await Future.delayed(const Duration(milliseconds: 500));
-    return mockSupporterProfile;
+    return _localMockSupporterProfile;
   }
 
   /// Updates the logged-in user's entire profile.
@@ -108,7 +116,7 @@ class HomeRepository {
 
     // Fallback
     await Future.delayed(const Duration(milliseconds: 500));
-    mockSupporterProfile = profile;
+    _localMockSupporterProfile = profile;
   }
 
   /// Adds a single competence tag to the user's profile.
@@ -123,16 +131,16 @@ class HomeRepository {
 
     // Fallback
     await Future.delayed(const Duration(milliseconds: 200));
-    if (!mockSupporterProfile.competencies.contains(competence)) {
-      final updatedCompetencies = List<String>.from(mockSupporterProfile.competencies)..add(competence);
-      mockSupporterProfile = SupporterProfile(
-        name: mockSupporterProfile.name,
-        introduction: mockSupporterProfile.introduction,
+    if (!_localMockSupporterProfile.competencies.contains(competence)) {
+      final updatedCompetencies = List<String>.from(_localMockSupporterProfile.competencies)..add(competence);
+      _localMockSupporterProfile = SupporterProfile(
+        name: _localMockSupporterProfile.name,
+        introduction: _localMockSupporterProfile.introduction,
         competencies: updatedCompetencies,
-        rating: mockSupporterProfile.rating,
-        reviewCount: mockSupporterProfile.reviewCount,
-        positiveFeedback: mockSupporterProfile.positiveFeedback,
-        negativeFeedback: mockSupporterProfile.negativeFeedback
+        rating: _localMockSupporterProfile.rating,
+        reviewCount: _localMockSupporterProfile.reviewCount,
+        positiveFeedback: _localMockSupporterProfile.positiveFeedback,
+        negativeFeedback: _localMockSupporterProfile.negativeFeedback
       );
     }
   }
@@ -150,16 +158,16 @@ class HomeRepository {
 
     // Fallback
     await Future.delayed(const Duration(milliseconds: 200));
-    if (mockSupporterProfile.competencies.contains(competence)) {
-      final updatedCompetencies = List<String>.from(mockSupporterProfile.competencies)..remove(competence);
-      mockSupporterProfile = SupporterProfile(
-        name: mockSupporterProfile.name,
-        introduction: mockSupporterProfile.introduction,
+    if (_localMockSupporterProfile.competencies.contains(competence)) {
+      final updatedCompetencies = List<String>.from(_localMockSupporterProfile.competencies)..remove(competence);
+      _localMockSupporterProfile = SupporterProfile(
+        name: _localMockSupporterProfile.name,
+        introduction: _localMockSupporterProfile.introduction,
         competencies: updatedCompetencies,
-        rating: mockSupporterProfile.rating,
-        reviewCount: mockSupporterProfile.reviewCount,
-        positiveFeedback: mockSupporterProfile.positiveFeedback,
-        negativeFeedback: mockSupporterProfile.negativeFeedback
+        rating: _localMockSupporterProfile.rating,
+        reviewCount: _localMockSupporterProfile.reviewCount,
+        positiveFeedback: _localMockSupporterProfile.positiveFeedback,
+        negativeFeedback: _localMockSupporterProfile.negativeFeedback
       );
     }
   }
@@ -184,9 +192,9 @@ class HomeRepository {
     // Here we use the name mapping logic that was in UI
     
     // Find request or use defaults
-    final request = mockRequests.firstWhere(
+    final request = _localMockRequests.firstWhere(
       (r) => r.userName == userId || r.id == userId, 
-      orElse: () => mockRequests.first
+      orElse: () => _localMockRequests.first
     );
 
     if (mockUserProfiles.containsKey(request.userName)) {
@@ -208,7 +216,7 @@ class HomeRepository {
 
     // Fallback
     await Future.delayed(const Duration(milliseconds: 500));
-    mockRequests.add(request);
+    _localMockRequests.add(request);
   }
 
   /// Updates the status (Accepted, Rejected, Completed) of an existing request.
@@ -223,10 +231,10 @@ class HomeRepository {
 
     // Fallback
     await Future.delayed(const Duration(milliseconds: 200));
-    final index = mockRequests.indexWhere((r) => r.id == requestId);
+    final index = _localMockRequests.indexWhere((r) => r.id == requestId);
     if (index != -1) {
-      final original = mockRequests[index];
-      mockRequests[index] = ServiceRequest(
+      final original = _localMockRequests[index];
+      _localMockRequests[index] = ServiceRequest(
         id: original.id,
         title: original.title,
         amountValue: original.amountValue,
