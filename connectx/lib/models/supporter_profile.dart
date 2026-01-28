@@ -23,11 +23,11 @@ class SupporterProfile {
     return SupporterProfile(
       name: json['name'] as String,
       introduction: json['introduction'] as String,
-      competencies: (json['competencies'] as List).cast<String>(),
+      competencies: (json['competencies'] as List?)?.cast<String>() ?? [],
       rating: (json['rating'] as num).toDouble(),
       reviewCount: json['review_count'] as int,
-      positiveFeedback: (json['positive_feedback'] as List).cast<String>(),
-      negativeFeedback: (json['negative_feedback'] as List).cast<String>(),
+      positiveFeedback: (json['positive_feedback'] as List?)?.cast<String>() ?? [],
+      negativeFeedback: (json['negative_feedback'] as List?)?.cast<String>() ?? [],
     );
   }
 
