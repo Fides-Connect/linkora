@@ -49,13 +49,16 @@ class HomeTabViewModel extends ChangeNotifier {
   }
 
   Future<void> toggleFavorite(SupporterProfile profile) async {
-    if (isFavorite(profile)) {
-      await _repository.removeFavorite(profile);
-    } else {
-      await _repository.addFavorite(profile);
+    try {
+      if (isFavorite(profile)) {
+        _favorites = await _repository.removeFavorite(profile);
+      } else {
+        _favorites = await _repository.addFavorite(profile);
+      }
+      _error = null;
+    } catch (e) {
+      _error = 'Failed to update favorites: $e';
     }
-    // Refresh list
-    _favorites = await _repository.getFavorites();
     notifyListeners();
   }
 

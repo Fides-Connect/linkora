@@ -55,10 +55,12 @@ class HomeRepository {
 
   /// Adds a supporter to favorites.
   /// Wraps API call to `POST /favorites/{id}`.
-  Future<void> addFavorite(SupporterProfile profile) async {
+  /// Returns the updated list of favorites.
+  Future<List<SupporterProfile>> addFavorite(SupporterProfile profile) async {
     try {
       // Assuming we have an ID or use name as ID for mock
       await _apiService.post('/favorites/${Uri.encodeComponent(profile.name)}'); 
+      return getFavorites();
     } catch (e) {
       debugPrint('API failed for addFavorite (using mock data): $e');
       // Fallback
@@ -66,19 +68,23 @@ class HomeRepository {
       if (!_localMockFavorites.any((p) => p.name == profile.name)) {
         _localMockFavorites.add(profile);
       }
+      return _localMockFavorites;
     }
   }
 
   /// Removes a supporter from favorites.
   /// Wraps API call to `DELETE /favorites/{id}`.
-  Future<void> removeFavorite(SupporterProfile profile) async {
+  /// Returns the updated list of favorites.
+  Future<List<SupporterProfile>> removeFavorite(SupporterProfile profile) async {
     try {
       await _apiService.delete('/favorites/${Uri.encodeComponent(profile.name)}');
+      return getFavorites();
     } catch (e) {
       debugPrint('API failed for removeFavorite (using mock data): $e');
       // Fallback
       await Future.delayed(const Duration(milliseconds: 200));
       _localMockFavorites.removeWhere((p) => p.name == profile.name);
+      return _localMockFavorites;
     }
   }
 
