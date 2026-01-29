@@ -115,4 +115,15 @@ void main() {
     expect(viewModel.chatMessages, isEmpty);
     expect(viewModel.statusText, 'Reset');
   });
+
+  test('dispose stops speech and cleans up callbacks', () {
+    viewModel.dispose();
+
+    verify(mockSpeechService.stopSpeech()).called(1);
+    verify(mockSpeechService.onSpeechStart = null);
+    verify(mockSpeechService.onConnected = null);
+    verify(mockSpeechService.onSpeechEnd = null);
+    verify(mockSpeechService.onDisconnected = null);
+    verify(mockSpeechService.onChatMessage = null);
+  });
 }

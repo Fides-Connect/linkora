@@ -122,6 +122,11 @@ class SearchTabViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _speechService.stopSpeech();
+    _speechService.onSpeechStart = null;
+    _speechService.onConnected = null;
+    _speechService.onSpeechEnd = null;
+    _speechService.onDisconnected = null;
+    _speechService.onChatMessage = null;
     super.dispose();
   }
 }
