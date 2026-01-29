@@ -38,22 +38,18 @@ class _SearchTabPageContentState extends State<_SearchTabPageContent> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await PermissionHelper.requestMicrophonePermission(context);
       await PermissionHelper.requestNotificationPermission(context);
+
+      if (mounted) {
+        final localizations = AppLocalizations.of(context);
+        final locale = Localizations.localeOf(context);
+        context.read<SearchTabViewModel>().initialize(
+              localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
+              locale.languageCode,
+            );
+      }
     });
 
     _setupForegroundMessageHandler();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final localizations = AppLocalizations.of(context);
-    final locale = Localizations.localeOf(context);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<SearchTabViewModel>().initialize(
-            localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
-            locale.languageCode,
-          );
-    });
   }
 
   void _setupForegroundMessageHandler() {
