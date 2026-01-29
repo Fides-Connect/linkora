@@ -27,7 +27,7 @@ void main() {
           'start_date': '2023-01-01T00:00:00.000',
           'user_name': 'Test User',
           'user_initials': 'TU',
-          'category': 'cleaning',
+          'category': 'housekeeping',
           'type': 'incoming',
           'status': 'pending',
           'description': 'Test Desc',
