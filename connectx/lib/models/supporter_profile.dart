@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 class SupporterProfile {
+  final String id;
   final String name;
   final String introduction;
   final List<String> competencies;
@@ -10,6 +11,7 @@ class SupporterProfile {
   final List<String> negativeFeedback;
 
   const SupporterProfile({
+    required this.id,
     required this.name,
     required this.introduction,
     required this.competencies,
@@ -21,6 +23,7 @@ class SupporterProfile {
 
   factory SupporterProfile.fromJson(Map<String, dynamic> json) {
     return SupporterProfile(
+      id: json['id'] as String,
       name: json['name'] as String,
       introduction: json['introduction'] as String,
       competencies: (json['competencies'] as List?)?.cast<String>() ?? [],
@@ -33,6 +36,7 @@ class SupporterProfile {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
       'name': name,
       'introduction': introduction,
       'competencies': competencies,

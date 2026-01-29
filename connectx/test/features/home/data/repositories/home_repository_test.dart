@@ -66,6 +66,7 @@ void main() {
        // Arrange
       final mockJsonList = [
         {
+          'id': 'user_1',
           'name': 'Supporter 1',
           'introduction': 'Intro',
           'competencies': ['A', 'B'],

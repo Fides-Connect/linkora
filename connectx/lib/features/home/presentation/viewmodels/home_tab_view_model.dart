@@ -70,6 +70,7 @@ class HomeTabViewModel extends ChangeNotifier {
     if (_userProfile == null) return;
     
     final updatedProfile = SupporterProfile(
+      id: _userProfile!.id,
       name: _userProfile!.name,
       introduction: introduction,
       competencies: _userProfile!.competencies,

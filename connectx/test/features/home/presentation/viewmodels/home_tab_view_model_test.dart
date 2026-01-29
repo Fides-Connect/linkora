@@ -21,6 +21,7 @@ void main() {
       final mockRequests = <ServiceRequest>[];
       final mockFavorites = <SupporterProfile>[];
       final mockProfile = SupporterProfile(
+          id: 'user_1',
           name: 'Me',
           introduction: 'Hi',
           competencies: [],
@@ -63,7 +64,7 @@ void main() {
       );
       
       final mockProfile = SupporterProfile(
-          name: 'Me', introduction: 'Hi', competencies: [], rating: 0,
+          id: 'user_1', name: 'Me', introduction: 'Hi', competencies: [], rating: 0,
           reviewCount: 0, positiveFeedback: [], negativeFeedback: []
       );
       

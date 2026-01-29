@@ -49,6 +49,7 @@ List<ServiceRequest> mockRequests = [
 
 List<SupporterProfile> mockFavorites = [
   SupporterProfile(
+    id: 'fav_1',
     name: "Sarah Miller",
     introduction: "I love helping seniors with their daily grocery shopping and providing company. I'm a patient listener and enjoy knitting.",
     competencies: ["Grocery Shopping", "Knitting", "Listening", "Patience"],
@@ -58,6 +59,7 @@ List<SupporterProfile> mockFavorites = [
     negativeFeedback: [],
   ),
   SupporterProfile(
+    id: 'fav_2',
     name: "David Chen",
     introduction: "Tech enthusiast who enjoys teaching others how to use smartphones and tablets. I can also help with minor computer repairs.",
     competencies: ["Smartphone Setup", "Tablet Basics", "Computer Repair", "WiFi Troubleshooting"],
@@ -67,6 +69,7 @@ List<SupporterProfile> mockFavorites = [
     negativeFeedback: ["Talks fast"],
   ),
   SupporterProfile(
+    id: 'fav_3',
     name: "Maria Garcia",
     introduction: "Certified nurse assistant with experience in elderly care. I can help with mobility, medication reminders, and light housekeeping.",
     competencies: ["Elderly Care", "Medication Reminders", "Mobility Assistance", "Housekeeping"],
@@ -79,6 +82,7 @@ List<SupporterProfile> mockFavorites = [
 
 // Mutable to allow updates
 SupporterProfile mockSupporterProfile = SupporterProfile(
+  id: 'current_user_123',
   name: "Thomas",
   introduction: "Hello, I'm Thomas! I have a deep passion for Japanese culture and helpful technology. In my free time, you can find me tending to my garden, fixing smaller things around the house, or relaxing with my cats.",
   competencies: [
@@ -96,6 +100,7 @@ SupporterProfile mockSupporterProfile = SupporterProfile(
 
 final Map<String, SupporterProfile> mockUserProfiles = {
   'Paul Shatner': const SupporterProfile(
+    id: 'ps_123',
     name: 'Paul Shatner',
     introduction:
         "I am fascinated by Japanese culture and have always wanted to learn the authentic tea ceremony. I am respectful and eager to learn.",
@@ -106,6 +111,7 @@ final Map<String, SupporterProfile> mockUserProfiles = {
     negativeFeedback: [],
   ),
   'Aron Neil': const SupporterProfile(
+    id: 'an_456',
     name: 'Aron Neil',
     introduction:
         "I own two lovely cats and often need reliable sitters when I travel for work. I value communication and reliability.",
@@ -116,6 +122,7 @@ final Map<String, SupporterProfile> mockUserProfiles = {
     negativeFeedback: [],
   ),
   'Jared Dang': const SupporterProfile(
+    id: 'jd_789',
     name: 'Jared Dang',
     introduction:
         "I travel often and need help keeping my home in order. I appreciate attention to detail.",

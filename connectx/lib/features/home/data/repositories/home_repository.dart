@@ -58,14 +58,13 @@ class HomeRepository {
   /// Returns the updated list of favorites.
   Future<List<SupporterProfile>> addFavorite(SupporterProfile profile) async {
     try {
-      // Assuming we have an ID or use name as ID for mock
-      await _apiService.post('/favorites/${Uri.encodeComponent(profile.name)}'); 
+      await _apiService.post('/favorites/${Uri.encodeComponent(profile.id)}'); 
       return getFavorites();
     } catch (e) {
       debugPrint('API failed for addFavorite (using mock data): $e');
       // Fallback
       await Future.delayed(const Duration(milliseconds: 200));
-      if (!_localMockFavorites.any((p) => p.name == profile.name)) {
+      if (!_localMockFavorites.any((p) => p.id == profile.id)) {
         _localMockFavorites.add(profile);
       }
       return _localMockFavorites;
@@ -77,13 +76,13 @@ class HomeRepository {
   /// Returns the updated list of favorites.
   Future<List<SupporterProfile>> removeFavorite(SupporterProfile profile) async {
     try {
-      await _apiService.delete('/favorites/${Uri.encodeComponent(profile.name)}');
+      await _apiService.delete('/favorites/${Uri.encodeComponent(profile.id)}');
       return getFavorites();
     } catch (e) {
       debugPrint('API failed for removeFavorite (using mock data): $e');
       // Fallback
       await Future.delayed(const Duration(milliseconds: 200));
-      _localMockFavorites.removeWhere((p) => p.name == profile.name);
+      _localMockFavorites.removeWhere((p) => p.id == profile.id);
       return _localMockFavorites;
     }
   }
@@ -138,6 +137,7 @@ class HomeRepository {
        if (!_localMockSupporterProfile.competencies.contains(competence)) {
          final updatedCompetencies = List<String>.from(_localMockSupporterProfile.competencies)..add(competence);
          _localMockSupporterProfile = SupporterProfile(
+           id: _localMockSupporterProfile.id,
            name: _localMockSupporterProfile.name,
            introduction: _localMockSupporterProfile.introduction,
            competencies: updatedCompetencies,
@@ -167,6 +167,7 @@ class HomeRepository {
        if (_localMockSupporterProfile.competencies.contains(competence)) {
          final updatedCompetencies = List<String>.from(_localMockSupporterProfile.competencies)..remove(competence);
          _localMockSupporterProfile = SupporterProfile(
+           id: _localMockSupporterProfile.id,
            name: _localMockSupporterProfile.name,
            introduction: _localMockSupporterProfile.introduction,
            competencies: updatedCompetencies,
