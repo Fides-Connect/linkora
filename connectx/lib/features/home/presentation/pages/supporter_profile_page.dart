@@ -18,17 +18,29 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
 
   late String _introduction;
   late TextEditingController _introController;
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    final viewModel = context.read<HomeTabViewModel>();
-    final profile = viewModel.userProfile;
-    
-    // Fallback if profile not loaded yet (though it should be)
-    _introduction = profile?.introduction ?? '';
-    
+    _introduction = '';
     _introController = TextEditingController(text: _introduction);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_isInitialized) {
+      final viewModel = context.read<HomeTabViewModel>();
+      final profile = viewModel.userProfile;
+      
+      // Fallback if profile not loaded yet (though it should be)
+      if (profile != null) {
+        _introduction = profile.introduction;
+        _introController.text = _introduction;
+      }
+      _isInitialized = true;
+    }
   }
 
   @override
