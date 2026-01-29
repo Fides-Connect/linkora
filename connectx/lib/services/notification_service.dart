@@ -54,7 +54,7 @@ class NotificationService {
 
     // Initialize the plugin
     final bool? result = await _notificationsPlugin.initialize(
-      initSettings,
+      settings: initSettings,
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
@@ -140,10 +140,10 @@ class NotificationService {
     );
 
     await _notificationsPlugin.show(
-      id,
-      title,
-      body,
-      notificationDetails,
+      id: id,
+      title: title,
+      body: body,
+      notificationDetails: notificationDetails,
       payload: payload,
     );
 
@@ -231,10 +231,10 @@ class NotificationService {
     final notificationId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
     await _notificationsPlugin.show(
-      notificationId,
-      title,
-      truncatedMessage,
-      notificationDetails,
+      id: notificationId,
+      title: title,
+      body: truncatedMessage,
+      notificationDetails: notificationDetails,
       payload: 'ai_response:$notificationId',
     );
 
@@ -270,7 +270,7 @@ class NotificationService {
 
   /// Cancel a specific notification
   Future<void> cancelNotification(int id) async {
-    await _notificationsPlugin.cancel(id);
+    await _notificationsPlugin.cancel(id: id);
     debugPrint('NotificationService: Cancelled notification $id');
   }
 
