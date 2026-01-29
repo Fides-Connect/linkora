@@ -34,7 +34,20 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   void initState() {
     super.initState();
     _searchViewModel = SearchTabViewModel();
-    _homeTabViewModel = HomeTabViewModel()..loadData();
+    _homeTabViewModel = HomeTabViewModel();
+    
+    // Explicitly handle async initialization
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadInitialData();
+    });
+  }
+
+  Future<void> _loadInitialData() async {
+    try {
+      await _homeTabViewModel.loadData();
+    } catch (e) {
+      debugPrint('Error loading initial data: $e');
+    }
   }
 
   @override
