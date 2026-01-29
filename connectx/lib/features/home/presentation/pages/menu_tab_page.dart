@@ -98,8 +98,6 @@ class MenuTabPage extends StatelessWidget {
                     },
                    ),
                   const SizedBox(height: 40),
-                  
-                  
                   _MenuItem(
                     icon: Icons.person_outline,
                     title: localizations?.menuSupporterProfile ?? 'Supporter Profile',
