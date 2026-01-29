@@ -79,8 +79,13 @@ class HomeTabViewModel extends ChangeNotifier {
       negativeFeedback: _userProfile!.negativeFeedback
     );
 
-    await _repository.updateSupporterProfile(updatedProfile);
-    _userProfile = updatedProfile;
+    try {
+      // Use the profile returned by the repository to ensure consistency
+      _userProfile = await _repository.updateSupporterProfile(updatedProfile);
+      _error = null;
+    } catch (e) {
+      _error = 'Failed to update profile: $e';
+    }
     notifyListeners();
   }
 

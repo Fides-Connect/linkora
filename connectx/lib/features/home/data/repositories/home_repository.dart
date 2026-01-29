@@ -108,14 +108,18 @@ class HomeRepository {
 
   /// Updates the logged-in user's entire profile.
   /// Wraps API call to `PUT /profile`.
-  Future<void> updateSupporterProfile(SupporterProfile profile) async {
+  /// Returns the updated profile.
+  Future<SupporterProfile> updateSupporterProfile(SupporterProfile profile) async {
      try {
       await _apiService.put('/profile', body: profile.toJson());
+      // Return the profile we just sent, assuming success
+      return profile;
     } catch (e) {
       debugPrint('API failed for updateSupporterProfile (using mock data): $e');
       // Fallback
       await Future.delayed(const Duration(milliseconds: 500));
       _localMockSupporterProfile = profile;
+      return _localMockSupporterProfile;
     }
   }
 
