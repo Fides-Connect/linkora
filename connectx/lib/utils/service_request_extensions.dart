@@ -11,23 +11,25 @@ extension ServiceRequestFormatting on ServiceRequest {
   }
 
   String getDate(AppLocalizations? localizations) {
+    final locale = localizations?.locale.toString();
     if (endDate == null) {
-      return _formatDate(startDate);
+      return _formatDate(startDate, locale);
     }
     final from = localizations?.dateFrom ?? 'From';
-    return '$from: ${_formatDate(startDate)}';
+    return '$from: ${_formatDate(startDate, locale)}';
   }
 
   String? getSecondDateLine(AppLocalizations? localizations) {
     if (endDate == null) return null;
+    final locale = localizations?.locale.toString();
     final to = localizations?.dateTo ?? 'To';
-    return '$to: ${_formatDate(endDate!)}';
+    return '$to: ${_formatDate(endDate!, locale)}';
   }
 
-  String _formatDate(DateTime dt) {
-    // Uses the default locale which is set by the app (flutter_localizations)
-    // Ensures month names and format structure respect the user's language setting.
-    return DateFormat.yMMMMd().format(dt);
+  String _formatDate(DateTime dt, [String? locale]) {
+    // Uses the provided locale if available, otherwise falls back to system default.
+    // ensures month names and format structure respect the passed user's language setting.
+    return DateFormat.yMMMMd(locale).format(dt);
   }
 }
 

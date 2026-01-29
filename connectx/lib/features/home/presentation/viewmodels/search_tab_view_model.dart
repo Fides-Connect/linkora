@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
-import '../../../../services/speech_service.dart';
-import '../../../../models/chat_message.dart';
-import '../../../../models/app_types.dart';
+import 'package:connectx/services/speech_service.dart';
+import 'package:connectx/models/chat_message.dart';
+import 'package:connectx/models/app_types.dart';
 
 class SearchTabViewModel extends ChangeNotifier {
   final SpeechService _speechService;
