@@ -59,15 +59,13 @@ class HomeRepository {
     try {
       // Assuming we have an ID or use name as ID for mock
       await _apiService.post('/favorites/${Uri.encodeComponent(profile.name)}'); 
-      return;
     } catch (e) {
       debugPrint('API failed for addFavorite (using mock data): $e');
-    }
-
-    // Fallback
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (!_localMockFavorites.any((p) => p.name == profile.name)) {
-      _localMockFavorites.add(profile);
+      // Fallback
+      await Future.delayed(const Duration(milliseconds: 200));
+      if (!_localMockFavorites.any((p) => p.name == profile.name)) {
+        _localMockFavorites.add(profile);
+      }
     }
   }
 
@@ -76,14 +74,12 @@ class HomeRepository {
   Future<void> removeFavorite(SupporterProfile profile) async {
     try {
       await _apiService.delete('/favorites/${Uri.encodeComponent(profile.name)}');
-      return;
     } catch (e) {
       debugPrint('API failed for removeFavorite (using mock data): $e');
+      // Fallback
+      await Future.delayed(const Duration(milliseconds: 200));
+      _localMockFavorites.removeWhere((p) => p.name == profile.name);
     }
-
-    // Fallback
-    await Future.delayed(const Duration(milliseconds: 200));
-    _localMockFavorites.removeWhere((p) => p.name == profile.name);
   }
 
   /// Fetches the logged-in user's own supporter profile.
@@ -109,14 +105,12 @@ class HomeRepository {
   Future<void> updateSupporterProfile(SupporterProfile profile) async {
      try {
       await _apiService.put('/profile', body: profile.toJson());
-      return;
     } catch (e) {
       debugPrint('API failed for updateSupporterProfile (using mock data): $e');
+      // Fallback
+      await Future.delayed(const Duration(milliseconds: 500));
+      _localMockSupporterProfile = profile;
     }
-
-    // Fallback
-    await Future.delayed(const Duration(milliseconds: 500));
-    _localMockSupporterProfile = profile;
   }
 
   /// Adds a single competence tag to the user's profile.
@@ -124,24 +118,22 @@ class HomeRepository {
   Future<void> addCompetence(String competence) async {
     try {
       await _apiService.post('/profile/competencies', body: {'competence': competence});
-      return;
     } catch (e) {
        debugPrint('API failed for addCompetence (using mock data): $e');
-    }
-
-    // Fallback
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (!_localMockSupporterProfile.competencies.contains(competence)) {
-      final updatedCompetencies = List<String>.from(_localMockSupporterProfile.competencies)..add(competence);
-      _localMockSupporterProfile = SupporterProfile(
-        name: _localMockSupporterProfile.name,
-        introduction: _localMockSupporterProfile.introduction,
-        competencies: updatedCompetencies,
-        rating: _localMockSupporterProfile.rating,
-        reviewCount: _localMockSupporterProfile.reviewCount,
-        positiveFeedback: _localMockSupporterProfile.positiveFeedback,
-        negativeFeedback: _localMockSupporterProfile.negativeFeedback
-      );
+       // Fallback
+       await Future.delayed(const Duration(milliseconds: 200));
+       if (!_localMockSupporterProfile.competencies.contains(competence)) {
+         final updatedCompetencies = List<String>.from(_localMockSupporterProfile.competencies)..add(competence);
+         _localMockSupporterProfile = SupporterProfile(
+           name: _localMockSupporterProfile.name,
+           introduction: _localMockSupporterProfile.introduction,
+           competencies: updatedCompetencies,
+           rating: _localMockSupporterProfile.rating,
+           reviewCount: _localMockSupporterProfile.reviewCount,
+           positiveFeedback: _localMockSupporterProfile.positiveFeedback,
+           negativeFeedback: _localMockSupporterProfile.negativeFeedback
+         );
+       }
     }
   }
 
@@ -151,24 +143,22 @@ class HomeRepository {
     try {
       // Assuming RESTful design: /profile/competencies/Gardening
       await _apiService.delete('/profile/competencies/${Uri.encodeComponent(competence)}');
-      return;
     } catch (e) {
        debugPrint('API failed for removeCompetence (using mock data): $e');
-    }
-
-    // Fallback
-    await Future.delayed(const Duration(milliseconds: 200));
-    if (_localMockSupporterProfile.competencies.contains(competence)) {
-      final updatedCompetencies = List<String>.from(_localMockSupporterProfile.competencies)..remove(competence);
-      _localMockSupporterProfile = SupporterProfile(
-        name: _localMockSupporterProfile.name,
-        introduction: _localMockSupporterProfile.introduction,
-        competencies: updatedCompetencies,
-        rating: _localMockSupporterProfile.rating,
-        reviewCount: _localMockSupporterProfile.reviewCount,
-        positiveFeedback: _localMockSupporterProfile.positiveFeedback,
-        negativeFeedback: _localMockSupporterProfile.negativeFeedback
-      );
+       // Fallback
+       await Future.delayed(const Duration(milliseconds: 200));
+       if (_localMockSupporterProfile.competencies.contains(competence)) {
+         final updatedCompetencies = List<String>.from(_localMockSupporterProfile.competencies)..remove(competence);
+         _localMockSupporterProfile = SupporterProfile(
+           name: _localMockSupporterProfile.name,
+           introduction: _localMockSupporterProfile.introduction,
+           competencies: updatedCompetencies,
+           rating: _localMockSupporterProfile.rating,
+           reviewCount: _localMockSupporterProfile.reviewCount,
+           positiveFeedback: _localMockSupporterProfile.positiveFeedback,
+           negativeFeedback: _localMockSupporterProfile.negativeFeedback
+         );
+       }
     }
   }
 
@@ -209,14 +199,12 @@ class HomeRepository {
   Future<void> createRequest(ServiceRequest request) async {
     try {
       await _apiService.post('/requests', body: request.toJson());
-      return;
     } catch (e) {
       debugPrint('API failed for createRequest (using mock data): $e');
+      // Fallback
+      await Future.delayed(const Duration(milliseconds: 500));
+      _localMockRequests.add(request);
     }
-
-    // Fallback
-    await Future.delayed(const Duration(milliseconds: 500));
-    _localMockRequests.add(request);
   }
 
   /// Updates the status (Accepted, Rejected, Completed) of an existing request.
@@ -224,32 +212,30 @@ class HomeRepository {
   Future<void> updateRequestStatus(String requestId, RequestStatus status) async {
     try {
       await _apiService.put('/requests/$requestId/status', body: {'status': status.name});
-      return;
     } catch (e) {
        debugPrint('API failed for updateRequestStatus (using mock data): $e');
-    }
-
-    // Fallback
-    await Future.delayed(const Duration(milliseconds: 200));
-    final index = _localMockRequests.indexWhere((r) => r.id == requestId);
-    if (index != -1) {
-      final original = _localMockRequests[index];
-      _localMockRequests[index] = ServiceRequest(
-        id: original.id,
-        title: original.title,
-        amountValue: original.amountValue,
-        currency: original.currency,
-        startDate: original.startDate,
-        endDate: original.endDate,
-        userName: original.userName,
-        userInitials: original.userInitials,
-        category: original.category,
-        type: original.type,
-        status: status, // Updated status
-        updateText: original.updateText,
-        description: original.description,
-        location: original.location,
-      );
+       // Fallback
+       await Future.delayed(const Duration(milliseconds: 200));
+       final index = _localMockRequests.indexWhere((r) => r.id == requestId);
+       if (index != -1) {
+         final original = _localMockRequests[index];
+         _localMockRequests[index] = ServiceRequest(
+           id: original.id,
+           title: original.title,
+           amountValue: original.amountValue,
+           currency: original.currency,
+           startDate: original.startDate,
+           endDate: original.endDate,
+           userName: original.userName,
+           userInitials: original.userInitials,
+           category: original.category,
+           type: original.type,
+           status: status, // Updated status
+           updateText: original.updateText,
+           description: original.description,
+           location: original.location,
+         );
+       }
     }
   }
 }
