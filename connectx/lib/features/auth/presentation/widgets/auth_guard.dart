@@ -26,7 +26,19 @@ class _AuthGuardState extends State<AuthGuard> {
             debugPrint('AuthGuard: No user logged in, redirecting to /start');
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                Navigator.of(context).pushNamedAndRemoveUntil('/start', (route) => false);
+                Navigator.of(context)
+                    .pushNamedAndRemoveUntil('/start', (route) => false)
+                    .then((_) {
+                      if (mounted) {
+                        _isNavigating = false;
+                      }
+                    })
+                    .catchError((error) {
+                      debugPrint('AuthGuard: Navigation failed: $error');
+                      if (mounted) {
+                        _isNavigating = false;
+                      }
+                    });
               }
             });
           }
@@ -37,9 +49,11 @@ class _AuthGuardState extends State<AuthGuard> {
         if (userProvider.isAuthenticated) {
           _isNavigating = false;
         }
-        
+
         if (userProvider.isLoading && !userProvider.isAuthenticated) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
         return widget.child;
