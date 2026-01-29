@@ -31,8 +31,8 @@ void main() {
     
     expect(userProvider!.isLoading, true);
     
-    // Wait for _init to complete
-    await Future.delayed(Duration.zero);
+    // Explicitly call init
+    await userProvider!.init();
     
     // Simulate user login
     authStreamController.add(mockUser);
