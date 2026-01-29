@@ -1,6 +1,3 @@
-import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import '../localization/app_localizations.dart';
 import 'service_category.dart';
 
 enum RequestType { incoming, outgoing, unknown }
@@ -38,35 +35,6 @@ class ServiceRequest {
     required this.description,
     required this.location,
   });
-
-  // Backward compatibility getters
-  IconData get icon => category.icon;
-  
-  String get amount {
-    final prefix = type == RequestType.incoming ? '+ ' : '- ';
-    return '$prefix${amountValue.toStringAsFixed(2)} $currency';
-  }
-
-  String getDate(AppLocalizations? localizations) {
-    if (endDate == null) {
-      return _formatDate(startDate);
-    }
-    final from = localizations?.dateFrom ?? 'From';
-    // Keeping simple spacing as alignment depends on font and language
-    return '$from: ${_formatDate(startDate)}';
-  }
-
-  String? getSecondDateLine(AppLocalizations? localizations) {
-    if (endDate == null) return null;
-    final to = localizations?.dateTo ?? 'To';
-    return '$to: ${_formatDate(endDate!)}';
-  }
-
-  String _formatDate(DateTime dt) {
-    // Uses the default locale which is set by the app (flutter_localizations)
-    // Ensures month names and format structure respect the user's language setting.
-    return DateFormat.yMMMMd().format(dt);
-  }
 
   factory ServiceRequest.fromJson(Map<String, dynamic> json) {
     return ServiceRequest(

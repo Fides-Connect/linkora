@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/service_request.dart';
+import '../../../../utils/service_request_extensions.dart';
 import '../viewmodels/home_tab_view_model.dart';
 import 'profile_detail_page.dart';
 
