@@ -45,7 +45,7 @@ class HomeTabViewModel extends ChangeNotifier {
   }
 
   bool isFavorite(SupporterProfile profile) {
-    return _favorites.any((p) => p.name == profile.name);
+    return _favorites.any((p) => p.id == profile.id);
   }
 
   Future<void> toggleFavorite(SupporterProfile profile) async {

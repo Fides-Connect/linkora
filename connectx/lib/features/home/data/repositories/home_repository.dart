@@ -185,7 +185,7 @@ class HomeRepository {
   /// Wraps API call to `GET /users/{id}/profile`.
   Future<SupporterProfile?> getOtherProfile(String userId) async {
     try {
-      final data = await _apiService.get('/users/$userId/profile');
+       final data = await _apiService.get('/users/${Uri.encodeComponent(userId)}/profile');
       if (data != null) {
         return SupporterProfile.fromJson(data);
       }
@@ -227,10 +227,10 @@ class HomeRepository {
   }
 
   /// Updates the status (Accepted, Rejected, Completed) of an existing request.
-  /// Wraps API call to `PUT /requests/{id}/status`.
+  /// Wraps API call to `PUT /requests/{requestId}/status`.
   Future<void> updateRequestStatus(String requestId, RequestStatus status) async {
     try {
-      await _apiService.put('/requests/$requestId/status', body: {'status': status.name});
+      await _apiService.put('/requests/${Uri.encodeComponent(requestId)}/status', body: {'status': status.name});
     } catch (e) {
        debugPrint('API failed for updateRequestStatus (using mock data): $e');
        // Fallback
@@ -249,7 +249,7 @@ class HomeRepository {
            userInitials: original.userInitials,
            category: original.category,
            type: original.type,
-           status: status, // Updated status
+           status: status,
            updateText: original.updateText,
            description: original.description,
            location: original.location,

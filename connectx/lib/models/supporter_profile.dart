@@ -52,6 +52,7 @@ class SupporterProfile {
     if (identical(this, other)) return true;
 
     return other is SupporterProfile &&
+        other.id == id &&
         other.name == name &&
         other.introduction == introduction &&
         listEquals(other.competencies, competencies) &&
@@ -63,6 +64,7 @@ class SupporterProfile {
 
   @override
   int get hashCode => Object.hash(
+        id,
         name,
         introduction,
         Object.hashAll(competencies),
