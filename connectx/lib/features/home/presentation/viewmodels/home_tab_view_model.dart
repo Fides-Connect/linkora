@@ -92,18 +92,24 @@ class HomeTabViewModel extends ChangeNotifier {
   Future<void> addCompetence(String competence) async {
     if (_userProfile == null) return;
     
-    await _repository.addCompetence(competence);
-    
-    // Let's reload profile to be safe and consistent with repository
-    _userProfile = await _repository.getSupporterProfile();
+    try {
+      _userProfile = await _repository.addCompetence(competence);
+      _error = null;
+    } catch (e) {
+      _error = 'Failed to add competence: $e';
+    }
     notifyListeners();
   }
 
   Future<void> removeCompetence(String competence) async {
     if (_userProfile == null) return;
     
-    await _repository.removeCompetence(competence);
-    _userProfile = await _repository.getSupporterProfile();
+    try {
+      _userProfile = await _repository.removeCompetence(competence);
+      _error = null;
+    } catch (e) {
+      _error = 'Failed to remove competence: $e';
+    }
     notifyListeners();
   }
 }

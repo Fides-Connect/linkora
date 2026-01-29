@@ -125,9 +125,12 @@ class HomeRepository {
 
   /// Adds a single competence tag to the user's profile.
   /// Wraps API call to `POST /profile/competencies`.
-  Future<void> addCompetence(String competence) async {
+  /// Returns the updated profile.
+  Future<SupporterProfile> addCompetence(String competence) async {
     try {
       await _apiService.post('/profile/competencies', body: {'competence': competence});
+      // Fetch fresh profile from server
+      return getSupporterProfile();
     } catch (e) {
        debugPrint('API failed for addCompetence (using mock data): $e');
        // Fallback
@@ -144,15 +147,19 @@ class HomeRepository {
            negativeFeedback: _localMockSupporterProfile.negativeFeedback
          );
        }
+       return _localMockSupporterProfile;
     }
   }
 
   /// Removes a single competence tag from the user's profile.
   /// Wraps API call to `DELETE /profile/competencies/{competence}`.
-  Future<void> removeCompetence(String competence) async {
+  /// Returns the updated profile.
+  Future<SupporterProfile> removeCompetence(String competence) async {
     try {
       // Assuming RESTful design: /profile/competencies/Gardening
       await _apiService.delete('/profile/competencies/${Uri.encodeComponent(competence)}');
+      // Fetch fresh profile from server
+      return getSupporterProfile();
     } catch (e) {
        debugPrint('API failed for removeCompetence (using mock data): $e');
        // Fallback
@@ -169,6 +176,7 @@ class HomeRepository {
            negativeFeedback: _localMockSupporterProfile.negativeFeedback
          );
        }
+       return _localMockSupporterProfile;
     }
   }
 
