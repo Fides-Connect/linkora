@@ -76,7 +76,15 @@ void main() {
           .thenAnswer((_) async => http.Response('Not Found', 404));
 
       // Act & Assert
-      expect(() => apiService.get('/unknown'), throwsA(isA<ApiException>()));
+      await expectLater(apiService.get('/unknown'), throwsA(isA<ApiException>()));
+
+      // Verify request was made with expected headers (no auth token)
+      verify(mockClient.get(
+        Uri.parse('http://test.com/unknown'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      )).called(1);
     });
   });
 }
