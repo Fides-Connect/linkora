@@ -23,18 +23,20 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   late SearchTabViewModel _searchViewModel;
   late HomeTabViewModel _homeTabViewModel;
 
-  final List<Widget> _pages = [
-    const HomeTabPage(),
-    const SearchTabPage(),
-    const FavoritesTabPage(),
-    const MenuTabPage(),
-  ];
+  late final List<Widget> _pages;
 
   @override
   void initState() {
     super.initState();
     _searchViewModel = SearchTabViewModel();
     _homeTabViewModel = HomeTabViewModel();
+
+    _pages = [
+      const HomeTabPage(),
+      const SearchTabPage(),
+      const FavoritesTabPage(),
+      const MenuTabPage(),
+    ];
     
     // Explicitly handle async initialization
     WidgetsBinding.instance.addPostFrameCallback((_) {
