@@ -16,11 +16,9 @@ class UserProvider extends ChangeNotifier {
   bool get isAuthenticated => _user != null;
 
   UserProvider({AuthService? authService}) 
-      : _authService = authService ?? AuthService() {
-    _init();
-  }
+      : _authService = authService ?? AuthService();
   
-  Future<void> _init() async {
+  Future<void> init() async {
     try {
       await _authService.initialize();
       _authSubscription = _authService.onCurrentUserChanged.listen((user) {
