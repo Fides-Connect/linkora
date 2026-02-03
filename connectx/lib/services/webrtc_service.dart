@@ -77,6 +77,9 @@ class WebRTCService {
     if (_audioTrack != null) {
       _audioTrack!.enabled = !muted;
       debugPrint('WebRTC: Microphone muted: $muted');
+    } else {
+      debugPrint(
+          'WebRTC: Cannot set microphone muted to $muted, audio track is not initialized');
     }
   }
 

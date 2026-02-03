@@ -141,7 +141,7 @@ class AudioProcessor:
                 user_id=self.user_id
              )
              
-             self._send_chat_message(greeting_text, is_user=False)
+             self._send_chat_message(greeting_text, is_user=False, is_chunk=False)
              
              # Enqueue the audio stream to the output track
              async for chunk in audio_stream:

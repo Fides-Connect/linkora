@@ -78,9 +78,9 @@ class PeerConnectionHandler:
                     
                     # If we already have a data channel, pass it to the audio processor (redundant check but safe)
                     if hasattr(self, 'data_channel') and self.data_channel:
-                         self.audio_processor.set_data_channel(self.data_channel)
+                        self.audio_processor.set_data_channel(self.data_channel)
                 else:
-                     logger.warning("AudioProcessor was not initialized in __init__!")
+                    logger.warning("AudioProcessor was not initialized in __init__!")
 
                 # Signal that the track is ready (legacy check)
                 self.track_ready.set()
