@@ -40,6 +40,9 @@ class SpeechService {
     _languageCode = languageCode;
   }
   
+  /// Check if microphone is currently muted
+  bool get isMicrophoneMuted => _webrtcService?.isMicrophoneMuted ?? true;
+
   void setMicrophoneMuted(bool muted) {
     _webrtcService?.setMicrophoneMuted(muted);
   }

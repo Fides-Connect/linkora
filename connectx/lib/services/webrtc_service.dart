@@ -73,6 +73,15 @@ class WebRTCService {
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
   
+  /// Check if microphone is currently muted
+  /// Returns true if muted or if audio track is not initialized (default state)
+  bool get isMicrophoneMuted {
+    if (_audioTrack != null) {
+      return !_audioTrack!.enabled;
+    }
+    return true;
+  }
+  
   void setMicrophoneMuted(bool muted) {
     if (_audioTrack != null) {
       _audioTrack!.enabled = !muted;
