@@ -19,6 +19,7 @@ class MicButton extends StatelessWidget {
       child: Container(
         width: AppConstants.micButtonSize,
         height: AppConstants.micButtonSize,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: LinearGradient(
@@ -39,11 +40,20 @@ class MicButton extends StatelessWidget {
             ),
           ],
         ),
-        child: Icon(
-          state != ConversationState.idle ? Icons.stop : Icons.mic,
-          color: Colors.white,
-          size: AppConstants.micIconSize,
-        ),
+        child: state == ConversationState.connecting
+            ? const SizedBox(
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : Icon(
+                state != ConversationState.idle ? Icons.stop : Icons.mic,
+                color: Colors.white,
+                size: AppConstants.micIconSize,
+              ),
       ),
     );
   }

@@ -41,7 +41,9 @@ class SearchTabViewModel extends ChangeNotifier {
 
   void _setupCallbacks() {
     _speechService.onSpeechStart = () {
-      _conversationState = ConversationState.listening;
+      _conversationState = ConversationState.connecting;
+      // Mute microphone until connection is fully established (AI speaks greeting)
+      _speechService.setMicrophoneMuted(true);
       notifyListeners();
     };
 
@@ -75,6 +77,8 @@ class SearchTabViewModel extends ChangeNotifier {
           _chatMessages.add(ChatMessage(text: text, isUser: false));
           _lastMessageWasUser = false;
           _conversationState = ConversationState.listening; // AI is speaking
+          // Unmute microphone now that AI is responding (which implies connection is ready)
+          _speechService.setMicrophoneMuted(false);
         } else {
           // Appending chunks to existing AI response
           _currentMessage += text;

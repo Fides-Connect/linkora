@@ -72,6 +72,13 @@ class WebRTCService {
 
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
+  
+  void setMicrophoneMuted(bool muted) {
+    if (_audioTrack != null) {
+      _audioTrack!.enabled = !muted;
+      debugPrint('WebRTC: Microphone muted: $muted');
+    }
+  }
 
   /// Initialize and connect to the AI-Assistant server
   Future<void> connect() async {
@@ -182,6 +189,8 @@ class WebRTCService {
 
       if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
         _audioTrack = _localStream!.getAudioTracks()[0];
+        // Start muted by default to prevent audio leakage before connection is ready
+        _audioTrack!.enabled = false;
         debugPrint('WebRTC: Local audio stream created: ${_audioTrack!.id}');
       } else {
         throw Exception('Failed to get audio track from local stream');

@@ -39,6 +39,10 @@ class SpeechService {
   void setLanguageCode(String languageCode) {
     _languageCode = languageCode;
   }
+  
+  void setMicrophoneMuted(bool muted) {
+    _webrtcService?.setMicrophoneMuted(muted);
+  }
 
   void stopSpeech() async {
     // Stop and clean up WebRTC service
