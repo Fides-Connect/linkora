@@ -26,20 +26,10 @@ class PeerConnectionHandler:
         self.language = language
         self.pc = RTCPeerConnection()
         self.relay = MediaRelay()
-        self.track_ready = asyncio.Event() # Kept for backward compat if needed, but unused for init
+        self.audio_processor = None
+        self.track_ready = asyncio.Event()
         
         logger.info(f"PeerConnectionHandler created for connection {connection_id} with language: {language}")
-
-        # Optimization: Initialize AudioProcessor immediately without waiting for tracks
-        logger.debug("Initializing AudioProcessor early (Optimization)")
-        self.audio_processor = AudioProcessor(
-            connection_id=self.connection_id,
-            input_track=None, # Will be set later
-            user_id=self.user_id,
-            language=self.language
-        )
-        # Start the processor task (it will process greeting and wait for input track)
-        asyncio.create_task(self.audio_processor.start())
         
         # Set up event handlers
         self._setup_event_handlers()
@@ -70,22 +60,26 @@ class PeerConnectionHandler:
             logger.debug(f"Track details - id={track.id}, kind={track.kind}, readyState={track.readyState}")
             
             if track.kind == "audio":
-                logger.debug("Received audio track - setting to existing processor")
+                logger.debug("Creating AudioProcessor for incoming audio track")
+                # Create audio processor for this track
+                self.audio_processor = AudioProcessor(
+                    connection_id=self.connection_id,
+                    input_track=track,
+                    user_id=self.user_id,
+                    language=self.language
+                )
                 
-                # Update existing audio processor with the track
-                if self.audio_processor:
-                    self.audio_processor.set_input_track(track)
-                    
-                    # If we already have a data channel, pass it to the audio processor (redundant check but safe)
-                    if hasattr(self, 'data_channel') and self.data_channel:
-                        self.audio_processor.set_data_channel(self.data_channel)
-                else:
-                    logger.warning("AudioProcessor was not initialized in __init__!")
+                # If we already have a data channel, pass it to the audio processor
+                if hasattr(self, 'data_channel') and self.data_channel:
+                    self.audio_processor.set_data_channel(self.data_channel)
 
-                # Signal that the track is ready (legacy check)
+                # Signal that the track is ready
                 self.track_ready.set()
-                logger.debug("Audio track set on processor")
-
+                logger.debug("Audio processor created and ready")
+                
+                # Start processing
+                logger.debug("Starting audio processor")
+                asyncio.create_task(self.audio_processor.start())
         
         @self.pc.on("datachannel")
         def on_datachannel(channel):
@@ -116,12 +110,18 @@ class PeerConnectionHandler:
             logger.debug("Setting remote description")
             await self.pc.setRemoteDescription(offer)
 
-            # Optimization: Do NOT wait for input track. Add output track immediately.
-            logger.debug("Adding output track immediately (Optimization)")
+            # Wait for audio processor to be ready
+            logger.debug("Waiting for audio track to be ready...")
+            await asyncio.wait_for(self.track_ready.wait(), timeout=5.0)
+            logger.debug("Audio track is ready")
+
+            # Add output track before creating answer
             if self.audio_processor:
                 output_track = self.audio_processor.get_output_track()
                 logger.info(f"Adding output track to peer connection: {output_track.id}")
                 self.pc.addTrack(output_track)
+            else:
+                logger.error("Audio processor not ready after waiting!")
             
             # Create answer
             logger.debug("Creating answer")

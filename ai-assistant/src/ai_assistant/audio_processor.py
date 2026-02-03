@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class AudioProcessor:
     """Processes audio through the STT -> LLM -> TTS pipeline."""
     
-    def __init__(self, connection_id: str, input_track: Optional[MediaStreamTrack] = None, user_id: Optional[str] = None, language: str = 'de'):
+    def __init__(self, connection_id: str, input_track: MediaStreamTrack, user_id: Optional[str] = None, language: str = 'de'):
         self.connection_id = connection_id
         self.input_track = input_track
         self.user_id = user_id
@@ -34,11 +34,6 @@ class AudioProcessor:
         self.running = False
         self.processing_task = None
         self.stt_task = None
-        self.greeting_task = None
-        self.input_track_ready = asyncio.Event()
-
-        if input_track:
-            self.input_track_ready.set()
         
         # Create language-specific AI assistant for this connection
         self.ai_assistant = self._create_language_specific_assistant(language)
@@ -79,12 +74,6 @@ class AudioProcessor:
         
         return assistant
 
-    def set_input_track(self, track: MediaStreamTrack):
-        """Set the input audio track."""
-        self.input_track = track
-        self.input_track_ready.set()
-        logger.info(f"Input track set for connection {self.connection_id}")
-
     def set_data_channel(self, channel):
         """Set the data channel for sending text messages."""
         self.data_channel = channel
@@ -111,51 +100,19 @@ class AudioProcessor:
     async def start(self):
         """Start processing audio."""
         self.running = True
-        
-        # Start AI Assistant greeting generation
-        logger.info(f"Adding user_id {self.user_id} and session {self.connection_id} greeting task")
-        self.greeting_task = asyncio.create_task(self._generate_initial_greeting())
-        
-        # Wait for input track to be ready before starting STT
-        if not self.input_track:
-            logger.info("Waiting for input track...")
-            await self.input_track_ready.wait()
-            logger.info("Input track received, proceeding with STT loop")
-
         logger.debug(f"📥 Creating _process_audio task for connection {self.connection_id}...")
         self.processing_task = asyncio.create_task(self._process_audio())
         self.stt_task = asyncio.create_task(self._continuous_stt())
         logger.info(f"🔊 Continuous STT streaming enabled")
         
-
-    async def _generate_initial_greeting(self):
-        """Generate and queue the initial greeting."""
-        try:
-            # This will trigger the GreetingService inside AIAssistant
-            # which generates text + TTS and we can feed it to the output track.
-            logger.info(f"Generating greeting for session {self.connection_id}")
-
-            # Fetch greeting stream
-            greeting_text, audio_stream = await self.ai_assistant.greeting_service.get_greeting_with_audio(
-                session_id=self.connection_id,
-                user_id=self.user_id
-            )
-
-            self._send_chat_message(greeting_text, is_user=False)
-
-            # Enqueue the audio stream to the output track
-            async for chunk in audio_stream:
-                if self.output_track:
-                    await self.output_track.queue_audio(chunk)
-            logger.info("Greeting playback queued")
-        except Exception as e:
-            logger.error(f"Error generating initial greeting: {e}", exc_info=True)
+        # Play greeting message
+        logger.debug(f"👋 Starting greeting playback...")
+        asyncio.create_task(self._play_greeting())
     
     async def stop(self):
         """Stop processing audio."""
         logger.debug(f"Stopping audio processor for connection {self.connection_id}")
         self.running = False
-        self.input_track_ready.clear()
         
         # Signal end of audio stream
         await self.audio_queue.put(None)
@@ -167,14 +124,6 @@ class AudioProcessor:
             except asyncio.CancelledError:
                 logger.debug("STT task cancelled successfully")
         
-        if self.greeting_task:
-            self.greeting_task.cancel()
-            try:
-                await self.greeting_task
-            except asyncio.CancelledError:
-                logger.debug("Greeting task cancelled successfully")
-            self.greeting_task = None
-
         if self.processing_task:
             self.processing_task.cancel()
             try:
