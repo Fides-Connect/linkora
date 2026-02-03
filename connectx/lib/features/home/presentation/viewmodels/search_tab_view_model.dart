@@ -55,11 +55,13 @@ class SearchTabViewModel extends ChangeNotifier {
 
     _speechService.onSpeechEnd = () {
       _conversationState = ConversationState.idle;
+      _speechService.setMicrophoneMuted(false);
       notifyListeners();
     };
 
     _speechService.onDisconnected = () {
       _conversationState = ConversationState.idle;
+      _speechService.setMicrophoneMuted(false);
       notifyListeners();
     };
 
