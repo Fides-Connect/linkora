@@ -131,24 +131,23 @@ class AudioProcessor:
     async def _generate_initial_greeting(self):
         """Generate and queue the initial greeting."""
         try:
-             # This will trigger the GreetingService inside AIAssistant
-             # which generates text + TTS and we can feed it to the output track.
-             logger.info(f"Generating greeting for session {self.connection_id}")
-             
-             # Fetch greeting stream
-             greeting_text, audio_stream = await self.ai_assistant.greeting_service.get_greeting_with_audio(
+            # This will trigger the GreetingService inside AIAssistant
+            # which generates text + TTS and we can feed it to the output track.
+            logger.info(f"Generating greeting for session {self.connection_id}")
+
+            # Fetch greeting stream
+            greeting_text, audio_stream = await self.ai_assistant.greeting_service.get_greeting_with_audio(
                 session_id=self.connection_id,
                 user_id=self.user_id
-             )
-             
-             self._send_chat_message(greeting_text, is_user=False, is_chunk=False)
-             
-             # Enqueue the audio stream to the output track
-             async for chunk in audio_stream:
-                 if self.output_track:
-                     await self.output_track.queue_audio(chunk)
-             logger.info("Greeting playback queued")
-                     
+            )
+
+            self._send_chat_message(greeting_text, is_user=False)
+
+            # Enqueue the audio stream to the output track
+            async for chunk in audio_stream:
+                if self.output_track:
+                    await self.output_track.queue_audio(chunk)
+            logger.info("Greeting playback queued")
         except Exception as e:
             logger.error(f"Error generating initial greeting: {e}", exc_info=True)
     
