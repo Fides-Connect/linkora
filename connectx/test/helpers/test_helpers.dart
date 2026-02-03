@@ -11,9 +11,11 @@ import 'package:connectx/services/auth_service.dart';
 import 'package:connectx/features/home/data/repositories/home_repository.dart';
 import 'package:http/http.dart' as http;
 
+@GenerateNiceMocks([
+  MockSpec<SpeechService>(),
+])
 @GenerateMocks([
   WebRTCService,
-  SpeechService,
   WebSocketChannel,
   WebSocketSink,
   RTCPeerConnection,

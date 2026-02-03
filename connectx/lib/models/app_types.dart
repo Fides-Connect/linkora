@@ -7,6 +7,7 @@
 /// Conversation state enum
 enum ConversationState {
   idle,       // Not connected
+  connecting, // Connection in progress
   listening,  // Connected and listening to user
   processing, // Processing user input (thinking)
 }

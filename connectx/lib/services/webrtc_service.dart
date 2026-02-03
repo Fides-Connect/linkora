@@ -72,6 +72,25 @@ class WebRTCService {
 
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
+  
+  /// Check if microphone is currently muted
+  /// Returns true if muted or if audio track is not initialized (default state)
+  bool get isMicrophoneMuted {
+    if (_audioTrack != null) {
+      return !_audioTrack!.enabled;
+    }
+    return true;
+  }
+  
+  void setMicrophoneMuted(bool muted) {
+    if (_audioTrack != null) {
+      _audioTrack!.enabled = !muted;
+      debugPrint('WebRTC: Microphone muted: $muted');
+    } else {
+      debugPrint(
+          'WebRTC: Cannot set microphone muted to $muted, audio track is not initialized');
+    }
+  }
 
   /// Initialize and connect to the AI-Assistant server
   Future<void> connect() async {
@@ -182,6 +201,8 @@ class WebRTCService {
 
       if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
         _audioTrack = _localStream!.getAudioTracks()[0];
+        // Start muted by default to prevent audio leakage before connection is ready
+        _audioTrack!.enabled = false;
         debugPrint('WebRTC: Local audio stream created: ${_audioTrack!.id}');
       } else {
         throw Exception('Failed to get audio track from local stream');

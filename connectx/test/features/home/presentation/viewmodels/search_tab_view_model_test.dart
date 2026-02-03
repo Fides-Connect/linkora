@@ -43,7 +43,7 @@ void main() {
          callback();
          
          // Assert
-         expect(viewModel.conversationState, ConversationState.listening);
+         expect(viewModel.conversationState, ConversationState.connecting);
       });
       
       test('onConnected clears status text', () {
