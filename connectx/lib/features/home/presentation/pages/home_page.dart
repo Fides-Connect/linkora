@@ -5,7 +5,7 @@ import '../../../../localization/app_localizations.dart';
 import '../../../../utils/constants.dart';
 import '../viewmodels/search_tab_view_model.dart';
 import '../viewmodels/home_tab_view_model.dart';
-import 'search_tab_page.dart';
+import 'assistant_tab_page.dart';
 
 import 'favorites_tab_page.dart';
 import 'home_tab_page.dart';
@@ -33,7 +33,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
     _pages = [
       const HomeTabPage(),
-      const SearchTabPage(),
+      const AssistantTabPage(),
       const FavoritesTabPage(),
       const MenuTabPage(),
     ];
@@ -94,8 +94,8 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
               label: localizations?.navHome ?? 'Home',
             ),
             BottomNavigationBarItem(
-              icon: const Icon(Icons.search),
-              label: localizations?.navSearch ?? 'Search',
+              icon: const Icon(Icons.auto_awesome),
+              label: localizations?.navSearch ?? 'Assistant',
             ),
             BottomNavigationBarItem(
               icon: const Icon(Icons.favorite),

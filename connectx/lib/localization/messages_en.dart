@@ -72,7 +72,7 @@ class MessagesEN {
 
   // Navigation Bar
   static const String navHome = 'Home';
-  static const String navSearch = 'Search';
+  static const String navSearch = 'Assistant';
   static const String navFavorites = 'Favorites';
   static const String navMenu = 'Menu';
 

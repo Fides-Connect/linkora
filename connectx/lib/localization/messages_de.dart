@@ -72,7 +72,7 @@ class MessagesDE {
 
   // Navigation Bar
   static const String navHome = 'Startseite';
-  static const String navSearch = 'Suche';
+  static const String navSearch = 'Assistent';
   static const String navFavorites = 'Favoriten';
   static const String navMenu = 'Menü';
 
