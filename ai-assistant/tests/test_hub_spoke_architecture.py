@@ -643,7 +643,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
             profile = result['profile']
             self.assertIn('uuid', profile, "Profile should have uuid")
             self.assertIn('name', profile, "Profile should have name")
-            self.assertTrue(profile.get('is_provider', False), "Profile should be a provider")
+            self.assertTrue(profile.get('is_service_provider', False), "Profile should be a provider")
         
         logger.info("✓ Hybrid search with availability filter working correctly")
     

@@ -155,7 +155,7 @@ def init_firestore(test_personas):
             'name': p_data['name'],
             'email': p_data['email'],
             'introduction': f"I am {p_data['name']}, a professional on Fides.", # Placeholder
-            'is_provider': p_data.get('is_provider', False),
+            'is_service_provider': p_data.get('is_service_provider', False),
             'fcm_token': p_data.get('fcm_token', ''),
             # 'competencies' is an Array of strings (titles) for quick access in the User object
             'competencies': [c['title'] for c in c_data_list],

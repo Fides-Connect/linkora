@@ -41,7 +41,7 @@ async def user_sync(request: web.Request) -> web.Response:
             "email": body.get("email", ""),
             "photo_url": body.get("photo_url", ""),
             "fcm_token": body.get("fcm_token", ""),
-            "is_provider": body.get("is_provider", False),  # Accept from client
+            "is_service_provider": body.get("is_service_provider", False),  # Accept from client
             "last_sign_in": datetime.now(UTC),
         }
         

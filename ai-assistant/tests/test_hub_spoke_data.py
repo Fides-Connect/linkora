@@ -15,14 +15,19 @@ from datetime import datetime, UTC, timedelta
 # Test Persona: User A - The Pro
 # Active user with specific electrical skill
 USER_A_PROFILE = {
+    "user_id": "user_alice_001",
     "name": "Alice Professional",
     "email": "alice@example.com",
-    "user_id": "user_alice_001",
+    "introduction": "Experienced electrician specializing in residential lighting installations.",
     "type": "user",
-    "is_provider": True,  # Service provider
+    "is_service_provider": True,  # Service provider
     "fcm_token": "token_alice",
     "has_open_request": False,
     "last_active_date": 1,  # Active 1 day ago
+    "positive_feedback": ["Punctual", "Clean work", "Friendly", "Explains everything clearly"],
+    "negative_feedback": ["Sometimes late on big jobs"],
+    "average_rating": 4.8,
+    "review_count": 25,
 }
 
 USER_A_COMPETENCES = [
@@ -38,14 +43,19 @@ USER_A_COMPETENCES = [
 # Test Persona: User B - The Spammer
 # Description stuffed with keywords to test spam filtering
 USER_B_PROFILE = {
+    "user_id": "user_bob_002",
     "name": "Bob Spammer",
     "email": "bob@example.com",
-    "user_id": "user_bob_002",
+    "introduction": "I do everything! Plumbing, electrical, driving, teaching, you name it!",
     "type": "user",
-    "is_provider": True,  # Service provider
+    "is_service_provider": True,  # Service provider
     "fcm_token": "token_bob",
     "has_open_request": False,
     "last_active_date": 5,  # Active 5 days ago
+    "positive_feedback": ["Quick response"],
+    "negative_feedback": ["Unfocused", "Quality varies", "Too many services listed"],
+    "average_rating": 3.2,
+    "review_count": 8,
 }
 
 USER_B_COMPETENCES = [
@@ -61,14 +71,19 @@ USER_B_COMPETENCES = [
 # Test Persona: User C - The Ghost
 # Perfect match but inactive for 365 days
 USER_C_PROFILE = {
+    "user_id": "user_charlie_003",
     "name": "Charlie Ghost",
     "email": "charlie@example.com",
-    "user_id": "user_charlie_003",
+    "introduction": "Master electrician with 20 years experience. Specialist in residential wiring and lighting installation.",
     "type": "user",
-    "is_provider": True,  # Service provider
+    "is_service_provider": True,  # Service provider
     "fcm_token": "token_charlie",
     "has_open_request": False,
     "last_active_date": 365,  # Inactive for 365 days
+    "positive_feedback": ["Expert knowledge", "Great results"],
+    "negative_feedback": ["Rarely available", "Slow to respond"],
+    "average_rating": 4.5,
+    "review_count": 12,
 }
 
 USER_C_COMPETENCES = [
@@ -84,14 +99,19 @@ USER_C_COMPETENCES = [
 # Test Persona: User D - The Generalist
 # Broad electrical work
 USER_D_PROFILE = {
+    "user_id": "user_david_004",
     "name": "David Generalist",
     "email": "david@example.com",
-    "user_id": "user_david_004",
+    "introduction": "Experienced in all types of electrical work including wiring, installations, and repairs.",
     "type": "user",
-    "is_provider": True,  # Service provider
+    "is_service_provider": True,  # Service provider
     "fcm_token": "token_david",
     "has_open_request": False,
     "last_active_date": 10,  # Active 10 days ago
+    "positive_feedback": ["Versatile", "Helpful", "Good communicator"],
+    "negative_feedback": ["Sometimes overbooked"],
+    "average_rating": 4.2,
+    "review_count": 15,
 }
 
 USER_D_COMPETENCES = [
@@ -107,14 +127,19 @@ USER_D_COMPETENCES = [
 # Test Persona: User E - The Enthusiast
 # Multiple gardening skills to test result grouping
 USER_E_PROFILE = {
+    "user_id": "user_eva_005",
     "name": "Eva Enthusiast",
     "email": "eva@example.com",
-    "user_id": "user_eva_005",
+    "introduction": "Gardening enthusiast offering a variety of services for beautiful and healthy gardens.",
     "type": "user",
-    "is_provider": True,  # Service provider
+    "is_service_provider": True,  # Service provider
     "fcm_token": "token_eva",
     "has_open_request": False,
     "last_active_date": 3,  # Active 3 days ago
+    "positive_feedback": ["Creative designs", "Very friendly", "Great with plants"],
+    "negative_feedback": ["Sometimes hard to book in spring"],
+    "average_rating": 4.7,
+    "review_count": 18,
 }
 
 USER_E_COMPETENCES = [
