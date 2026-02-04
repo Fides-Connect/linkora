@@ -10,7 +10,7 @@ It handles:
 
 Collections initialized:
 - Firestore: users, requests, reviews, chat_sessions
-- Weaviate: UnifiedProfile, CompetenceEntry
+- Weaviate: User, Competence
 
 Usage:
     python scripts/init_database.py [--load-test-data]

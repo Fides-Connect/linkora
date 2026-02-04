@@ -15,8 +15,8 @@ from weaviate.classes.query import Filter, QueryReference, MetadataQuery
 
 # Handle both package and direct imports
 from ai_assistant.hub_spoke_schema import (
-    get_unified_profile_collection,
-    get_competence_entry_collection
+    get_user_collection,
+    get_competence_collection
 )
 
 logger = logging.getLogger(__name__)
@@ -27,7 +27,7 @@ class HubSpokeSearch:
     Search manager for Hub and Spoke architecture.
     
     Implements:
-    1. Hybrid search on CompetenceEntry (vector + keyword)
+    1. Hybrid search on Competence (vector + keyword)
     2. Ghost user filtering (excludes inactive profiles)
     3. Result grouping (one result per profile)
     """
@@ -44,7 +44,7 @@ class HubSpokeSearch:
         Search for competences with ghost filtering and grouping.
         
         Search Strategy:
-        1. Perform hybrid search on CompetenceEntry.description
+        1. Perform hybrid search on Competence.description
         2. Filter by owned_by.last_active_date (ghost filtering)
         3. Group by owned_by to prevent duplicate profiles
         
@@ -59,7 +59,7 @@ class HubSpokeSearch:
             List of competence results with profile info
         """
         try:
-            competence_collection = get_competence_entry_collection()
+            competence_collection = get_competence_collection()
             
             # Calculate cutoff date for ghost filtering
             cutoff_date = datetime.now(UTC) - timedelta(days=max_inactive_days)
@@ -171,7 +171,7 @@ class HubSpokeSearch:
             List of competence dictionaries
         """
         try:
-            profile_collection = get_unified_profile_collection()
+            profile_collection = get_user_collection()
             
             # Fetch profile with competence references
             response = profile_collection.query.fetch_object_by_id(
@@ -329,7 +329,7 @@ class HubSpokeSearch:
             List of provider results sorted by relevance
         """
         try:
-            competence_collection = get_competence_entry_collection()
+            competence_collection = get_competence_collection()
             
             # Build filters and query text
             filter_clause, query_text, available_time = HubSpokeSearch._build_filters_and_query(

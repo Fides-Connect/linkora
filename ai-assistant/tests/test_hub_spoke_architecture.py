@@ -23,8 +23,8 @@ from src.ai_assistant.hub_spoke_schema import (
     init_hub_spoke_schema,
     cleanup_hub_spoke_schema,
     HubSpokeConnection,
-    get_unified_profile_collection,
-    get_competence_entry_collection
+    get_user_collection,
+    get_competence_collection
 )
 from src.ai_assistant.hub_spoke_ingestion import (
     HubSpokeIngestion,
@@ -140,7 +140,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         
         # Verify Competence → Profile link
         logger.info("Checking Competence → Profile link (owned_by)")
-        competence_collection = get_competence_entry_collection()
+        competence_collection = get_competence_collection()
         competence_obj = competence_collection.query.fetch_object_by_id(
             uuid=competence_uuid,
             return_references=QueryReference(
@@ -227,7 +227,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         self.assertIsNotNone(user_b, "User B should be loaded")
         
         competence_uuid = user_b['competence_uuids'][0]
-        competence_collection = get_competence_entry_collection()
+        competence_collection = get_competence_collection()
         
         # Fetch the actual stored description
         competence_obj = competence_collection.query.fetch_object_by_id(uuid=competence_uuid)
@@ -427,7 +427,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         
         # Get User A's data
         user_a = self.personas_map['User A (The Pro)']
-        profile_collection = get_unified_profile_collection()
+        profile_collection = get_user_collection()
         
         # Get the user_id
         profile_result = profile_collection.query.fetch_object_by_id(
@@ -484,7 +484,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         
         # Get User B's data
         user_b = self.personas_map['User B (The Spammer)']
-        profile_collection = get_unified_profile_collection()
+        profile_collection = get_user_collection()
         
         # Get the user_id
         profile_result = profile_collection.query.fetch_object_by_id(
@@ -556,7 +556,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         if not user_c:
             self.skipTest("User C not found in test data")
         
-        profile_collection = get_unified_profile_collection()
+        profile_collection = get_user_collection()
         
         # Get the user_id
         profile_result = profile_collection.query.fetch_object_by_id(

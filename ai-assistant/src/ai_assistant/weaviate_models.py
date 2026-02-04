@@ -1,7 +1,7 @@
 """
 Weaviate Models and Operations
 Data models using Hub and Spoke architecture.
-Maps legacy User/Provider operations to UnifiedProfile/CompetenceEntry.
+Maps legacy User/Provider operations to User/Competence.
 """
 import logging
 from datetime import datetime, UTC
@@ -19,11 +19,11 @@ class UserModelWeaviate:
     
     @staticmethod
     def create_user(user_data: Dict[str, Any]) -> Optional[str]:
-        """Create a new user (UnifiedProfile)."""
+        """Create a new user (User)."""
         try:
             collection = get_users_collection()
             
-            # Map old User fields to UnifiedProfile fields
+            # Map old User fields to User fields
             uuid = collection.data.insert(
                 properties={
                     "user_id": user_data.get("user_id"),
@@ -200,9 +200,9 @@ class ProviderModelWeaviate:
 
     @staticmethod
     def get_provider_by_id(provider_id: str) -> Optional[Dict[str, Any]]:
-        """Get provider by ID (searches UnifiedProfile by user_id)."""
+        """Get provider by ID (searches User by user_id)."""
         try:
-            collection = get_users_collection()  # UnifiedProfile
+            collection = get_users_collection()
             
             response = collection.query.fetch_objects(
                 filters=Filter.by_property("user_id").equal(provider_id),
@@ -297,9 +297,9 @@ class ProviderModelWeaviate:
     
     @staticmethod
     def get_all_providers(limit: int = 100) -> List[Dict[str, Any]]:
-        """Get all providers (UnifiedProfile with type='provider')."""
+        """Get all providers (User with type='provider')."""
         try:
-            collection = get_users_collection()  # UnifiedProfile
+            collection = get_users_collection()
             
             response = collection.query.fetch_objects(
                 filters=Filter.by_property("type").equal("provider"),

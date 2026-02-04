@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.ai_assistant.hub_spoke_schema import (
     HubSpokeConnection,
-    get_unified_profile_collection,
-    get_competence_entry_collection
+    get_user_collection,
+    get_competence_collection
 )
 from weaviate.classes.query import Filter
 
@@ -37,8 +37,8 @@ def delete_user_by_user_id(user_id: str) -> bool:
     """
     try:
         client = HubSpokeConnection.get_client()
-        profile_collection = get_unified_profile_collection()
-        competence_collection = get_competence_entry_collection()
+        profile_collection = get_user_collection()
+        competence_collection = get_competence_collection()
         
         # Step 1: Find the profile by user_id
         logger.info(f"Searching for user with user_id: {user_id}")

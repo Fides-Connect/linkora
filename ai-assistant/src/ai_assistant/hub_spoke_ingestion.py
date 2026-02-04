@@ -13,8 +13,8 @@ from datetime import datetime, UTC
 from typing import List, Dict, Any, Optional
 
 from ai_assistant.hub_spoke_schema import (
-    get_unified_profile_collection,
-    get_competence_entry_collection
+    get_user_collection,
+    get_competence_collection
 )
 
 logger = logging.getLogger(__name__)
@@ -111,15 +111,15 @@ class HubSpokeIngestion:
     Ingestion manager for Hub and Spoke architecture.
     
     Handles:
-    1. Creating UnifiedProfile (Hub)
-    2. Creating CompetenceEntry (Spoke)
+    1. Creating User (Hub)
+    2. Creating Competence (Spoke)
     3. Establishing bidirectional links
     """
     
     @staticmethod
     def create_profile(profile_data: Dict[str, Any]) -> Optional[str]:
         """
-        Create a UnifiedProfile (Hub).
+        Create a User (Hub).
         
         Args:
             profile_data: Dict with keys: name, email, type, fcm_token, 
@@ -129,7 +129,7 @@ class HubSpokeIngestion:
             UUID of created profile
         """
         try:
-            collection = get_unified_profile_collection()
+            collection = get_user_collection()
             
             # Handle last_active_date: can be datetime or days offset
             last_active = profile_data.get("last_active_date")
@@ -154,7 +154,7 @@ class HubSpokeIngestion:
                 }
             )
             
-            logger.info(f"Created UnifiedProfile: {profile_data.get('name')} (UUID: {uuid})")
+            logger.info(f"Created User: {profile_data.get('name')} (UUID: {uuid})")
             return str(uuid)
             
         except Exception as e:
@@ -169,7 +169,7 @@ class HubSpokeIngestion:
         apply_enrichment: bool = True
     ) -> Optional[str]:
         """
-        Create a CompetenceEntry (Spoke) with bidirectional link to Profile.
+        Create a Competence (Spoke) with bidirectional link to Profile.
         
         Critical Logic:
         1. Sanitize description to prevent keyword stuffing
@@ -179,7 +179,7 @@ class HubSpokeIngestion:
         
         Args:
             competence_data: Dict with keys: title, description, category, price_range
-            profile_uuid: UUID of the owning UnifiedProfile
+            profile_uuid: UUID of the owning User
             apply_sanitization: Whether to sanitize description
             apply_enrichment: Whether to enrich description
             
@@ -187,8 +187,8 @@ class HubSpokeIngestion:
             UUID of created competence
         """
         try:
-            profile_collection = get_unified_profile_collection()
-            competence_collection = get_competence_entry_collection()
+            profile_collection = get_user_collection()
+            competence_collection = get_competence_collection()
             
             # Process description
             description = competence_data.get("description", "")
@@ -202,7 +202,7 @@ class HubSpokeIngestion:
             if apply_enrichment and category:
                 description = enrich_text(description, category)
             
-            # Step 3: Create CompetenceEntry with owned_by reference
+            # Step 3: Create Competence with owned_by reference
             competence_uuid = competence_collection.data.insert(
                 properties={
                     "title": competence_data.get("title"),
@@ -215,7 +215,7 @@ class HubSpokeIngestion:
                 }
             )
             
-            logger.info(f"Created CompetenceEntry: {competence_data.get('title')} (UUID: {competence_uuid})")
+            logger.info(f"Created Competence: {competence_data.get('title')} (UUID: {competence_uuid})")
             
             # Step 4: Add reverse reference (Hub → Spoke)
             # Add competence to Profile's has_competences list
@@ -305,7 +305,7 @@ class HubSpokeIngestion:
             Dict with success status and list of added competence UUIDs
         """
         try:
-            profile_collection = get_unified_profile_collection()
+            profile_collection = get_user_collection()
             
             # Find profile by user_id
             from weaviate.classes.query import Filter
@@ -382,8 +382,8 @@ class HubSpokeIngestion:
             Dict with success status and list of updated competence UUIDs
         """
         try:
-            profile_collection = get_unified_profile_collection()
-            competence_collection = get_competence_entry_collection()
+            profile_collection = get_user_collection()
+            competence_collection = get_competence_collection()
             
             # Find profile by user_id
             from weaviate.classes.query import Filter
@@ -474,8 +474,8 @@ class HubSpokeIngestion:
             Dict with success status and list of deleted competence UUIDs
         """
         try:
-            profile_collection = get_unified_profile_collection()
-            competence_collection = get_competence_entry_collection()
+            profile_collection = get_user_collection()
+            competence_collection = get_competence_collection()
             
             # Find profile by user_id
             from weaviate.classes.query import Filter, QueryReference

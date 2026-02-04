@@ -16,8 +16,8 @@ from src.ai_assistant.hub_spoke_ingestion import HubSpokeIngestion
 class TestCompetenceManagement(unittest.TestCase):
     """Test suite for competence management functions."""
     
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_unified_profile_collection')
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_entry_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
     def test_add_competences_single_string(self, mock_comp_collection, mock_profile_collection):
         """Test adding a single competence as a string."""
         # Mock profile query result
@@ -41,8 +41,8 @@ class TestCompetenceManagement(unittest.TestCase):
         self.assertEqual(len(result['added_uuids']), 1)
         self.assertEqual(result['count'], 1)
     
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_unified_profile_collection')
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_entry_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
     def test_add_competences_list(self, mock_comp_collection, mock_profile_collection):
         """Test adding multiple competences as a list."""
         # Mock profile query result
@@ -66,8 +66,8 @@ class TestCompetenceManagement(unittest.TestCase):
         self.assertEqual(len(result['added_uuids']), 2)
         self.assertEqual(result['count'], 2)
     
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_unified_profile_collection')
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_entry_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
     def test_add_competences_user_not_found(self, mock_comp_collection, mock_profile_collection):
         """Test adding competences when user doesn't exist."""
         # Mock empty query result
@@ -85,8 +85,8 @@ class TestCompetenceManagement(unittest.TestCase):
         self.assertEqual(result['error'], "User not found")
         self.assertEqual(len(result['added_uuids']), 0)
     
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_unified_profile_collection')
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_entry_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
     def test_update_competences_replaces_existing(self, mock_comp_collection, mock_profile_collection):
         """Test updating competences replaces all existing ones."""
         # Mock profile query result
@@ -124,8 +124,8 @@ class TestCompetenceManagement(unittest.TestCase):
         # Verify old competences were deleted
         self.assertEqual(mock_comp_collection.return_value.data.delete_by_id.call_count, 2)
     
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_unified_profile_collection')
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_entry_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
     def test_delete_competences_by_pattern(self, mock_comp_collection, mock_profile_collection):
         """Test deleting competences by matching pattern."""
         # Mock profile query result
@@ -170,8 +170,8 @@ class TestCompetenceManagement(unittest.TestCase):
         self.assertEqual(len(result['deleted_uuids']), 1)
         self.assertEqual(result['deleted_uuids'][0], 'comp-1')
     
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_unified_profile_collection')
-    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_entry_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
     def test_delete_multiple_competences(self, mock_comp_collection, mock_profile_collection):
         """Test deleting multiple competences with a list of patterns."""
         # Mock profile query result

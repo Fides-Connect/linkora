@@ -17,7 +17,7 @@ from typing import Any, Callable, Optional
 from aiohttp import web
 from weaviate.classes.query import QueryReference
 
-from ai_assistant.hub_spoke_schema import get_competence_entry_collection
+from ai_assistant.hub_spoke_schema import get_competence_collection
 from ai_assistant.services.notification_service import NotificationService
 from ai_assistant.data_provider import get_data_provider
 from ai_assistant.weaviate_models import (
@@ -378,7 +378,7 @@ class AdminService:
             limit = int(request.query.get('limit', 100))
             
             # Fetch competences with 'owned_by' reference to show who owns them
-            collection = get_competence_entry_collection()
+            collection = get_competence_collection()
             result = collection.query.fetch_objects(
                 limit=limit,
                 return_references=[
