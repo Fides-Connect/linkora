@@ -85,11 +85,17 @@ def get_test_data():
     """Import test data dynamically."""
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tests'))
     try:
-        from test_hub_spoke_data import TEST_PERSONAS
-        return TEST_PERSONAS
+        import test_database_data
+        return {
+            'personas': test_database_data.TEST_PERSONAS,
+            'requests': getattr(test_database_data, 'TEST_SERVICE_REQUESTS', []),
+            'chats': getattr(test_database_data, 'TEST_CHATS', []),
+            'chat_messages': getattr(test_database_data, 'TEST_CHAT_MESSAGES', []),
+            'reviews': getattr(test_database_data, 'TEST_REVIEWS', [])
+        }
     except ImportError:
-        logger.error("Could not import TEST_PERSONAS from tests/test_hub_spoke_data.py")
-        return []
+        logger.error("Could not import test data from tests/test_database_data.py")
+        return {'personas': [], 'requests': [], 'chats': [], 'reviews': []}
 
 
 def clean_firestore_collection(coll_ref, batch_size=50):
@@ -117,7 +123,7 @@ def datetime_from_days_ago(days):
     return datetime.datetime.now(timezone.utc) - datetime.timedelta(days=days)
 
 
-def init_firestore(test_personas):
+def init_firestore(test_data):
     """Initialize Firestore with schema and test data."""
     if not db:
         logger.error("Firestore client is not active. Skipping Firestore initialization.")
@@ -126,125 +132,133 @@ def init_firestore(test_personas):
     logger.info("Initializing Firestore...")
     
     # Collections to clean based on Diagram
-    collections = ['users', 'requests', 'reviews', 'chat_sessions']
+    collections = ['profiles', 'requests', 'reviews', 'chat_sessions', 'chats']
     
     # 1. Cleanup
     for coll_name in collections:
         logger.info(f"  Cleaning Firestore collection: {coll_name}")
         clean_firestore_collection(db.collection(coll_name))
 
+    test_personas = test_data.get('personas', [])
     if not test_personas:
-        logger.warning("  No test data provided. Firestore cleaned but empty.")
-        return
-
-    # 2. Populate Users & Competencies
-    logger.info("  Populating Users and Competencies...")
-    
-    batch = db.batch()
-    
-    for persona in test_personas:
-        p_data = persona['profile']
-        c_data_list = persona['competences']
+        logger.warning("  No test personas provided. Firestore users/competencies skipped.")
+    else:
+        # 2. Populate Profiles & Competencies
+        logger.info("  Populating Profiles and Competencies...")
         
-        user_id = p_data['user_id']
-        user_ref = db.collection('users').document(user_id)
+        batch = db.batch()
         
-        # Transform profile data to match User schema
-        user_doc = {
-            'id': user_id,
-            'name': p_data['name'],
-            'email': p_data['email'],
-            'introduction': f"I am {p_data['name']}, a professional on Fides.", # Placeholder
-            'is_service_provider': p_data.get('is_service_provider', False),
-            'fcm_token': p_data.get('fcm_token', ''),
-            # 'competencies' is an Array of strings (titles) for quick access in the User object
-            'competencies': [c['title'] for c in c_data_list],
-            'favorites': [],
-            'last_active': datetime_from_days_ago(p_data.get('last_active_date', 0)),
-            'rating': 5.0, # Default start rating
-            'review_count': 0,
-            'positive_feedback': [],
-            'negative_feedback': []
-        }
-        
-        batch.set(user_ref, user_doc)
-        
-    batch.commit()
-    logger.info("  ✓ User documents created")
-    
-    # Add Competencies Subcollection (Separate loop to avoid large batches)
-    for persona in test_personas:
-        user_id = persona['profile']['user_id']
-        c_data_list = persona['competences']
-        
-        for i, comp in enumerate(c_data_list):
-            comp_id = f"{user_id}_comp_{i+1}"
-            # Subcollection 'competencies' under 'users'
-            comp_ref = db.collection('users').document(user_id).collection('competencies').document(comp_id)
+        for persona in test_personas:
+            p_data = persona['profile']
+            c_data_list = persona['competences']
             
-            comp_doc = {
-                'id': comp_id,
-                'title': comp['title'],
-                'description': comp.get('description', ''),
-                'price_range': comp.get('price_range', ''),
-                'experience_years': 5, # Dummy data
-                'certification': 'Certified Pro' # Dummy data
+            profile_id = p_data['profile_id']
+            profile_ref = db.collection('profiles').document(profile_id)
+            
+            # Transform profile data to match Profile schema
+            profile_doc = {
+                'profile_id': profile_id,
+                'name': p_data['name'],
+                'email': p_data['email'],
+                'introduction': p_data['introduction'],
+                'type': p_data.get('type', 'user'),
+                'is_service_provider': p_data.get('is_service_provider', False),
+                'fcm_token': p_data.get('fcm_token', ''),
+                'has_open_request': p_data.get('has_open_request', False),
+                'favorites': p_data.get('favorites', []),
+                'last_active': datetime_from_days_ago(p_data.get('last_active_date', 0)),
+                'positive_feedback': p_data.get('positive_feedback', []),
+                'negative_feedback': p_data.get('negative_feedback', []),
+                'average_rating': p_data.get('average_rating', 5.0),
+                'review_count': p_data.get('review_count', 0),
+                # 'competencies' is an Array of strings (titles) for quick access in the User object
+                'competencies': [c['title'] for c in c_data_list]
             }
-            comp_ref.set(comp_doc)
             
-    logger.info("  ✓ Competencies subcollections created")
+            batch.set(profile_ref, profile_doc)
+            
+        batch.commit()
+        logger.info("  ✓ Profile documents created")
+        
+        # Add Competencies Subcollection (Separate loop to avoid large batches)
+        for persona in test_personas:
+            profile_id = persona['profile']['profile_id']
+            c_data_list = persona['competences']
+            
+            for i, comp in enumerate(c_data_list):
+                comp_id = f"{profile_id}_comp_{i+1}"
+                # Subcollection 'competencies' under 'profiles'
+                comp_ref = db.collection('profiles').document(profile_id).collection('competencies').document(comp_id)
+                
+                comp_doc = {
+                    'competence_id': comp_id,
+                    'title': comp['title'],
+                    'description': comp.get('description', ''),
+                    'price_range': comp.get('price_range', '')
+                }
+                comp_ref.set(comp_doc)
+                
+        logger.info("  ✓ Competencies subcollections created")
 
-    # 3. Create Dummy Service Request
-    # Scenario: User E (Enthusiast/Seeker) asks User A (Pro)
-    # Using 'requests' collection name to match previous code, Diagram says SERVICE_REQUEST but usually maps to lowercase plural in Firestore
-    req_collection_name = 'requests' 
-    req_id = "req_test_001"
-    req_ref = db.collection(req_collection_name).document(req_id)
-    req_doc = {
-        'id': req_id,
-        'seeker_user_id': "user_eva_005",
-        'provider_user_id': "user_alice_001",
-        'title': "Pot Light Installation",
-        'price': 150.0,
-        'description': "I need 5 pot lights installed in my living room. High ceilings.",
-        'competencies': ["Installing Pot Lights"],
-        'status': 'pending',
-        'created_at': datetime.datetime.now(timezone.utc)
-    }
-    req_ref.set(req_doc)
-    logger.info(f"  ✓ Dummy Service Request created in '{req_collection_name}'")
+    # 3. Create Service Requests
+    requests = test_data.get('requests', [])
+    if requests:
+        for req in requests:
+            req_collection_name = 'requests'
+            req_id = req.get('id', 'unknown_req')
+            req_ref = db.collection(req_collection_name).document(req_id)
+            
+            # Add dynamic timestamp if missing
+            if 'created_at' not in req:
+                req['created_at'] = datetime.datetime.now(timezone.utc)
+                
+            req_ref.set(req)
+        logger.info(f"  ✓ {len(requests)} Service Requests created")
     
-    # 4. Create Dummy Chat Session
-    # Scenario: User E talks to AI
-    chat_id = "chat_test_001"
-    chat_ref = db.collection('chat_sessions').document(chat_id)
-    chat_doc = {
-        'id': chat_id,
-        'session_id': chat_id,
-        'sender_user_id': "user_eva_005",
-        'receiver_user_id': "AI_ASSISTANT", 
-        'title': "Pot Light Inquiry",
-        'time': int(datetime.datetime.now(timezone.utc).timestamp() * 1000),
-        'message': "Can you find someone to help with pot lights?"
-    }
-    chat_ref.set(chat_doc)
-    logger.info("  ✓ Dummy Chat Session created")
+    # 4. Create Chat Sessions and Messages
+    chats = test_data.get('chats', [])
+    messages = test_data.get('chat_messages', [])
     
-    # 5. Create Dummy Review
-    # Scenario: User A reviewed User E (maybe for a past job)
-    review_id = "rev_test_001"
-    review_ref = db.collection('reviews').document(review_id)
-    review_doc = {
-        'id': review_id,
-        'request_id': "req_past_000",
-        'provider_id': "user_alice_001",
-        'reviewer_id': "user_eva_005",
-        'rating': 5,
-        'positive_feedback': ["Punctual", "Professional"],
-        'negative_feedback': []
-    }
-    review_ref.set(review_doc)
-    logger.info("  ✓ Dummy Review created")
+    if chats:
+        for chat in chats:
+            chat_id = chat.get('chat_id', 'unknown_chat')
+            chat_ref = db.collection('chats').document(chat_id)
+            
+            # Add dynamic timestamp if missing
+            if 'created_at' not in chat:
+                chat['created_at'] = int(datetime.datetime.now(timezone.utc).timestamp() * 1000)
+                
+            chat_ref.set(chat)
+        logger.info(f"  ✓ {len(chats)} Chat Sessions created")
+        
+        # Add messages to subcollections
+        if messages:
+            count = 0
+            for msg in messages:
+                chat_id = msg.get('chat_id')
+                if not chat_id:
+                    continue
+                    
+                msg_id = msg.get('chat_message_id', f'msg_{count}')
+                # Subcollection 'messages' under 'chats' document
+                msg_ref = db.collection('chats').document(chat_id).collection('messages').document(msg_id)
+                
+                # Add dynamic timestamp if missing
+                if 'timestamp' not in msg:
+                    msg['timestamp'] = int(datetime.datetime.now(timezone.utc).timestamp() * 1000)
+                
+                msg_ref.set(msg)
+                count += 1
+            logger.info(f"  ✓ {count} Chat Messages created")
+    
+    # 5. Create Reviews
+    reviews = test_data.get('reviews', [])
+    if reviews:
+        for rev in reviews:
+            rev_id = rev.get('review_id', 'unknown_rev')
+            rev_ref = db.collection('reviews').document(rev_id)
+            rev_ref.set(rev)
+        logger.info(f"  ✓ {len(reviews)} Reviews created")
 
 
 def load_weaviate_data(test_personas):
@@ -282,7 +296,8 @@ def main():
     )
     
     args = parser.parse_args()
-    test_personas = get_test_data()
+    test_data = get_test_data()
+    test_personas = test_data.get('personas', [])
     
     try:
         logger.info("=" * 80)
@@ -308,20 +323,21 @@ def main():
         if args.clean_only:
              # Just clean firestore
              if db:
-                 for c in ['users', 'requests', 'reviews', 'chat_sessions']:
+                 for c in ['profiles', 'requests', 'reviews', 'chat_sessions', 'chats']:
                      clean_firestore_collection(db.collection(c))
              logger.info("✓ Firestore collections cleaned")
         else:
             # Clean and Populate
             if args.load_test_data and test_personas:
-                init_firestore(test_personas)
+                init_firestore(test_data)
                 
                 # Load Weaviate Data as well if requested
                 logger.info("\n[Phase 3] Loading Vector Data (Weaviate)")
                 logger.info("-" * 30)
                 load_weaviate_data(test_personas)
             elif not args.load_test_data:
-                 init_firestore([]) # Just clean if no data requested
+                 # Create empty structure by passing empty dict
+                 init_firestore({}) 
                  logger.info("✓ Firestore cleaned (no data loaded)")
 
         logger.info("\n" + "=" * 80)

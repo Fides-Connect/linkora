@@ -15,7 +15,7 @@ from weaviate.classes.query import Filter, QueryReference, MetadataQuery
 
 # Handle both package and direct imports
 from ai_assistant.hub_spoke_schema import (
-    get_user_collection,
+    get_profile_collection,
     get_competence_collection
 )
 
@@ -171,7 +171,7 @@ class HubSpokeSearch:
             List of competence dictionaries
         """
         try:
-            profile_collection = get_user_collection()
+            profile_collection = get_profile_collection()
             
             # Fetch profile with competence references
             response = profile_collection.query.fetch_object_by_id(
