@@ -197,10 +197,19 @@ REQ_TEST_001 = {
     'provider_user_id': "user_alice_001",
     'title': "Pot Light Installation",
     'amount_value': 150.0,
+    'currency': "EUR",
     'description': "I need 5 pot lights installed in my living room. High ceilings.",
     'requested_competencies': ["Installing Pot Lights"],
     'status': 'pending',
     # Note: 'created_at' will be generated dynamically in the init script
+    'start_date': "2026-02-15T09:00:00Z",
+    'end_date': "2026-02-15T14:00:00Z",
+    'category': "Electrical",
+    'location': {
+        'address': "123 Main St, Anytown",
+        'latitude': 40.7128,
+        'longitude': -74.0060,
+    },
 }
 
 CHAT_TEST_001 = {
