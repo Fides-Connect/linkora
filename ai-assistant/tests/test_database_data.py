@@ -3,17 +3,17 @@ Hub and Spoke Architecture: Test Dataset
 =========================================
 
 Test Personas:
-1. Profile A (The Pro): Active electrician with specific skill
-2. Profile B (The Spammer): Keyword-stuffed description
-3. Profile C (The Ghost): Great match but inactive 365 days
-4. Profile D (The Generalist): Broad electrical skill
-5. Profile E (The Enthusiast): Multiple gardening skills (tests grouping)
+1. User A (The Pro): Active electrician with specific skill
+2. User B (The Spammer): Keyword-stuffed description
+3. User C (The Ghost): Great match but inactive 365 days
+4. User D (The Generalist): Broad electrical skill
+5. User E (The Enthusiast): Multiple gardening skills (tests grouping)
 """
 
-# Test Persona: Profile A - The Pro
-# Active profile with specific electrical skill
-PROFILE_A = {
-    "profile_id": "profile_alice_001",
+# Test Persona: User A - The Pro
+# Active user with specific electrical skill
+USER_A = {
+    "user_id": "user_alice_001",
     "name": "Alice Professional",
     "email": "alice@example.com",
     "introduction": "Experienced electrician specializing in residential lighting installations.",
@@ -29,7 +29,7 @@ PROFILE_A = {
     "review_count": 25,
 }
 
-PROFILE_A_COMPETENCES = [
+USER_A_COMPETENCES = [
     {
         "title": "Installing Pot Lights",
         "description": "Expert installation of recessed lighting and pot lights in residential and commercial spaces.",
@@ -39,10 +39,10 @@ PROFILE_A_COMPETENCES = [
 ]
 
 
-# Test Persona: Profile B - The Spammer
+# Test Persona: User B - The Spammer
 # Description stuffed with keywords to test spam filtering
-PROFILE_B = {
-    "profile_id": "profile_bob_002",
+USER_B = {
+    "user_id": "user_bob_002",
     "name": "Bob Spammer",
     "email": "bob@example.com",
     "introduction": "I do everything! Plumbing, electrical, driving, teaching, you name it!",
@@ -58,7 +58,7 @@ PROFILE_B = {
     "review_count": 8,
 }
 
-PROFILE_B_COMPETENCES = [
+USER_B_COMPETENCES = [
     {
         "title": "Everything Services",
         "description": "Plumber Electrician Driver Nurse Teacher Plumber Driver Electrician Plumber Driver Nurse Teacher Electrician Plumber Driver Nurse Teacher Electrician Plumber Driver Nurse Teacher Electrician Plumber Driver Nurse Teacher",
@@ -68,10 +68,10 @@ PROFILE_B_COMPETENCES = [
 ]
 
 
-# Test Persona: Profile C - The Ghost
+# Test Persona: User C - The Ghost
 # Perfect match but inactive for 365 days
-PROFILE_C = {
-    "profile_id": "profile_charlie_003",
+USER_C = {
+    "user_id": "user_charlie_003",
     "name": "Charlie Ghost",
     "email": "charlie@example.com",
     "introduction": "Master electrician with 20 years experience. Specialist in residential wiring and lighting installation.",
@@ -87,7 +87,7 @@ PROFILE_C = {
     "review_count": 12,
 }
 
-PROFILE_C_COMPETENCES = [
+USER_C_COMPETENCES = [
     {
         "title": "Expert Electrician",
         "description": "Master electrician with 20 years experience. Specialist in residential wiring and lighting installation.",
@@ -97,10 +97,10 @@ PROFILE_C_COMPETENCES = [
 ]
 
 
-# Test Persona: Profile D - The Generalist
+# Test Persona: User D - The Generalist
 # Broad electrical work
-PROFILE_D = {
-    "profile_id": "profile_david_004",
+USER_D = {
+    "user_id": "user_david_004",
     "name": "David Generalist",
     "email": "david@example.com",
     "introduction": "Experienced in all types of electrical work including wiring, installations, and repairs.",
@@ -116,7 +116,7 @@ PROFILE_D = {
     "review_count": 15,
 }
 
-PROFILE_D_COMPETENCES = [
+USER_D_COMPETENCES = [
     {
         "title": "General Electrical Work",
         "description": "Experienced in all types of electrical work including wiring, installations, and repairs.",
@@ -126,10 +126,10 @@ PROFILE_D_COMPETENCES = [
 ]
 
 
-# Test Persona: Profile E - The Enthusiast
+# Test Persona: User E - The Enthusiast
 # Multiple gardening skills to test result grouping
-PROFILE_E = {
-    "profile_id": "profile_eva_005",
+USER_E = {
+    "user_id": "user_eva_005",
     "name": "Eva Enthusiast",
     "email": "eva@example.com",
     "introduction": "Gardening enthusiast offering a variety of services for beautiful and healthy gardens.",
@@ -145,7 +145,7 @@ PROFILE_E = {
     "review_count": 18,
 }
 
-PROFILE_E_COMPETENCES = [
+USER_E_COMPETENCES = [
     {
         "title": "Lawn Mowing",
         "description": "Professional lawn mowing and edging services for residential properties.",
@@ -181,20 +181,20 @@ PROFILE_E_COMPETENCES = [
 
 # All test personas for easy iteration
 TEST_PERSONAS = [
-    {"profile": PROFILE_A, "competences": PROFILE_A_COMPETENCES, "name": "Profile A (The Pro)"},
-    {"profile": PROFILE_B, "competences": PROFILE_B_COMPETENCES, "name": "Profile B (The Spammer)"},
-    {"profile": PROFILE_C, "competences": PROFILE_C_COMPETENCES, "name": "Profile C (The Ghost)"},
-    {"profile": PROFILE_D, "competences": PROFILE_D_COMPETENCES, "name": "Profile D (The Generalist)"},
-    {"profile": PROFILE_E, "competences": PROFILE_E_COMPETENCES, "name": "Profile E (The Enthusiast)"},
+    {"user": USER_A, "competences": USER_A_COMPETENCES, "name": "User A (The Pro)"},
+    {"user": USER_B, "competences": USER_B_COMPETENCES, "name": "User B (The Spammer)"},
+    {"user": USER_C, "competences": USER_C_COMPETENCES, "name": "User C (The Ghost)"},
+    {"user": USER_D, "competences": USER_D_COMPETENCES, "name": "User D (The Generalist)"},
+    {"user": USER_E, "competences": USER_E_COMPETENCES, "name": "User E (The Enthusiast)"},
 ]
 
 # --- Database Test Data (Requests, Chat, Reviews) ---
 
-# Scenario 1: Profile E (Enthusiast/Seeker) asks Profile A (Pro) for Pot Lights
+# Scenario 1: User E (Enthusiast/Seeker) asks User A (Pro) for Pot Lights
 REQ_TEST_001 = {
     'id': "req_test_001",
-    'seeker_profile_id': "profile_eva_005",
-    'provider_profile_id': "profile_alice_001",
+    'seeker_user_id': "user_eva_005",
+    'provider_user_id': "user_alice_001",
     'title': "Pot Light Installation",
     'price': 150.0,
     'description': "I need 5 pot lights installed in my living room. High ceilings.",
@@ -213,8 +213,8 @@ CHAT_TEST_001 = {
 CHAT_MSG_TEST_001_1 = {
     'chat_message_id': "msg_test_001_1",
     'chat_id': "chat_test_001",
-    'sender_profile_id': "profile_eva_005",
-    'receiver_profile_id': "AI_ASSISTANT",
+    'sender_user_id': "user_eva_005",
+    'receiver_user_id': "AI_ASSISTANT",
     'message': "Can you find someone to help with pot lights?",
     # Note: 'time' will be generated dynamically
 }
@@ -222,8 +222,8 @@ CHAT_MSG_TEST_001_1 = {
 CHAT_MSG_TEST_001_2 = {
     'chat_message_id': "msg_test_001_2",
     'chat_id': "chat_test_001",
-    'sender_profile_id': "AI_ASSISTANT",
-    'receiver_profile_id': "profile_eva_005",
+    'sender_user_id': "AI_ASSISTANT",
+    'receiver_user_id': "user_eva_005",
     'message': "I found Alice Professional who fits your request.",
     # Note: 'time' will be generated dynamically
 }
@@ -231,8 +231,8 @@ CHAT_MSG_TEST_001_2 = {
 REV_TEST_001 = {
     'review_id': "rev_test_001",
     'request_id': "req_past_000",
-    'profile_id': "profile_alice_001",
-    'reviewer_profile_id': "profile_eva_005",
+    'user_id': "user_alice_001",
+    'reviewer_user_id': "user_eva_005",
     'rating': 5,
     'positive_feedback': ["Punctual", "Professional"],
     'negative_feedback': []
@@ -241,11 +241,11 @@ REV_TEST_001 = {
 
 # --- Additional Test Scenarios ---
 
-# Scenario 2: Profile C (Ghost) has an old inactive request
+# Scenario 2: User C (Ghost) has an old inactive request
 REQ_TEST_002_GHOST = {
     'id': "req_test_002",
-    'seeker_profile_id': "profile_bob_002",
-    'provider_profile_id': "profile_charlie_003",
+    'seeker_user_id': "user_bob_002",
+    'provider_user_id': "user_charlie_003",
     'title': "Panel Upgrade",
     'price': 1200.0,
     'description': "Safety upgrade for the old fuse box.",
@@ -253,7 +253,7 @@ REQ_TEST_002_GHOST = {
     'status': 'expired', # Custom status for test
 }
 
-# Scenario 3: Ongoing chat between Profile A and AI
+# Scenario 3: Ongoing chat between User A and AI
 CHAT_TEST_002_PRO = {
     'chat_id': "chat_test_002",
     'service_request_id': None, # General inquiry
@@ -263,8 +263,8 @@ CHAT_TEST_002_PRO = {
 CHAT_MSG_TEST_002_1 = {
     'chat_message_id': "msg_test_002_1",
     'chat_id': "chat_test_002",
-    'sender_profile_id': "profile_alice_001",
-    'receiver_profile_id': "AI_ASSISTANT",
+    'sender_user_id': "user_alice_001",
+    'receiver_user_id': "AI_ASSISTANT",
     'message': "I will be on vacation next week, please pause requests.",
 }
 

@@ -3,9 +3,9 @@ Hub and Spoke Search Architecture for Service Marketplace
 ==========================================================
 
 Architecture:
-- Hub (Profile): Identity model for users/companies
+- Hub (User): Identity model for users/companies
 - Spoke (Competence): Specific skills/services with descriptions
-- Bidirectional Cross-References: Profile ↔ Competence
+- Bidirectional Cross-References: User ↔ Competence
 
 """
 import os
@@ -20,7 +20,7 @@ from weaviate.auth import AuthApiKey
 logger = logging.getLogger(__name__)
 
 # Collection names
-PROFILE_COLLECTION = "Profile"
+USER_COLLECTION = "User"
 COMPETENCE_COLLECTION = "Competence"
 
 class HubSpokeConnection:
@@ -86,8 +86,8 @@ def init_hub_spoke_schema():
     
     Collections:
     1. Competence (Spoke) - Created FIRST
-    2. Profile (Hub) - Created SECOND with reference to Competence
-    3. Add owned_by reference to Competence after Profile exists
+    2. User (Hub) - Created SECOND with reference to Competence
+    3. Add owned_by reference to Competence after User exists
     
     Note: Weaviate v4 Python client handles cross-references at data insertion time,
     but we define the schema properties for explicit structure.
@@ -117,12 +117,12 @@ def init_hub_spoke_schema():
         else:
             logger.info(f"Collection already exists: {COMPETENCE_COLLECTION}")
         
-        # Step 2: Create Profile SECOND (now it can reference existing Competence)
-        if not client.collections.exists(PROFILE_COLLECTION):
+        # Step 2: Create User SECOND (now it can reference existing Competence)
+        if not client.collections.exists(USER_COLLECTION):
             client.collections.create(
-                name=PROFILE_COLLECTION,
+                name=USER_COLLECTION,
                 properties=[
-                    Property(name="profile_id", data_type=DataType.TEXT),  # External ID (e.g. Firebase UID)
+                    Property(name="user_id", data_type=DataType.TEXT),  # External ID (e.g. Firebase UID)
                     Property(name="name", data_type=DataType.TEXT),
                     Property(name="email", data_type=DataType.TEXT),
                     Property(name="type", data_type=DataType.TEXT),  # "client" or "provider"
@@ -141,11 +141,11 @@ def init_hub_spoke_schema():
                     )
                 ]
             )
-            logger.info(f"Created collection: {PROFILE_COLLECTION}")
+            logger.info(f"Created collection: {USER_COLLECTION}")
         else:
-            logger.info(f"Collection already exists: {PROFILE_COLLECTION}")
+            logger.info(f"Collection already exists: {USER_COLLECTION}")
         
-        # Step 3: Add owned_by reference to Competence (now that Profile exists)
+        # Step 3: Add owned_by reference to Competence (now that User exists)
         # Update the collection to add the cross-reference
         competence_collection = client.collections.get(COMPETENCE_COLLECTION)
         config = competence_collection.config.get()
@@ -158,7 +158,7 @@ def init_hub_spoke_schema():
             competence_collection.config.add_reference(
                 ref=ReferenceProperty(
                     name="owned_by",
-                    target_collection=PROFILE_COLLECTION
+                    target_collection=USER_COLLECTION
                 )
             )
             logger.info(f"Added 'owned_by' reference to {COMPETENCE_COLLECTION}")
@@ -173,10 +173,10 @@ def init_hub_spoke_schema():
         raise
 
 
-def get_profile_collection():
-    """Get Profile collection."""
+def get_user_collection():
+    """Get User collection."""
     client = HubSpokeConnection.get_client()
-    return client.collections.get(PROFILE_COLLECTION)
+    return client.collections.get(USER_COLLECTION)
 
 
 def get_competence_collection():
@@ -194,9 +194,9 @@ def cleanup_hub_spoke_schema():
             client.collections.delete(COMPETENCE_COLLECTION)
             logger.info(f"Deleted collection: {COMPETENCE_COLLECTION}")
         
-        if client.collections.exists(PROFILE_COLLECTION):
-            client.collections.delete(PROFILE_COLLECTION)
-            logger.info(f"Deleted collection: {PROFILE_COLLECTION}")
+        if client.collections.exists(USER_COLLECTION):
+            client.collections.delete(USER_COLLECTION)
+            logger.info(f"Deleted collection: {USER_COLLECTION}")
         
         logger.info("Hub and Spoke schema cleanup complete")
         return True

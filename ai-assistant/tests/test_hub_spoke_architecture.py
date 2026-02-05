@@ -3,11 +3,11 @@ Hub and Spoke Architecture: Test Suite (TDD)
 =============================================
 
 Test Coverage:
-1. test_bidirectional_link: Verify Profile ↔ Competence linking
+1. test_bidirectional_link: Verify User ↔ Competence linking
 2. test_granularity_match: Specific skill matches broad query
 3. test_spam_filtering: Keyword-stuffed descriptions are sanitized
-4. test_ghost_filtering: Inactive profiles are excluded
-5. test_result_grouping: Multiple competences return one profile result
+4. test_ghost_filtering: Inactive users are excluded
+5. test_result_grouping: Multiple competences return one user result
 
 Following TDD: These tests should fail initially, then pass after implementation.
 """
@@ -32,7 +32,7 @@ from src.ai_assistant.hub_spoke_ingestion import (
     enrich_text
 )
 from src.ai_assistant.hub_spoke_search import HubSpokeSearch
-from tests.test_hub_spoke_data import TEST_PERSONAS
+from tests.test_database_data import TEST_PERSONAS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -79,15 +79,15 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         cls.personas_map = {}
         for persona in TEST_PERSONAS:
             logger.info(f"Loading {persona['name']}")
-            result = HubSpokeIngestion.create_profile_with_competences(
-                profile_data=persona['profile'],
+            result = HubSpokeIngestion.create_user_with_competences(
+                user_data=persona['user'],
                 competences_data=persona['competences'],
                 apply_sanitization=True,
                 apply_enrichment=True
             )
             if result:
                 cls.personas_map[persona['name']] = result
-                logger.info(f"  Profile UUID: {result['profile_uuid']}")
+                logger.info(f"  User UUID: {result['user_uuid']}")
                 logger.info(f"  Competences: {len(result['competence_uuids'])}")
         
         # Wait for indexing (Weaviate needs time to vectorize)
@@ -110,9 +110,9 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         """
         Test 1: Bidirectional Link
         
-        Verify that creating a Profile with Competences establishes:
-        1. Profile.has_competences → Competence (Hub → Spoke)
-        2. Competence.owned_by → Profile (Spoke → Hub)
+        Verify that creating a User with Competences establishes:
+        1. User.has_competences → Competence (Hub → Spoke)
+        2. Competence.owned_by → User (Spoke → Hub)
         
         This is CRITICAL for the Hub and Spoke architecture.
         """
@@ -124,22 +124,22 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         user_a = self.personas_map.get("User A (The Pro)")
         self.assertIsNotNone(user_a, "User A should be loaded")
         
-        profile_uuid = user_a['profile_uuid']
+        user_uuid = user_a['user_uuid']
         competence_uuid = user_a['competence_uuids'][0]
         
-        # Verify Profile → Competence link
-        logger.info("Checking Profile → Competence link (has_competences)")
-        profile_competences = HubSpokeSearch.get_profile_competences(profile_uuid)
-        self.assertGreater(len(profile_competences), 0, "Profile should have competences")
+        # Verify User → Competence link
+        logger.info("Checking User → Competence link (has_competences)")
+        user_competences = HubSpokeSearch.get_user_competences(user_uuid)
+        self.assertGreater(len(user_competences), 0, "User should have competences")
         
-        competence_uuids = [c['uuid'] for c in profile_competences]
+        competence_uuids = [c['uuid'] for c in user_competences]
         self.assertIn(competence_uuid, competence_uuids, 
-                     "Competence should be in profile's has_competences")
+                     "Competence should be in user's has_competences")
         
-        logger.info(f"✓ Profile {profile_uuid[:8]}... has {len(profile_competences)} competence(s)")
+        logger.info(f"✓ User {user_uuid[:8]}... has {len(user_competences)} competence(s)")
         
-        # Verify Competence → Profile link
-        logger.info("Checking Competence → Profile link (owned_by)")
+        # Verify Competence → User link
+        logger.info("Checking Competence → User link (owned_by)")
         competence_collection = get_competence_collection()
         competence_obj = competence_collection.query.fetch_object_by_id(
             uuid=competence_uuid,
@@ -156,9 +156,9 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         self.assertEqual(len(owned_by_objects), 1, "Competence should have exactly one owner")
         
         owner_uuid = str(owned_by_objects[0].uuid)
-        self.assertEqual(owner_uuid, profile_uuid, "Competence owner should match profile UUID")
+        self.assertEqual(owner_uuid, user_uuid, "Competence owner should match user UUID")
         
-        logger.info(f"✓ Competence {competence_uuid[:8]}... is owned_by Profile {owner_uuid[:8]}...")
+        logger.info(f"✓ Competence {competence_uuid[:8]}... is owned_by User {owner_uuid[:8]}...")
         logger.info("✓ Bidirectional linking verified")
     
     def test_02_granularity_match(self):
@@ -183,20 +183,20 @@ class TestHubSpokeArchitecture(unittest.TestCase):
             query=query,
             limit=10,
             max_inactive_days=180,
-            group_by_profile=False  # Show all competences
+            group_by_user=False  # Show all competences
         )
         
         logger.info(f"Results: {len(results)} competence(s) found")
         
         # Verify User A appears in results
         user_a = self.personas_map.get("User A (The Pro)")
-        profile_names = [r.get('profile', {}).get('name') for r in results if 'profile' in r]
+        user_names = [r.get('user', {}).get('name') for r in results if 'user' in r]
         
-        self.assertIn("Alice Professional", profile_names, 
+        self.assertIn("Alice Professional", user_names, 
                      "User A (Alice) should appear in results due to enrichment")
         
         # Find User A's result
-        user_a_result = next((r for r in results if r.get('profile', {}).get('name') == 'Alice Professional'), None)
+        user_a_result = next((r for r in results if r.get('user', {}).get('name') == 'Alice Professional'), None)
         self.assertIsNotNone(user_a_result, "User A result should be found")
         
         logger.info(f"✓ User A found: {user_a_result['title']}")
@@ -252,12 +252,12 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         # Additionally, search for "Driver" and verify User B has low relevance
         query = "Driver"
         logger.info(f"\nSearching for: '{query}'")
-        results = HubSpokeSearch.search_competences(query=query, limit=10, group_by_profile=False)
+        results = HubSpokeSearch.search_competences(query=query, limit=10, group_by_user=False)
         
         logger.info(f"Results: {len(results)} competence(s) found")
         
         # User B might appear, but should have low score or not appear at all
-        user_b_result = next((r for r in results if r.get('profile', {}).get('name') == 'Bob Spammer'), None)
+        user_b_result = next((r for r in results if r.get('user', {}).get('name') == 'Bob Spammer'), None)
         
         if user_b_result:
             logger.info(f"User B found with score: {user_b_result.get('score', 0):.4f}")
@@ -291,18 +291,18 @@ class TestHubSpokeArchitecture(unittest.TestCase):
             query=query,
             limit=10,
             max_inactive_days=180,  # Only include users active in last 180 days
-            group_by_profile=False
+            group_by_user=False
         )
         
         logger.info(f"Results: {len(results)} competence(s) found")
         
         # Verify User C is NOT in results
-        profile_names = [r.get('profile', {}).get('name') for r in results if 'profile' in r]
+        user_names = [r.get('user', {}).get('name') for r in results if 'user' in r]
         
-        self.assertNotIn("Charlie Ghost", profile_names, 
+        self.assertNotIn("Charlie Ghost", user_names, 
                         "User C (Charlie Ghost) should be excluded due to inactivity")
         
-        logger.info(f"Active users found: {profile_names}")
+        logger.info(f"Active users found: {user_names}")
         logger.info("✓ User C (Ghost) correctly excluded")
         logger.info("✓ Ghost user filtering working")
     
@@ -317,7 +317,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         4. Flower Planting
         5. Vegetable Garden Setup
         
-        With group_by_profile=True, searching for "Gardening" should return
+        With group_by_user=True, searching for "Gardening" should return
         User E only ONCE (not 5 times), with her best matching competence.
         
         Expected: Only 1 result for User E (not 5)
@@ -329,28 +329,28 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         query = "Gardening"
         logger.info(f"Query: '{query}'")
         logger.info("User E has 5 different gardening competences")
-        logger.info("Expected: User E appears ONCE (grouped by profile)")
+        logger.info("Expected: User E appears ONCE (grouped by user)")
         
         # Search WITH grouping
         grouped_results = HubSpokeSearch.search_competences(
             query=query,
             limit=10,
             max_inactive_days=180,
-            group_by_profile=True  # Enable grouping
+            group_by_user=True  # Enable grouping
         )
         
         logger.info(f"Grouped results: {len(grouped_results)} result(s)")
         
         # Count how many times User E appears
         user_e_count = sum(1 for r in grouped_results 
-                          if r.get('profile', {}).get('name') == 'Eva Enthusiast')
+                          if r.get('user', {}).get('name') == 'Eva Enthusiast')
         
         self.assertEqual(user_e_count, 1, 
                         "User E should appear exactly once with grouping enabled")
         
         # Find User E's result
         user_e_result = next((r for r in grouped_results 
-                             if r.get('profile', {}).get('name') == 'Eva Enthusiast'), None)
+                             if r.get('user', {}).get('name') == 'Eva Enthusiast'), None)
         
         self.assertIsNotNone(user_e_result, "User E should be in results")
         
@@ -362,13 +362,13 @@ class TestHubSpokeArchitecture(unittest.TestCase):
             query=query,
             limit=10,
             max_inactive_days=180,
-            group_by_profile=False  # Disable grouping
+            group_by_user=False  # Disable grouping
         )
         
         logger.info(f"\nUngrouped results: {len(ungrouped_results)} result(s)")
         
         user_e_ungrouped_count = sum(1 for r in ungrouped_results 
-                                     if r.get('profile', {}).get('name') == 'Eva Enthusiast')
+                                     if r.get('user', {}).get('name') == 'Eva Enthusiast')
         
         logger.info(f"User E appears {user_e_ungrouped_count} time(s) without grouping")
         
@@ -427,17 +427,17 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         
         # Get User A's data
         user_a = self.personas_map['User A (The Pro)']
-        profile_collection = get_user_collection()
+        user_collection = get_user_collection()
         
         # Get the user_id
-        profile_result = profile_collection.query.fetch_object_by_id(
-            uuid=user_a['profile_uuid']
+        user_result = user_collection.query.fetch_object_by_id(
+            uuid=user_a['user_uuid']
         )
-        user_id = profile_result.properties.get('user_id')
+        user_id = user_result.properties.get('user_id')
         
         # Original competence data
         logger.info(f"User ID: {user_id}")
-        original_competences = HubSpokeSearch.get_profile_competences(user_a['profile_uuid'])
+        original_competences = HubSpokeSearch.get_user_competences(user_a['user_uuid'])
         logger.info(f"Original competences count: {len(original_competences)}")
         
         # Update with a single string
@@ -453,7 +453,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         
         # Verify the update
         time.sleep(1)  # Wait for indexing
-        updated_competences = HubSpokeSearch.get_profile_competences(user_a['profile_uuid'])
+        updated_competences = HubSpokeSearch.get_user_competences(user_a['user_uuid'])
         found_updated = any("Home Renovation" in c.get('description', '') for c in updated_competences)
         self.assertTrue(found_updated, "Should find updated competence")
         
@@ -484,16 +484,16 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         
         # Get User B's data
         user_b = self.personas_map['User B (The Spammer)']
-        profile_collection = get_user_collection()
+        user_collection = get_user_collection()
         
         # Get the user_id
-        profile_result = profile_collection.query.fetch_object_by_id(
-            uuid=user_b['profile_uuid']
+        user_result = user_collection.query.fetch_object_by_id(
+            uuid=user_b['user_uuid']
         )
-        user_id = profile_result.properties.get('user_id')
+        user_id = user_result.properties.get('user_id')
         
         logger.info(f"User ID: {user_id}")
-        original_competences = HubSpokeSearch.get_profile_competences(user_b['profile_uuid'])
+        original_competences = HubSpokeSearch.get_user_competences(user_b['user_uuid'])
         original_count = len(original_competences)
         logger.info(f"Original competences count: {original_count}")
         logger.info(f"Original competences:")
@@ -516,14 +516,14 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         
         # Verify deletion
         time.sleep(1)  # Wait for indexing
-        remaining_competences = HubSpokeSearch.get_profile_competences(user_b['profile_uuid'])
+        remaining_competences = HubSpokeSearch.get_user_competences(user_b['user_uuid'])
         self.assertLess(len(remaining_competences), original_count, "Should have fewer competences")
         
-        # Verify profile still exists
-        profile_result = profile_collection.query.fetch_object_by_id(
-            uuid=user_b['profile_uuid']
+        # Verify user still exists
+        user_result = user_collection.query.fetch_object_by_id(
+            uuid=user_b['user_uuid']
         )
-        self.assertIsNotNone(profile_result, "Profile should still exist")
+        self.assertIsNotNone(user_result, "User should still exist")
         
         # Delete multiple competences with a list
         remaining_count = len(remaining_competences)
@@ -556,19 +556,19 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         if not user_c:
             self.skipTest("User C not found in test data")
         
-        profile_collection = get_user_collection()
+        user_collection = get_user_collection()
         
         # Get the user_id
-        profile_result = profile_collection.query.fetch_object_by_id(
-            uuid=user_c['profile_uuid']
+        user_result = user_collection.query.fetch_object_by_id(
+            uuid=user_c['user_uuid']
         )
-        user_id = profile_result.properties.get('user_id')
+        user_id = user_result.properties.get('user_id')
         
         logger.info(f"User ID: {user_id}")
-        logger.info(f"Profile properties: {profile_result.properties}")
+        logger.info(f"User properties: {user_result.properties}")
         if not user_id:
-            self.skipTest(f"User C profile missing user_id field. Properties: {profile_result.properties}")
-        original_competences = HubSpokeSearch.get_profile_competences(user_c['profile_uuid'])
+            self.skipTest(f"User C user missing user_id field. Properties: {user_result.properties}")
+        original_competences = HubSpokeSearch.get_user_competences(user_c['user_uuid'])
         original_count = len(original_competences)
         logger.info(f"Original competences count: {original_count}")
         
@@ -586,7 +586,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         
         # Verify addition
         time.sleep(1)  # Wait for indexing
-        updated_competences = HubSpokeSearch.get_profile_competences(user_c['profile_uuid'])
+        updated_competences = HubSpokeSearch.get_user_competences(user_c['user_uuid'])
         self.assertEqual(len(updated_competences), original_count + 1, "Should have one more competence")
         
         # Add multiple competences with a list
@@ -605,7 +605,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         self.assertEqual(len(result['added_uuids']), 2, "Should add two competences")
         
         # Final verification
-        final_competences = HubSpokeSearch.get_profile_competences(user_c['profile_uuid'])
+        final_competences = HubSpokeSearch.get_user_competences(user_c['user_uuid'])
         self.assertEqual(len(final_competences), original_count + 3, "Should have three more competences total")
         
         logger.info("✓ Add competences by user_id working correctly")
@@ -636,14 +636,14 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         for result in results:
             self.assertIn('uuid', result, "Result should have uuid")
             self.assertIn('score', result, "Result should have score")
-            self.assertIn('profile', result, "Result should have profile")
+            self.assertIn('user', result, "Result should have user")
             self.assertIn('category', result, "Result should have category")
             
-            # Verify profile structure
-            profile = result['profile']
-            self.assertIn('uuid', profile, "Profile should have uuid")
-            self.assertIn('name', profile, "Profile should have name")
-            self.assertTrue(profile.get('is_service_provider', False), "Profile should be a provider")
+            # Verify user structure
+            user = result['user']
+            self.assertIn('uuid', user, "User should have uuid")
+            self.assertIn('name', user, "User should have name")
+            self.assertTrue(user.get('is_service_provider', False), "User should be a provider")
         
         logger.info("✓ Hybrid search with availability filter working correctly")
     
@@ -702,10 +702,10 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         self.assertIsInstance(results, list, "Should return a list")
         logger.info(f"Found {len(results)} providers matching criterions")
         
-        # Verify no duplicate profiles
-        profile_uuids = [r['profile']['uuid'] for r in results if 'profile' in r]
-        self.assertEqual(len(profile_uuids), len(set(profile_uuids)), 
-                        "Should not have duplicate profiles")
+        # Verify no duplicate users
+        user_uuids = [r['user']['uuid'] for r in results if 'user' in r]
+        self.assertEqual(len(user_uuids), len(set(user_uuids)), 
+                        "Should not have duplicate users")
         
         logger.info("✓ Search with criterions working correctly")
     

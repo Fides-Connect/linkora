@@ -5,7 +5,7 @@ Hub and Spoke Ingestion: Data Sanitization and Enrichment
 Handles:
 1. SEO Spam Defense (sanitize_input)
 2. Granularity Enrichment (enrich_text)
-3. Bidirectional Linking (Profile ↔ Competence)
+3. Bidirectional Linking (User ↔ Competence)
 """
 import re
 import logging
@@ -13,7 +13,7 @@ from datetime import datetime, UTC
 from typing import List, Dict, Any, Optional
 
 from ai_assistant.hub_spoke_schema import (
-    get_profile_collection,
+    get_user_collection,
     get_competence_collection
 )
 
@@ -117,22 +117,22 @@ class HubSpokeIngestion:
     """
     
     @staticmethod
-    def create_profile(profile_data: Dict[str, Any]) -> Optional[str]:
+    def create_user(user_data: Dict[str, Any]) -> Optional[str]:
         """
         Create a User (Hub).
         
         Args:
-            profile_data: Dict with keys: name, email, type, fcm_token, 
+            user_data: Dict with keys: name, email, type, fcm_token, 
                          has_open_request, last_active_date
                          
         Returns:
-            UUID of created profile
+            UUID of created user
         """
         try:
-            collection = get_profile_collection()
+            collection = get_user_collection()
             
             # Handle last_active_date: can be datetime or days offset
-            last_active = profile_data.get("last_active_date")
+            last_active = user_data.get("last_active_date")
             if isinstance(last_active, int):
                 # Treat as days ago
                 from datetime import timedelta
@@ -142,44 +142,44 @@ class HubSpokeIngestion:
             
             uuid = collection.data.insert(
                 properties={
-                    "name": profile_data.get("name"),
-                    "email": profile_data.get("email"),
-                    "profile_id": profile_data.get("profile_id"),
-                    "type": profile_data.get("type", "user"),
-                    "is_service_provider": profile_data.get("is_service_provider", False),
-                    "fcm_token": profile_data.get("fcm_token", ""),
-                    "created_at": profile_data.get("created_at", datetime.now(UTC)),
-                    "has_open_request": profile_data.get("has_open_request", False),
+                    "name": user_data.get("name"),
+                    "email": user_data.get("email"),
+                    "user_id": user_data.get("user_id"),
+                    "type": user_data.get("type", "user"),
+                    "is_service_provider": user_data.get("is_service_provider", False),
+                    "fcm_token": user_data.get("fcm_token", ""),
+                    "created_at": user_data.get("created_at", datetime.now(UTC)),
+                    "has_open_request": user_data.get("has_open_request", False),
                     "last_active_date": last_active,
                 }
             )
             
-            logger.info(f"Created User: {profile_data.get('name')} (UUID: {uuid})")
+            logger.info(f"Created User: {user_data.get('name')} (UUID: {uuid})")
             return str(uuid)
             
         except Exception as e:
-            logger.error(f"Error creating profile: {e}")
+            logger.error(f"Error creating user: {e}")
             return None
     
     @staticmethod
     def create_competence(
         competence_data: Dict[str, Any],
-        profile_uuid: str,
+        user_uuid: str,
         apply_sanitization: bool = True,
         apply_enrichment: bool = True
     ) -> Optional[str]:
         """
-        Create a Competence (Spoke) with bidirectional link to Profile.
+        Create a Competence (Spoke) with bidirectional link to User.
         
         Critical Logic:
         1. Sanitize description to prevent keyword stuffing
         2. Enrich description with parent category terms
-        3. Create competence with owned_by reference to Profile
-        4. Add competence reference to Profile's has_competences
+        3. Create competence with owned_by reference to User
+        4. Add competence reference to User's has_competences
         
         Args:
             competence_data: Dict with keys: title, description, category, price_range
-            profile_uuid: UUID of the owning User
+            user_uuid: UUID of the owning User
             apply_sanitization: Whether to sanitize description
             apply_enrichment: Whether to enrich description
             
@@ -187,7 +187,7 @@ class HubSpokeIngestion:
             UUID of created competence
         """
         try:
-            profile_collection = get_profile_collection()
+            user_collection = get_user_collection()
             competence_collection = get_competence_collection()
             
             # Process description
@@ -211,21 +211,21 @@ class HubSpokeIngestion:
                     "price_range": competence_data.get("price_range", ""),
                 },
                 references={
-                    "owned_by": profile_uuid  # Link to Profile (Spoke → Hub)
+                    "owned_by": user_uuid  # Link to User (Spoke → Hub)
                 }
             )
             
             logger.info(f"Created Competence: {competence_data.get('title')} (UUID: {competence_uuid})")
             
             # Step 4: Add reverse reference (Hub → Spoke)
-            # Add competence to Profile's has_competences list
-            profile_collection.data.reference_add(
-                from_uuid=profile_uuid,
+            # Add competence to User's has_competences list
+            user_collection.data.reference_add(
+                from_uuid=user_uuid,
                 from_property="has_competences",
                 to=competence_uuid
             )
             
-            logger.info(f"Linked Profile {profile_uuid} ↔ Competence {competence_uuid}")
+            logger.info(f"Linked User {user_uuid} ↔ Competence {competence_uuid}")
             return str(competence_uuid)
             
         except Exception as e:
@@ -233,30 +233,30 @@ class HubSpokeIngestion:
             return None
     
     @staticmethod
-    def create_profile_with_competences(
-        profile_data: Dict[str, Any],
+    def create_user_with_competences(
+        user_data: Dict[str, Any],
         competences_data: List[Dict[str, Any]],
         apply_sanitization: bool = True,
         apply_enrichment: bool = True
     ) -> Optional[Dict[str, Any]]:
         """
-        Create a complete Profile with multiple Competences.
+        Create a complete User with multiple Competences.
         
         Convenience method for bulk ingestion.
         
         Args:
-            profile_data: Profile properties
+            user_data: User properties
             competences_data: List of competence properties
             apply_sanitization: Whether to sanitize descriptions
             apply_enrichment: Whether to enrich descriptions
             
         Returns:
-            Dict with profile_uuid and list of competence_uuids
+            Dict with user_uuid and list of competence_uuids
         """
         try:
-            # Create profile
-            profile_uuid = HubSpokeIngestion.create_profile(profile_data)
-            if not profile_uuid:
+            # Create user
+            user_uuid = HubSpokeIngestion.create_user(user_data)
+            if not user_uuid:
                 return None
             
             # Create competences
@@ -264,7 +264,7 @@ class HubSpokeIngestion:
             for comp_data in competences_data:
                 comp_uuid = HubSpokeIngestion.create_competence(
                     comp_data,
-                    profile_uuid,
+                    user_uuid,
                     apply_sanitization=apply_sanitization,
                     apply_enrichment=apply_enrichment
                 )
@@ -272,30 +272,30 @@ class HubSpokeIngestion:
                     competence_uuids.append(comp_uuid)
             
             result = {
-                "profile_uuid": profile_uuid,
+                "user_uuid": user_uuid,
                 "competence_uuids": competence_uuids
             }
             
-            logger.info(f"Created profile with {len(competence_uuids)} competences")
+            logger.info(f"Created user with {len(competence_uuids)} competences")
             return result
             
         except Exception as e:
-            logger.error(f"Error creating profile with competences: {e}")
+            logger.error(f"Error creating user with competences: {e}")
             return None
     
     @staticmethod
-    def add_competences_by_id(
-        profile_id: str,
+    def add_competences_by_user_id(
+        user_id: str,
         competences: str | List[str],
         category: str = "",
         apply_sanitization: bool = True,
         apply_enrichment: bool = True
     ) -> Dict[str, Any]:
         """
-        Add new competences to an existing profile by profile_id.
+        Add new competences to an existing user by user_id.
         
         Args:
-            profile_id: The profile_id to add competences to
+            user_id: The user_id to add competences to
             competences: Single string or list of strings describing competences
             category: Category for the competences (optional)
             apply_sanitization: Whether to sanitize descriptions
@@ -305,21 +305,21 @@ class HubSpokeIngestion:
             Dict with success status and list of added competence UUIDs
         """
         try:
-            profile_collection = get_profile_collection()
+            user_collection = get_user_collection()
             
-            # Find profile by profile_id
+            # Find user by user_id
             from weaviate.classes.query import Filter
-            result = profile_collection.query.fetch_objects(
-                filters=Filter.by_property("profile_id").equal(profile_id),
+            result = user_collection.query.fetch_objects(
+                filters=Filter.by_property("user_id").equal(user_id),
                 limit=1
             )
             
             if not result.objects:
-                logger.error(f"No profile found with profile_id: {profile_id}")
-                return {"success": False, "error": "Profile not found", "added_uuids": []}
+                logger.error(f"No user found with user_id: {user_id}")
+                return {"success": False, "error": "User not found", "added_uuids": []}
             
-            profile_uuid = str(result.objects[0].uuid)
-            logger.info(f"Found profile {profile_uuid} for profile_id {profile_id}")
+            user_uuid = str(result.objects[0].uuid)
+            logger.info(f"Found user {user_uuid} for user_id {user_id}")
             
             # Normalize input to list
             if isinstance(competences, str):
@@ -339,7 +339,7 @@ class HubSpokeIngestion:
                 
                 comp_uuid = HubSpokeIngestion.create_competence(
                     competence_data=comp_data,
-                    profile_uuid=profile_uuid,
+                    user_uuid=user_uuid,
                     apply_sanitization=apply_sanitization,
                     apply_enrichment=apply_enrichment
                 )
@@ -348,7 +348,7 @@ class HubSpokeIngestion:
                     added_uuids.append(comp_uuid)
                     logger.info(f"Added competence: {comp_uuid}")
             
-            logger.info(f"Added {len(added_uuids)} competences to profile {profile_id}")
+            logger.info(f"Added {len(added_uuids)} competences to user {user_id}")
             return {
                 "success": True,
                 "added_uuids": added_uuids,
@@ -360,19 +360,19 @@ class HubSpokeIngestion:
             return {"success": False, "error": str(e), "added_uuids": []}
     
     @staticmethod
-    def update_competences_by_id(
-        profile_id: str,
+    def update_competences_by_user_id(
+        user_id: str,
         competences: str | List[str],
         category: str = "",
         apply_sanitization: bool = True,
         apply_enrichment: bool = True
     ) -> Dict[str, Any]:
         """
-        Update (replace) competences for a profile by profile_id.
+        Update (replace) competences for a user by user_id.
         Deletes existing competences and creates new ones.
         
         Args:
-            profile_id: The profile_id to update competences for
+            user_id: The user_id to update competences for
             competences: Single string or list of strings describing new competences
             category: Category for the competences (optional)
             apply_sanitization: Whether to sanitize descriptions
@@ -382,38 +382,38 @@ class HubSpokeIngestion:
             Dict with success status and list of updated competence UUIDs
         """
         try:
-            profile_collection = get_profile_collection()
+            user_collection = get_user_collection()
             competence_collection = get_competence_collection()
             
-            # Find profile by profile_id
+            # Find user by user_id
             from weaviate.classes.query import Filter
-            result = profile_collection.query.fetch_objects(
-                filters=Filter.by_property("profile_id").equal(profile_id),
+            result = user_collection.query.fetch_objects(
+                filters=Filter.by_property("user_id").equal(user_id),
                 limit=1
             )
             
             if not result.objects:
-                logger.error(f"No profile found with profile_id: {profile_id}")
-                return {"success": False, "error": "Profile not found", "updated_uuids": []}
+                logger.error(f"No user found with user_id: {user_id}")
+                return {"success": False, "error": "User not found", "updated_uuids": []}
             
-            profile_uuid = str(result.objects[0].uuid)
-            logger.info(f"Found profile {profile_uuid} for profile_id {profile_id}")
+            user_uuid = str(result.objects[0].uuid)
+            logger.info(f"Found user {user_uuid} for user_id {user_id}")
             
             # Delete all existing competences
             from weaviate.classes.query import QueryReference
-            profile_with_refs = profile_collection.query.fetch_object_by_id(
-                uuid=profile_uuid,
+            user_with_refs = user_collection.query.fetch_object_by_id(
+                uuid=user_uuid,
                 return_references=QueryReference(link_on="has_competences")
             )
             
-            if profile_with_refs.references and 'has_competences' in profile_with_refs.references:
-                for comp_obj in profile_with_refs.references['has_competences'].objects:
+            if user_with_refs.references and 'has_competences' in user_with_refs.references:
+                for comp_obj in user_with_refs.references['has_competences'].objects:
                     comp_uuid = str(comp_obj.uuid)
                     # Delete the competence
                     competence_collection.data.delete_by_id(comp_uuid)
-                    # Remove reference from profile
-                    profile_collection.data.reference_delete(
-                        from_uuid=profile_uuid,
+                    # Remove reference from user
+                    user_collection.data.reference_delete(
+                        from_uuid=user_uuid,
                         from_property="has_competences",
                         to=comp_uuid
                     )
@@ -437,7 +437,7 @@ class HubSpokeIngestion:
                 
                 comp_uuid = HubSpokeIngestion.create_competence(
                     competence_data=comp_data,
-                    profile_uuid=profile_uuid,
+                    user_uuid=user_uuid,
                     apply_sanitization=apply_sanitization,
                     apply_enrichment=apply_enrichment
                 )
@@ -446,7 +446,7 @@ class HubSpokeIngestion:
                     updated_uuids.append(comp_uuid)
                     logger.info(f"Created new competence: {comp_uuid}")
             
-            logger.info(f"Updated competences for profile {profile_id}: {len(updated_uuids)} new competences")
+            logger.info(f"Updated competences for user {user_id}: {len(updated_uuids)} new competences")
             return {
                 "success": True,
                 "updated_uuids": updated_uuids,
@@ -458,50 +458,50 @@ class HubSpokeIngestion:
             return {"success": False, "error": str(e), "updated_uuids": []}
     
     @staticmethod
-    def delete_competences_by_id(
-        profile_id: str,
+    def delete_competences_by_user_id(
+        user_id: str,
         competences: str | List[str]
     ) -> Dict[str, Any]:
         """
-        Delete specific competences for a profile by profile_id.
+        Delete specific competences for a user by user_id.
         Matches competences by title or description pattern.
         
         Args:
-            profile_id: The profile_id to delete competences from
+            user_id: The user_id to delete competences from
             competences: Single string or list of strings to match against competence titles/descriptions
             
         Returns:
             Dict with success status and list of deleted competence UUIDs
         """
         try:
-            profile_collection = get_profile_collection()
+            user_collection = get_user_collection()
             competence_collection = get_competence_collection()
             
-            # Find profile by profile_id
+            # Find user by user_id
             from weaviate.classes.query import Filter, QueryReference
-            result = profile_collection.query.fetch_objects(
-                filters=Filter.by_property("profile_id").equal(profile_id),
+            result = user_collection.query.fetch_objects(
+                filters=Filter.by_property("user_id").equal(user_id),
                 limit=1
             )
             
             if not result.objects:
-                logger.error(f"No profile found with profile_id: {profile_id}")
-                return {"success": False, "error": "Profile not found", "deleted_uuids": []}
+                logger.error(f"No user found with user_id: {user_id}")
+                return {"success": False, "error": "User not found", "deleted_uuids": []}
             
-            profile_uuid = str(result.objects[0].uuid)
-            logger.info(f"Found profile {profile_uuid} for profile_id {profile_id}")
+            user_uuid = str(result.objects[0].uuid)
+            logger.info(f"Found user {user_uuid} for user_id {user_id}")
             
-            # Get all competences for this profile
-            profile_with_refs = profile_collection.query.fetch_object_by_id(
-                uuid=profile_uuid,
+            # Get all competences for this user
+            user_with_refs = user_collection.query.fetch_object_by_id(
+                uuid=user_uuid,
                 return_references=QueryReference(
                     link_on="has_competences",
                     return_properties=["title", "description", "category"]
                 )
             )
             
-            if not profile_with_refs.references or 'has_competences' not in profile_with_refs.references:
-                logger.info(f"No competences found for profile {profile_id}")
+            if not user_with_refs.references or 'has_competences' not in user_with_refs.references:
+                logger.info(f"No competences found for user {user_id}")
                 return {"success": True, "deleted_uuids": [], "count": 0}
             
             # Normalize input to list
@@ -512,7 +512,7 @@ class HubSpokeIngestion:
             
             # Find and delete matching competences
             deleted_uuids = []
-            for comp_obj in profile_with_refs.references['has_competences'].objects:
+            for comp_obj in user_with_refs.references['has_competences'].objects:
                 comp_uuid = str(comp_obj.uuid)
                 comp_props = comp_obj.properties
                 comp_title = (comp_props.get('title') or '').lower()
@@ -524,9 +524,9 @@ class HubSpokeIngestion:
                     if pattern in comp_title or pattern in comp_desc or pattern in comp_category:
                         # Delete the competence
                         competence_collection.data.delete_by_id(comp_uuid)
-                        # Remove reference from profile
-                        profile_collection.data.reference_delete(
-                            from_uuid=profile_uuid,
+                        # Remove reference from user
+                        user_collection.data.reference_delete(
+                            from_uuid=user_uuid,
                             from_property="has_competences",
                             to=comp_uuid
                         )
@@ -534,7 +534,7 @@ class HubSpokeIngestion:
                         logger.info(f"Deleted competence: {comp_uuid} (matched pattern: '{pattern}')")
                         break  # Only delete once per competence
             
-            logger.info(f"Deleted {len(deleted_uuids)} competences for profile {profile_id}")
+            logger.info(f"Deleted {len(deleted_uuids)} competences for user {user_id}")
             return {
                 "success": True,
                 "deleted_uuids": deleted_uuids,

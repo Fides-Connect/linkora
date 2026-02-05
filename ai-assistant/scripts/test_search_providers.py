@@ -25,7 +25,7 @@ def print_header(text: str):
 def print_provider(provider: dict, index: int):
     """Print provider information."""
     # Handle both formats: direct hybrid search results and data provider mapped results
-    name = provider.get('name') or provider.get('profile', {}).get('name', 'Unknown')
+    name = provider.get('name') or provider.get('user', {}).get('name', 'Unknown')
     category = provider.get('category', 'N/A')
     price = provider.get('price_range') or 'N/A'
     score = provider.get('score', 0)

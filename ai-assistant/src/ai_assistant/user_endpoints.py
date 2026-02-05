@@ -11,7 +11,7 @@ from .common_endpoints import _sessions
 
 
 async def user_sync(request: web.Request) -> web.Response:
-    """Sync user profile with backend database.
+    """Sync user with backend database.
     
     Creates new user if doesn't exist, updates existing user.
     Handles FCM token registration for push notifications.

@@ -234,16 +234,16 @@ class ProviderModelWeaviate:
                 query=category,
                 limit=limit,
                 max_inactive_days=180,
-                group_by_profile=True  # One result per provider
+                group_by_user=True  # One result per provider
             )
             
             # Map to provider format
             providers = []
             for result in results:
-                profile = result.get('profile', {})
+                user = result.get('user', {})
                 provider = {
-                    'provider_id': profile.get('uuid'),
-                    'name': profile.get('name'),
+                    'provider_id': user.get('uuid'),
+                    'name': user.get('name'),
                     'category': result.get('category'),
                     'description': result.get('description'),
                     'skills': result.get('keywords', []),
@@ -270,16 +270,16 @@ class ProviderModelWeaviate:
                 query=query_text,
                 limit=limit,
                 max_inactive_days=180,  # Exclude inactive providers
-                group_by_profile=True   # One result per provider
+                group_by_user=True   # One result per provider
             )
             
             # Map to provider format for backward compatibility
             providers = []
             for result in results:
-                profile = result.get('profile', {})
+                user = result.get('user', {})
                 provider = {
-                    'provider_id': profile.get('uuid'),
-                    'name': profile.get('name'),
+                    'provider_id': user.get('uuid'),
+                    'name': user.get('name'),
                     'category': result.get('category'),
                     'description': result.get('description'),
                     'skills': result.get('keywords', []),

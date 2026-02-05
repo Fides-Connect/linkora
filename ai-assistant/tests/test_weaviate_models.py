@@ -314,13 +314,13 @@ class TestProviderModelWeaviate:
                 {
                     'category': 'plumbing',
                     'description': 'Service 1',
-                    'profile': {'uuid': 'uuid_1', 'name': 'Provider 1'},
+                    'user': {'uuid': 'uuid_1', 'name': 'Provider 1'},
                     'keywords': []
                 },
                 {
                     'category': 'plumbing',
                     'description': 'Service 2',
-                    'profile': {'uuid': 'uuid_2', 'name': 'Provider 2'},
+                    'user': {'uuid': 'uuid_2', 'name': 'Provider 2'},
                     'keywords': []
                 }
             ]
@@ -347,7 +347,7 @@ class TestProviderModelWeaviate:
                 {
                     'category': 'plumbing',
                     'description': 'Plumbing service',
-                    'profile': {'uuid': 'uuid_1', 'name': 'Provider 1'},
+                    'user': {'uuid': 'uuid_1', 'name': 'Provider 1'},
                     'keywords': [],
                     'score': 0.95
                 }

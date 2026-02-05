@@ -18,16 +18,16 @@ class TestCompetenceManagement(unittest.TestCase):
     
     @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
     @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
-    def test_add_competences_single_string(self, mock_comp_collection, mock_profile_collection):
+    def test_add_competences_single_string(self, mock_comp_collection, mock_user_collection):
         """Test adding a single competence as a string."""
-        # Mock profile query result
-        mock_profile_obj = Mock()
-        mock_profile_obj.uuid = "profile-uuid-123"
+        # Mock user query result
+        mock_user_obj = Mock()
+        mock_user_obj.uuid = "user-uuid-123"
         
         mock_query_result = Mock()
-        mock_query_result.objects = [mock_profile_obj]
+        mock_query_result.objects = [mock_user_obj]
         
-        mock_profile_collection.return_value.query.fetch_objects.return_value = mock_query_result
+        mock_user_collection.return_value.query.fetch_objects.return_value = mock_query_result
         
         # Mock create_competence to return UUID
         with patch.object(HubSpokeIngestion, 'create_competence', return_value='comp-uuid-1'):
@@ -43,16 +43,16 @@ class TestCompetenceManagement(unittest.TestCase):
     
     @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
     @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
-    def test_add_competences_list(self, mock_comp_collection, mock_profile_collection):
+    def test_add_competences_list(self, mock_comp_collection, mock_user_collection):
         """Test adding multiple competences as a list."""
-        # Mock profile query result
-        mock_profile_obj = Mock()
-        mock_profile_obj.uuid = "profile-uuid-123"
+        # Mock user query result
+        mock_user_obj = Mock()
+        mock_user_obj.uuid = "user-uuid-123"
         
         mock_query_result = Mock()
-        mock_query_result.objects = [mock_profile_obj]
+        mock_query_result.objects = [mock_user_obj]
         
-        mock_profile_collection.return_value.query.fetch_objects.return_value = mock_query_result
+        mock_user_collection.return_value.query.fetch_objects.return_value = mock_query_result
         
         # Mock create_competence to return different UUIDs
         with patch.object(HubSpokeIngestion, 'create_competence', side_effect=['comp-uuid-1', 'comp-uuid-2']):
@@ -68,13 +68,13 @@ class TestCompetenceManagement(unittest.TestCase):
     
     @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
     @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
-    def test_add_competences_user_not_found(self, mock_comp_collection, mock_profile_collection):
+    def test_add_competences_user_not_found(self, mock_comp_collection, mock_user_collection):
         """Test adding competences when user doesn't exist."""
         # Mock empty query result
         mock_query_result = Mock()
         mock_query_result.objects = []
         
-        mock_profile_collection.return_value.query.fetch_objects.return_value = mock_query_result
+        mock_user_collection.return_value.query.fetch_objects.return_value = mock_query_result
         
         result = HubSpokeIngestion.add_competences_by_user_id(
             user_id="nonexistent",
@@ -87,16 +87,16 @@ class TestCompetenceManagement(unittest.TestCase):
     
     @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
     @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
-    def test_update_competences_replaces_existing(self, mock_comp_collection, mock_profile_collection):
+    def test_update_competences_replaces_existing(self, mock_comp_collection, mock_user_collection):
         """Test updating competences replaces all existing ones."""
-        # Mock profile query result
-        mock_profile_obj = Mock()
-        mock_profile_obj.uuid = "profile-uuid-123"
+        # Mock user query result
+        mock_user_obj = Mock()
+        mock_user_obj.uuid = "user-uuid-123"
         
         mock_query_result = Mock()
-        mock_query_result.objects = [mock_profile_obj]
+        mock_query_result.objects = [mock_user_obj]
         
-        mock_profile_collection.return_value.query.fetch_objects.return_value = mock_query_result
+        mock_user_collection.return_value.query.fetch_objects.return_value = mock_query_result
         
         # Mock existing competences
         mock_existing_comp1 = Mock()
@@ -104,12 +104,12 @@ class TestCompetenceManagement(unittest.TestCase):
         mock_existing_comp2 = Mock()
         mock_existing_comp2.uuid = "old-comp-2"
         
-        mock_profile_with_refs = Mock()
-        mock_profile_with_refs.references = {
+        mock_user_with_refs = Mock()
+        mock_user_with_refs.references = {
             'has_competences': Mock(objects=[mock_existing_comp1, mock_existing_comp2])
         }
         
-        mock_profile_collection.return_value.query.fetch_object_by_id.return_value = mock_profile_with_refs
+        mock_user_collection.return_value.query.fetch_object_by_id.return_value = mock_user_with_refs
         
         # Mock create_competence to return new UUIDs
         with patch.object(HubSpokeIngestion, 'create_competence', side_effect=['new-comp-1', 'new-comp-2']):
@@ -126,16 +126,16 @@ class TestCompetenceManagement(unittest.TestCase):
     
     @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
     @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
-    def test_delete_competences_by_pattern(self, mock_comp_collection, mock_profile_collection):
+    def test_delete_competences_by_pattern(self, mock_comp_collection, mock_user_collection):
         """Test deleting competences by matching pattern."""
-        # Mock profile query result
-        mock_profile_obj = Mock()
-        mock_profile_obj.uuid = "profile-uuid-123"
+        # Mock user query result
+        mock_user_obj = Mock()
+        mock_user_obj.uuid = "user-uuid-123"
         
         mock_query_result = Mock()
-        mock_query_result.objects = [mock_profile_obj]
+        mock_query_result.objects = [mock_user_obj]
         
-        mock_profile_collection.return_value.query.fetch_objects.return_value = mock_query_result
+        mock_user_collection.return_value.query.fetch_objects.return_value = mock_query_result
         
         # Mock existing competences
         mock_comp1 = Mock()
@@ -154,12 +154,12 @@ class TestCompetenceManagement(unittest.TestCase):
             'category': 'Electrical'
         }
         
-        mock_profile_with_refs = Mock()
-        mock_profile_with_refs.references = {
+        mock_user_with_refs = Mock()
+        mock_user_with_refs.references = {
             'has_competences': Mock(objects=[mock_comp1, mock_comp2])
         }
         
-        mock_profile_collection.return_value.query.fetch_object_by_id.return_value = mock_profile_with_refs
+        mock_user_collection.return_value.query.fetch_object_by_id.return_value = mock_user_with_refs
         
         result = HubSpokeIngestion.delete_competences_by_user_id(
             user_id="user123",
@@ -172,16 +172,16 @@ class TestCompetenceManagement(unittest.TestCase):
     
     @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
     @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
-    def test_delete_multiple_competences(self, mock_comp_collection, mock_profile_collection):
+    def test_delete_multiple_competences(self, mock_comp_collection, mock_user_collection):
         """Test deleting multiple competences with a list of patterns."""
-        # Mock profile query result
-        mock_profile_obj = Mock()
-        mock_profile_obj.uuid = "profile-uuid-123"
+        # Mock user query result
+        mock_user_obj = Mock()
+        mock_user_obj.uuid = "user-uuid-123"
         
         mock_query_result = Mock()
-        mock_query_result.objects = [mock_profile_obj]
+        mock_query_result.objects = [mock_user_obj]
         
-        mock_profile_collection.return_value.query.fetch_objects.return_value = mock_query_result
+        mock_user_collection.return_value.query.fetch_objects.return_value = mock_query_result
         
         # Mock existing competences
         mock_comp1 = Mock()
@@ -208,12 +208,12 @@ class TestCompetenceManagement(unittest.TestCase):
             'category': 'Carpentry'
         }
         
-        mock_profile_with_refs = Mock()
-        mock_profile_with_refs.references = {
+        mock_user_with_refs = Mock()
+        mock_user_with_refs.references = {
             'has_competences': Mock(objects=[mock_comp1, mock_comp2, mock_comp3])
         }
         
-        mock_profile_collection.return_value.query.fetch_object_by_id.return_value = mock_profile_with_refs
+        mock_user_collection.return_value.query.fetch_object_by_id.return_value = mock_user_with_refs
         
         result = HubSpokeIngestion.delete_competences_by_user_id(
             user_id="user123",

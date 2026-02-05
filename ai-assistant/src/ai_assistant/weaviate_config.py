@@ -13,14 +13,14 @@ from typing import Optional
 try:
     from .hub_spoke_schema import (
         init_hub_spoke_schema,
-        get_profile_collection,
+        get_user_collection,
         get_competence_collection,
         cleanup_hub_spoke_schema
     )
 except ImportError:
     from hub_spoke_schema import (
         init_hub_spoke_schema,
-        get_profile_collection,
+        get_user_collection,
         get_competence_collection,
         cleanup_hub_spoke_schema
     )
@@ -121,8 +121,8 @@ def init_weaviate_schema():
 
 
 def get_users_collection():
-    """Get user profile collection."""
-    return get_profile_collection()
+    """Get user collection."""
+    return get_user_collection()
 
 
 def get_providers_collection():

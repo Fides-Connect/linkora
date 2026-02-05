@@ -76,10 +76,10 @@ class WeaviateDataProvider(DataProvider):
                 # Map to provider format for backward compatibility
                 mapped_providers = []
                 for result in providers:
-                    profile = result.get('profile', {})
+                    user = result.get('user', {})
                     provider = {
-                        'provider_id': profile.get('uuid'),
-                        'name': profile.get('name'),
+                        'user_id': user.get('uuid'),
+                        'name': user.get('name'),
                         'category': result.get('category'),
                         'description': result.get('description'),
                         'availability': result.get('availability'),

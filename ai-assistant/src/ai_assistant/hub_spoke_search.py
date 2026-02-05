@@ -15,7 +15,7 @@ from weaviate.classes.query import Filter, QueryReference, MetadataQuery
 
 # Handle both package and direct imports
 from ai_assistant.hub_spoke_schema import (
-    get_profile_collection,
+    get_user_collection,
     get_competence_collection
 )
 
@@ -28,8 +28,8 @@ class HubSpokeSearch:
     
     Implements:
     1. Hybrid search on Competence (vector + keyword)
-    2. Ghost user filtering (excludes inactive profiles)
-    3. Result grouping (one result per profile)
+    2. Ghost user filtering (excludes inactive users)
+    3. Result grouping (one result per user)
     """
     
     @staticmethod
@@ -37,7 +37,7 @@ class HubSpokeSearch:
         query: str,
         limit: int = 10,
         max_inactive_days: int = 180,
-        group_by_profile: bool = True,
+        group_by_user: bool = True,
         alpha: float = 0.5
     ) -> List[Dict[str, Any]]:
         """
@@ -46,17 +46,17 @@ class HubSpokeSearch:
         Search Strategy:
         1. Perform hybrid search on Competence.description
         2. Filter by owned_by.last_active_date (ghost filtering)
-        3. Group by owned_by to prevent duplicate profiles
+        3. Group by owned_by to prevent duplicate users
         
         Args:
             query: Search query text
             limit: Maximum results
             max_inactive_days: Maximum days since last_active_date
-            group_by_profile: Whether to group results by profile
+            group_by_user: Whether to group results by user
             alpha: Hybrid search weight (0=pure vector, 1=pure keyword, 0.5=balanced)
             
         Returns:
-            List of competence results with profile info
+            List of competence results with user info
         """
         try:
             competence_collection = get_competence_collection()
@@ -69,12 +69,12 @@ class HubSpokeSearch:
             filter_clause = Filter.by_ref("owned_by").by_property("last_active_date").greater_or_equal(cutoff_date) & \
                            Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
             
-            if group_by_profile:
+            if group_by_user:
                 # Note: Weaviate's GroupBy doesn't work with reference properties,
                 # so we'll fetch more results and do client-side grouping
                 response = competence_collection.query.hybrid(
                     query=query,
-                    limit=limit * 10,  # Fetch more results to ensure we get enough unique profiles
+                    limit=limit * 10,  # Fetch more results to ensure we get enough unique users
                     filters=filter_clause,
                     alpha=alpha,
                     return_metadata=MetadataQuery(score=True),
@@ -84,41 +84,41 @@ class HubSpokeSearch:
                     )
                 )
                 
-                # Client-side grouping: Keep only the best competence per profile
-                seen_profiles = {}
+                # Client-side grouping: Keep only the best competence per user
+                seen_users = {}
                 for obj in response.objects:
                     competence = obj.properties.copy()
                     competence['uuid'] = str(obj.uuid)
                     competence['score'] = obj.metadata.score if obj.metadata else 0
                     
-                    # Extract profile info from references
-                    profile_uuid = None
+                    # Extract user info from references
+                    user_uuid = None
                     if obj.references and 'owned_by' in obj.references:
                         owned_by_refs = obj.references['owned_by'].objects
                         if owned_by_refs:
-                            profile = owned_by_refs[0].properties
-                            profile_uuid = str(owned_by_refs[0].uuid)
-                            competence['profile'] = {
-                                'uuid': profile_uuid,
-                                'name': profile.get('name'),
-                                'email': profile.get('email'),
-                                'type': profile.get('type'),
-                                'is_service_provider': profile.get('is_service_provider', False),
-                                'last_active_date': profile.get('last_active_date'),
+                            user = owned_by_refs[0].properties
+                            user_uuid = str(owned_by_refs[0].uuid)
+                            competence['user'] = {
+                                'uuid': user_uuid,
+                                'name': user.get('name'),
+                                'email': user.get('email'),
+                                'type': user.get('type'),
+                                'is_service_provider': user.get('is_service_provider', False),
+                                'last_active_date': user.get('last_active_date'),
                             }
                     
-                    # Keep only the best-scoring competence per profile
-                    if profile_uuid:
-                        if profile_uuid not in seen_profiles or competence['score'] > seen_profiles[profile_uuid]['score']:
-                            seen_profiles[profile_uuid] = competence
+                    # Keep only the best-scoring competence per user
+                    if user_uuid:
+                        if user_uuid not in seen_users or competence['score'] > seen_users[user_uuid]['score']:
+                            seen_users[user_uuid] = competence
                 
-                results = list(seen_profiles.values())[:limit]  # Limit to requested number
+                results = list(seen_users.values())[:limit]  # Limit to requested number
                 
-                logger.info(f"Grouped search found {len(results)} unique profiles for: '{query[:50]}...'")
+                logger.info(f"Grouped search found {len(results)} unique users for: '{query[:50]}...'")
                 return results
                 
             else:
-                # Hybrid search WITHOUT grouping (may return multiple competences per profile)
+                # Hybrid search WITHOUT grouping (may return multiple competences per user)
                 response = competence_collection.query.hybrid(
                     query=query,
                     limit=limit,
@@ -137,17 +137,17 @@ class HubSpokeSearch:
                     competence['uuid'] = str(obj.uuid)
                     competence['score'] = obj.metadata.score if obj.metadata else 0
                     
-                    # Extract profile info
+                    # Extract user info
                     if obj.references and 'owned_by' in obj.references:
                         owned_by_refs = obj.references['owned_by'].objects
                         if owned_by_refs:
-                            profile = owned_by_refs[0].properties
-                            competence['profile'] = {
+                            user = owned_by_refs[0].properties
+                            competence['user'] = {
                                 'uuid': str(owned_by_refs[0].uuid),
-                                'name': profile.get('name'),
-                                'email': profile.get('email'),
-                                'type': profile.get('type'),
-                                'last_active_date': profile.get('last_active_date'),
+                                'name': user.get('name'),
+                                'email': user.get('email'),
+                                'type': user.get('type'),
+                                'last_active_date': user.get('last_active_date'),
                             }
                     
                     results.append(competence)
@@ -160,22 +160,22 @@ class HubSpokeSearch:
             return []
     
     @staticmethod
-    def get_profile_competences(profile_uuid: str) -> List[Dict[str, Any]]:
+    def get_user_competences(user_uuid: str) -> List[Dict[str, Any]]:
         """
-        Get all competences for a specific profile.
+        Get all competences for a specific user.
         
         Args:
-            profile_uuid: UUID of the profile
+            user_uuid: UUID of the user
             
         Returns:
             List of competence dictionaries
         """
         try:
-            profile_collection = get_profile_collection()
+            user_collection = get_user_collection()
             
-            # Fetch profile with competence references
-            response = profile_collection.query.fetch_object_by_id(
-                uuid=profile_uuid,
+            # Fetch user with competence references
+            response = user_collection.query.fetch_object_by_id(
+                uuid=user_uuid,
                 return_references=QueryReference(
                     link_on="has_competences",
                     return_properties=["title", "description", "category", "price_range"]
@@ -193,11 +193,11 @@ class HubSpokeSearch:
                     comp['uuid'] = str(comp_obj.uuid)
                     competences.append(comp)
             
-            logger.info(f"Retrieved {len(competences)} competences for profile {profile_uuid}")
+            logger.info(f"Retrieved {len(competences)} competences for user {user_uuid}")
             return competences
             
         except Exception as e:
-            logger.error(f"Error getting profile competences: {e}")
+            logger.error(f"Error getting user competences: {e}")
             return []
     
     @staticmethod
@@ -261,7 +261,7 @@ class HubSpokeSearch:
     @staticmethod
     def _process_search_results(response, limit: int) -> List[Dict[str, Any]]:
         """
-        Process search results: extract data, group by profile, sort by score.
+        Process search results: extract data, group by user, sort by score.
         
         Args:
             response: Weaviate query response
@@ -270,36 +270,36 @@ class HubSpokeSearch:
         Returns:
             List of provider results sorted by relevance
         """
-        seen_profiles = {}
+        seen_users = {}
         
         for obj in response.objects:
             competence = obj.properties.copy()
             competence['uuid'] = str(obj.uuid)
             competence['score'] = obj.metadata.score if obj.metadata else 0
             
-            # Extract profile info from references
-            profile_uuid = None
+            # Extract user info from references
+            user_uuid = None
             if obj.references and 'owned_by' in obj.references:
                 owned_by_refs = obj.references['owned_by'].objects
                 if owned_by_refs:
-                    profile = owned_by_refs[0].properties
-                    profile_uuid = str(owned_by_refs[0].uuid)
-                    competence['profile'] = {
-                        'uuid': profile_uuid,
-                        'name': profile.get('name'),
-                        'email': profile.get('email'),
-                        'type': profile.get('type'),
-                        'is_service_provider': profile.get('is_service_provider', False),
-                        'last_active_date': profile.get('last_active_date'),
+                    user = owned_by_refs[0].properties
+                    user_uuid = str(owned_by_refs[0].uuid)
+                    competence['user'] = {
+                        'uuid': user_uuid,
+                        'name': user.get('name'),
+                        'email': user.get('email'),
+                        'type': user.get('type'),
+                        'is_service_provider': user.get('is_service_provider', False),
+                        'last_active_date': user.get('last_active_date'),
                     }
             
-            # Keep only the best-scoring competence per profile
-            if profile_uuid:
-                if profile_uuid not in seen_profiles or competence['score'] > seen_profiles[profile_uuid]['score']:
-                    seen_profiles[profile_uuid] = competence
+            # Keep only the best-scoring competence per user
+            if user_uuid:
+                if user_uuid not in seen_users or competence['score'] > seen_users[user_uuid]['score']:
+                    seen_users[user_uuid] = competence
         
         # Sort by score and limit
-        return sorted(seen_profiles.values(), key=lambda x: x.get('score', 0), reverse=True)[:limit]
+        return sorted(seen_users.values(), key=lambda x: x.get('score', 0), reverse=True)[:limit]
     
     @staticmethod
     def hybrid_search_providers(
@@ -357,7 +357,7 @@ class HubSpokeSearch:
                 )
             )
             
-            # Process results: group by profile and sort
+            # Process results: group by user and sort
             results = HubSpokeSearch._process_search_results(response, limit)
             
             logger.info(f"Hybrid search found {len(results)} unique providers")

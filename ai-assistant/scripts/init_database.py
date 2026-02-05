@@ -132,7 +132,7 @@ def init_firestore(test_data):
     logger.info("Initializing Firestore...")
     
     # Collections to clean based on Diagram
-    collections = ['profiles', 'requests', 'reviews', 'chat_sessions', 'chats']
+    collections = ['users', 'requests', 'reviews', 'chat_sessions', 'chats']
     
     # 1. Cleanup
     for coll_name in collections:
@@ -143,21 +143,21 @@ def init_firestore(test_data):
     if not test_personas:
         logger.warning("  No test personas provided. Firestore users/competencies skipped.")
     else:
-        # 2. Populate Profiles & Competencies
-        logger.info("  Populating Profiles and Competencies...")
+        # 2. Populate Users & Competencies
+        logger.info("  Populating Users and Competencies...")
         
         batch = db.batch()
         
         for persona in test_personas:
-            p_data = persona['profile']
+            p_data = persona['user']
             c_data_list = persona['competences']
             
-            profile_id = p_data['profile_id']
-            profile_ref = db.collection('profiles').document(profile_id)
+            user_id = p_data['user_id']
+            user_ref = db.collection('users').document(user_id)
             
-            # Transform profile data to match Profile schema
-            profile_doc = {
-                'profile_id': profile_id,
+            # Transform user data to match User schema
+            user_doc = {
+                'user_id': user_id,
                 'name': p_data['name'],
                 'email': p_data['email'],
                 'introduction': p_data['introduction'],
@@ -175,20 +175,20 @@ def init_firestore(test_data):
                 'competencies': [c['title'] for c in c_data_list]
             }
             
-            batch.set(profile_ref, profile_doc)
+            batch.set(user_ref, user_doc)
             
         batch.commit()
-        logger.info("  ✓ Profile documents created")
+        logger.info("  ✓ User documents created")
         
         # Add Competencies Subcollection (Separate loop to avoid large batches)
         for persona in test_personas:
-            profile_id = persona['profile']['profile_id']
+            user_id = persona['user']['user_id']
             c_data_list = persona['competences']
             
             for i, comp in enumerate(c_data_list):
-                comp_id = f"{profile_id}_comp_{i+1}"
-                # Subcollection 'competencies' under 'profiles'
-                comp_ref = db.collection('profiles').document(profile_id).collection('competencies').document(comp_id)
+                comp_id = f"{user_id}_comp_{i+1}"
+                # Subcollection 'competencies' under 'users'
+                comp_ref = db.collection('users').document(user_id).collection('competencies').document(comp_id)
                 
                 comp_doc = {
                     'competence_id': comp_id,
@@ -267,14 +267,14 @@ def load_weaviate_data(test_personas):
     
     for persona in test_personas:
         logger.info(f"  Processing {persona['name']}")
-        result = HubSpokeIngestion.create_profile_with_competences(
-            profile_data=persona['profile'],
+        result = HubSpokeIngestion.create_user_with_competences(
+            user_data=persona['user'],
             competences_data=persona['competences'],
             apply_sanitization=True,
             apply_enrichment=True
         )
         if result:
-            logger.info(f"    ✓ Profile UUID: {result['profile_uuid']}")
+            logger.info(f"    ✓ User UUID: {result['user_uuid']}")
             logger.info(f"    ✓ Competences: {len(result['competence_uuids'])}")
         else:
             logger.error(f"    ✗ Failed to create {persona['name']}")
@@ -323,7 +323,7 @@ def main():
         if args.clean_only:
              # Just clean firestore
              if db:
-                 for c in ['profiles', 'requests', 'reviews', 'chat_sessions', 'chats']:
+                 for c in ['users', 'requests', 'reviews', 'chat_sessions', 'chats']:
                      clean_firestore_collection(db.collection(c))
              logger.info("✓ Firestore collections cleaned")
         else:
