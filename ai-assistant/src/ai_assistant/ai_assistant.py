@@ -124,51 +124,6 @@ class AIAssistant:
             logger.info("Using default credentials (Cloud Run environment)")
             return None
     
-    @property
-    def current_stage(self) -> str:
-        """Get current conversation stage."""
-        return self.conversation_service.get_current_stage()
-    
-    @property
-    def conversation_context(self):
-        """Get conversation context."""
-        return self.conversation_service.context
-    
-    def _get_session_history(self, session_id: str):
-        """Get session history from LLM service."""
-        return self.llm_service.get_session_history(session_id)
-    
-    def _create_prompt_for_stage(self, stage: str):
-        """Create prompt template for stage."""
-        return self.conversation_service.create_prompt_for_stage(stage)
-    
-    def _update_chain_for_stage(self, stage: str):
-        """Update conversation stage."""
-        self.conversation_service.set_stage(stage)
-        logger.info(f"Updated conversation stage to: {stage}")
-    
-    async def _detect_stage_transition(self, user_input: str, ai_response: str) -> Optional[str]:
-        """Detect stage transition."""
-        return await self.conversation_service.detect_stage_transition(user_input, ai_response)
-    
-    async def _accumulate_problem_description(self, user_input: str):
-        """Accumulate problem description."""
-        await self.conversation_service.accumulate_problem_description(user_input)
-    
-    async def speech_to_text_continuous_stream(self, audio_generator) -> AsyncIterator[Tuple[str, bool]]:
-        """
-        Continuously stream audio to STT.
-        Delegates to SpeechToTextService.
-        
-        Args:
-            audio_generator: Async generator yielding audio chunks
-        
-        Yields:
-            Tuple of (transcript, is_final)
-        """
-        async for transcript, is_final in self.stt_service.continuous_stream(audio_generator):
-            yield (transcript, is_final)
-    
     async def generate_llm_response_stream(self, prompt: str) -> AsyncIterator[str]:
         """
         Generate streaming response using LLM.
@@ -185,38 +140,6 @@ class AIAssistant:
             self.session_id
         ):
             yield chunk
-    
-    async def text_to_speech_stream(self, text: str) -> AsyncIterator[bytes]:
-        """
-        Convert text to speech.
-        Delegates to TextToSpeechService.
-        
-        Args:
-            text: Text to synthesize
-        
-        Yields:
-            Audio data chunks as bytes
-        """
-        async for chunk in self.tts_service.synthesize_stream(text, chunk_size=2048):
-            yield chunk
-    
-    async def generate_greeting(self, user_name: str = "", has_open_request: bool = False) -> str:
-        """
-        Generate a natural, friendly greeting.
-        Delegates to ConversationService.
-        
-        Args:
-            user_name: User's name
-            has_open_request: Whether user has an open request
-        
-        Returns:
-            Greeting text
-        """
-        return await self.conversation_service.generate_greeting(
-            session_id=self.session_id,
-            user_name=user_name or USER_NAME_PLACEHOLDER,
-            has_open_request=has_open_request
-        )
     
     async def get_greeting_audio(self, user_id: Optional[str] = None) -> Tuple[str, AsyncIterator[bytes]]:
         """
