@@ -61,7 +61,7 @@ class TestUserModelWeaviate:
         mock_obj = MagicMock()
         mock_obj.properties = {
             "user_id": "user_123",
-            "display_name": "Test User",  # Stored as display_name
+            "name": "Test User",
             "email": "test@example.com",
             "fcm_token": "fcm_token_abc"
         }
@@ -71,7 +71,7 @@ class TestUserModelWeaviate:
 
         assert result is not None
         assert result["user_id"] == "user_123"
-        assert result["name"] == "Test User"  # Mapped from display_name
+        assert result["name"] == "Test User"
         assert result["fcm_token"] == "fcm_token_abc"
 
     def test_get_user_by_id_not_found(self):
@@ -120,7 +120,7 @@ class TestUserModelWeaviate:
         assert call_args['uuid'] == "uuid_123"
         
         updated_properties = call_args['properties']
-        assert updated_properties['display_name'] == "New Name"  # Mapped to display_name
+        assert updated_properties['name'] == "New Name"
         assert updated_properties['email'] == "new@example.com"
         assert updated_properties['fcm_token'] == "new_token"
         assert 'last_active_date' in updated_properties  # Should be updated
@@ -283,7 +283,7 @@ class TestProviderModelWeaviate:
             mock_obj = Mock()
             mock_obj.properties = {
                 "user_id": "provider_123",
-                "display_name": "John's Plumbing",
+                "name": "John's Plumbing",
                 "type": "provider"
             }
             mock_response = Mock()
@@ -356,7 +356,7 @@ class TestProviderModelWeaviate:
             result = ProviderModelWeaviate.vector_search_providers("need plumber", limit=3)
             
             assert len(result) == 1
-            assert result[0]["name"] == "Provider 1"
+            assert result[0]["user"]["name"] == "Provider 1"
             assert result[0]["score"] == 0.95
     
     def test_vector_search_providers_exception(self, mock_collection):
@@ -372,9 +372,9 @@ class TestProviderModelWeaviate:
         """Test getting all providers."""
         with patch('ai_assistant.weaviate_models.get_users_collection', return_value=mock_collection):
             mock_obj1 = Mock()
-            mock_obj1.properties = {"user_id": "p1", "display_name": "Provider 1", "type": "provider"}
+            mock_obj1.properties = {"user_id": "p1", "name": "Provider 1", "type": "provider"}
             mock_obj2 = Mock()
-            mock_obj2.properties = {"user_id": "p2", "display_name": "Provider 2", "type": "provider"}
+            mock_obj2.properties = {"user_id": "p2", "name": "Provider 2", "type": "provider"}
             mock_response = Mock()
             mock_response.objects = [mock_obj1, mock_obj2]
             mock_collection.query.fetch_objects.return_value = mock_response
