@@ -99,7 +99,7 @@ def init_hub_spoke_schema():
         if not client.collections.exists(COMPETENCE_COLLECTION):
             client.collections.create(
                 name=COMPETENCE_COLLECTION,
-                vectorizer_config=Configure.Vectorizer.text2vec_model2vec(),
+                vector_config=Configure.Vectors.text2vec_model2vec(),
                 properties=[
                     Property(name="title", data_type=DataType.TEXT),
                     Property(

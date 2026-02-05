@@ -89,7 +89,7 @@ class AudioFileTrack(MediaStreamTrack):
         return frame
 
 
-class TestClient:
+class AIClient:
     """Test client for AI Assistant service."""
     
     def __init__(self, server_url: str = "localhost:8080"):
@@ -238,7 +238,7 @@ async def main():
     
     args = parser.parse_args()
     
-    client = TestClient(args.server)
+    client = AIClient(args.server)
     await client.run(args.audio_file, args.duration)
 
 
