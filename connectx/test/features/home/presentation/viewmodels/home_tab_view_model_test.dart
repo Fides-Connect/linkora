@@ -25,7 +25,7 @@ void main() {
           name: 'Me',
           introduction: 'Hi',
           competencies: [],
-          rating: 0,
+          averageRating: 0,
           reviewCount: 0,
           positiveFeedback: [],
           negativeFeedback: []
@@ -64,7 +64,7 @@ void main() {
       );
       
       final mockProfile = SupporterProfile(
-          id: 'user_1', name: 'Me', introduction: 'Hi', competencies: [], rating: 0,
+          id: 'user_1', name: 'Me', introduction: 'Hi', competencies: [], averageRating: 0,
           reviewCount: 0, positiveFeedback: [], negativeFeedback: []
       );
       

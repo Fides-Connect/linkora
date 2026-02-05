@@ -273,7 +273,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                           Row(
                             children: [
                               Text(
-                                profile?.rating.toString() ?? '0.0',
+                                profile?.averageRating.toString() ?? '0.0',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 32,
@@ -282,7 +282,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                               ),
                               const SizedBox(width: 8),
                               StarRating(
-                                rating: profile?.rating ?? 0.0,
+                                rating: profile?.averageRating ?? 0.0,
                                 size: 28,
                               ),
                               const SizedBox(width: 8),

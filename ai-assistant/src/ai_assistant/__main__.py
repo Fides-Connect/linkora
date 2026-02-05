@@ -15,6 +15,7 @@ from .signaling_server import SignalingServer
 from .common_endpoints import sign_in_google, setup_cors
 from .user_endpoints import user_sync, user_logout
 from .services.admin_service import AdminService
+from . import app_endpoints
 
 # Configure logging
 logging.basicConfig(
@@ -100,6 +101,19 @@ async def main():
     app.router.add_post('/sign_in_google', sign_in_google)
     app.router.add_post('/user/sync', user_sync)
     app.router.add_post('/user/logout', user_logout)
+
+    # Register app endpoints
+    app.router.add_get('/requests', app_endpoints.get_requests)
+    app.router.add_post('/requests', app_endpoints.create_request)
+    app.router.add_put('/requests/{requestId}/status', app_endpoints.update_request_status)
+    app.router.add_get('/favorites', app_endpoints.get_favorites)
+    app.router.add_post('/favorites/{id}', app_endpoints.add_favorite)
+    app.router.add_delete('/favorites/{id}', app_endpoints.remove_favorite)
+    app.router.add_get('/profile', app_endpoints.get_profile)
+    app.router.add_put('/profile', app_endpoints.update_profile)
+    app.router.add_post('/profile/competencies', app_endpoints.add_competence)
+    app.router.add_delete('/profile/competencies/{competence}', app_endpoints.remove_competence)
+    app.router.add_get('/users/{id}/profile', app_endpoints.get_other_profile)
     
     # Register admin routes
     admin_service.register_routes(app)

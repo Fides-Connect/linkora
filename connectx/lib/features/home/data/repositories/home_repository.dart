@@ -141,7 +141,7 @@ class HomeRepository {
            name: _localMockSupporterProfile.name,
            introduction: _localMockSupporterProfile.introduction,
            competencies: updatedCompetencies,
-           rating: _localMockSupporterProfile.rating,
+           averageRating: _localMockSupporterProfile.averageRating,
            reviewCount: _localMockSupporterProfile.reviewCount,
            positiveFeedback: _localMockSupporterProfile.positiveFeedback,
            negativeFeedback: _localMockSupporterProfile.negativeFeedback
@@ -171,7 +171,7 @@ class HomeRepository {
            name: _localMockSupporterProfile.name,
            introduction: _localMockSupporterProfile.introduction,
            competencies: updatedCompetencies,
-           rating: _localMockSupporterProfile.rating,
+           averageRating: _localMockSupporterProfile.averageRating,
            reviewCount: _localMockSupporterProfile.reviewCount,
            positiveFeedback: _localMockSupporterProfile.positiveFeedback,
            negativeFeedback: _localMockSupporterProfile.negativeFeedback

@@ -209,7 +209,7 @@ class ProfileDetailPage extends StatelessWidget {
                           Row(
                             children: [
                               Text(
-                                profile.rating.toString(),
+                                profile.averageRating.toString(),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 32,
@@ -217,7 +217,7 @@ class ProfileDetailPage extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              StarRating(rating: profile.rating),
+                              StarRating(rating: profile.averageRating),
                               const SizedBox(width: 8),
                               Text(
                                 '(${profile.reviewCount})',

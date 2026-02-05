@@ -70,7 +70,7 @@ void main() {
           'name': 'Supporter 1',
           'introduction': 'Intro',
           'competencies': ['A', 'B'],
-          'rating': 5.0,
+          'average_rating': 5.0,
           'review_count': 10,
           'positive_feedback': ['Good'],
           'negative_feedback': []

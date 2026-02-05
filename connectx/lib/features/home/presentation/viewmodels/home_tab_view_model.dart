@@ -74,7 +74,7 @@ class HomeTabViewModel extends ChangeNotifier {
       name: _userProfile!.name,
       introduction: introduction,
       competencies: _userProfile!.competencies,
-      rating: _userProfile!.rating,
+      averageRating: _userProfile!.averageRating,
       reviewCount: _userProfile!.reviewCount,
       positiveFeedback: _userProfile!.positiveFeedback,
       negativeFeedback: _userProfile!.negativeFeedback

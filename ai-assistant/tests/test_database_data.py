@@ -1,14 +1,64 @@
 """
-Hub and Spoke Architecture: Test Dataset
-=========================================
-
-Test Personas:
-1. User A (The Pro): Active electrician with specific skill
-2. User B (The Spammer): Keyword-stuffed description
-3. User C (The Ghost): Great match but inactive 365 days
-4. User D (The Generalist): Broad electrical skill
-5. User E (The Enthusiast): Multiple gardening skills (tests grouping)
+Data templates and test datasets for the AI Assistant.
+Contains User Templates for seeding and static Test Personas.
 """
+
+# Data template for new users
+USER_TEMPLATE = {
+    # user_id matches firebase uid
+    # name comes from auth provider
+    # email comes from auth provider
+    "introduction": "Passionate developer and tech enthusiast. I love building things and helping others.",
+    "type": "user",
+    "is_service_provider": True,
+    "fcm_token": "", # Will be set by client
+    "has_open_request": True,
+    "favorites": [], # Will be populated with default friend
+    "last_active_date": 0, # Today
+    "positive_feedback": ["Fast learner", "Great communicator"],
+    "negative_feedback": [],
+    "average_rating": 5.0,
+    "review_count": 3,
+    "requests": [
+        {
+            "id": "request_{uid}_001", # Template for ID
+            "title": "Need help with Python project",
+            "description": "I need an expert to help me structure my AI project properly.",
+            "amount_value": 50.0,
+            "currency": "EUR",
+            "start_date": "2026-02-10T10:00:00.000000",
+            "end_date": "2026-02-10T14:00:00.000000",
+            "user_name": "{name}", # Template
+            "user_initials": "{initials}", # Template
+            "category": "technology",
+            "type": "outgoing",
+            "status": "accepted",
+            "location": "Berlin, Germany",
+        },
+        {
+            "id": "request_{uid}_002", # Template for ID
+            "title": "Gardening Advice",
+            "description": "My plants are dying, please help! Need diagnosis and tips.",
+            "amount_value": 30.0,
+            "currency": "EUR",
+            "start_date": "2026-02-15T09:00:00.000000",
+            "end_date": "2026-02-15T10:00:00.000000",
+            "user_name": "{name}", # Template 
+            "user_initials": "{initials}", # Template
+            "category": "gardening",
+            "type": "outgoing",
+            "status": "pending",
+            "location": "Munich, Germany",
+        }
+    ],
+    "competencies": [
+        "Software Development",
+        "Project Management",
+        "Flutter"
+    ]
+}
+
+# --- Test Personas ---
 
 # Test Persona: User A - The Pro
 # Active user with specific electrical skill
