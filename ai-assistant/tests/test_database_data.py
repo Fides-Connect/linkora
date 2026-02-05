@@ -256,10 +256,19 @@ REQ_TEST_002_GHOST = {
     'seeker_user_id': "user_bob_002",
     'provider_user_id': "user_charlie_003",
     'title': "Panel Upgrade",
-    'price': 1200.0,
+    'amount_value': 1200.0,
+    'currency': "EUR",
     'description': "Safety upgrade for the old fuse box.",
     'competencies': ["Expert Electrician"],
     'status': 'expired', # Custom status for test
+    'start_date': "2025-01-10T08:00:00Z",
+    'end_date': "2025-01-12T17:00:00Z",
+    'category': "Electrical",
+    'location': {
+        'address': "456 Old Rd, Ghosttown",
+        'latitude': 40.7200,
+        'longitude': -74.0100,
+    },
 }
 
 # Scenario 3: Ongoing chat between User A and AI
