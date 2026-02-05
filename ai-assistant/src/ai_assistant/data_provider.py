@@ -56,7 +56,7 @@ class WeaviateDataProvider(DataProvider):
                     "location": "where service is needed",
                     "criterions": ["criterion 1", "criterion 2", ...]
                 }
-            category: Optional category filter (legacy, overridden by JSON structure)
+            category: Optional category filter
             limit: Maximum number of results
         """
         logger.info(f"Searching providers with query: '{query_text[:100]}...'")
@@ -73,28 +73,13 @@ class WeaviateDataProvider(DataProvider):
                     limit=limit
                 )
                 
-                # Map to provider format for backward compatibility
-                mapped_providers = []
-                for result in providers:
-                    user = result.get('user', {})
-                    provider = {
-                        'user_id': user.get('uuid'),
-                        'name': user.get('name'),
-                        'category': result.get('category'),
-                        'description': result.get('description'),
-                        'availability': result.get('availability'),
-                        'skills': result.get('keywords', []),
-                        'score': result.get('score', 0),
-                    }
-                    mapped_providers.append(provider)
-                
-                logger.info(f"Returning {len(mapped_providers)} providers from structured search")
-                return mapped_providers
+                logger.info(f"Returning {len(providers)} providers from structured search")
+                return providers
         except (json.JSONDecodeError, ValueError):
             # Not JSON, use simple text search
             logger.info("Query is not JSON, using simple vector search")
         
-        # Fallback to simple vector search
+        # Use simple vector search for unstructured queries
         providers = self.provider_model.vector_search_providers(query_text, limit)
         
         logger.info(f"Returning {len(providers)} providers from search")

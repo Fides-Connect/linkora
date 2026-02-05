@@ -767,7 +767,6 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         self.assertIsInstance(results, list, "Should return a list")
         logger.info(f"Found {len(results)} providers with empty query")
         
-        # Should still return results (fallback to "service provider")
         self.assertGreater(len(results), 0, "Should return some providers even with empty query")
         
         logger.info("✓ Empty query handling working correctly")

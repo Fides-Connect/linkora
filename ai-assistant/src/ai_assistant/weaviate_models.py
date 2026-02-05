@@ -1,7 +1,6 @@
 """
 Weaviate Models and Operations
 Data models using Hub and Spoke architecture.
-Maps legacy User/Provider operations to User/Competence.
 """
 import logging
 from datetime import datetime, UTC
@@ -62,9 +61,6 @@ class UserModelWeaviate:
             if response.objects:
                 obj = response.objects[0]
                 user = obj.properties.copy()
-                # Add backward compatibility: map display_name -> name
-                if 'display_name' in user and 'name' not in user:
-                    user['name'] = user['display_name']
                 return user
             
             return None
@@ -91,10 +87,6 @@ class UserModelWeaviate:
                 return False
             
             obj = response.objects[0]
-            
-            # Map name -> display_name if present
-            if 'name' in update_data and 'display_name' not in update_data:
-                update_data['display_name'] = update_data['name']
             
             # Update last_active_date on any update
             update_data['last_active_date'] = datetime.now(UTC).isoformat()
@@ -126,9 +118,6 @@ class UserModelWeaviate:
             users = []
             for obj in response.objects:
                 user = obj.properties.copy()
-                # Add backward compatibility: map display_name -> name
-                if 'display_name' in user and 'name' not in user:
-                    user['name'] = user['display_name']
                 users.append(user)
             
             logger.info(f"Retrieved {len(users)} users")
@@ -212,9 +201,6 @@ class ProviderModelWeaviate:
             if response.objects:
                 obj = response.objects[0]
                 provider = obj.properties.copy()
-                # Map display_name -> name for backward compatibility
-                if 'display_name' in provider:
-                    provider['name'] = provider['display_name']
                 provider['provider_id'] = provider.get('user_id')
                 return provider
             
@@ -273,22 +259,8 @@ class ProviderModelWeaviate:
                 group_by_user=True   # One result per provider
             )
             
-            # Map to provider format for backward compatibility
-            providers = []
-            for result in results:
-                user = result.get('user', {})
-                provider = {
-                    'provider_id': user.get('uuid'),
-                    'name': user.get('name'),
-                    'category': result.get('category'),
-                    'description': result.get('description'),
-                    'skills': result.get('keywords', []),
-                    'score': result.get('score', 0),
-                }
-                providers.append(provider)
-            
-            logger.info(f"Vector search found {len(providers)} providers for: '{query_text[:50]}...'")
-            return providers
+            logger.info(f"Vector search found {len(results)} providers for: '{query_text[:50]}...'")
+            return results
             
         except Exception as e:
             logger.error(f"Error in vector search: {e}")
@@ -309,9 +281,6 @@ class ProviderModelWeaviate:
             providers = []
             for obj in response.objects:
                 provider = obj.properties.copy()
-                # Map display_name -> name for backward compatibility
-                if 'display_name' in provider:
-                    provider['name'] = provider['display_name']
                 provider['provider_id'] = provider.get('user_id')
                 providers.append(provider)
             
