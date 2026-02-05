@@ -27,13 +27,13 @@ def print_provider(provider: dict, index: int):
     # Handle both formats: direct hybrid search results and data provider mapped results
     name = provider.get('name') or provider.get('user', {}).get('name', 'Unknown')
     category = provider.get('category', 'N/A')
-    price = provider.get('price_range') or 'N/A'
+    price_range = provider.get('price_range') or 'N/A'
     score = provider.get('score', 0)
     description = provider.get('description', '')
     
     print(f"{index}. {name}")
     print(f"   Category: {category}")
-    print(f"   Price: {price}")
+    print(f"   Price Range: {price_range}")
     print(f"   Score: {score:.3f}")
     
     if description:

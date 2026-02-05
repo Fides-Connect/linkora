@@ -8,14 +8,14 @@ from typing import Optional, AsyncIterator, Dict, Any
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage
 
+from ..data_provider import DataProvider
 from ..prompts_templates import (
     GREETING_AND_TRIAGE_PROMPT,
     TRIAGE_CONVERSATION_PROMPT,
     FINALIZE_SERVICE_REQUEST_PROMPT,
     get_language_instruction
 )
-from ..test_data import detect_category
-from ..data_provider import DataProvider
+
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,6 @@ class ConversationService:
             "user_problem": [],
             "ai_responses": [],
             "request_summary": "",
-            "detected_category": None,
             "providers_found": [],
             "current_provider_index": 0,
         }
@@ -179,12 +178,6 @@ class ConversationService:
             user_input: User's problem description
         """
         self.context["user_problem"].append(user_input)
-        
-        # Detect category
-        category = detect_category(" ".join(self.context["user_problem"]))
-        if category:
-            self.context["detected_category"] = category
-            logger.info(f"Detected category: {category}")
     
     def _get_problem_summary(self) -> str:
         """Extract problem summary from conversation context."""
@@ -256,7 +249,6 @@ class ConversationService:
         self.context["request_summary"] = query_text
         providers = await self.data_provider.search_providers(
             query_text=query_text,
-            category=self.context["detected_category"],
             limit=self.max_providers
         )
         

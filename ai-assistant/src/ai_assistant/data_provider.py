@@ -20,7 +20,7 @@ class DataProvider(ABC):
         pass
     
     @abstractmethod
-    async def search_providers(self, query_text: str, category: Optional[str] = None, limit: int = 3) -> List[Dict[str, Any]]:
+    async def search_providers(self, query_text: str, limit: int = 3) -> List[Dict[str, Any]]:
         """Search for service providers."""
         pass
     
@@ -43,7 +43,7 @@ class WeaviateDataProvider(DataProvider):
         """Get user from Weaviate."""
         return self.user_model.get_user_by_id(user_id)
     
-    async def search_providers(self, query_text: str, category: Optional[str] = None, limit: int = 3) -> List[Dict[str, Any]]:
+    async def search_providers(self, query_text: str, limit: int = 3) -> List[Dict[str, Any]]:
         """
         Search providers using Weaviate hybrid search.
         Supports both simple text queries and structured JSON queries.
@@ -52,7 +52,6 @@ class WeaviateDataProvider(DataProvider):
             query_text: Search query - can be plain text or JSON string with structure:
                 {
                     "available_time": "when service is needed",
-                    "category": "service category",
                     "location": "where service is needed",
                     "criterions": ["criterion 1", "criterion 2", ...]
                 }

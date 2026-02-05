@@ -196,7 +196,7 @@ REQ_TEST_001 = {
     'seeker_user_id': "user_eva_005",
     'provider_user_id': "user_alice_001",
     'title': "Pot Light Installation",
-    'price': 150.0,
+    'amount_value': 150.0,
     'description': "I need 5 pot lights installed in my living room. High ceilings.",
     'requested_competencies': ["Installing Pot Lights"],
     'status': 'pending',

@@ -64,7 +64,6 @@ class TestProviderSearchMethod:
         # Setup: simulate the agent's conversational summary (captured during triage)
         conversation_service.context["user_problem"] = ["Ich brauche einen Klempner für mein Badezimmer"]
         conversation_service.context["ai_responses"] = ["User needs a plumber for bathroom repair", "Latest message"]
-        conversation_service.context["detected_category"] = "plumbing"
         
         # Execute
         await conversation_service.search_providers_for_request()
@@ -72,7 +71,6 @@ class TestProviderSearchMethod:
         # Verify: search was called with the agent's conversational summary
         mock_data_provider.search_providers.assert_called_once_with(
             query_text="User needs a plumber for bathroom repair",
-            category="plumbing",
             limit=3
         )
         
@@ -86,7 +84,6 @@ class TestProviderSearchMethod:
         # Setup: agent's conversational summary without detected category
         conversation_service.context["user_problem"] = ["I need help with something"]
         conversation_service.context["ai_responses"] = ["User needs general assistance", "Latest message"]
-        conversation_service.context["detected_category"] = None
         
         # Execute
         await conversation_service.search_providers_for_request()
@@ -94,7 +91,6 @@ class TestProviderSearchMethod:
         # Verify: search was called with conversational summary and None category
         mock_data_provider.search_providers.assert_called_once_with(
             query_text="User needs general assistance",
-            category=None,
             limit=3
         )
     
@@ -157,17 +153,6 @@ class TestAccumulateProblemDescription:
         assert any("Klempner" in item for item in problem)
         assert any("dringend" in item for item in problem)
         assert any("Badezimmer" in item for item in problem)
-    
-    @pytest.mark.asyncio
-    async def test_accumulate_detects_category(self, conversation_service):
-        """Test that category detection happens during accumulation."""
-        # Execute: accumulate with category keywords
-        await conversation_service.accumulate_problem_description("Ich brauche einen Elektriker")
-        
-        # Verify: category is detected (if detect_category function works)
-        # Note: This depends on the detect_category implementation
-        assert conversation_service.context["detected_category"] is not None or \
-               conversation_service.context["detected_category"] is None  # Either is valid
     
     @pytest.mark.asyncio
     async def test_accumulate_does_not_search(self, conversation_service, mock_data_provider):
