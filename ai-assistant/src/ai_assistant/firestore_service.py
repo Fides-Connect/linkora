@@ -106,23 +106,16 @@ class FirestoreService:
 
     # --- Favorites Operations ---
 
-    async def get_favorites(self, user_id: str) -> List[Dict[str, Any]]:
-        """Fetch user's favorite supporters."""
+    async def get_favorites(self, user_id: str) -> List[str]:
+        """Fetch user's favorite supporter IDs."""
         if not self.db:
             return []
         try:
-            # Storing favorites in a subcollection 'favorites' under the user document
-            # seems appropriate.
-            favorites_ref = self._get_collection('users').document(user_id).collection('favorites')
-            favorites = []
-            for doc in favorites_ref.stream():
+            doc = self._get_collection('users').document(user_id).get()
+            if doc.exists:
                 data = doc.to_dict()
-                # The doc id should probably be the fav supporter's ID, 
-                # or we store the ID in the data.
-                if 'id' not in data:
-                    data['id'] = doc.id
-                favorites.append(data)
-            return favorites
+                return data.get('favorites', [])
+            return []
         except Exception as e:
             logger.error(f"Error fetching favorites for {user_id}: {e}")
             return []
@@ -131,9 +124,9 @@ class FirestoreService:
         """Add a user to favorites."""
         if not self.db:
             return False
-        try:            
-            ref = self._get_collection('users').document(user_id).collection('favorites').document(favorite_user_id)
-            ref.set({'favorite_user_id': favorite_user_id})
+        try:
+            ref = self._get_collection('users').document(user_id)
+            ref.update({'favorites': firestore.ArrayUnion([favorite_user_id])})
             return True
         except Exception as e:
             logger.error(f"Error adding favorite for {user_id}: {e}")
@@ -144,8 +137,8 @@ class FirestoreService:
         if not self.db:
             return False
         try:
-            ref = self._get_collection('users').document(user_id).collection('favorites').document(favorite_user_id)
-            ref.delete()
+            ref = self._get_collection('users').document(user_id)
+            ref.update({'favorites': firestore.ArrayRemove([favorite_user_id])})
             return True
         except Exception as e:
             logger.error(f"Error removing favorite {favorite_user_id} for {user_id}: {e}")
