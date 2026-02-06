@@ -205,7 +205,7 @@ def init_firestore(test_data):
     if requests:
         for req in requests:
             req_collection_name = 'requests'
-            req_id = req.get('id', 'unknown_req')
+            req_id = req.get('service_request_id', 'unknown_req')
             req_ref = db.collection(req_collection_name).document(req_id)
             
             # Add dynamic timestamp if missing

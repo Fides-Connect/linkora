@@ -19,44 +19,46 @@ USER_TEMPLATE = {
     "negative_feedback": [],
     "average_rating": 5.0,
     "review_count": 3,
-    "service_requests": [
-        {
-            "service_request_id": "request_{uid}_001", # Template for ID
-            "title": "Need help with Python project",
-            "description": "I need an expert to help me structure my AI project properly.",
-            "amount_value": 50.0,
-            "currency": "EUR",
-            "start_date": "2026-02-10T10:00:00.000000",
-            "end_date": "2026-02-10T14:00:00.000000",
-            "user_name": "{name}", # Template
-            "user_initials": "{initials}", # Template
-            "category": "technology",
-            "type": "outgoing",
-            "status": "accepted",
-            "location": "Berlin, Germany",
-        },
-        {
-            "service_request_id": "request_{uid}_002", # Template for ID
-            "title": "Gardening Advice",
-            "description": "My plants are dying, please help! Need diagnosis and tips.",
-            "amount_value": 30.0,
-            "currency": "EUR",
-            "start_date": "2026-02-15T09:00:00.000000",
-            "end_date": "2026-02-15T10:00:00.000000",
-            "user_name": "{name}", # Template 
-            "user_initials": "{initials}", # Template
-            "category": "gardening",
-            "type": "outgoing",
-            "status": "pending",
-            "location": "Munich, Germany",
-        }
-    ],
-    "competencies": [
-        "Software Development",
-        "Project Management",
-        "Flutter"
-    ]
 }
+
+USER_TEMPLATE_SERVICE_REQUESTS = [
+    {
+        "service_request_id": "request_{uid}_001", # Template for ID
+        "title": "Need help with Python project",
+        "description": "I need an expert to help me structure my AI project properly.",
+        "amount_value": 50.0,
+        "currency": "EUR",
+        "start_date": "2026-02-10T10:00:00.000000",
+        "end_date": "2026-02-10T14:00:00.000000",
+        "user_name": "{name}", # Template
+        "user_initials": "{initials}", # Template
+        "category": "technology",
+        "type": "outgoing",
+        "status": "accepted",
+        "location": "Berlin, Germany",
+    },
+    {
+        "service_request_id": "request_{uid}_002", # Template for ID
+        "title": "Gardening Advice",
+        "description": "My plants are dying, please help! Need diagnosis and tips.",
+        "amount_value": 30.0,
+        "currency": "EUR",
+        "start_date": "2026-02-15T09:00:00.000000",
+        "end_date": "2026-02-15T10:00:00.000000",
+        "user_name": "{name}", # Template 
+        "user_initials": "{initials}", # Template
+        "category": "gardening",
+        "type": "outgoing",
+        "status": "pending",
+        "location": "Munich, Germany",
+    }
+]
+
+USER_TEMPLATE_COMPETENCES = [
+    "Software Development",
+    "Project Management",
+    "Flutter"
+]
 
 # --- Test Personas ---
 

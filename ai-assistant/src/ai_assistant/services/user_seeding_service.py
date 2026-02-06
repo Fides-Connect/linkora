@@ -19,12 +19,14 @@ if project_root not in sys.path:
 from ..firestore_service import FirestoreService
 
 try:
-    from tests.test_database_data import USER_TEMPLATE, USER_A
+    from tests.test_database_data import USER_TEMPLATE, USER_TEMPLATE_SERVICE_REQUESTS, USER_TEMPLATE_COMPETENCES, USER_A
 except ImportError:
     # Fallback or error if tests are not present (e.g. lean docker build)
     # Ideally tests/test_database_data.py should be moved to src/ if it's needed here.
     logging.getLogger(__name__).error("Could not import USER_TEMPLATE from tests.test_database_data")
     USER_TEMPLATE = {}
+    USER_TEMPLATE_SERVICE_REQUESTS = []
+    USER_TEMPLATE_COMPETENCES = []
     USER_A = {}
 
 logger = logging.getLogger(__name__)
@@ -47,22 +49,21 @@ class UserSeedingService:
         initials = "".join([n[0] for n in name.split() if n]).upper()[:2]
         
         # 1. Update User with Template Defaults (intro, competencies, feedback)
-        user_update = {k: v for k, v in USER_TEMPLATE.items() if k not in ["requests", "favorites"]}
-        # Remove dynamic fields we might not want to overwrite if they exist, but here we assume new user
-        # user_id, name, email are already handled by user_sync
+        user_update = {k: v for k, v in USER_TEMPLATE.items()}
+        user_update['competencies'] = USER_TEMPLATE_COMPETENCES
         
         # We use the existing update_user_user method which does a set with merge=True
         await self.firestore_service.update_user(user_id, user_update)
         
         # 2. Create Sample Requests
-        requests = USER_TEMPLATE.get("requests", [])
+        requests = USER_TEMPLATE_SERVICE_REQUESTS
         for req in requests:
             # Create a deep copy to modify
             req_data = copy.deepcopy(req)
             
             # Format dynamic values
-            req_id = req_data["id"].format(uid=user_id)
-            req_data["id"] = req_id
+            req_id = req_data["service_request_id"].format(uid=user_id)
+            req_data["service_request_id"] = req_id
             req_data["userId"] = user_id
             req_data["user_name"] = req_data["user_name"].format(name=name)
             req_data["user_initials"] = req_data["user_initials"].format(initials=initials)
@@ -82,10 +83,8 @@ class UserSeedingService:
             await self.firestore_service.update_user(user_a_id, alice_user_data)
             
             # Add to user's favorites
-            # We can use add_favorite service method
-            alice_for_fav = copy.deepcopy(alice_user_data)
-            alice_for_fav['id'] = user_a_id
-            await self.firestore_service.add_favorite(user_id, alice_for_fav)
+            # Pass only the user_id, not the full dict
+            await self.firestore_service.add_favorite(user_id, user_a_id)
             logger.info(f"Added default favorite {user_a_id} for user {user_id}")
             
         except Exception as e:
