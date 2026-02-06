@@ -41,17 +41,7 @@ class FirestoreService:
             return []
         
         requests = []
-        try:
-            # Query where user is the creator (outgoing)
-            # Assuming 'creator_id' or similar field. 
-            # In the Dart model there is 'userName' which seems to be the creator's name.
-            # We need to standardize on user IDs. 
-            # For now I will assume requests have 'userId' (creator) and 'providerId' (optional).
-            # The prompt implies querying requests relevant to the user.
-            
-            # Since the Dart code previously used mock data, we define the schema now.
-            # Let's assume requests collection is 'requests'.
-            
+        try:         
             requests_ref = self._get_collection('requests')
             
             # Requests created by user
@@ -60,15 +50,8 @@ class FirestoreService:
                 data = doc.to_dict()
                 data['id'] = doc.id
                 requests.append(data)
-                
-            # Requests where user is the provider/supporter (optional, if we support that flow)
-            # query2 = requests_ref.where(filter=FieldFilter("providerId", "==", user_id)).stream()
-            # for doc in query2:
-            #    data = doc.to_dict()
-            #    data['id'] = doc.id
-            #    requests.append(data)
-
-            # Deduplicate if necessary (though separate queries shouldn't overlap if roles are distinct)
+            
+            # TODO: Requests where user is a supporter (in supporters array)
             return requests
 
         except Exception as e:
@@ -164,8 +147,26 @@ class FirestoreService:
 
     # --- User Operations ---
 
+    async def get_competencies(self, user_id: str) -> List[str]:
+        """Fetch user's competencies from subcollection."""
+        if not self.db:
+            return []
+        try:
+            competencies_ref = self.db.collection('users').document(user_id).collection('competencies')
+            docs = competencies_ref.stream()
+            competencies = []
+            for doc in docs:
+                comp_data = doc.to_dict()
+                # Extract just the title for the User model
+                if 'title' in comp_data:
+                    competencies.append(comp_data['title'])
+            return competencies
+        except Exception as e:
+            logger.error(f"Error fetching competencies for {user_id}: {e}")
+            return []
+
     async def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get user."""
+        """Get user with optional competencies from subcollection."""
         if not self.db:
             return None
         try:
@@ -173,6 +174,12 @@ class FirestoreService:
             if doc.exists:
                 data = doc.to_dict()
                 data['id'] = doc.id
+                
+                # Fetch competencies from subcollection
+                competencies = await self.get_competencies(user_id)
+                # Override the competencies field with subcollection data
+                data['competencies'] = competencies
+                
                 return data
             return None
         except Exception as e:
