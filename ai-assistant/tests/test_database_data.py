@@ -19,9 +19,9 @@ USER_TEMPLATE = {
     "negative_feedback": [],
     "average_rating": 5.0,
     "review_count": 3,
-    "requests": [
+    "service_requests": [
         {
-            "id": "request_{uid}_001", # Template for ID
+            "service_request_id": "request_{uid}_001", # Template for ID
             "title": "Need help with Python project",
             "description": "I need an expert to help me structure my AI project properly.",
             "amount_value": 50.0,
@@ -36,7 +36,7 @@ USER_TEMPLATE = {
             "location": "Berlin, Germany",
         },
         {
-            "id": "request_{uid}_002", # Template for ID
+            "service_request_id": "request_{uid}_002", # Template for ID
             "title": "Gardening Advice",
             "description": "My plants are dying, please help! Need diagnosis and tips.",
             "amount_value": 30.0,
@@ -242,7 +242,7 @@ TEST_PERSONAS = [
 
 # Scenario 1: User E (Enthusiast/Seeker) asks User A (Pro) for Pot Lights
 REQ_TEST_001 = {
-    'id': "req_test_001",
+    'service_request_id': "req_test_001",
     'seeker_user_id': "user_eva_005",
     'provider_user_id': "user_alice_001",
     'title': "Pot Light Installation",
@@ -302,7 +302,7 @@ REV_TEST_001 = {
 
 # Scenario 2: User C (Ghost) has an old inactive request
 REQ_TEST_002_GHOST = {
-    'id': "req_test_002",
+    'service_request_id': "req_test_002",
     'seeker_user_id': "user_bob_002",
     'provider_user_id': "user_charlie_003",
     'title': "Panel Upgrade",
