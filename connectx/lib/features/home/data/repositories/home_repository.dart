@@ -35,7 +35,7 @@ class HomeRepository {
     return _localMockRequests;
   }
 
-  /// Fetches the current user's favorite supporters.
+  /// Fetches the current user's favorite user IDs.
   /// Used in the Favorites Tab.
   /// Wraps API call to `GET /favorites`.
   Future<List<User>> getFavorites() async {
