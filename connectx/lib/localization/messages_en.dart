@@ -87,8 +87,8 @@ class MessagesEN {
   static const String languageEnglish = 'English';
   static const String languageGerman = 'German';
 
-  // Supporter Profile
-  static const String menuSupporterProfile = 'Supporter Profile';
+  // Profile
+  static const String menuProfile = 'Profile';
   static const String competenciesTitle = 'Competencies';
   static const String addCompetence = 'Add Competence';
   static const String enterCompetence = 'Enter competence';

@@ -100,20 +100,19 @@ async def get_favorites(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 async def add_favorite(request: web.Request) -> web.Response:
-    """POST /favorites/{id}"""
+    """POST /favorites/{user_id}"""
     try:
         user_id = await get_current_user_id(request)
-        supporter_id = request.match_info['id']
+        favorite_user_id = request.match_info['user_id']
         
-        # We need to fetch the supporter details to store them in favorites
-        # Assuming we can fetch public profile of the supporter from users collection
-        supporter_profile = await firestore_service.get_user_profile(supporter_id)
+        # We need to fetch the user details to store them in favorites
+        user = await firestore_service.get_user(favorite_user_id)
         
-        if not supporter_profile:
+        if not user:
              return web.json_response({"error": "Supporter not found"}, status=404)
 
         # Add to favorites
-        success = await firestore_service.add_favorite(user_id, supporter_profile)
+        success = await firestore_service.add_favorite(user_id, user)
         if success:
              return web.json_response({"status": "added"})
         else:
@@ -141,46 +140,46 @@ async def remove_favorite(request: web.Request) -> web.Response:
         logger.error(f"Error in remove_favorite: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-async def get_profile(request: web.Request) -> web.Response:
-    """GET /profile"""
+async def get_user(request: web.Request) -> web.Response:
+    """GET /user"""
     try:
         user_id = await get_current_user_id(request)
-        profile = await firestore_service.get_user_profile(user_id)
+        user = await firestore_service.get_user(user_id)
         
-        if profile:
+        if user:
             # Handle datetime serialization if any
-            for k, v in profile.items():
+            for k, v in user.items():
                 if hasattr(v, 'isoformat'):
-                    profile[k] = v.isoformat()
-            return web.json_response(profile)
+                    user[k] = v.isoformat()
+            return web.json_response(user)
         
         # If not found, return 404
-        return web.json_response({"error": "Profile not found"}, status=404)
+        return web.json_response({"error": "User not found"}, status=404)
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in get_profile: {e}")
+        logger.error(f"Error in get_user: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-async def update_profile(request: web.Request) -> web.Response:
-    """PUT /profile"""
+async def update_user(request: web.Request) -> web.Response:
+    """PUT /user"""
     try:
         user_id = await get_current_user_id(request)
         body = await request.json()
         
-        success = await firestore_service.update_user_profile(user_id, body)
+        success = await firestore_service.update_user(user_id, body)
         if success:
              return web.json_response({"status": "updated"})
         else:
-             return web.json_response({"error": "Failed to update profile"}, status=500)
+             return web.json_response({"error": "Failed to update user"}, status=500)
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in update_profile: {e}")
+        logger.error(f"Error in update_user: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 async def add_competence(request: web.Request) -> web.Response:
-    """POST /profile/competencies"""
+    """POST /user/competencies"""
     try:
         user_id = await get_current_user_id(request)
         body = await request.json()
@@ -201,7 +200,7 @@ async def add_competence(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 async def remove_competence(request: web.Request) -> web.Response:
-    """DELETE /profile/competencies/{competence}"""
+    """DELETE /user/competencies/{competence}"""
     try:
         user_id = await get_current_user_id(request)
         competence = request.match_info['competence']
@@ -217,25 +216,25 @@ async def remove_competence(request: web.Request) -> web.Response:
         logger.error(f"Error in remove_competence: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-async def get_other_profile(request: web.Request) -> web.Response:
-    """GET /users/{id}/profile"""
+async def get_other_user(request: web.Request) -> web.Response:
+    """GET /users/{id}/user"""
     try:
         # We might require auth here too, to prevent scraping
         await get_current_user_id(request)
         
         target_user_id = request.match_info['id']
-        profile = await firestore_service.get_user_profile(target_user_id)
+        user = await firestore_service.get_user(target_user_id)
         
-        if profile:
+        if user:
              # Handle datetime serialization if any
-            for k, v in profile.items():
+            for k, v in user.items():
                 if hasattr(v, 'isoformat'):
-                    profile[k] = v.isoformat()
-            return web.json_response(profile)
+                    user[k] = v.isoformat()
+            return web.json_response(user)
         
-        return web.json_response({"error": "Profile not found"}, status=404)
+        return web.json_response({"error": "User not found"}, status=404)
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in get_other_profile: {e}")
+        logger.error(f"Error in get_other_user: {e}")
         return web.json_response({"error": str(e)}, status=500)

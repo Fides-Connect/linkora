@@ -4,15 +4,15 @@ import '../../../../core/widgets/app_background.dart';
 import '../../../../core/widgets/feedback_display.dart';
 import '../../../../core/widgets/star_rating.dart';
 import '../../../../localization/app_localizations.dart';
-import '../../../../models/supporter_profile.dart';
+import '../../../../models/user.dart';
 import '../viewmodels/home_tab_view_model.dart';
 
-class ProfileDetailPage extends StatelessWidget {
-  final SupporterProfile profile;
+class UserDetailPage extends StatelessWidget {
+  final User user;
 
-  const ProfileDetailPage({
+  const UserDetailPage({
     super.key,
-    required this.profile,
+    required this.user,
   });
 
   @override
@@ -22,13 +22,13 @@ class ProfileDetailPage extends StatelessWidget {
     // or watch to rebuild when the model changes.
     // Note: This requires HomeTabViewModel to be provided above this widget.
     final viewModel = context.watch<HomeTabViewModel>();
-    final isFavorite = viewModel.isFavorite(profile);
+    final isFavorite = viewModel.isFavorite(user);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
-          profile.name,
+          user.name,
           style: const TextStyle(color: Colors.white),
         ),
         backgroundColor: Colors.transparent,
@@ -54,7 +54,7 @@ class ProfileDetailPage extends StatelessWidget {
                             radius: 50,
                             backgroundColor: Colors.white.withValues(alpha: 0.2),
                             child: Text(
-                              profile.name.isNotEmpty ? profile.name[0] : '?',
+                              user.name.isNotEmpty ? user.name[0] : '?',
                               style: const TextStyle(
                                 fontSize: 40,
                                 color: Colors.white,
@@ -64,7 +64,7 @@ class ProfileDetailPage extends StatelessWidget {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            profile.name,
+                            user.name,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 24,
@@ -125,7 +125,7 @@ class ProfileDetailPage extends StatelessWidget {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            profile.introduction,
+                            user.introduction,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 16,
@@ -157,7 +157,7 @@ class ProfileDetailPage extends StatelessWidget {
                         Wrap(
                           spacing: 8.0,
                           runSpacing: 8.0,
-                          children: profile.competencies.map((competency) {
+                          children: user.competencies.map((competency) {
                             return Chip(
                               label: Text(competency),
                               backgroundColor: Colors.white.withValues(alpha: 0.2),
@@ -209,7 +209,7 @@ class ProfileDetailPage extends StatelessWidget {
                           Row(
                             children: [
                               Text(
-                                profile.averageRating.toString(),
+                                user.averageRating.toString(),
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 32,
@@ -217,10 +217,10 @@ class ProfileDetailPage extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              StarRating(rating: profile.averageRating),
+                              StarRating(rating: user.averageRating),
                               const SizedBox(width: 8),
                               Text(
-                                '(${profile.reviewCount})',
+                                '(${user.reviewCount})',
                                 style: TextStyle(
                                   color: Colors.white.withValues(alpha: 0.5),
                                   fontSize: 14,
@@ -235,14 +235,14 @@ class ProfileDetailPage extends StatelessWidget {
 
                   FeedbackDisplay(
                     title: localizations?.positiveFeedback ?? 'Positive Feedback',
-                    feedbackItems: profile.positiveFeedback,
+                    feedbackItems: user.positiveFeedback,
                     titleColor: Colors.greenAccent,
                     chipColor: const Color(0x3369F0AE),
                   ),
 
                   FeedbackDisplay(
                     title: localizations?.negativeFeedback ?? 'Negative Feedback',
-                    feedbackItems: profile.negativeFeedback,
+                    feedbackItems: user.negativeFeedback,
                     titleColor: Colors.redAccent,
                     chipColor: const Color(0x33FF5252),
                   ),
@@ -264,7 +264,7 @@ class ProfileDetailPage extends StatelessWidget {
                           ),
                         ),
                         onPressed: () {
-                          viewModel.toggleFavorite(profile);
+                          viewModel.toggleFavorite(user);
                         },
                         child: Text(
                           isFavorite

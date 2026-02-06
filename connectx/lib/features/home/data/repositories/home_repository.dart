@@ -1,21 +1,21 @@
 import 'package:flutter/foundation.dart';
 import '../../../../services/api_service.dart';
 import '../../../../models/service_request.dart';
-import '../../../../models/supporter_profile.dart';
+import '../../../../models/user.dart';
 import '../mock_home_data.dart';
 
 class HomeRepository {
   final ApiService _apiService;
 
   late List<ServiceRequest> _localMockRequests;
-  late List<SupporterProfile> _localMockFavorites;
-  late SupporterProfile _localMockSupporterProfile;
+  late List<User> _localMockFavorites;
+  late User _localMockUser;
 
   HomeRepository({ApiService? apiService})
       : _apiService = apiService ?? ApiService() {
     _localMockRequests = List.from(mockRequests);
     _localMockFavorites = List.from(mockFavorites);
-    _localMockSupporterProfile = mockSupporterProfile;
+    _localMockUser = mockUser;
   }
 
   /// Fetches the list of incoming and outgoing service requests.
@@ -38,11 +38,11 @@ class HomeRepository {
   /// Fetches the current user's favorite supporters.
   /// Used in the Favorites Tab.
   /// Wraps API call to `GET /favorites`.
-  Future<List<SupporterProfile>> getFavorites() async {
+  Future<List<User>> getFavorites() async {
     try {
       final data = await _apiService.get('/favorites');
       if (data is List) {
-        return data.map((json) => SupporterProfile.fromJson(json)).toList();
+        return data.map((json) => User.fromJson(json)).toList();
       }
     } catch (e) {
       debugPrint('API failed for getFavorites (using mock data): $e');
@@ -53,161 +53,161 @@ class HomeRepository {
     return _localMockFavorites;
   }
 
-  /// Adds a supporter to favorites.
+  /// Adds a user to favorites.
   /// Wraps API call to `POST /favorites/{id}`.
   /// Returns the updated list of favorites.
-  Future<List<SupporterProfile>> addFavorite(SupporterProfile profile) async {
+  Future<List<User>> addFavorite(User user) async {
     try {
-      await _apiService.post('/favorites/${Uri.encodeComponent(profile.id)}'); 
+      await _apiService.post('/favorites/${Uri.encodeComponent(user.userId)}'); 
       return getFavorites();
     } catch (e) {
       debugPrint('API failed for addFavorite (using mock data): $e');
       // Fallback
       await Future.delayed(const Duration(milliseconds: 200));
-      if (!_localMockFavorites.any((p) => p.id == profile.id)) {
-        _localMockFavorites.add(profile);
+      if (!_localMockFavorites.any((p) => p.userId == user.userId)) {
+        _localMockFavorites.add(user);
       }
       return _localMockFavorites;
     }
   }
 
-  /// Removes a supporter from favorites.
+  /// Removes a user from favorites.
   /// Wraps API call to `DELETE /favorites/{id}`.
   /// Returns the updated list of favorites.
-  Future<List<SupporterProfile>> removeFavorite(SupporterProfile profile) async {
+  Future<List<User>> removeFavorite(User user) async {
     try {
-      await _apiService.delete('/favorites/${Uri.encodeComponent(profile.id)}');
+      await _apiService.delete('/favorites/${Uri.encodeComponent(user.userId)}');
       return getFavorites();
     } catch (e) {
       debugPrint('API failed for removeFavorite (using mock data): $e');
       // Fallback
       await Future.delayed(const Duration(milliseconds: 200));
-      _localMockFavorites.removeWhere((p) => p.id == profile.id);
+      _localMockFavorites.removeWhere((p) => p.userId == user.userId);
       return _localMockFavorites;
     }
   }
 
-  /// Fetches the logged-in user's own supporter profile.
-  /// Wraps API call to `GET /profile`.
-  Future<SupporterProfile> getSupporterProfile() async {
+  /// Fetches the logged-in user's own data.
+  /// Wraps API call to `GET /data`.
+  Future<User> getUser() async {
     try {
-      final data = await _apiService.get('/profile');
+      final data = await _apiService.get('/user');
       // If data is null (empty body), we should also fall back
       if (data != null) {
-        return SupporterProfile.fromJson(data);
+        return User.fromJson(data);
       }
     } catch (e) {
-      debugPrint('API failed for getSupporterProfile (using mock data): $e');
+      debugPrint('API failed for getUser (using mock data): $e');
     }
     
     // Fallback if API fails or is not implemented
     await Future.delayed(const Duration(milliseconds: 500));
-    return _localMockSupporterProfile;
+    return _localMockUser;
   }
 
-  /// Updates the logged-in user's entire profile.
-  /// Wraps API call to `PUT /profile`.
-  /// Returns the updated profile.
-  Future<SupporterProfile> updateSupporterProfile(SupporterProfile profile) async {
+  /// Updates the logged-in user's entire data.
+  /// Wraps API call to `PUT /user`.
+  /// Returns the updated user.
+  Future<User> updateUser(User user) async {
      try {
-      await _apiService.put('/profile', body: profile.toJson());
-      // Return the profile we just sent, assuming success
-      return profile;
+      await _apiService.put('/user', body: user.toJson());
+      // Return the user we just sent, assuming success
+      return user;
     } catch (e) {
-      debugPrint('API failed for updateSupporterProfile (using mock data): $e');
+      debugPrint('API failed for updateUser (using mock data): $e');
       // Fallback
       await Future.delayed(const Duration(milliseconds: 500));
-      _localMockSupporterProfile = profile;
-      return _localMockSupporterProfile;
+      _localMockUser = user;
+      return _localMockUser;
     }
   }
 
-  /// Adds a single competence tag to the user's profile.
-  /// Wraps API call to `POST /profile/competencies`.
-  /// Returns the updated profile.
-  Future<SupporterProfile> addCompetence(String competence) async {
+  /// Adds a single competence tag to the user.
+  /// Wraps API call to `POST /user/competencies`.
+  /// Returns the updated user.
+  Future<User> addCompetence(String competence) async {
     try {
-      await _apiService.post('/profile/competencies', body: {'competence': competence});
-      // Fetch fresh profile from server
-      return getSupporterProfile();
+      await _apiService.post('/user/competencies', body: {'competence': competence});
+      // Fetch fresh user from server
+      return getUser();
     } catch (e) {
        debugPrint('API failed for addCompetence (using mock data): $e');
        // Fallback
        await Future.delayed(const Duration(milliseconds: 200));
-       if (!_localMockSupporterProfile.competencies.contains(competence)) {
-         final updatedCompetencies = List<String>.from(_localMockSupporterProfile.competencies)..add(competence);
-         _localMockSupporterProfile = SupporterProfile(
-           id: _localMockSupporterProfile.id,
-           name: _localMockSupporterProfile.name,
-           introduction: _localMockSupporterProfile.introduction,
+       if (!_localMockUser.competencies.contains(competence)) {
+         final updatedCompetencies = List<String>.from(_localMockUser.competencies)..add(competence);
+         _localMockUser = User(
+           userId: _localMockUser.userId,
+           name: _localMockUser.name,
+           introduction: _localMockUser.introduction,
            competencies: updatedCompetencies,
-           averageRating: _localMockSupporterProfile.averageRating,
-           reviewCount: _localMockSupporterProfile.reviewCount,
-           positiveFeedback: _localMockSupporterProfile.positiveFeedback,
-           negativeFeedback: _localMockSupporterProfile.negativeFeedback
+           averageRating: _localMockUser.averageRating,
+           reviewCount: _localMockUser.reviewCount,
+           positiveFeedback: _localMockUser.positiveFeedback,
+           negativeFeedback: _localMockUser.negativeFeedback
          );
        }
-       return _localMockSupporterProfile;
+       return _localMockUser;
     }
   }
 
-  /// Removes a single competence tag from the user's profile.
-  /// Wraps API call to `DELETE /profile/competencies/{competence}`.
-  /// Returns the updated profile.
-  Future<SupporterProfile> removeCompetence(String competence) async {
+  /// Removes a single competence tag from the user.
+  /// Wraps API call to `DELETE /user/competencies/{competence}`.
+  /// Returns the updated user.
+  Future<User> removeCompetence(String competence) async {
     try {
-      // Assuming RESTful design: /profile/competencies/Gardening
-      await _apiService.delete('/profile/competencies/${Uri.encodeComponent(competence)}');
-      // Fetch fresh profile from server
-      return getSupporterProfile();
+      // Assuming RESTful design: /user/competencies/Gardening
+      await _apiService.delete('/user/competencies/${Uri.encodeComponent(competence)}');
+      // Fetch fresh user from server
+      return getUser();
     } catch (e) {
        debugPrint('API failed for removeCompetence (using mock data): $e');
        // Fallback
        await Future.delayed(const Duration(milliseconds: 200));
-       if (_localMockSupporterProfile.competencies.contains(competence)) {
-         final updatedCompetencies = List<String>.from(_localMockSupporterProfile.competencies)..remove(competence);
-         _localMockSupporterProfile = SupporterProfile(
-           id: _localMockSupporterProfile.id,
-           name: _localMockSupporterProfile.name,
-           introduction: _localMockSupporterProfile.introduction,
+       if (_localMockUser.competencies.contains(competence)) {
+         final updatedCompetencies = List<String>.from(_localMockUser.competencies)..remove(competence);
+         _localMockUser = User(
+           userId: _localMockUser.userId,
+           name: _localMockUser.name,
+           introduction: _localMockUser.introduction,
            competencies: updatedCompetencies,
-           averageRating: _localMockSupporterProfile.averageRating,
-           reviewCount: _localMockSupporterProfile.reviewCount,
-           positiveFeedback: _localMockSupporterProfile.positiveFeedback,
-           negativeFeedback: _localMockSupporterProfile.negativeFeedback
+           averageRating: _localMockUser.averageRating,
+           reviewCount: _localMockUser.reviewCount,
+           positiveFeedback: _localMockUser.positiveFeedback,
+           negativeFeedback: _localMockUser.negativeFeedback
          );
        }
-       return _localMockSupporterProfile;
+       return _localMockUser;
     }
   }
 
-  /// Fetches proper public profile for another user (e.g. a request sender).
-  /// Wraps API call to `GET /users/{id}/profile`.
-  Future<SupporterProfile?> getOtherProfile(String userId) async {
+  /// Fetches proper public data for another user (e.g. a request sender).
+  /// Wraps API call to `GET /users/{id}/user`.
+  Future<User?> getOtherUser(String userId) async {
     try {
-       final data = await _apiService.get('/users/${Uri.encodeComponent(userId)}/profile');
+       final data = await _apiService.get('/users/${Uri.encodeComponent(userId)}/user');
       if (data != null) {
-        return SupporterProfile.fromJson(data);
+        return User.fromJson(data);
       }
     } catch (e) {
-       debugPrint('API failed for getOtherProfile (using mock data): $e');
+       debugPrint('API failed for getOtherUser (using mock data): $e');
     }
 
     // Fallback logic moved from RequestDetailPage
     await Future.delayed(const Duration(milliseconds: 500));
 
-    // Try to find a request by this user to determine which mock profile to return
+    // Try to find a request by this user to determine which mock user to return
     // In a real app, we would look up by userId directly.
     // Here we use the name mapping logic that was in UI
     
     // Find request or use defaults
     final request = _localMockRequests.firstWhere(
-      (r) => r.userName == userId || r.id == userId, 
+      (r) => r.userName == userId || r.service_request_id == userId, 
       orElse: () => _localMockRequests.first
     );
 
-    if (mockUserProfiles.containsKey(request.userName)) {
-      return mockUserProfiles[request.userName];
+    if (mockUsers.containsKey(request.userName)) {
+      return mockUsers[request.userName];
     }
     
     return null;
@@ -235,11 +235,11 @@ class HomeRepository {
        debugPrint('API failed for updateRequestStatus (using mock data): $e');
        // Fallback
        await Future.delayed(const Duration(milliseconds: 200));
-       final index = _localMockRequests.indexWhere((r) => r.id == requestId);
+       final index = _localMockRequests.indexWhere((r) => r.service_request_id == requestId);
        if (index != -1) {
          final original = _localMockRequests[index];
          _localMockRequests[index] = ServiceRequest(
-           id: original.id,
+           service_request_id: original.service_request_id,
            title: original.title,
            amountValue: original.amountValue,
            currency: original.currency,

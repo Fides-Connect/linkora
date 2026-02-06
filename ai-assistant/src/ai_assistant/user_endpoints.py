@@ -46,7 +46,7 @@ async def user_sync(request: web.Request) -> web.Response:
             "last_sign_in": datetime.now(UTC),
             "last_active_date": datetime.now(UTC).isoformat()
         }
-        await firestore_service.update_user_profile(user_id, firestore_user_data)
+        await firestore_service.update_user(user_id, firestore_user_data)
 
         # Sync with Weaviate (for Provider Search)
         # Check if user exists

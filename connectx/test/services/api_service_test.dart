@@ -55,13 +55,13 @@ void main() {
       when(mockAuth.currentUser).thenReturn(mockUser);
       when(mockUser.getIdToken()).thenAnswer((_) async => 'fake_token');
       when(mockClient.post(any, headers: anyNamed('headers'), body: anyNamed('body')))
-          .thenAnswer((_) async => http.Response('{"id": 1}', 201));
+          .thenAnswer((_) async => http.Response('{"user_id": 1}', 201));
 
       // Act
       final result = await apiService.post('/test', body: {'name': 'data'});
 
       // Assert
-      expect(result, {'id': 1});
+      expect(result, {'user_id': 1});
       verify(mockClient.post(
         Uri.parse('http://test.com/test'),
         headers: anyNamed('headers'),

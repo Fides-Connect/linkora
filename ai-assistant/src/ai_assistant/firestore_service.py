@@ -127,38 +127,34 @@ class FirestoreService:
             logger.error(f"Error fetching favorites for {user_id}: {e}")
             return []
 
-    async def add_favorite(self, user_id: str, profile_data: Dict[str, Any]) -> bool:
-        """Add a supporter to favorites."""
+    async def add_favorite(self, user_id: str, favorite_user_id: str) -> bool:
+        """Add a user to favorites."""
         if not self.db:
             return False
-        try:
-            supporter_id = profile_data.get('id')
-            if not supporter_id:
-                return False
-            
-            ref = self._get_collection('users').document(user_id).collection('favorites').document(supporter_id)
-            ref.set(profile_data)
+        try:            
+            ref = self._get_collection('users').document(user_id).collection('favorites').document(favorite_user_id)
+            ref.set({'favorite_user_id': favorite_user_id})
             return True
         except Exception as e:
             logger.error(f"Error adding favorite for {user_id}: {e}")
             return False
 
-    async def remove_favorite(self, user_id: str, favorite_id: str) -> bool:
-        """Remove a supporter from favorites."""
+    async def remove_favorite(self, user_id: str, favorite_user_id: str) -> bool:
+        """Remove a user from favorites."""
         if not self.db:
             return False
         try:
-            ref = self._get_collection('users').document(user_id).collection('favorites').document(favorite_id)
+            ref = self._get_collection('users').document(user_id).collection('favorites').document(favorite_user_id)
             ref.delete()
             return True
         except Exception as e:
-            logger.error(f"Error removing favorite {favorite_id} for {user_id}: {e}")
+            logger.error(f"Error removing favorite {favorite_user_id} for {user_id}: {e}")
             return False
 
-    # --- Profile Operations ---
+    # --- User Operations ---
 
-    async def get_user_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get user profile."""
+    async def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user."""
         if not self.db:
             return None
         try:
@@ -169,23 +165,23 @@ class FirestoreService:
                 return data
             return None
         except Exception as e:
-            logger.error(f"Error getting profile {user_id}: {e}")
+            logger.error(f"Error getting user {user_id}: {e}")
             return None
 
-    async def update_user_profile(self, user_id: str, profile_data: Dict[str, Any]) -> bool:
-        """Update user profile."""
+    async def update_user(self, user_id: str, user_data: Dict[str, Any]) -> bool:
+        """Update user."""
         if not self.db:
             return False
         try:
             # Use set with merge=True to create if not exists or update existing fields
-            self._get_collection('users').document(user_id).set(profile_data, merge=True)
+            self._get_collection('users').document(user_id).set(user_data, merge=True)
             return True
         except Exception as e:
-            logger.error(f"Error updating profile {user_id}: {e}")
+            logger.error(f"Error updating {user_id}: {e}")
             return False
 
     async def add_competence(self, user_id: str, competence: str) -> bool:
-        """Add a competence to user profile."""
+        """Add a competence to user."""
         if not self.db:
             return False
         try:
@@ -198,7 +194,7 @@ class FirestoreService:
             return False
 
     async def remove_competence(self, user_id: str, competence: str) -> bool:
-        """Remove a competence from user profile."""
+        """Remove a competence from user."""
         if not self.db:
             return False
         try:

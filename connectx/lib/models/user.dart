@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-class SupporterProfile {
-  final String id;
+class User {
+  final String userId;
   final String name;
   final String introduction;
   final List<String> competencies;
@@ -10,8 +10,8 @@ class SupporterProfile {
   final List<String> positiveFeedback;
   final List<String> negativeFeedback;
 
-  const SupporterProfile({
-    required this.id,
+  const User({
+    required this.userId,
     required this.name,
     required this.introduction,
     required this.competencies,
@@ -21,9 +21,9 @@ class SupporterProfile {
     required this.negativeFeedback,
   });
 
-  factory SupporterProfile.fromJson(Map<String, dynamic> json) {
-    return SupporterProfile(
-      id: json['id'] as String,
+  factory User.fromJson(Map<String, dynamic> json) {
+    return User(
+      userId: json['user_id'] as String,
       name: json['name'] as String,
       introduction: json['introduction'] as String,
       competencies: (json['competencies'] as List?)?.cast<String>() ?? [],
@@ -36,7 +36,7 @@ class SupporterProfile {
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
+      'user_id': userId,
       'name': name,
       'introduction': introduction,
       'competencies': competencies,
@@ -51,8 +51,8 @@ class SupporterProfile {
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
 
-    return other is SupporterProfile &&
-        other.id == id &&
+    return other is User &&
+        other.userId == userId &&
         other.name == name &&
         other.introduction == introduction &&
         listEquals(other.competencies, competencies) &&
@@ -64,7 +64,7 @@ class SupporterProfile {
 
   @override
   int get hashCode => Object.hash(
-        id,
+        userId,
         name,
         introduction,
         Object.hashAll(competencies),

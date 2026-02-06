@@ -4,7 +4,7 @@ enum RequestType { incoming, outgoing, unknown }
 enum RequestStatus { pending, waitingForAnswer, completed, accepted, rejected, unknown }
 
 class ServiceRequest {
-  final String id;
+  final String service_request_id;
   final String title;
   final double amountValue;
   final String currency;
@@ -20,7 +20,7 @@ class ServiceRequest {
   final String location;
 
   const ServiceRequest({
-    required this.id,
+    required this.service_request_id,
     required this.title,
     required this.amountValue,
     this.currency = '€',
@@ -38,7 +38,7 @@ class ServiceRequest {
 
   factory ServiceRequest.fromJson(Map<String, dynamic> json) {
     return ServiceRequest(
-      id: json['id'] as String,
+      service_request_id: json['service_request_id'] as String,
       title: json['title'] as String,
       amountValue: (json['amount_value'] as num).toDouble(),
       currency: json['currency'] as String? ?? '€',
@@ -59,7 +59,7 @@ class ServiceRequest {
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
+      'service_request_id': service_request_id,
       'title': title,
       'amount_value': amountValue,
       'currency': currency,

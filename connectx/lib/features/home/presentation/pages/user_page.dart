@@ -7,14 +7,14 @@ import '../../../../core/widgets/star_rating.dart';
 import '../../../../localization/app_localizations.dart';
 import '../viewmodels/home_tab_view_model.dart';
 
-class SupporterProfilePage extends StatefulWidget {
-  const SupporterProfilePage({super.key});
+class UserPage extends StatefulWidget {
+  const UserPage({super.key});
 
   @override
-  State<SupporterProfilePage> createState() => _SupporterProfilePageState();
+  State<UserPage> createState() => _UserPageState();
 }
 
-class _SupporterProfilePageState extends State<SupporterProfilePage> {
+class _UserPageState extends State<UserPage> {
 
   late String _introduction;
   late TextEditingController _introController;

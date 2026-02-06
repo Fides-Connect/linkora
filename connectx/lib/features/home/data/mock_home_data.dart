@@ -1,11 +1,11 @@
 import '../../../../models/service_request.dart';
-import '../../../../models/supporter_profile.dart';
+import '../../../models/user.dart';
 import '../../../../models/service_category.dart';
 
 // Mutable lists to allow runtime updates during mock session
 List<ServiceRequest> mockRequests = [
   ServiceRequest(
-    id: '1',
+    service_request_id: '1',
     title: 'Teach Japanese Tea Ceremony',
     amountValue: 159.00,
     startDate: DateTime(2026, 2, 25),
@@ -18,7 +18,7 @@ List<ServiceRequest> mockRequests = [
     location: 'Berlin, Mitte',
   ),
   ServiceRequest(
-    id: '2',
+    service_request_id: '2',
     title: 'Cat Sitting',
     amountValue: 59.00,
     startDate: DateTime(2025, 12, 19),
@@ -32,7 +32,7 @@ List<ServiceRequest> mockRequests = [
     location: 'Munich, Schwabing',
   ),
   ServiceRequest(
-    id: '3',
+    service_request_id: '3',
     title: 'Housekeeping',
     amountValue: 365.12,
     startDate: DateTime(2025, 12, 19),
@@ -47,9 +47,9 @@ List<ServiceRequest> mockRequests = [
   ),
 ];
 
-List<SupporterProfile> mockFavorites = [
-  SupporterProfile(
-    id: 'fav_1',
+List<User> mockFavorites = [
+  User(
+    userId: 'fav_1',
     name: "Sarah Miller",
     introduction: "I love helping seniors with their daily grocery shopping and providing company. I'm a patient listener and enjoy knitting.",
     competencies: ["Grocery Shopping", "Knitting", "Listening", "Patience"],
@@ -58,8 +58,8 @@ List<SupporterProfile> mockFavorites = [
     positiveFeedback: ["Very kind", "Punctual", "Great listener"],
     negativeFeedback: [],
   ),
-  SupporterProfile(
-    id: 'fav_2',
+  User(
+    userId: 'fav_2',
     name: "David Chen",
     introduction: "Tech enthusiast who enjoys teaching others how to use smartphones and tablets. I can also help with minor computer repairs.",
     competencies: ["Smartphone Setup", "Tablet Basics", "Computer Repair", "WiFi Troubleshooting"],
@@ -68,8 +68,8 @@ List<SupporterProfile> mockFavorites = [
     positiveFeedback: ["Knowledgeable", "Patient teacher"],
     negativeFeedback: ["Talks fast"],
   ),
-  SupporterProfile(
-    id: 'fav_3',
+  User(
+    userId: 'fav_3',
     name: "Maria Garcia",
     introduction: "Certified nurse assistant with experience in elderly care. I can help with mobility, medication reminders, and light housekeeping.",
     competencies: ["Elderly Care", "Medication Reminders", "Mobility Assistance", "Housekeeping"],
@@ -81,8 +81,8 @@ List<SupporterProfile> mockFavorites = [
 ];
 
 // Mutable to allow updates
-SupporterProfile mockSupporterProfile = SupporterProfile(
-  id: 'current_user_123',
+User mockUser = User(
+  userId: 'current_user_123',
   name: "Thomas",
   introduction: "Hello, I'm Thomas! I have a deep passion for Japanese culture and helpful technology. In my free time, you can find me tending to my garden, fixing smaller things around the house, or relaxing with my cats.",
   competencies: [
@@ -98,9 +98,9 @@ SupporterProfile mockSupporterProfile = SupporterProfile(
   negativeFeedback: ['Too late'],
 );
 
-final Map<String, SupporterProfile> mockUserProfiles = {
-  'Paul Shatner': const SupporterProfile(
-    id: 'ps_123',
+final Map<String, User> mockUsers = {
+  'Paul Shatner': const User(
+    userId: 'ps_123',
     name: 'Paul Shatner',
     introduction:
         "I am fascinated by Japanese culture and have always wanted to learn the authentic tea ceremony. I am respectful and eager to learn.",
@@ -110,8 +110,8 @@ final Map<String, SupporterProfile> mockUserProfiles = {
     positiveFeedback: ["Very polite", "Eager learner"],
     negativeFeedback: [],
   ),
-  'Aron Neil': const SupporterProfile(
-    id: 'an_456',
+  'Aron Neil': const User(
+    userId: 'an_456',
     name: 'Aron Neil',
     introduction:
         "I own two lovely cats and often need reliable sitters when I travel for work. I value communication and reliability.",
@@ -121,8 +121,8 @@ final Map<String, SupporterProfile> mockUserProfiles = {
     positiveFeedback: ["Clear instructions", "Friendly"],
     negativeFeedback: [],
   ),
-  'Jared Dang': const SupporterProfile(
-    id: 'jd_789',
+  'Jared Dang': const User(
+    userId: 'jd_789',
     name: 'Jared Dang',
     introduction:
         "I travel often and need help keeping my home in order. I appreciate attention to detail.",

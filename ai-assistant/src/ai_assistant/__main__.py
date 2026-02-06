@@ -109,11 +109,11 @@ async def main():
     app.router.add_get('/favorites', app_endpoints.get_favorites)
     app.router.add_post('/favorites/{id}', app_endpoints.add_favorite)
     app.router.add_delete('/favorites/{id}', app_endpoints.remove_favorite)
-    app.router.add_get('/profile', app_endpoints.get_profile)
-    app.router.add_put('/profile', app_endpoints.update_profile)
-    app.router.add_post('/profile/competencies', app_endpoints.add_competence)
-    app.router.add_delete('/profile/competencies/{competence}', app_endpoints.remove_competence)
-    app.router.add_get('/users/{id}/profile', app_endpoints.get_other_profile)
+    app.router.add_get('/user', app_endpoints.get_user)
+    app.router.add_put('/user', app_endpoints.update_user)
+    app.router.add_post('/user/competencies', app_endpoints.add_competence)
+    app.router.add_delete('/user/competencies/{competence}', app_endpoints.remove_competence)
+    app.router.add_get('/users/{id}/user', app_endpoints.get_other_user)
     
     # Register admin routes
     admin_service.register_routes(app)

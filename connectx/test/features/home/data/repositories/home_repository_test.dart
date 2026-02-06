@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:connectx/features/home/data/repositories/home_repository.dart';
 import 'package:connectx/models/service_request.dart';
-import 'package:connectx/models/supporter_profile.dart';
+import 'package:connectx/models/user.dart';
 import 'package:connectx/services/api_service.dart';
 import '../../../../helpers/test_helpers.mocks.dart';
 
@@ -20,7 +20,7 @@ void main() {
       // Arrange
       final mockJsonList = [
         {
-          'id': '1',
+          'service_request_id': 'req_1',
           'title': 'Test Request',
           'amount_value': 100.0,
           'currency': '€',
@@ -62,11 +62,11 @@ void main() {
   });
 
   group('getFavorites', () {
-    test('returns list of SupporterProfiles on successful API call', () async {
+    test('returns list of Users on successful API call', () async {
        // Arrange
       final mockJsonList = [
         {
-          'id': 'user_1',
+          'user_id': 'user_1',
           'name': 'Supporter 1',
           'introduction': 'Intro',
           'competencies': ['A', 'B'],
@@ -82,7 +82,7 @@ void main() {
       final result = await repository.getFavorites();
 
       // Assert
-      expect(result, isA<List<SupporterProfile>>());
+      expect(result, isA<List<User>>());
       expect(result.length, 1);
       expect(result.first.name, 'Supporter 1');
     });

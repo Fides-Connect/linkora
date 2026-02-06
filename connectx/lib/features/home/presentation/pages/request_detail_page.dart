@@ -5,7 +5,7 @@ import '../../../../localization/app_localizations.dart';
 import '../../../../models/service_request.dart';
 import '../../../../utils/service_request_extensions.dart';
 import '../viewmodels/home_tab_view_model.dart';
-import 'profile_detail_page.dart';
+import 'user_detail_page.dart';
 
 class RequestDetailPage extends StatelessWidget {
   final ServiceRequest request;
@@ -95,24 +95,24 @@ class RequestDetailPage extends StatelessWidget {
                       );
                       
                       try {
-                        final profile = await viewModel.getOtherProfile(request.userName);
+                        final user = await viewModel.getOtherUser(request.userName);
                         
                         // Close loading indicator
                         if (context.mounted) Navigator.pop(context);
                         
-                        if (profile != null && context.mounted) {
+                        if (user != null && context.mounted) {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (_) => ChangeNotifierProvider.value(
                                 value: viewModel,
-                                child: ProfileDetailPage(profile: profile),
+                                child: UserDetailPage(user: user),
                               ),
                             ),
                           );
                         } else if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(localizations?.featureNotAvailable ?? 'Profile not found')),
+                            SnackBar(content: Text(localizations?.featureNotAvailable ?? 'User not found')),
                           );
                         }
                       } catch (e) {

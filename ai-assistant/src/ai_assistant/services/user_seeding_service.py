@@ -46,18 +46,13 @@ class UserSeedingService:
         # Prepare data from template
         initials = "".join([n[0] for n in name.split() if n]).upper()[:2]
         
-        # Profile Data - We construct the Firetore profile object manually to match the script logic
-        # But wait, user_sync endpoint already updates/creates the profile in Firestore.
-        # We only need to add the EXTRA data: requests, favorites, etc.
-        # However, to be safe, we can merge what we have in the template.
-        
-        # 1. Update Profile with Template Defaults (intro, competencies, feedback)
-        profile_update = {k: v for k, v in USER_TEMPLATE.items() if k not in ["requests", "favorites"]}
+        # 1. Update User with Template Defaults (intro, competencies, feedback)
+        user_update = {k: v for k, v in USER_TEMPLATE.items() if k not in ["requests", "favorites"]}
         # Remove dynamic fields we might not want to overwrite if they exist, but here we assume new user
         # user_id, name, email are already handled by user_sync
         
-        # We use the existing update_user_profile method which does a set with merge=True
-        await self.firestore_service.update_user_profile(user_id, profile_update)
+        # We use the existing update_user_user method which does a set with merge=True
+        await self.firestore_service.update_user(user_id, user_update)
         
         # 2. Create Sample Requests
         requests = USER_TEMPLATE.get("requests", [])
@@ -72,14 +67,6 @@ class UserSeedingService:
             req_data["user_name"] = req_data["user_name"].format(name=name)
             req_data["user_initials"] = req_data["user_initials"].format(initials=initials)
             
-            # Use raw Firestore collection access for setting specifically with ID
-            # firestore_service.create_request generates a random ID, but we want structured IDs for tests?
-            # actually random IDs are fine for real users, but the template has ID field.
-            # Let's check firestore_service. It has a `_get_collection` method but it's internal.
-            # We can use `create_request` but that adds valid `createdAt`. 
-            # The template requests have dates.
-            # Let's access the DB directly through the service property I added in previous turn.
-            
             try:
                 requests_ref = self.firestore_service.db.collection('requests') # access public prop
                 requests_ref.document(req_id).set(req_data, merge=True)
@@ -91,12 +78,12 @@ class UserSeedingService:
         # Ensure Alice exists first
         user_a_id = USER_A["user_id"]
         try:
-            alice_profile_data = {k:v for k,v in USER_A.items() if k != "favorites"}
-            await self.firestore_service.update_user_profile(user_a_id, alice_profile_data)
+            alice_user_data = {k:v for k,v in USER_A.items() if k != "favorites"}
+            await self.firestore_service.update_user(user_a_id, alice_user_data)
             
             # Add to user's favorites
             # We can use add_favorite service method
-            alice_for_fav = copy.deepcopy(alice_profile_data)
+            alice_for_fav = copy.deepcopy(alice_user_data)
             alice_for_fav['id'] = user_a_id
             await self.firestore_service.add_favorite(user_id, alice_for_fav)
             logger.info(f"Added default favorite {user_a_id} for user {user_id}")

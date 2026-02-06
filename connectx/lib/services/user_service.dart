@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/foundation.dart';
 
-/// Service for managing user profile sync and FCM token registration
+/// Service for managing user sync and FCM token registration
 class UserService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -47,7 +47,7 @@ class UserService {
     }
   }
 
-  /// Sync user profile with backend
+  /// Sync user with backend
   /// Creates or updates user record with FCM token
   Future<Map<String, dynamic>?> syncUserWithBackend() async {
     try {

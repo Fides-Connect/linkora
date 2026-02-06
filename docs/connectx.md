@@ -222,7 +222,7 @@ connectx/
 │   ├── models/                        # Data models
 │   │   ├── chat_message.dart          # Chat message model
 │   │   ├── service_request.dart       # Service request model
-│   │   └── supporter_profile.dart     # Profile & favorites model
+│   │   └── user.dart                  # User & favorites model
 │   │
 │   ├── services/                      # Business logic
 │   │   ├── auth_service.dart          # Firebase authentication

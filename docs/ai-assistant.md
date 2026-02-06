@@ -405,7 +405,7 @@ WS /ws
 GET /api/users/me
 Authorization: Bearer <firebase-token>
 
-# Update user profile
+# Update user
 PUT /api/users/me
 Authorization: Bearer <firebase-token>
 Body: {"name": "John Doe", "email": "john@example.com"}

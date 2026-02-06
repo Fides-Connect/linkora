@@ -298,12 +298,12 @@ class AppLocalizations {
     return MessagesEN.languageGerman;
   }
 
-  // Supporter Profile
-  String get menuSupporterProfile {
+  // Profile
+  String get menuUser {
     if (locale.languageCode == 'de') {
-      return MessagesDE.menuSupporterProfile;
+      return MessagesDE.menuProfile;
     }
-    return MessagesEN.menuSupporterProfile;
+    return MessagesEN.menuProfile;
   }
 
   String get competenciesTitle {
