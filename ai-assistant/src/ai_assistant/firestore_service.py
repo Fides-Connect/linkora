@@ -223,27 +223,44 @@ class FirestoreService:
             logger.error(f"Error updating {user_id}: {e}")
             return False
 
-    async def add_competence(self, user_id: str, competence: str) -> bool:
-        """Add a competence to user."""
+    async def add_competence(self, user_id: str, competence: dict) -> bool:
+        """Add a competence to user's competencies subcollection.
+        
+        Args:
+            user_id: The user's ID
+            competence: Dictionary with 'title' (required), 'description', 'category', 'price_range' (optional)
+        """
         if not self.db:
             return False
         try:
-            ref = self._get_collection('users').document(user_id)
-            # Atomically add to array
-            ref.update({'competencies': firestore.ArrayUnion([competence])})
+            title = competence.get('title')
+            if not title:
+                logger.error(f"Competence missing title for user {user_id}")
+                return False
+            
+            # Add document to competencies subcollection
+            competencies_ref = self._get_collection('users').document(user_id).collection('competencies')
+            # Use the competence title as the document ID
+            competence_data = {
+                'title': title,
+                'description': competence.get('description', ''),
+                'category': competence.get('category', ''),
+                'price_range': competence.get('price_range', ''),
+            }
+            competencies_ref.document(title).set(competence_data)
             return True
         except Exception as e:
             logger.error(f"Error adding competence for {user_id}: {e}")
             return False
 
     async def remove_competence(self, user_id: str, competence: str) -> bool:
-        """Remove a competence from user."""
+        """Remove a competence from user's competencies subcollection."""
         if not self.db:
             return False
         try:
-            ref = self._get_collection('users').document(user_id)
-            # Atomically remove from array
-            ref.update({'competencies': firestore.ArrayRemove([competence])})
+            # Delete document from competencies subcollection
+            competencies_ref = self._get_collection('users').document(user_id).collection('competencies')
+            competencies_ref.document(competence).delete()
             return True
         except Exception as e:
             logger.error(f"Error removing competence for {user_id}: {e}")

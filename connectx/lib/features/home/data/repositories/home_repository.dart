@@ -127,7 +127,14 @@ class HomeRepository {
   /// Returns the updated user.
   Future<User> addCompetence(String competence) async {
     try {
-      await _apiService.post('/user/competencies', body: {'competence': competence});
+      // Create competence object with title field (other fields can be added later)
+      final competenceObj = {
+        'title': competence,
+        'description': '',
+        'category': '',
+        'price_range': '',
+      };
+      await _apiService.post('/user/competencies', body: {'competence': competenceObj});
       // Fetch fresh user from server
       return getUser();
     } catch (e) {

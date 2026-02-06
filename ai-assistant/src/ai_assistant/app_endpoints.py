@@ -185,8 +185,8 @@ async def add_competence(request: web.Request) -> web.Response:
         body = await request.json()
         competence = body.get('competence')
         
-        if not competence:
-            return web.json_response({"error": "Missing competence"}, status=400)
+        if not competence or not isinstance(competence, dict) or 'title' not in competence:
+            return web.json_response({"error": "Missing or invalid competence object. Must include 'title' field."}, status=400)
             
         success = await firestore_service.add_competence(user_id, competence)
         if success:
