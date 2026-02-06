@@ -106,15 +106,33 @@ class FirestoreService:
 
     # --- Favorites Operations ---
 
-    async def get_favorites(self, user_id: str) -> List[str]:
-        """Fetch user's favorite supporter IDs."""
+    async def get_favorites(self, user_id: str) -> List[Dict[str, Any]]:
+        """Fetch user's favorite users with full user data."""
         if not self.db:
             return []
         try:
             doc = self._get_collection('users').document(user_id).get()
             if doc.exists:
                 data = doc.to_dict()
-                return data.get('favorites', [])
+                favorite_ids = data.get('favorites', [])
+                
+                # Fetch full user data for each favorite user ID
+                favorite_users = []
+                for favorite_id in favorite_ids:
+                    user_data = await self.get_user(favorite_id)
+                    if user_data:
+                        # Transform to match the User model expected by Flutter
+                        favorite_users.append({
+                            'user_id': user_data.get('user_id', favorite_id),
+                            'name': user_data.get('name', ''),
+                            'introduction': user_data.get('introduction', ''),
+                            'competencies': user_data.get('competencies', []),
+                            'average_rating': user_data.get('average_rating', 0.0),
+                            'review_count': user_data.get('review_count', 0),
+                            'positive_feedback': user_data.get('positive_feedback', []),
+                            'negative_feedback': user_data.get('negative_feedback', [])
+                        })
+                return favorite_users
             return []
         except Exception as e:
             logger.error(f"Error fetching favorites for {user_id}: {e}")

@@ -109,7 +109,7 @@ async def add_favorite(request: web.Request) -> web.Response:
         user = await firestore_service.get_user(favorite_user_id)
         
         if not user:
-             return web.json_response({"error": "Supporter not found"}, status=404)
+             return web.json_response({"error": "User not found"}, status=404)
 
         # Add to favorites
         success = await firestore_service.add_favorite(user_id, user)
@@ -127,9 +127,9 @@ async def remove_favorite(request: web.Request) -> web.Response:
     """DELETE /favorites/{id}"""
     try:
         user_id = await get_current_user_id(request)
-        supporter_id = request.match_info['id']
+        favorite_user_id = request.match_info['id']
         
-        success = await firestore_service.remove_favorite(user_id, supporter_id)
+        success = await firestore_service.remove_favorite(user_id, favorite_user_id)
         if success:
              return web.json_response({"status": "removed"})
         else:
