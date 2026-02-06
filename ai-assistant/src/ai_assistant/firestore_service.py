@@ -63,7 +63,7 @@ class FirestoreService:
             for req in requests:
                 # Add seeker user info
                 if 'seeker_user_id' in req:
-                    seeker = await self.get_user(req['seeker_user_id'], include_competencies=False)
+                    seeker = await self.get_user(req['seeker_user_id'])
                     if seeker and 'name' in seeker:
                         req['seeker_user_name'] = seeker['name']
                         req['seeker_user_initials'] = "".join([n[0] for n in seeker['name'].split() if n]).upper()[:2]
@@ -73,14 +73,13 @@ class FirestoreService:
                 
                 # Add provider user info
                 if 'provider_user_id' in req:
-                    provider = await self.get_user(req['provider_user_id'], include_competencies=False)
+                    provider = await self.get_user(req['provider_user_id'])
                     if provider and 'name' in provider:
                         req['provider_user_name'] = provider['name']
                         req['provider_user_initials'] = "".join([n[0] for n in provider['name'].split() if n]).upper()[:2]
                     else:
                         req['provider_user_name'] = ''
                         req['provider_user_initials'] = ''
-            
             return requests
 
         except Exception as e:
@@ -95,9 +94,6 @@ class FirestoreService:
             # Ensure timestamps are set
             if 'createdAt' not in request_data:
                 request_data['createdAt'] = datetime.utcnow()
-            
-            # The Dart client sends fields matching ServiceRequest.toJson()
-            # We can save it as is or map it. Saving as is is safer for now.
             update_time, ref = self._get_collection('requests').add(request_data)
             return ref.id
         except Exception as e:
@@ -195,7 +191,7 @@ class FirestoreService:
             return []
 
     async def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get user with optional competencies from subcollection."""
+        """Get user with competencies from subcollection."""
         if not self.db:
             return None
         try:

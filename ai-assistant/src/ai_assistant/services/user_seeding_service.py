@@ -75,9 +75,15 @@ class UserSeedingService:
             # Create a deep copy to modify
             req_data = copy.deepcopy(req)
             
-            # Format dynamic values
+            # Format dynamic values - replace {uid} with actual user_id
             req_id = req_data["service_request_id"].format(uid=user_id)
             req_data["service_request_id"] = req_id
+            
+            # Replace {uid} in seeker_user_id and provider_user_id
+            if "seeker_user_id" in req_data and "{uid}" in req_data["seeker_user_id"]:
+                req_data["seeker_user_id"] = req_data["seeker_user_id"].format(uid=user_id)
+            if "provider_user_id" in req_data and "{uid}" in req_data["provider_user_id"]:
+                req_data["provider_user_id"] = req_data["provider_user_id"].format(uid=user_id)
             
             try:
                 requests_ref = self.firestore_service.db.collection('requests') # access public prop

@@ -34,7 +34,6 @@ USER_TEMPLATE_SERVICE_REQUESTS = [
         "seeker_user_id": "user_eva_005",
         "provider_user_id": "{uid}",
         "category": "Technology",
-        "type": "incoming",
         "status": "pending",
         "location": "Berlin, Germany",
     },
@@ -50,7 +49,6 @@ USER_TEMPLATE_SERVICE_REQUESTS = [
         "seeker_user_id": "{uid}",
         "provider_user_id": "user_eva_005",
         "category": "Gardening",
-        "type": "outgoing",
         "status": "accepted",
         "location": "Munich, Germany",
     },
@@ -66,7 +64,6 @@ USER_TEMPLATE_SERVICE_REQUESTS = [
         "seeker_user_id": "{uid}",
         "provider_user_id": "user_david_004",
         "category": "Electrical",
-        "type": "outgoing",
         "status": "pending",
         "location": "Frankfurt, Germany",
     }
