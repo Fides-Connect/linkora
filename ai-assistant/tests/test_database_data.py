@@ -22,35 +22,53 @@ USER_TEMPLATE = {
 }
 
 USER_TEMPLATE_SERVICE_REQUESTS = [
+    # Request 1: New user is provider for User A (Alice Professional)
     {
-        "service_request_id": "request_{uid}_001", # Template for ID
-        "title": "Need help with Python project",
-        "description": "I need an expert to help me structure my AI project properly.",
-        "amount_value": 50.0,
-        "currency": "EUR",
-        "start_date": "2026-02-10T10:00:00.000000",
-        "end_date": "2026-02-10T14:00:00.000000",
-        "user_name": "{name}", # Template
-        "user_initials": "{initials}", # Template
-        "category": "technology",
-        "type": "outgoing",
-        "status": "accepted",
-        "location": "Berlin, Germany",
-    },
-    {
-        "service_request_id": "request_{uid}_002", # Template for ID
-        "title": "Gardening Advice",
-        "description": "My plants are dying, please help! Need diagnosis and tips.",
-        "amount_value": 30.0,
+        "service_request_id": "request_{uid}_001",
+        "title": "Printer Setup and Troubleshooting",
+        "description": "Need help setting up a new printer and fixing connectivity issues. Prefer someone with IT experience.",
+        "amount_value": 80.0,
         "currency": "EUR",
         "start_date": "2026-02-15T09:00:00.000000",
-        "end_date": "2026-02-15T10:00:00.000000",
-        "user_name": "{name}", # Template 
-        "user_initials": "{initials}", # Template
-        "category": "gardening",
+        "end_date": "2026-02-15T11:00:00.000000",
+        "seeker_user_id": "user_eva_005",
+        "provider_user_id": "{uid}",
+        "category": "Technology",
+        "type": "incoming",
+        "status": "pending",
+        "location": "Berlin, Germany",
+    },
+    # Request 2: New user is seeker, provider is User E (Eva Enthusiast)
+    {
+        "service_request_id": "request_{uid}_002",
+        "title": "Garden Design",
+        "description": "Looking for creative garden design and landscaping planning services.",
+        "amount_value": 120.0,
+        "currency": "EUR",
+        "start_date": "2026-03-01T10:00:00.000000",
+        "end_date": "2026-03-01T12:00:00.000000",
+        "seeker_user_id": "{uid}",
+        "provider_user_id": "user_eva_005",
+        "category": "Gardening",
+        "type": "outgoing",
+        "status": "accepted",
+        "location": "Munich, Germany",
+    },
+    # Request 3: New user is seeker, provider is User D (David Generalist)
+    {
+        "service_request_id": "request_{uid}_003",
+        "title": "General Electrical Work",
+        "description": "Need help with wiring and installation for a new apartment.",
+        "amount_value": 200.0,
+        "currency": "EUR",
+        "start_date": "2026-03-10T09:00:00.000000",
+        "end_date": "2026-03-10T13:00:00.000000",
+        "seeker_user_id": "{uid}",
+        "provider_user_id": "user_david_004",
+        "category": "Electrical",
         "type": "outgoing",
         "status": "pending",
-        "location": "Munich, Germany",
+        "location": "Frankfurt, Germany",
     }
 ]
 

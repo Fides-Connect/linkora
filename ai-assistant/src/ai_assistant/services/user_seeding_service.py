@@ -78,9 +78,6 @@ class UserSeedingService:
             # Format dynamic values
             req_id = req_data["service_request_id"].format(uid=user_id)
             req_data["service_request_id"] = req_id
-            req_data["userId"] = user_id
-            req_data["user_name"] = req_data["user_name"].format(name=name)
-            req_data["user_initials"] = req_data["user_initials"].format(initials=initials)
             
             try:
                 requests_ref = self.firestore_service.db.collection('requests') # access public prop

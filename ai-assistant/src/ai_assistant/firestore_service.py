@@ -44,14 +44,43 @@ class FirestoreService:
         try:         
             requests_ref = self._get_collection('requests')
             
-            # Requests created by user
-            query1 = requests_ref.where(filter=FieldFilter("userId", "==", user_id)).stream()
+            # Fetch requests where user is seeker or provider
+            query1 = requests_ref.where(filter=FieldFilter("seeker_user_id", "==", user_id)).stream()
             for doc in query1:
                 data = doc.to_dict()
                 data['id'] = doc.id
                 requests.append(data)
             
-            # TODO: Requests where user is a supporter (in supporters array)
+            query2 = requests_ref.where(filter=FieldFilter("provider_user_id", "==", user_id)).stream()
+            for doc in query2:
+                data = doc.to_dict()
+                data['id'] = doc.id
+                # Avoid duplicates
+                if not any(r['id'] == data['id'] for r in requests):
+                    requests.append(data)
+            
+            # Enrich requests with user names and initials
+            for req in requests:
+                # Add seeker user info
+                if 'seeker_user_id' in req:
+                    seeker = await self.get_user(req['seeker_user_id'], include_competencies=False)
+                    if seeker and 'name' in seeker:
+                        req['seeker_user_name'] = seeker['name']
+                        req['seeker_user_initials'] = "".join([n[0] for n in seeker['name'].split() if n]).upper()[:2]
+                    else:
+                        req['seeker_user_name'] = ''
+                        req['seeker_user_initials'] = ''
+                
+                # Add provider user info
+                if 'provider_user_id' in req:
+                    provider = await self.get_user(req['provider_user_id'], include_competencies=False)
+                    if provider and 'name' in provider:
+                        req['provider_user_name'] = provider['name']
+                        req['provider_user_initials'] = "".join([n[0] for n in provider['name'].split() if n]).upper()[:2]
+                    else:
+                        req['provider_user_name'] = ''
+                        req['provider_user_initials'] = ''
+            
             return requests
 
         except Exception as e:
