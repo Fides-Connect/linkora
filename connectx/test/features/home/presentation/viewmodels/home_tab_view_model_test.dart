@@ -52,20 +52,24 @@ void main() {
 
     test('filters requests into incoming and outgoing', () async {
       // Arrange
-      final req1 = ServiceRequest(
-          service_request_id: '1', title: 'In', amountValue: 10, startDate: DateTime(2023),
-          userName: 'U', userInitials: 'I', category: ServiceCategory.housekeeping,
-          type: RequestType.incoming, status: RequestStatus.pending, description: '', location: ''
-      );
-      final req2 = ServiceRequest(
-          service_request_id: '2', title: 'Out', amountValue: 10, startDate: DateTime(2023),
-          userName: 'U', userInitials: 'I', category: ServiceCategory.housekeeping,
-          type: RequestType.outgoing, status: RequestStatus.pending, description: '', location: ''
-      );
-      
       final mockUser = User(
           userId: 'user_1', name: 'Me', introduction: 'Hi', competencies: [], averageRating: 0,
           reviewCount: 0, positiveFeedback: [], negativeFeedback: []
+      );
+      
+      final req1 = ServiceRequest(
+          service_request_id: '1', title: 'In', amountValue: 10, startDate: DateTime(2023),
+          seekerUserId: 'other_user', seekerUserName: 'Other', seekerUserInitials: 'OU',
+          providerUserId: 'user_1', providerUserName: 'Me', providerUserInitials: 'ME',
+          category: ServiceCategory.housekeeping,
+          status: RequestStatus.pending, description: '', location: ''
+      );
+      final req2 = ServiceRequest(
+          service_request_id: '2', title: 'Out', amountValue: 10, startDate: DateTime(2023),
+          seekerUserId: 'user_1', seekerUserName: 'Me', seekerUserInitials: 'ME',
+          providerUserId: 'other_user', providerUserName: 'Other', providerUserInitials: 'OU',
+          category: ServiceCategory.housekeeping,
+          status: RequestStatus.pending, description: '', location: ''
       );
       
       when(mockRepository.getRequests()).thenAnswer((_) async => [req1, req2]);

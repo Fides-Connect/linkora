@@ -196,18 +196,19 @@ class HomeRepository {
     // Fallback logic moved from RequestDetailPage
     await Future.delayed(const Duration(milliseconds: 500));
 
-    // Try to find a request by this user to determine which mock user to return
+    // Try to find a request by this user ID to determine which mock user to return
     // In a real app, we would look up by userId directly.
-    // Here we use the name mapping logic that was in UI
     
-    // Find request or use defaults
+    // Find request where the userId matches seeker or provider
     final request = _localMockRequests.firstWhere(
-      (r) => r.userName == userId || r.service_request_id == userId, 
+      (r) => r.seekerUserId == userId || r.providerUserId == userId || r.service_request_id == userId, 
       orElse: () => _localMockRequests.first
     );
 
-    if (mockUsers.containsKey(request.userName)) {
-      return mockUsers[request.userName];
+    // Try to match with seeker or provider names
+    final userName = request.seekerUserId == userId ? request.seekerUserName : request.providerUserName;
+    if (mockUsers.containsKey(userName)) {
+      return mockUsers[userName];
     }
     
     return null;
@@ -245,10 +246,13 @@ class HomeRepository {
            currency: original.currency,
            startDate: original.startDate,
            endDate: original.endDate,
-           userName: original.userName,
-           userInitials: original.userInitials,
+           seekerUserId: original.seekerUserId,
+           seekerUserName: original.seekerUserName,
+           seekerUserInitials: original.seekerUserInitials,
+           providerUserId: original.providerUserId,
+           providerUserName: original.providerUserName,
+           providerUserInitials: original.providerUserInitials,
            category: original.category,
-           type: original.type,
            status: status,
            updateText: original.updateText,
            description: original.description,

@@ -65,13 +65,20 @@ class RequestDetailPage extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Text(
-                          request.amount,
-                          style: TextStyle(
-                            color: request.amount.startsWith('+') ? Colors.greenAccent : Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Builder(
+                          builder: (context) {
+                            final viewModel = context.read<HomeTabViewModel>();
+                            final currentUserId = viewModel.user?.userId ?? '';
+                            final amount = request.getAmount(currentUserId);
+                            return Text(
+                              amount,
+                              style: TextStyle(
+                                color: amount.startsWith('+') ? Colors.greenAccent : Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            );
+                          },
                         ),
                         const SizedBox(height: 16),
                         // Status
@@ -95,7 +102,13 @@ class RequestDetailPage extends StatelessWidget {
                       );
                       
                       try {
-                        final user = await viewModel.getOtherUser(request.userName);
+                        // Get the other user's ID based on request type
+                        final currentUserId = viewModel.user?.userId ?? '';
+                        final otherUserId = request.getType(currentUserId) == RequestType.incoming
+                            ? request.seekerUserId
+                            : request.providerUserId;
+                        
+                        final user = await viewModel.getOtherUser(otherUserId);
                         
                         // Close loading indicator
                         if (context.mounted) Navigator.pop(context);
@@ -133,25 +146,39 @@ class RequestDetailPage extends StatelessWidget {
                           CircleAvatar(
                             radius: 25,
                             backgroundColor: Colors.white.withValues(alpha: 0.2),
-                            child: Text(
-                              request.userInitials,
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            child: Builder(
+                              builder: (context) {
+                                final viewModel = context.read<HomeTabViewModel>();
+                                final currentUserId = viewModel.user?.userId ?? '';
+                                final isIncoming = request.getType(currentUserId) == RequestType.incoming;
+                                return Text(
+                                  isIncoming ? request.seekerUserInitials : request.providerUserInitials,
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                );
+                              },
                             ),
                           ),
                           const SizedBox(width: 16),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  request.userName,
-                                  style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
-                                ),
-                                Text(
-                                  request.type == RequestType.incoming ? 'Requester' : 'Provider',
-                                  style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
-                                ),
-                              ],
+                            child: Builder(
+                              builder: (context) {
+                                final viewModel = context.read<HomeTabViewModel>();
+                                final currentUserId = viewModel.user?.userId ?? '';
+                                final isIncoming = request.getType(currentUserId) == RequestType.incoming;
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      isIncoming ? request.seekerUserName : request.providerUserName,
+                                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(
+                                      isIncoming ? 'Requester' : 'Provider',
+                                      style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
                           ),
                           const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
@@ -197,10 +224,70 @@ class RequestDetailPage extends StatelessWidget {
                   const SizedBox(height: 48),
 
                   // Actions
-                  if (request.type == RequestType.incoming)
-                    Row(
-                      children: [
-                        Expanded(
+                  Builder(
+                    builder: (context) {
+                      final viewModel = context.read<HomeTabViewModel>();
+                      final currentUserId = viewModel.user?.userId ?? '';
+                      final requestType = request.getType(currentUserId);
+                      
+                      if (requestType == RequestType.incoming) {
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.redAccent.withValues(alpha: 0.8),
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(
+                                            localizations?.featureNotAvailable ??
+                                                'N/A')),
+                                  );
+                                },
+                                child: Text(
+                                  localizations?.rejectButton ?? 'Reject',
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 16),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blueAccent,
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                ),
+                                onPressed: () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                        content: Text(
+                                            localizations?.featureNotAvailable ??
+                                                'N/A')),
+                                  );
+                                },
+                                child: Text(
+                                  localizations?.acceptButton ?? 'Accept',
+                                  style: const TextStyle(
+                                      color: Colors.white, fontSize: 16),
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                      
+                      if (requestType == RequestType.outgoing &&
+                          request.status == RequestStatus.waitingForAnswer) {
+                        return SizedBox(
+                          width: double.infinity,
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.redAccent.withValues(alpha: 0.8),
@@ -211,69 +298,22 @@ class RequestDetailPage extends StatelessWidget {
                             onPressed: () {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                    content: Text(
-                                        localizations?.featureNotAvailable ??
-                                            'N/A')),
+                                    content: Text(localizations?.featureNotAvailable ??
+                                        'Feature not available')),
                               );
                             },
                             child: Text(
-                              localizations?.rejectButton ?? 'Reject',
+                              localizations?.cancelRequestButton ?? 'Cancel Request',
                               style: const TextStyle(
                                   color: Colors.white, fontSize: 16),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blueAccent,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ),
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content: Text(
-                                        localizations?.featureNotAvailable ??
-                                            'N/A')),
-                              );
-                            },
-                            child: Text(
-                              localizations?.acceptButton ?? 'Accept',
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 16),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  if (request.type == RequestType.outgoing &&
-                      request.status == RequestStatus.waitingForAnswer)
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.redAccent.withValues(alpha: 0.8),
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                                content: Text(localizations?.featureNotAvailable ??
-                                    'Feature not available')),
-                          );
-                        },
-                        child: Text(
-                          localizations?.cancelRequestButton ?? 'Cancel Request',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 16),
-                        ),
-                      ),
-                    ),
+                        );
+                      }
+                      
+                      return const SizedBox.shrink();
+                    },
+                  ),
                 ],
               ),
             ),
@@ -300,6 +340,14 @@ class RequestDetailPage extends StatelessWidget {
       case RequestStatus.completed:
         color = Colors.green;
         text = localizations?.completed ?? 'Completed';
+        break;
+      case RequestStatus.accepted:
+        color = Colors.green;
+        text = 'Accepted';
+        break;
+      case RequestStatus.rejected:
+        color = Colors.red;
+        text = 'Rejected';
         break;
       default:
         color = Colors.grey;

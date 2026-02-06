@@ -5,8 +5,9 @@ import '../localization/app_localizations.dart';
 import '../models/service_category.dart';
 
 extension ServiceRequestFormatting on ServiceRequest {
-  String get amount {
-    final prefix = type == RequestType.incoming ? '+ ' : '- ';
+  String getAmount(String currentUserId) {
+    final requestType = getType(currentUserId);
+    final prefix = requestType == RequestType.incoming ? '+ ' : '- ';
     return '$prefix${amountValue.toStringAsFixed(2)} $currency';
   }
 

@@ -150,13 +150,13 @@ class HomeTabPage extends StatelessWidget {
                       radius: 20,
                       backgroundColor: Colors.white.withValues(alpha: 0.2),
                       child: Text(
-                        request.userInitials,
+                        request.seekerUserInitials,
                         style: const TextStyle(color: Colors.white),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      request.userName,
+                      request.seekerUserName,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.7),
                         fontSize: 12,
@@ -167,13 +167,18 @@ class HomeTabPage extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              request.amount,
-              style: const TextStyle(
-                color: Colors
-                    .white,
-                fontSize: 16,
-              ),
+            Builder(
+              builder: (context) {
+                final viewModel = context.read<HomeTabViewModel>();
+                final currentUserId = viewModel.user?.userId ?? '';
+                return Text(
+                  request.getAmount(currentUserId),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 16),
             Row(
@@ -289,13 +294,13 @@ class HomeTabPage extends StatelessWidget {
                       radius: 20,
                       backgroundColor: Colors.white.withValues(alpha: 0.2),
                       child: Text(
-                        request.userInitials,
+                        request.providerUserInitials,
                         style: const TextStyle(color: Colors.white),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      request.userName,
+                      request.providerUserName,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.7),
                         fontSize: 12,
@@ -306,9 +311,15 @@ class HomeTabPage extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              request.amount,
-              style: const TextStyle(color: Colors.white, fontSize: 16),
+            Builder(
+              builder: (context) {
+                final viewModel = context.read<HomeTabViewModel>();
+                final currentUserId = viewModel.user?.userId ?? '';
+                return Text(
+                  request.getAmount(currentUserId),
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                );
+              },
             ),
             const SizedBox(height: 16),
             Row(

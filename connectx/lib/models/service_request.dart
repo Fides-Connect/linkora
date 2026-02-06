@@ -10,10 +10,13 @@ class ServiceRequest {
   final String currency;
   final DateTime startDate;
   final DateTime? endDate;
-  final String userName;
-  final String userInitials;
+  final String seekerUserId;
+  final String seekerUserName;
+  final String seekerUserInitials;
+  final String providerUserId;
+  final String providerUserName;
+  final String providerUserInitials;
   final ServiceCategory category;
-  final RequestType type;
   final RequestStatus status;
   final String? updateText;
   final String description;
@@ -26,10 +29,13 @@ class ServiceRequest {
     this.currency = '€',
     required this.startDate,
     this.endDate,
-    required this.userName,
-    required this.userInitials,
+    required this.seekerUserId,
+    required this.seekerUserName,
+    required this.seekerUserInitials,
+    required this.providerUserId,
+    required this.providerUserName,
+    required this.providerUserInitials,
     required this.category,
-    required this.type,
     required this.status,
     this.updateText,
     required this.description,
@@ -44,11 +50,13 @@ class ServiceRequest {
       currency: json['currency'] as String? ?? '€',
       startDate: DateTime.parse(json['start_date'] as String),
       endDate: json['end_date'] != null ? DateTime.parse(json['end_date'] as String) : null,
-      userName: json['user_name'] as String,
-      userInitials: json['user_initials'] as String,
+      seekerUserId: json['seeker_user_id'] as String,
+      seekerUserName: json['seeker_user_name'] as String,
+      seekerUserInitials: json['seeker_user_initials'] as String,
+      providerUserId: json['provider_user_id'] as String,
+      providerUserName: json['provider_user_name'] as String,
+      providerUserInitials: json['provider_user_initials'] as String,
       category: ServiceCategoryExtension.fromJson(json['category'] as String),
-      type: RequestType.values.asNameMap()[json['type'] as String] ??
-          RequestType.unknown,
       status: RequestStatus.values.asNameMap()[json['status'] as String] ??
           RequestStatus.unknown,
       updateText: json['update_text'] as String?,
@@ -65,14 +73,27 @@ class ServiceRequest {
       'currency': currency,
       'start_date': startDate.toIso8601String(),
       'end_date': endDate?.toIso8601String(),
-      'user_name': userName,
-      'user_initials': userInitials,
+      'seeker_user_id': seekerUserId,
+      'seeker_user_name': seekerUserName,
+      'seeker_user_initials': seekerUserInitials,
+      'provider_user_id': providerUserId,
+      'provider_user_name': providerUserName,
+      'provider_user_initials': providerUserInitials,
       'category': category.toJson(),
-      'type': type.name,
       'status': status.name,
       'update_text': updateText,
       'description': description,
       'location': location,
     };
+  }
+
+  /// Derives the request type based on the current user ID
+  RequestType getType(String currentUserId) {
+    if (currentUserId == seekerUserId) {
+      return RequestType.outgoing;
+    } else if (currentUserId == providerUserId) {
+      return RequestType.incoming;
+    }
+    return RequestType.unknown;
   }
 }

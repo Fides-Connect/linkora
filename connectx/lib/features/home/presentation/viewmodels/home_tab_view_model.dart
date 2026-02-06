@@ -30,12 +30,15 @@ class HomeTabViewModel extends ChangeNotifier {
     notifyListeners();
 
     try {
+      _user = await _repository.getUser();
       final requests = await _repository.getRequests();
-      _incomingRequests = requests.where((r) => r.type == RequestType.incoming).toList();
-      _outgoingRequests = requests.where((r) => r.type == RequestType.outgoing).toList();
+      
+      // Use getType() method with current user's ID to determine request type
+      final currentUserId = _user?.userId ?? '';
+      _incomingRequests = requests.where((r) => r.getType(currentUserId) == RequestType.incoming).toList();
+      _outgoingRequests = requests.where((r) => r.getType(currentUserId) == RequestType.outgoing).toList();
       
       _favorites = await _repository.getFavorites();
-      _user = await _repository.getUser();
     } catch (e) {
       _error = e.toString();
     } finally {
