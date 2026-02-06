@@ -55,9 +55,24 @@ USER_TEMPLATE_SERVICE_REQUESTS = [
 ]
 
 USER_TEMPLATE_COMPETENCES = [
-    "Software Development",
-    "Project Management",
-    "Flutter"
+    {
+        "title": "Software Development",
+        "description": "Professional software development services including architecture, design, and implementation.",
+        "category": "Technology",
+        "price_range": "$80-$150/hour",
+    },
+    {
+        "title": "Project Management",
+        "description": "Expert project management for software and tech projects.",
+        "category": "Technology",
+        "price_range": "$100-$200/hour",
+    },
+    {
+        "title": "Flutter",
+        "description": "Mobile app development using Flutter framework.",
+        "category": "Technology",
+        "price_range": "$90-$180/hour",
+    }
 ]
 
 # --- Test Personas ---

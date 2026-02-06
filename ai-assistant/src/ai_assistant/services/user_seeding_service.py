@@ -50,10 +50,23 @@ class UserSeedingService:
         
         # 1. Update User with Template Defaults (intro, competencies, feedback)
         user_update = {k: v for k, v in USER_TEMPLATE.items()}
-        user_update['competencies'] = USER_TEMPLATE_COMPETENCES
         
         # We use the existing update_user_user method which does a set with merge=True
         await self.firestore_service.update_user(user_id, user_update)
+        
+        # 1b. Add Competencies Subcollection
+        for i, comp in enumerate(USER_TEMPLATE_COMPETENCES):
+            comp_id = f"{user_id}_comp_{i+1}"
+            comp_ref = self.firestore_service.db.collection('users').document(user_id).collection('competencies').document(comp_id)
+            
+            comp_doc = {
+                'competence_id': comp_id,
+                'title': comp.get('title', ''),
+                'description': comp.get('description', ''),
+                'category': comp.get('category', ''),
+                'price_range': comp.get('price_range', '')
+            }
+            comp_ref.set(comp_doc)
         
         # 2. Create Sample Requests
         requests = USER_TEMPLATE_SERVICE_REQUESTS

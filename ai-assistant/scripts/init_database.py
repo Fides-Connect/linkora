@@ -170,9 +170,7 @@ def init_firestore(test_data):
                 'positive_feedback': p_data.get('positive_feedback', []),
                 'negative_feedback': p_data.get('negative_feedback', []),
                 'average_rating': p_data.get('average_rating', 5.0),
-                'review_count': p_data.get('review_count', 0),
-                # 'competencies' is an Array of strings (titles) for quick access in the User object
-                'competencies': [c['title'] for c in c_data_list]
+                'review_count': p_data.get('review_count', 0)
             }
             
             batch.set(user_ref, user_doc)
