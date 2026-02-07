@@ -69,6 +69,60 @@ USER_TEMPLATE_SERVICE_REQUESTS = [
     }
 ]
 
+USER_TEMPLATE_PROVIDER_CANDIDATES = [
+    # Candidates for request_001 (New user is selected provider)
+    [
+        {
+            "provider_candidate_id": "candidate_{uid}_001_1",
+            "service_request_id": "request_{uid}_001",
+            "provider_candidate_user_id": "user_alice_001",
+            "matching_score": 85.5,
+            "matching_score_reasons": ["Has relevant IT experience", "High rating", "Available in requested timeframe"]
+        },
+        {
+            "provider_candidate_id": "candidate_{uid}_001_2",
+            "service_request_id": "request_{uid}_001",
+            "provider_candidate_user_id": "user_david_004",
+            "matching_score": 78.2,
+            "matching_score_reasons": ["General technical skills", "Good availability", "Positive reviews"]
+        },
+    ],
+    # Candidates for request_002 (Eva is selected provider, new user is seeker)
+    [
+        {
+            "provider_candidate_id": "candidate_{uid}_002_1",
+            "service_request_id": "request_{uid}_002",
+            "provider_candidate_user_id": "user_david_004",
+            "matching_score": 75.0,
+            "matching_score_reasons": ["Versatile skillset", "Good availability", "Willing to try gardening"]
+        },
+        {
+            "provider_candidate_id": "candidate_{uid}_002_2",
+            "service_request_id": "request_{uid}_002",
+            "provider_candidate_user_id": "user_alice_001",
+            "matching_score": 65.5,
+            "matching_score_reasons": ["Willing to try new tasks", "Good communicator"]
+        },
+    ],
+    # Candidates for request_003 (David is selected provider, new user is seeker)
+    [
+        {
+            "provider_candidate_id": "candidate_{uid}_003_1",
+            "service_request_id": "request_{uid}_003",
+            "provider_candidate_user_id": "user_alice_001",
+            "matching_score": 88.0,
+            "matching_score_reasons": ["Expert in electrical work", "High rating", "Verified professional"]
+        },
+        {
+            "provider_candidate_id": "candidate_{uid}_003_2",
+            "service_request_id": "request_{uid}_003",
+            "provider_candidate_user_id": "user_eva_005",
+            "matching_score": 45.0,
+            "matching_score_reasons": ["Willing to learn", "Some basic electrical knowledge"]
+        },
+    ],
+]
+
 USER_TEMPLATE_COMPETENCES = [
     {
         "title": "Software Development",

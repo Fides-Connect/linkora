@@ -19,7 +19,7 @@ if project_root not in sys.path:
 from ..firestore_service import FirestoreService
 
 try:
-    from tests.test_database_data import USER_TEMPLATE, USER_TEMPLATE_SERVICE_REQUESTS, USER_TEMPLATE_COMPETENCES, USER_A
+    from tests.test_database_data import USER_TEMPLATE, USER_TEMPLATE_SERVICE_REQUESTS, USER_TEMPLATE_COMPETENCES, USER_TEMPLATE_PROVIDER_CANDIDATES, USER_A
 except ImportError:
     # Fallback or error if tests are not present (e.g. lean docker build)
     # Ideally tests/test_database_data.py should be moved to src/ if it's needed here.
@@ -27,6 +27,7 @@ except ImportError:
     USER_TEMPLATE = {}
     USER_TEMPLATE_SERVICE_REQUESTS = []
     USER_TEMPLATE_COMPETENCES = []
+    USER_TEMPLATE_PROVIDER_CANDIDATES = []
     USER_A = {}
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class UserSeedingService:
         
         # 2. Create Sample Requests
         requests = USER_TEMPLATE_SERVICE_REQUESTS
-        for req in requests:
+        for idx, req in enumerate(requests):
             # Create a deep copy to modify
             req_data = copy.deepcopy(req)
             
@@ -89,6 +90,26 @@ class UserSeedingService:
                 requests_ref = self.firestore_service.db.collection('requests') # access public prop
                 requests_ref.document(req_id).set(req_data, merge=True)
                 logger.info(f"Created seed request: {req_id}")
+                
+                # 2b. Add Provider Candidates as Subcollection
+                if idx < len(USER_TEMPLATE_PROVIDER_CANDIDATES):
+                    candidates = USER_TEMPLATE_PROVIDER_CANDIDATES[idx]
+                    for candidate in candidates:
+                        candidate_data = copy.deepcopy(candidate)
+                        
+                        # Replace {uid} in candidate fields
+                        candidate_id = candidate_data["provider_candidate_id"].format(uid=user_id)
+                        candidate_data["provider_candidate_id"] = candidate_id
+                        candidate_data["service_request_id"] = req_id
+                        
+                        if "{uid}" in candidate_data.get("provider_candidate_user_id", ""):
+                            candidate_data["provider_candidate_user_id"] = candidate_data["provider_candidate_user_id"].format(uid=user_id)
+                        
+                        # Store in provider_candidates subcollection
+                        candidate_ref = requests_ref.document(req_id).collection('provider_candidates').document(candidate_id)
+                        candidate_ref.set(candidate_data)
+                        logger.info(f"Created provider candidate: {candidate_id} for request {req_id}")
+                        
             except Exception as e:
                 logger.error(f"Failed to seed request {req_id}: {e}")
 
