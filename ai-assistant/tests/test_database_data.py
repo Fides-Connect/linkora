@@ -346,9 +346,41 @@ REQ_TEST_001 = {
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
+# --- Test Provider Candidates ---
+
+PROV_CAND_TEST_001_ALICE = {
+    'provider_candidate_id': "cand_test_001_alice",
+    'service_request_id': "req_test_001",
+    'provider_candidate_user_id': "user_alice_001",
+    'matching_score': 95.0,
+    'matching_score_reasons': ["Expert in electrical work", "High rating", "Available in timeframe"],
+    # Note: created_at and updated_at will be set dynamically in init script
+}
+
+PROV_CAND_TEST_001_DAVID = {
+    'provider_candidate_id': "cand_test_001_david",
+    'service_request_id': "req_test_001",
+    'provider_candidate_user_id': "user_david_004",
+    'matching_score': 78.0,
+    'matching_score_reasons': ["General technical skills", "Good availability"],
+    # Note: created_at and updated_at will be set dynamically in init script
+}
+
+PROV_CAND_TEST_002_CHARLIE = {
+    'provider_candidate_id': "cand_test_002_charlie",
+    'service_request_id': "req_test_002",
+    'provider_candidate_user_id': "user_charlie_003",
+    'matching_score': 88.0,
+    'matching_score_reasons': ["Expert electrician", "Has done panel upgrades before"],
+    # Note: created_at and updated_at will be set dynamically in init script
+}
+
+# --- Test Chats ---
+
 CHAT_TEST_001 = {
     'chat_id': "chat_test_001",
     'service_request_id': "req_test_001",
+    'provider_candidate_id': "cand_test_001_alice",
     'title': "Pot Light Inquiry",
     # Chat Messages will be stored in subcollection
     # Note: created_at and updated_at will be set dynamically in init script
@@ -408,10 +440,11 @@ REQ_TEST_002_GHOST = {
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
-# Scenario 3: Ongoing chat between User A and AI
+# Scenario 3: Ongoing chat between User A and AI for req_test_001
 CHAT_TEST_002_PRO = {
     'chat_id': "chat_test_002",
-    'service_request_id': None, # General inquiry
+    'service_request_id': "req_test_001",
+    'provider_candidate_id': "cand_test_001_alice",
     'title': "Availability Update",
     # Note: created_at and updated_at will be set dynamically in init script
 }
@@ -427,6 +460,7 @@ CHAT_MSG_TEST_002_1 = {
 
 
 # Collections for easy iteration in init script
+TEST_PROVIDER_CANDIDATES = [PROV_CAND_TEST_001_ALICE, PROV_CAND_TEST_001_DAVID, PROV_CAND_TEST_002_CHARLIE]
 TEST_SERVICE_REQUESTS = [REQ_TEST_001, REQ_TEST_002_GHOST]
 TEST_CHATS = [CHAT_TEST_001, CHAT_TEST_002_PRO]
 TEST_CHAT_MESSAGES = [CHAT_MSG_TEST_001_1, CHAT_MSG_TEST_001_2, CHAT_MSG_TEST_002_1]

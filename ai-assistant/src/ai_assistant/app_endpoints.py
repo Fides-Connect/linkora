@@ -464,7 +464,7 @@ async def delete_review(request: web.Request) -> web.Response:
 async def create_chat(request: web.Request) -> web.Response:
     """Create a new chat.
     
-    POST /chats
+    POST /provider_candidates/{provider_candidate_id}/chats
     Body: {
         "title": "Chat title",
         "service_request_id": "service_request_xyz"
@@ -472,6 +472,7 @@ async def create_chat(request: web.Request) -> web.Response:
     """
     try:
         await get_current_user_id(request)
+        provider_candidate_id = request.match_info.get('provider_candidate_id')
         body = await request.json()
         
         # Validate required fields
@@ -480,20 +481,19 @@ async def create_chat(request: web.Request) -> web.Response:
             if field not in body:
                 return web.json_response({"error": f"Missing required field: {field}"}, status=400)
         
-        from datetime import datetime
         chat_data = {
             'title': body['title'],
-            'service_request_id': body['service_request_id'],
-            'created_at': datetime.utcnow()
+            'service_request_id': body['service_request_id']
         }
         
-        chat_id = await firestore_service.create_chat(chat_data)
+        chat_id = await firestore_service.create_chat(provider_candidate_id, chat_data)
         
         if not chat_id:
             return web.json_response({"error": "Failed to create chat"}, status=500)
         
         return web.json_response({
             "chat_id": chat_id,
+            "provider_candidate_id": provider_candidate_id,
             "status": "created"
         }, status=201)
     except web.HTTPException:
@@ -506,13 +506,14 @@ async def create_chat(request: web.Request) -> web.Response:
 async def get_chat(request: web.Request) -> web.Response:
     """Get a chat by ID.
     
-    GET /chats/{chat_id}
+    GET /provider_candidates/{provider_candidate_id}/chats/{chat_id}
     """
     try:
         await get_current_user_id(request)
+        provider_candidate_id = request.match_info.get('provider_candidate_id')
         chat_id = request.match_info.get('chat_id')
         
-        chat = await firestore_service.get_chat(chat_id)
+        chat = await firestore_service.get_chat(provider_candidate_id, chat_id)
         
         if not chat:
             return web.json_response({"error": "Chat not found"}, status=404)
@@ -530,7 +531,7 @@ async def get_chat(request: web.Request) -> web.Response:
 async def get_chats_for_request(request: web.Request) -> web.Response:
     """Get all chats for a service request.
     
-    GET /chats/request/{request_id}
+    GET /requests/{request_id}/chats
     """
     try:
         await get_current_user_id(request)
@@ -548,20 +549,53 @@ async def get_chats_for_request(request: web.Request) -> web.Response:
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
+async def get_chats_for_provider_candidate(request: web.Request) -> web.Response:
+    """Get all chats for a specific provider_candidate.
+    
+    GET /provider_candidates/{provider_candidate_id}/chats
+    """
+    try:
+        await get_current_user_id(request)
+        provider_candidate_id = request.match_info.get('provider_candidate_id')
+        
+        # We need the service_request_id from query params
+        service_request_id = request.query.get('service_request_id')
+        if not service_request_id:
+            return web.json_response({"error": "Missing service_request_id query parameter"}, status=400)
+        
+        chats = await firestore_service.get_chats_by_provider_candidate(provider_candidate_id, service_request_id)
+        
+        # Handle datetime serialization
+        chats = serialize_datetime(chats)
+        return web.json_response({"chats": chats})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting chats for provider_candidate: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
 async def update_chat(request: web.Request) -> web.Response:
     """Update a chat.
     
-    PATCH /chats/{chat_id}
+    PATCH /provider_candidates/{provider_candidate_id}/chats/{chat_id}
+    Query params: service_request_id
     Body: {
         "title": "Updated title"
     }
     """
     try:
         await get_current_user_id(request)
+        provider_candidate_id = request.match_info.get('provider_candidate_id')
         chat_id = request.match_info.get('chat_id')
+        service_request_id = request.query.get('service_request_id')
+        
+        if not service_request_id:
+            return web.json_response({"error": "Missing service_request_id query parameter"}, status=400)
+        
         body = await request.json()
         
-        success = await firestore_service.update_chat(chat_id, body)
+        success = await firestore_service.update_chat(provider_candidate_id, chat_id, service_request_id, body)
         
         if not success:
             return web.json_response({"error": "Failed to update chat"}, status=500)
@@ -577,13 +611,19 @@ async def update_chat(request: web.Request) -> web.Response:
 async def delete_chat(request: web.Request) -> web.Response:
     """Delete a chat and all its messages.
     
-    DELETE /chats/{chat_id}
+    DELETE /provider_candidates/{provider_candidate_id}/chats/{chat_id}
+    Query params: service_request_id
     """
     try:
         await get_current_user_id(request)
+        provider_candidate_id = request.match_info.get('provider_candidate_id')
         chat_id = request.match_info.get('chat_id')
+        service_request_id = request.query.get('service_request_id')
         
-        success = await firestore_service.delete_chat(chat_id)
+        if not service_request_id:
+            return web.json_response({"error": "Missing service_request_id query parameter"}, status=400)
+        
+        success = await firestore_service.delete_chat(provider_candidate_id, chat_id, service_request_id)
         
         if not success:
             return web.json_response({"error": "Failed to delete chat"}, status=500)
@@ -601,16 +641,22 @@ async def delete_chat(request: web.Request) -> web.Response:
 async def create_chat_message(request: web.Request) -> web.Response:
     """Create a new chat message.
     
-    POST /chats/{chat_id}/messages
+    POST /provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages
+    Query params: service_request_id
     Body: {
-        "sender_user_id": "user_abc",
         "receiver_user_id": "user_def",
         "message": "Hello!"
     }
     """
     try:
         sender_user_id = await get_current_user_id(request)
+        provider_candidate_id = request.match_info.get('provider_candidate_id')
         chat_id = request.match_info.get('chat_id')
+        service_request_id = request.query.get('service_request_id')
+        
+        if not service_request_id:
+            return web.json_response({"error": "Missing service_request_id query parameter"}, status=400)
+        
         body = await request.json()
         
         # Validate required fields
@@ -619,14 +665,13 @@ async def create_chat_message(request: web.Request) -> web.Response:
             if field not in body:
                 return web.json_response({"error": f"Missing required field: {field}"}, status=400)
         
-        from datetime import datetime
         message_data = {
             'sender_user_id': sender_user_id,  # Use authenticated user
             'receiver_user_id': body['receiver_user_id'],
             'message': body['message']
         }
         
-        message_id = await firestore_service.create_chat_message(chat_id, message_data)
+        message_id = await firestore_service.create_chat_message(provider_candidate_id, chat_id, service_request_id, message_data)
         
         if not message_id:
             return web.json_response({"error": "Failed to create message"}, status=500)
@@ -645,16 +690,21 @@ async def create_chat_message(request: web.Request) -> web.Response:
 async def get_chat_messages(request: web.Request) -> web.Response:
     """Get all messages for a chat.
     
-    GET /chats/{chat_id}/messages?limit=100
+    GET /provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages?service_request_id=xxx&limit=100
     """
     try:
         await get_current_user_id(request)
+        provider_candidate_id = request.match_info.get('provider_candidate_id')
         chat_id = request.match_info.get('chat_id')
+        service_request_id = request.query.get('service_request_id')
+        
+        if not service_request_id:
+            return web.json_response({"error": "Missing service_request_id query parameter"}, status=400)
         
         # Get limit from query params
         limit = int(request.query.get('limit', 100))
         
-        messages = await firestore_service.get_chat_messages(chat_id, limit=limit)
+        messages = await firestore_service.get_chat_messages(provider_candidate_id, chat_id, service_request_id, limit=limit)
         
         # Handle datetime serialization
         messages = serialize_datetime(messages)
@@ -669,14 +719,19 @@ async def get_chat_messages(request: web.Request) -> web.Response:
 async def get_chat_message(request: web.Request) -> web.Response:
     """Get a specific chat message.
     
-    GET /chats/{chat_id}/messages/{message_id}
+    GET /provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages/{message_id}?service_request_id=xxx
     """
     try:
         await get_current_user_id(request)
+        provider_candidate_id = request.match_info.get('provider_candidate_id')
         chat_id = request.match_info.get('chat_id')
         message_id = request.match_info.get('message_id')
+        service_request_id = request.query.get('service_request_id')
         
-        message = await firestore_service.get_chat_message(chat_id, message_id)
+        if not service_request_id:
+            return web.json_response({"error": "Missing service_request_id query parameter"}, status=400)
+        
+        message = await firestore_service.get_chat_message(provider_candidate_id, chat_id, service_request_id, message_id)
         
         if not message:
             return web.json_response({"error": "Message not found"}, status=404)
@@ -694,18 +749,24 @@ async def get_chat_message(request: web.Request) -> web.Response:
 async def update_chat_message(request: web.Request) -> web.Response:
     """Update a chat message.
     
-    PATCH /chats/{chat_id}/messages/{message_id}
+    PATCH /provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages/{message_id}?service_request_id=xxx
     Body: {
         "message": "Updated message text"
     }
     """
     try:
         await get_current_user_id(request)
+        provider_candidate_id = request.match_info.get('provider_candidate_id')
         chat_id = request.match_info.get('chat_id')
         message_id = request.match_info.get('message_id')
+        service_request_id = request.query.get('service_request_id')
+        
+        if not service_request_id:
+            return web.json_response({"error": "Missing service_request_id query parameter"}, status=400)
+        
         body = await request.json()
         
-        success = await firestore_service.update_chat_message(chat_id, message_id, body)
+        success = await firestore_service.update_chat_message(provider_candidate_id, chat_id, service_request_id, message_id, body)
         
         if not success:
             return web.json_response({"error": "Failed to update message"}, status=500)
@@ -721,14 +782,19 @@ async def update_chat_message(request: web.Request) -> web.Response:
 async def delete_chat_message(request: web.Request) -> web.Response:
     """Delete a chat message.
     
-    DELETE /chats/{chat_id}/messages/{message_id}
+    DELETE /provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages/{message_id}?service_request_id=xxx
     """
     try:
         await get_current_user_id(request)
+        provider_candidate_id = request.match_info.get('provider_candidate_id')
         chat_id = request.match_info.get('chat_id')
         message_id = request.match_info.get('message_id')
+        service_request_id = request.query.get('service_request_id')
         
-        success = await firestore_service.delete_chat_message(chat_id, message_id)
+        if not service_request_id:
+            return web.json_response({"error": "Missing service_request_id query parameter"}, status=400)
+        
+        success = await firestore_service.delete_chat_message(provider_candidate_id, chat_id, service_request_id, message_id)
         
         if not success:
             return web.json_response({"error": "Failed to delete message"}, status=500)

@@ -89,13 +89,14 @@ def get_test_data():
         return {
             'personas': test_database_data.TEST_PERSONAS,
             'requests': getattr(test_database_data, 'TEST_SERVICE_REQUESTS', []),
+            'provider_candidates': getattr(test_database_data, 'TEST_PROVIDER_CANDIDATES', []),
             'chats': getattr(test_database_data, 'TEST_CHATS', []),
             'chat_messages': getattr(test_database_data, 'TEST_CHAT_MESSAGES', []),
             'reviews': getattr(test_database_data, 'TEST_REVIEWS', [])
         }
     except ImportError:
         logger.error("Could not import test data from tests/test_database_data.py")
-        return {'personas': [], 'requests': [], 'chats': [], 'reviews': []}
+        return {'personas': [], 'requests': [], 'provider_candidates': [], 'chats': [], 'reviews': []}
 
 
 def clean_firestore_collection(coll_ref, batch_size=50):
@@ -219,14 +220,46 @@ def init_firestore(test_data):
             req_ref.set(req)
         logger.info(f"  ✓ {len(requests)} Service Requests created")
     
-    # 4. Create Chat Sessions and Messages
+    # 3b. Create Provider Candidates as subcollections
+    provider_candidates = test_data.get('provider_candidates', [])
+    if provider_candidates:
+        for candidate in provider_candidates:
+            req_id = candidate.get('service_request_id')
+            cand_id = candidate.get('provider_candidate_id', 'unknown_candidate')
+            
+            if not req_id:
+                continue
+                
+            cand_ref = db.collection('requests').document(req_id).collection('provider_candidates').document(cand_id)
+            
+            # Add dynamic timestamps if missing
+            if 'created_at' not in candidate:
+                candidate['created_at'] = datetime.datetime.now(timezone.utc)
+            if 'updated_at' not in candidate:
+                candidate['updated_at'] = datetime.datetime.now(timezone.utc)
+                
+            cand_ref.set(candidate)
+        logger.info(f"  ✓ {len(provider_candidates)} Provider Candidates created")
+    
+    # 4. Create Chat Sessions and Messages as subcollections under provider_candidates
     chats = test_data.get('chats', [])
     messages = test_data.get('chat_messages', [])
     
     if chats:
         for chat in chats:
             chat_id = chat.get('chat_id', 'unknown_chat')
-            chat_ref = db.collection('chats').document(chat_id)
+            req_id = chat.get('service_request_id')
+            cand_id = chat.get('provider_candidate_id')
+            
+            # Skip chats without proper hierarchy (general inquiries)
+            if not req_id or not cand_id:
+                logger.warning(f"Skipping chat {chat_id}: missing service_request_id or provider_candidate_id")
+                continue
+            
+            # Chat is a subcollection under provider_candidate
+            chat_ref = (db.collection('requests').document(req_id)
+                       .collection('provider_candidates').document(cand_id)
+                       .collection('chats').document(chat_id))
             
             # Add dynamic timestamps if missing
             if 'created_at' not in chat:
@@ -244,10 +277,26 @@ def init_firestore(test_data):
                 chat_id = msg.get('chat_id')
                 if not chat_id:
                     continue
+                
+                # Find the chat to get its request_id and provider_candidate_id
+                chat_data = next((c for c in chats if c.get('chat_id') == chat_id), None)
+                if not chat_data:
+                    logger.warning(f"No chat found for message in chat {chat_id}")
+                    continue
+                    
+                req_id = chat_data.get('service_request_id')
+                cand_id = chat_data.get('provider_candidate_id')
+                
+                if not req_id or not cand_id:
+                    logger.warning(f"Skipping message in chat {chat_id}: missing hierarchy info")
+                    continue
                     
                 msg_id = msg.get('chat_message_id', f'msg_{count}')
                 # Subcollection 'messages' under 'chats' document
-                msg_ref = db.collection('chats').document(chat_id).collection('messages').document(msg_id)
+                msg_ref = (db.collection('requests').document(req_id)
+                          .collection('provider_candidates').document(cand_id)
+                          .collection('chats').document(chat_id)
+                          .collection('messages').document(msg_id))
                 
                 # Add dynamic timestamps if missing
                 if 'created_at' not in msg:
