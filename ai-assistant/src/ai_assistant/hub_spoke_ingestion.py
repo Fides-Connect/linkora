@@ -145,6 +145,7 @@ class HubSpokeIngestion:
                 properties={
                     "name": user_data.get("name"),
                     "email": user_data.get("email"),
+                    "location": user_data.get("location", ""),
                     "user_id": user_data.get("user_id"),
                     "type": user_data.get("type", "user"),
                     "is_service_provider": user_data.get("is_service_provider", False),

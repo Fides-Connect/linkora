@@ -28,6 +28,7 @@ class UserModelWeaviate:
                     "user_id": user_data.get("user_id"),
                     "name": user_data.get("name") or user_data.get("display_name", ""),
                     "email": user_data.get("email"),
+                    "location": user_data.get("location", ""),
                     "type": "client",  # Default type for users
                     "is_service_provider": user_data.get("is_service_provider", False),  # Default False for regular users
                     "photo_url": user_data.get("photo_url", ""),

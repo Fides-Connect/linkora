@@ -126,6 +126,7 @@ def init_hub_spoke_schema():
                     Property(name="user_id", data_type=DataType.TEXT),  # External ID (e.g. Firebase UID)
                     Property(name="name", data_type=DataType.TEXT),
                     Property(name="email", data_type=DataType.TEXT),
+                    Property(name="location", data_type=DataType.TEXT),
                     Property(name="type", data_type=DataType.TEXT),  # "client" or "provider"
                     Property(name="is_service_provider", data_type=DataType.BOOL),  # True if user offers services
                     Property(name="photo_url", data_type=DataType.TEXT),

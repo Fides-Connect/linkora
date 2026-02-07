@@ -8,6 +8,7 @@ USER_TEMPLATE = {
     # user_id matches firebase uid
     # name comes from auth provider
     # email comes from auth provider
+    "location": "Berlin, Germany",
     "introduction": "Passionate developer and tech enthusiast. I love building things and helping others.",
     "type": "user",
     "is_service_provider": True,
@@ -146,6 +147,7 @@ USER_A = {
     "user_id": "user_alice_001",
     "name": "Alice Professional",
     "email": "alice@example.com",
+    "location": "Berlin, Germany",
     "introduction": "Experienced electrician specializing in residential lighting installations.",
     "type": "user",
     "is_service_provider": True,  # Service provider
@@ -176,6 +178,7 @@ USER_B = {
     "user_id": "user_bob_002",
     "name": "Bob Spammer",
     "email": "bob@example.com",
+    "location": "Jakarta, Indonesia",
     "introduction": "I do everything! Plumbing, electrical, driving, teaching, you name it!",
     "type": "user",
     "is_service_provider": True,  # Service provider
@@ -206,6 +209,7 @@ USER_C = {
     "user_id": "user_charlie_003",
     "name": "Charlie Ghost",
     "email": "charlie@example.com",
+    "location": "London, UK",
     "introduction": "Master electrician with 20 years experience. Specialist in residential wiring and lighting installation.",
     "type": "user",
     "is_service_provider": True,  # Service provider
@@ -236,6 +240,7 @@ USER_D = {
     "user_id": "user_david_004",
     "name": "David Generalist",
     "email": "david@example.com",
+    "location": "New York, USA",
     "introduction": "Experienced in all types of electrical work including wiring, installations, and repairs.",
     "type": "user",
     "is_service_provider": True,  # Service provider
@@ -266,6 +271,7 @@ USER_E = {
     "user_id": "user_eva_005",
     "name": "Eva Enthusiast",
     "email": "eva@example.com",
+    "location": "Paris, France",
     "introduction": "Gardening enthusiast offering a variety of services for beautiful and healthy gardens.",
     "type": "user",
     "is_service_provider": True,  # Service provider
@@ -344,11 +350,7 @@ REQ_TEST_001 = {
     'start_date': "2026-02-15T09:00:00Z",
     'end_date': "2026-02-15T14:00:00Z",
     'category': "Electrical",
-    'location': {
-        'address': "123 Main St, Anytown",
-        'latitude': 40.7128,
-        'longitude': -74.0060,
-    },
+    'location': "Paris, France",
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
@@ -441,11 +443,7 @@ REQ_TEST_002_GHOST = {
     'start_date': "2025-01-10T08:00:00Z",
     'end_date': "2025-01-12T17:00:00Z",
     'category': "Electrical",
-    'location': {
-        'address': "456 Old Rd, Ghosttown",
-        'latitude': 40.7200,
-        'longitude': -74.0100,
-    },
+    'location': "Jakarta, Indonesia",
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
