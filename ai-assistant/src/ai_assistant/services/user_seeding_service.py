@@ -72,6 +72,7 @@ class UserSeedingService:
         # 1. Update User with Template Defaults (intro, competencies, feedback)
         user_update = {k: v for k, v in USER_TEMPLATE.items()}
         user_update['user_id'] = user_id
+        user_update['created_at'] = datetime.now(timezone.utc)
         
         # We use the existing update_user_user method which does a set with merge=True
         await self.firestore_service.update_user(user_id, user_update)

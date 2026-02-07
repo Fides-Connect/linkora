@@ -21,6 +21,8 @@ class ServiceRequest {
   final String? updateText;
   final String description;
   final String location;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   const ServiceRequest({
     required this.service_request_id,
@@ -40,6 +42,8 @@ class ServiceRequest {
     this.updateText,
     required this.description,
     required this.location,
+    this.createdAt,
+    this.updatedAt,
   });
 
   factory ServiceRequest.fromJson(Map<String, dynamic> json) {
@@ -62,6 +66,8 @@ class ServiceRequest {
       updateText: json['update_text'] as String?,
       description: json['description'] as String,
       location: json['location'] as String,
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'] as String) : null,
+      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'] as String) : null,
     );
   }
 
@@ -84,6 +90,8 @@ class ServiceRequest {
       'update_text': updateText,
       'description': description,
       'location': location,
+      'created_at': createdAt?.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
     };
   }
 

@@ -4,6 +4,8 @@ class Competence {
   final String description;
   final String category;
   final String priceRange;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   const Competence({
     required this.competenceId,
@@ -11,6 +13,8 @@ class Competence {
     this.description = '',
     this.category = '',
     this.priceRange = '',
+    this.createdAt,
+    this.updatedAt,
   });
 
   factory Competence.fromJson(Map<String, dynamic> json) {
@@ -20,6 +24,8 @@ class Competence {
       description: json['description'] as String? ?? '',
       category: json['category'] as String? ?? '',
       priceRange: json['price_range'] as String? ?? '',
+      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'] as String) : null,
+      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'] as String) : null,
     );
   }
 
@@ -30,6 +36,8 @@ class Competence {
       'description': description,
       'category': category,
       'price_range': priceRange,
+      'created_at': createdAt?.toIso8601String(),
+      'updated_at': updatedAt?.toIso8601String(),
     };
   }
 
@@ -41,9 +49,11 @@ class Competence {
         other.title == title &&
         other.description == description &&
         other.category == category &&
-        other.priceRange == priceRange;
+        other.priceRange == priceRange &&
+        other.createdAt == createdAt &&
+        other.updatedAt == updatedAt;
   }
 
   @override
-  int get hashCode => Object.hash(competenceId, title, description, category, priceRange);
+  int get hashCode => Object.hash(competenceId, title, description, category, priceRange, createdAt, updatedAt);
 }
