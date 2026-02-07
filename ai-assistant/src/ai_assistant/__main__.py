@@ -103,41 +103,41 @@ async def main():
     app.router.add_post('/user/logout', user_logout)
 
     # Register app endpoints
-    app.router.add_get('/requests', app_endpoints.get_requests)
-    app.router.add_post('/requests', app_endpoints.create_request)
-    app.router.add_put('/requests/{requestId}/status', app_endpoints.update_request_status)
+    app.router.add_get('/service_requests', app_endpoints.get_service_requests)
+    app.router.add_post('/service_requests', app_endpoints.create_service_request)
+    app.router.add_put('/service_requests/{service_request_id}/status', app_endpoints.update_service_request_status)
     app.router.add_get('/favorites', app_endpoints.get_favorites)
     app.router.add_post('/favorites/{user_id}', app_endpoints.add_favorite)
     app.router.add_delete('/favorites/{user_id}', app_endpoints.remove_favorite)
     app.router.add_get('/user', app_endpoints.get_user)
     app.router.add_put('/user', app_endpoints.update_user)
     app.router.add_post('/user/competencies', app_endpoints.add_competence)
-    app.router.add_delete('/user/competencies/{competence}', app_endpoints.remove_competence)
-    app.router.add_get('/users/{id}/user', app_endpoints.get_other_user)
+    app.router.add_delete('/user/competencies/{competence_id}', app_endpoints.remove_competence)
+    app.router.add_get('/users/{user_id}/user', app_endpoints.get_other_user)
     
     # Review routes
     app.router.add_post('/reviews', app_endpoints.create_review)
     app.router.add_get('/reviews/{review_id}', app_endpoints.get_review)
     app.router.add_get('/reviews/user/{user_id}', app_endpoints.get_reviews_for_user)
     app.router.add_get('/reviews/reviewer/{reviewer_user_id}', app_endpoints.get_reviews_by_reviewer)
-    app.router.add_get('/reviews/request/{request_id}', app_endpoints.get_reviews_for_request)
+    app.router.add_get('/reviews/service_request/{service_request_id}', app_endpoints.get_reviews_for_service_request)
     app.router.add_patch('/reviews/{review_id}', app_endpoints.update_review)
     app.router.add_delete('/reviews/{review_id}', app_endpoints.delete_review)
     
     # Chat routes
     app.router.add_post('/provider_candidates/{provider_candidate_id}/chats', app_endpoints.create_chat)
     app.router.add_get('/provider_candidates/{provider_candidate_id}/chats/{chat_id}', app_endpoints.get_chat)
-    app.router.add_get('/requests/{request_id}/chats', app_endpoints.get_chats_for_request)
+    app.router.add_get('/service_requests/{service_request_id}/chats', app_endpoints.get_chats_for_service_request)
     app.router.add_get('/provider_candidates/{provider_candidate_id}/chats', app_endpoints.get_chats_for_provider_candidate)
     app.router.add_patch('/provider_candidates/{provider_candidate_id}/chats/{chat_id}', app_endpoints.update_chat)
     app.router.add_delete('/provider_candidates/{provider_candidate_id}/chats/{chat_id}', app_endpoints.delete_chat)
     
     # Chat message routes
-    app.router.add_post('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages', app_endpoints.create_chat_message)
-    app.router.add_get('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages', app_endpoints.get_chat_messages)
-    app.router.add_get('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages/{message_id}', app_endpoints.get_chat_message)
-    app.router.add_patch('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages/{message_id}', app_endpoints.update_chat_message)
-    app.router.add_delete('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages/{message_id}', app_endpoints.delete_chat_message)
+    app.router.add_post('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages', app_endpoints.create_chat_message)
+    app.router.add_get('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages', app_endpoints.get_chat_messages)
+    app.router.add_get('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages/{chat_message_id}', app_endpoints.get_chat_message)
+    app.router.add_patch('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages/{chat_message_id}', app_endpoints.update_chat_message)
+    app.router.add_delete('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages/{chat_message_id}', app_endpoints.delete_chat_message)
     
     # Register admin routes
     admin_service.register_routes(app)

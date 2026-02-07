@@ -133,7 +133,7 @@ def init_firestore(test_data):
     logger.info("Initializing Firestore...")
     
     # Collections to clean based on Diagram
-    collections = ['users', 'requests', 'reviews', 'chat_sessions', 'chats']
+    collections = ['users', 'service_requests', 'reviews', 'chat_sessions', 'chats']
     
     # 1. Cleanup
     for coll_name in collections:
@@ -207,7 +207,7 @@ def init_firestore(test_data):
     requests = test_data.get('requests', [])
     if requests:
         for req in requests:
-            req_collection_name = 'requests'
+            req_collection_name = 'service_requests'
             req_id = req.get('service_request_id', 'unknown_req')
             req_ref = db.collection(req_collection_name).document(req_id)
             
@@ -230,7 +230,7 @@ def init_firestore(test_data):
             if not req_id:
                 continue
                 
-            cand_ref = db.collection('requests').document(req_id).collection('provider_candidates').document(cand_id)
+            cand_ref = db.collection('service_requests').document(req_id).collection('provider_candidates').document(cand_id)
             
             # Add dynamic timestamps if missing
             if 'created_at' not in candidate:
@@ -257,7 +257,7 @@ def init_firestore(test_data):
                 continue
             
             # Chat is a subcollection under provider_candidate
-            chat_ref = (db.collection('requests').document(req_id)
+            chat_ref = (db.collection('service_requests').document(req_id)
                        .collection('provider_candidates').document(cand_id)
                        .collection('chats').document(chat_id))
             
@@ -293,7 +293,7 @@ def init_firestore(test_data):
                     
                 msg_id = msg.get('chat_message_id', f'msg_{count}')
                 # Subcollection 'messages' under 'chats' document
-                msg_ref = (db.collection('requests').document(req_id)
+                msg_ref = (db.collection('service_requests').document(req_id)
                           .collection('provider_candidates').document(cand_id)
                           .collection('chats').document(chat_id)
                           .collection('messages').document(msg_id))
@@ -387,7 +387,7 @@ def main():
         if args.clean_only:
              # Just clean firestore
              if db:
-                 for c in ['users', 'requests', 'reviews', 'chat_sessions', 'chats']:
+                 for c in ['users', 'service_requests', 'reviews', 'chat_sessions', 'chats']:
                      clean_firestore_collection(db.collection(c))
              logger.info("✓ Firestore collections cleaned")
         else:

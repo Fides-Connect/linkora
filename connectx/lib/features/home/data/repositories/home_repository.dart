@@ -9,9 +9,9 @@ class HomeRepository {
       : _apiService = apiService ?? ApiService();
 
   /// Fetches the list of incoming and outgoing service requests.
-  /// Wraps API call to `GET /requests`.
+  /// Wraps API call to `GET /service_requests`.
   Future<List<ServiceRequest>> getRequests() async {
-    final data = await _apiService.get('/requests');
+    final data = await _apiService.get('/service_requests');
     if (data is List) {
       return data.map((json) => ServiceRequest.fromJson(json)).toList();
     }
@@ -97,14 +97,14 @@ class HomeRepository {
   }
 
   /// Creates a new service request.
-  /// Wraps API call to `POST /requests`.
+  /// Wraps API call to `POST /service_requests`.
   Future<void> createRequest(ServiceRequest request) async {
-    await _apiService.post('/requests', body: request.toJson());
+    await _apiService.post('/service_requests', body: request.toJson());
   }
 
   /// Updates the status (Accepted, Rejected, Completed) of an existing request.
-  /// Wraps API call to `PUT /requests/{requestId}/status`.
+  /// Wraps API call to `PUT /service_requests/{requestId}/status`.
   Future<void> updateRequestStatus(String requestId, RequestStatus status) async {
-    await _apiService.put('/requests/${Uri.encodeComponent(requestId)}/status', body: {'status': status.name});
+    await _apiService.put('/service_requests/${Uri.encodeComponent(requestId)}/status', body: {'status': status.name});
   }
 }

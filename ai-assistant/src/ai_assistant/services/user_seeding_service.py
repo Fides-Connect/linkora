@@ -95,7 +95,7 @@ class UserSeedingService:
             req_data['updated_at'] = datetime.now(timezone.utc)
             
             try:
-                requests_ref = self.firestore_service.db.collection('requests') # access public prop
+                requests_ref = self.firestore_service.db.collection('service_requests') # access public prop
                 requests_ref.document(req_id).set(req_data, merge=True)
                 logger.info(f"Created seed request: {req_id}")
                 

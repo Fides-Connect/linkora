@@ -37,7 +37,7 @@ void main() {
           'location': 'Test Loc',
         }
       ];
-      when(mockApiService.get('/requests')).thenAnswer((_) async => mockJsonList);
+      when(mockApiService.get('/service_requests')).thenAnswer((_) async => mockJsonList);
 
       // Act
       final result = await repository.getRequests();
@@ -46,14 +46,14 @@ void main() {
       expect(result, isA<List<ServiceRequest>>());
       expect(result.length, 1);
       expect(result.first.title, 'Test Request');
-      verify(mockApiService.get('/requests')).called(1);
+      verify(mockApiService.get('/service_requests')).called(1);
     });
 
     // We can't easily test fallback to 'mockRequests' because it is imported internally 
     // and potentially hardcoded. But we can verify it doesn't throw.
     test('returns fallback (not empty usually) on API failure', () async {
       // Arrange
-      when(mockApiService.get('/requests')).thenThrow(ApiException('Error'));
+      when(mockApiService.get('/service_requests')).thenThrow(ApiException('Error'));
 
       // Act
       final result = await repository.getRequests();

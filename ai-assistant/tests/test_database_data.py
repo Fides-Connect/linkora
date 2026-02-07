@@ -406,7 +406,7 @@ CHAT_MSG_TEST_001_2 = {
 
 REV_TEST_001 = {
     'review_id': "rev_test_001",
-    'request_id': "req_past_000",
+    'service_request_id': "req_past_000",
     'user_id': "user_alice_001",
     'reviewer_user_id': "user_eva_005",
     'rating': 5,

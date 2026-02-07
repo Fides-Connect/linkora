@@ -34,8 +34,8 @@ async def get_current_user_id(request: web.Request) -> str:
         logger.warning(f"Auth failed: {e}")
         raise web.HTTPUnauthorized(reason="Invalid authentication token")
 
-async def get_requests(request: web.Request) -> web.Response:
-    """GET /requests"""
+async def get_service_requests(request: web.Request) -> web.Response:
+    """GET /service_requests"""
     try:
         user_id = await get_current_user_id(request)
         requests = await firestore_service.get_requests(user_id)
@@ -45,11 +45,11 @@ async def get_requests(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in get_requests: {e}")
+        logger.error(f"Error in get_service_requests: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-async def create_request(request: web.Request) -> web.Response:
-    """POST /requests"""
+async def create_service_request(request: web.Request) -> web.Response:
+    """POST /service_requests"""
     try:
         user_id = await get_current_user_id(request)
         body = await request.json()
@@ -63,18 +63,18 @@ async def create_request(request: web.Request) -> web.Response:
         if request_id:
             return web.json_response({"id": request_id, "status": "created"}, status=201)
         else:
-            return web.json_response({"error": "Failed to create request"}, status=500)
+            return web.json_response({"error": "Failed to create service request"}, status=500)
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in create_request: {e}")
+        logger.error(f"Error in create_service_request: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-async def update_request_status(request: web.Request) -> web.Response:
-    """PUT /requests/{requestId}/status"""
+async def update_service_request_status(request: web.Request) -> web.Response:
+    """PUT /service_requests/{service_request_id}/status"""
     try:
         user_id = await get_current_user_id(request) # Auth check
-        request_id = request.match_info['requestId']
+        service_request_id = request.match_info['service_request_id']
         body = await request.json()
         status = body.get('status')
         
@@ -84,15 +84,15 @@ async def update_request_status(request: web.Request) -> web.Response:
         # TODO: Check if user is allowed to update this request (owner or provider)
         # For now, just update.
         
-        success = await firestore_service.update_request_status(request_id, status)
+        success = await firestore_service.update_request_status(service_request_id, status)
         if success:
             return web.json_response({"status": "updated"})
         else:
-            return web.json_response({"error": "Failed to update status"}, status=500)
+            return web.json_response({"error": "Failed to update service request status"}, status=500)
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in update_request_status: {e}")
+        logger.error(f"Error in update_service_request_status: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 async def get_favorites(request: web.Request) -> web.Response:
@@ -237,12 +237,12 @@ async def remove_competence(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 async def get_other_user(request: web.Request) -> web.Response:
-    """GET /users/{id}/user"""
+    """GET /users/{user_id}/user"""
     try:
         # We might require auth here too, to prevent scraping
         await get_current_user_id(request)
         
-        target_user_id = request.match_info['id']
+        target_user_id = request.match_info['user_id']
         user = await firestore_service.get_user(target_user_id)
         
         if user:
@@ -264,7 +264,7 @@ async def create_review(request: web.Request) -> web.Response:
     
     POST /reviews
     Body: {
-        "request_id": "service_request_xyz",
+        "service_request_id": "service_request_xyz",
         "user_id": "user_abc",
         "reviewer_user_id": "user_def",
         "rating": 5,
@@ -278,7 +278,7 @@ async def create_review(request: web.Request) -> web.Response:
         body = await request.json()
         
         # Validate required fields
-        required_fields = ['request_id', 'user_id', 'rating']
+        required_fields = ['service_request_id', 'user_id', 'rating']
         for field in required_fields:
             if field not in body:
                 return web.json_response({"error": f"Missing required field: {field}"}, status=400)
@@ -290,7 +290,7 @@ async def create_review(request: web.Request) -> web.Response:
         
         from datetime import datetime
         review_data = {
-            'request_id': body['request_id'],
+            'service_request_id': body['service_request_id'],
             'user_id': body['user_id'],
             'reviewer_user_id': reviewer_user_id,  # Use authenticated user
             'rating': rating,
@@ -382,16 +382,16 @@ async def get_reviews_by_reviewer(request: web.Request) -> web.Response:
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
-async def get_reviews_for_request(request: web.Request) -> web.Response:
+async def get_reviews_for_service_request(request: web.Request) -> web.Response:
     """Get all reviews for a service request.
     
-    GET /reviews/request/{request_id}
+    GET /reviews/service_request/{service_request_id}
     """
     try:
         await get_current_user_id(request)
-        request_id = request.match_info.get('request_id')
+        service_request_id = request.match_info.get('service_request_id')
         
-        reviews = await firestore_service.get_reviews_by_request(request_id)
+        reviews = await firestore_service.get_reviews_by_request(service_request_id)
         
         # Handle datetime serialization
         reviews = serialize_datetime(reviews)
@@ -399,7 +399,7 @@ async def get_reviews_for_request(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting reviews for request: {e}")
+        logger.error(f"Error getting reviews for service request: {e}")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -528,16 +528,16 @@ async def get_chat(request: web.Request) -> web.Response:
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
-async def get_chats_for_request(request: web.Request) -> web.Response:
+async def get_chats_for_service_request(request: web.Request) -> web.Response:
     """Get all chats for a service request.
     
-    GET /requests/{request_id}/chats
+    GET /service_requests/{service_request_id}/chats
     """
     try:
         await get_current_user_id(request)
-        request_id = request.match_info.get('request_id')
+        service_request_id = request.match_info.get('service_request_id')
         
-        chats = await firestore_service.get_chats_by_request(request_id)
+        chats = await firestore_service.get_chats_by_request(service_request_id)
         
         # Handle datetime serialization
         chats = serialize_datetime(chats)
@@ -545,7 +545,7 @@ async def get_chats_for_request(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting chats for request: {e}")
+        logger.error(f"Error getting chats for service request: {e}")
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -641,7 +641,7 @@ async def delete_chat(request: web.Request) -> web.Response:
 async def create_chat_message(request: web.Request) -> web.Response:
     """Create a new chat message.
     
-    POST /provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages
+    POST /provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages
     Query params: service_request_id
     Body: {
         "receiver_user_id": "user_def",
@@ -690,7 +690,7 @@ async def create_chat_message(request: web.Request) -> web.Response:
 async def get_chat_messages(request: web.Request) -> web.Response:
     """Get all messages for a chat.
     
-    GET /provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages?service_request_id=xxx&limit=100
+    GET /provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages?service_request_id=xxx&limit=100
     """
     try:
         await get_current_user_id(request)
@@ -719,13 +719,13 @@ async def get_chat_messages(request: web.Request) -> web.Response:
 async def get_chat_message(request: web.Request) -> web.Response:
     """Get a specific chat message.
     
-    GET /provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages/{message_id}?service_request_id=xxx
+    GET /provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages/{chat_message_id}?service_request_id=xxx
     """
     try:
         await get_current_user_id(request)
         provider_candidate_id = request.match_info.get('provider_candidate_id')
         chat_id = request.match_info.get('chat_id')
-        message_id = request.match_info.get('message_id')
+        message_id = request.match_info.get('chat_message_id')
         service_request_id = request.query.get('service_request_id')
         
         if not service_request_id:
@@ -749,7 +749,7 @@ async def get_chat_message(request: web.Request) -> web.Response:
 async def update_chat_message(request: web.Request) -> web.Response:
     """Update a chat message.
     
-    PATCH /provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages/{message_id}?service_request_id=xxx
+    PATCH /provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages/{chat_message_id}?service_request_id=xxx
     Body: {
         "message": "Updated message text"
     }
@@ -758,7 +758,7 @@ async def update_chat_message(request: web.Request) -> web.Response:
         await get_current_user_id(request)
         provider_candidate_id = request.match_info.get('provider_candidate_id')
         chat_id = request.match_info.get('chat_id')
-        message_id = request.match_info.get('message_id')
+        message_id = request.match_info.get('chat_message_id')
         service_request_id = request.query.get('service_request_id')
         
         if not service_request_id:
@@ -782,13 +782,13 @@ async def update_chat_message(request: web.Request) -> web.Response:
 async def delete_chat_message(request: web.Request) -> web.Response:
     """Delete a chat message.
     
-    DELETE /provider_candidates/{provider_candidate_id}/chats/{chat_id}/messages/{message_id}?service_request_id=xxx
+    DELETE /provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages/{chat_message_id}?service_request_id=xxx
     """
     try:
         await get_current_user_id(request)
         provider_candidate_id = request.match_info.get('provider_candidate_id')
         chat_id = request.match_info.get('chat_id')
-        message_id = request.match_info.get('message_id')
+        message_id = request.match_info.get('chat_message_id')
         service_request_id = request.query.get('service_request_id')
         
         if not service_request_id:

@@ -56,7 +56,7 @@ class FirestoreService:
         
         requests = []
         try:         
-            requests_ref = self._get_collection('requests')
+            requests_ref = self._get_collection('service_requests')
             
             # Fetch requests where user is seeker or provider
             query1 = requests_ref.where(filter=FieldFilter("seeker_user_id", "==", user_id)).stream()
@@ -117,7 +117,7 @@ class FirestoreService:
             request_data['updated_at'] = datetime.utcnow()
             
             # Create document with the prefixed ID
-            ref = self._get_collection('requests').document(service_request_id)
+            ref = self._get_collection('service_requests').document(service_request_id)
             ref.set(request_data)
             return service_request_id
         except Exception as e:
@@ -129,7 +129,7 @@ class FirestoreService:
         if not self.db:
             return False
         try:
-            ref = self._get_collection('requests').document(request_id)
+            ref = self._get_collection('service_requests').document(request_id)
             ref.update({
                 'status': status,
                 'updated_at': datetime.utcnow()
@@ -315,7 +315,7 @@ class FirestoreService:
         """Create a new review.
         
         Args:
-            review_data: Review data (should include request_id, user_id, reviewer_user_id, rating, etc.)
+            review_data: Review data (should include service_request_id, user_id, reviewer_user_id, rating, etc.)
             
         Returns:
             The generated review_id or None if failed
@@ -377,16 +377,16 @@ class FirestoreService:
             logger.error(f"Error getting reviews by reviewer {reviewer_user_id}: {e}")
             return []
 
-    async def get_reviews_by_request(self, request_id: str) -> List[Dict[str, Any]]:
+    async def get_reviews_by_request(self, service_request_id: str) -> List[Dict[str, Any]]:
         """Get all reviews for a service request."""
         if not self.db:
             return []
         try:
-            query = self._get_collection('reviews').where('request_id', '==', request_id)
+            query = self._get_collection('reviews').where('service_request_id', '==', service_request_id)
             docs = query.stream()
             return [doc.to_dict() for doc in docs]
         except Exception as e:
-            logger.error(f"Error getting reviews for request {request_id}: {e}")
+            logger.error(f"Error getting reviews for request {service_request_id}: {e}")
             return []
 
     async def update_review(self, review_id: str, update_data: Dict[str, Any]) -> bool:
@@ -519,7 +519,7 @@ class FirestoreService:
         if not self.db:
             return False
         try:
-            ref = (self._get_collection('requests')
+            ref = (self._get_collection('service_requests')
                    .document(service_request_id)
                    .collection('provider_candidates')
                    .document(provider_candidate_id)
@@ -543,7 +543,7 @@ class FirestoreService:
         if not self.db:
             return False
         try:
-            chat_ref = (self._get_collection('requests')
+            chat_ref = (self._get_collection('service_requests')
                        .document(service_request_id)
                        .collection('provider_candidates')
                        .document(provider_candidate_id)
@@ -591,7 +591,7 @@ class FirestoreService:
             message_data['updated_at'] = datetime.now(timezone.utc)
             
             # Create document in messages subcollection
-            ref = (self._get_collection('requests')
+            ref = (self._get_collection('service_requests')
                    .document(service_request_id)
                    .collection('provider_candidates')
                    .document(provider_candidate_id)
@@ -617,7 +617,7 @@ class FirestoreService:
         if not self.db:
             return []
         try:
-            messages_ref = (self._get_collection('requests')
+            messages_ref = (self._get_collection('service_requests')
                            .document(service_request_id)
                            .collection('provider_candidates')
                            .document(provider_candidate_id)
@@ -643,7 +643,7 @@ class FirestoreService:
         if not self.db:
             return None
         try:
-            doc = (self._get_collection('requests')
+            doc = (self._get_collection('service_requests')
                   .document(service_request_id)
                   .collection('provider_candidates')
                   .document(provider_candidate_id)
@@ -672,7 +672,7 @@ class FirestoreService:
         if not self.db:
             return False
         try:
-            ref = (self._get_collection('requests')
+            ref = (self._get_collection('service_requests')
                    .document(service_request_id)
                    .collection('provider_candidates')
                    .document(provider_candidate_id)
@@ -699,7 +699,7 @@ class FirestoreService:
         if not self.db:
             return False
         try:
-            (self._get_collection('requests')
+            (self._get_collection('service_requests')
              .document(service_request_id)
              .collection('provider_candidates')
              .document(provider_candidate_id)
