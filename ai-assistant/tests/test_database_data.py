@@ -73,12 +73,14 @@ USER_TEMPLATE_PROVIDER_CANDIDATES = [
         {
             "provider_candidate_user_id": "user_alice_001",
             "matching_score": 85.5,
-            "matching_score_reasons": ["Has relevant IT experience", "High rating", "Available in requested timeframe"]
+            "matching_score_reasons": ["Has relevant IT experience", "High rating", "Available in requested timeframe"],
+            "status": "contacted"
         },
         {
             "provider_candidate_user_id": "user_david_004",
             "matching_score": 78.2,
-            "matching_score_reasons": ["General technical skills", "Good availability", "Positive reviews"]
+            "matching_score_reasons": ["General technical skills", "Good availability", "Positive reviews"],
+            "status": "pending"
         },
     ],
     # Candidates for request_002 (Eva is selected provider, new user is seeker)
@@ -86,14 +88,16 @@ USER_TEMPLATE_PROVIDER_CANDIDATES = [
         {
             "provider_candidate_user_id": "user_david_004",
             "matching_score": 75.0,
-            "matching_score_reasons": ["Versatile skillset", "Good availability", "Willing to try gardening"]
+            "matching_score_reasons": ["Versatile skillset", "Good availability", "Willing to try gardening"],
+            "status": "pending"
         },
         {
             "provider_candidate_id": "candidate_{uid}_002_2",
             "service_request_id": "request_{uid}_002",
             "provider_candidate_user_id": "user_alice_001",
             "matching_score": 65.5,
-            "matching_score_reasons": ["Willing to try new tasks", "Good communicator"]
+            "matching_score_reasons": ["Willing to try new tasks", "Good communicator"],
+            "status": "declined"
         },
     ],
     # Candidates for request_003 (David is selected provider, new user is seeker)
@@ -101,12 +105,14 @@ USER_TEMPLATE_PROVIDER_CANDIDATES = [
         {
             "provider_candidate_user_id": "user_alice_001",
             "matching_score": 88.0,
-            "matching_score_reasons": ["Expert in electrical work", "High rating", "Verified professional"]
+            "matching_score_reasons": ["Expert in electrical work", "High rating", "Verified professional"],
+            "status": "accepted"
         },
         {
             "provider_candidate_user_id": "user_eva_005",
             "matching_score": 45.0,
-            "matching_score_reasons": ["Willing to learn", "Some basic electrical knowledge"]
+            "matching_score_reasons": ["Willing to learn", "Some basic electrical knowledge"],
+            "status": "pending"
         },
     ],
 ]
@@ -354,6 +360,7 @@ PROV_CAND_TEST_001_ALICE = {
     'provider_candidate_user_id': "user_alice_001",
     'matching_score': 95.0,
     'matching_score_reasons': ["Expert in electrical work", "High rating", "Available in timeframe"],
+    'status': 'contacted',
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
@@ -363,6 +370,7 @@ PROV_CAND_TEST_001_DAVID = {
     'provider_candidate_user_id': "user_david_004",
     'matching_score': 78.0,
     'matching_score_reasons': ["General technical skills", "Good availability"],
+    'status': 'pending',
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
@@ -372,6 +380,7 @@ PROV_CAND_TEST_002_CHARLIE = {
     'provider_candidate_user_id': "user_charlie_003",
     'matching_score': 88.0,
     'matching_score_reasons': ["Expert electrician", "Has done panel upgrades before"],
+    'status': 'accepted',
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
