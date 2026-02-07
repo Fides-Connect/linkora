@@ -111,10 +111,10 @@ class FirestoreService:
             
             # Ensure timestamps are set
             if 'createdAt' not in request_data:
-                request_data['createdAt'] = datetime.utcnow()
+                request_data['createdAt'] = datetime.now(timezone.utc)
             if 'created_at' not in request_data:
-                request_data['created_at'] = datetime.utcnow()
-            request_data['updated_at'] = datetime.utcnow()
+                request_data['created_at'] = datetime.now(timezone.utc)
+            request_data['updated_at'] = datetime.now(timezone.utc)
             
             # Create document with the prefixed ID
             ref = self._get_collection('service_requests').document(service_request_id)
@@ -132,7 +132,7 @@ class FirestoreService:
             ref = self._get_collection('service_requests').document(request_id)
             ref.update({
                 'status': status,
-                'updated_at': datetime.utcnow()
+                'updated_at': datetime.now(timezone.utc)
             })
             return True
         except Exception as e:

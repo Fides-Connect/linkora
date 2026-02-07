@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:http/http.dart' as http;
@@ -85,6 +86,35 @@ void main() {
           'Content-Type': 'application/json',
         },
       )).called(1);
+    });
+
+    test('handles request timeout', () async {
+      // Arrange
+      when(mockAuth.currentUser).thenReturn(mockUser);
+      when(mockClient.get(any, headers: anyNamed('headers')))
+          .thenThrow(TimeoutException('Request timed out')); // Simulate timeout from client
+
+      // Act & Assert
+      // We expect ApiException with specific message or just ApiException
+      expect(
+        () async => await apiService.get('/slow'),
+        throwsA(isA<ApiException>().having((e) => e.message, 'message', contains('timed out'))),
+      );
+    });
+
+    test('handles malformed JSON response', () async {
+      // Arrange
+      when(mockAuth.currentUser).thenReturn(mockUser);
+      // Return 200 OK but with HTML body (e.g. proxy error page)
+      when(mockClient.get(any, headers: anyNamed('headers')))
+          .thenAnswer((_) async => http.Response('<html>Error</html>', 200));
+
+      // Act
+      final result = await apiService.get('/bad_json');
+
+      // Assert
+      // The implemented logic returns raw body if jsonDecode fails
+      expect(result, '<html>Error</html>'); 
     });
   });
 }

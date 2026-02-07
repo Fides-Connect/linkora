@@ -68,9 +68,10 @@ ConnectX is a comprehensive mobile client for the Linkora platform that:
 - **Voice Input**: Real-time audio capture and streaming
 - **Voice Output**: Playback of AI-generated responses
 - **Authentication**: Google Sign-In, Email/Password, Phone Auth
+- **User Profile Sync**: Auto-syncs name, email, and photo from Google Profile to backend
 - **Service Requests**: View and manage incoming/outgoing requests
 - **Favorites Management**: Save preferred providers for quick access
-- **User Profiles**: Detailed view of users, competencies, and reviews
+- **User Profiles**: Detailed view of users including location, competencies, and reviews
 - **WebRTC**: Direct peer-to-peer audio streaming
 - **Visual Feedback**: Audio visualization during recording
 - **Chat History**: Conversation transcript display
