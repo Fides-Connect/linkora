@@ -24,7 +24,6 @@ USER_TEMPLATE = {
 USER_TEMPLATE_SERVICE_REQUESTS = [
     # Request 1: New user is provider for User A (Alice Professional)
     {
-        "service_request_id": "request_{uid}_001",
         "title": "Printer Setup and Troubleshooting",
         "description": "Need help setting up a new printer and fixing connectivity issues. Prefer someone with IT experience.",
         "amount_value": 80.0,
@@ -39,7 +38,6 @@ USER_TEMPLATE_SERVICE_REQUESTS = [
     },
     # Request 2: New user is seeker, provider is User E (Eva Enthusiast)
     {
-        "service_request_id": "request_{uid}_002",
         "title": "Garden Design",
         "description": "Looking for creative garden design and landscaping planning services.",
         "amount_value": 120.0,
@@ -54,7 +52,6 @@ USER_TEMPLATE_SERVICE_REQUESTS = [
     },
     # Request 3: New user is seeker, provider is User D (David Generalist)
     {
-        "service_request_id": "request_{uid}_003",
         "title": "General Electrical Work",
         "description": "Need help with wiring and installation for a new apartment.",
         "amount_value": 200.0,
@@ -73,15 +70,11 @@ USER_TEMPLATE_PROVIDER_CANDIDATES = [
     # Candidates for request_001 (New user is selected provider)
     [
         {
-            "provider_candidate_id": "candidate_{uid}_001_1",
-            "service_request_id": "request_{uid}_001",
             "provider_candidate_user_id": "user_alice_001",
             "matching_score": 85.5,
             "matching_score_reasons": ["Has relevant IT experience", "High rating", "Available in requested timeframe"]
         },
         {
-            "provider_candidate_id": "candidate_{uid}_001_2",
-            "service_request_id": "request_{uid}_001",
             "provider_candidate_user_id": "user_david_004",
             "matching_score": 78.2,
             "matching_score_reasons": ["General technical skills", "Good availability", "Positive reviews"]
@@ -90,8 +83,6 @@ USER_TEMPLATE_PROVIDER_CANDIDATES = [
     # Candidates for request_002 (Eva is selected provider, new user is seeker)
     [
         {
-            "provider_candidate_id": "candidate_{uid}_002_1",
-            "service_request_id": "request_{uid}_002",
             "provider_candidate_user_id": "user_david_004",
             "matching_score": 75.0,
             "matching_score_reasons": ["Versatile skillset", "Good availability", "Willing to try gardening"]
@@ -107,15 +98,11 @@ USER_TEMPLATE_PROVIDER_CANDIDATES = [
     # Candidates for request_003 (David is selected provider, new user is seeker)
     [
         {
-            "provider_candidate_id": "candidate_{uid}_003_1",
-            "service_request_id": "request_{uid}_003",
             "provider_candidate_user_id": "user_alice_001",
             "matching_score": 88.0,
             "matching_score_reasons": ["Expert in electrical work", "High rating", "Verified professional"]
         },
         {
-            "provider_candidate_id": "candidate_{uid}_003_2",
-            "service_request_id": "request_{uid}_003",
             "provider_candidate_user_id": "user_eva_005",
             "matching_score": 45.0,
             "matching_score_reasons": ["Willing to learn", "Some basic electrical knowledge"]

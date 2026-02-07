@@ -58,10 +58,12 @@ class UserSeedingService:
         
         # 1b. Add Competencies Subcollection
         for comp in USER_TEMPLATE_COMPETENCES:
-            # Use auto-generated document ID
-            comp_ref = self.firestore_service.db.collection('users').document(user_id).collection('competencies').document()
+            # Generate prefixed competence ID
+            competence_id = self.firestore_service._generate_prefixed_id('competence')
+            comp_ref = self.firestore_service.db.collection('users').document(user_id).collection('competencies').document(competence_id)
             
             comp_doc = {
+                'competence_id': competence_id,
                 'title': comp.get('title', ''),
                 'description': comp.get('description', ''),
                 'category': comp.get('category', ''),
@@ -75,8 +77,8 @@ class UserSeedingService:
             # Create a deep copy to modify
             req_data = copy.deepcopy(req)
             
-            # Format dynamic values - replace {uid} with actual user_id
-            req_id = req_data["service_request_id"].format(uid=user_id)
+            # Generate prefixed service request ID
+            req_id = self.firestore_service._generate_prefixed_id('service_request')
             req_data["service_request_id"] = req_id
             
             # Replace {uid} in seeker_user_id and selected_provider_user_id
@@ -96,15 +98,15 @@ class UserSeedingService:
                     for candidate in candidates:
                         candidate_data = copy.deepcopy(candidate)
                         
-                        # Replace {uid} in candidate fields
-                        candidate_id = candidate_data["provider_candidate_id"].format(uid=user_id)
+                        # Generate prefixed provider candidate ID
+                        candidate_id = self.firestore_service._generate_prefixed_id('provider_candidate')
                         candidate_data["provider_candidate_id"] = candidate_id
                         candidate_data["service_request_id"] = req_id
                         
                         if "{uid}" in candidate_data.get("provider_candidate_user_id", ""):
                             candidate_data["provider_candidate_user_id"] = candidate_data["provider_candidate_user_id"].format(uid=user_id)
                         
-                        # Store in provider_candidates subcollection
+                        # Store in provider_candidates subcollection using candidate_id as document ID
                         candidate_ref = requests_ref.document(req_id).collection('provider_candidates').document(candidate_id)
                         candidate_ref.set(candidate_data)
                         logger.info(f"Created provider candidate: {candidate_id} for request {req_id}")

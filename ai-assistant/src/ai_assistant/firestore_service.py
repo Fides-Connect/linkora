@@ -32,6 +32,20 @@ class FirestoreService:
         if not self.db:
             return None
         return self.db.collection(collection_name)
+    
+    def _generate_prefixed_id(self, prefix: str) -> str:
+        """Generate a Firestore auto-ID with a prefix.
+        
+        Args:
+            prefix: The prefix to add (e.g., 'user', 'competence', 'service_request')
+            
+        Returns:
+            A prefixed ID like 'user_abc123def456'
+        """
+        # Generate a Firestore-style auto ID
+        doc_ref = self.db.collection('_temp').document()
+        auto_id = doc_ref.id
+        return f"{prefix}_{auto_id}"
 
     # --- Request Operations ---
 
@@ -91,11 +105,18 @@ class FirestoreService:
         if not self.db:
             return ""
         try:
+            # Generate prefixed service request ID
+            service_request_id = self._generate_prefixed_id('service_request')
+            request_data['service_request_id'] = service_request_id
+            
             # Ensure timestamps are set
             if 'createdAt' not in request_data:
                 request_data['createdAt'] = datetime.utcnow()
-            update_time, ref = self._get_collection('requests').add(request_data)
-            return ref.id
+            
+            # Create document with the prefixed ID
+            ref = self._get_collection('requests').document(service_request_id)
+            ref.set(request_data)
+            return service_request_id
         except Exception as e:
             logger.error(f"Error creating request: {e}")
             return ""
@@ -241,20 +262,21 @@ class FirestoreService:
                 logger.error(f"Competence missing title for user {user_id}")
                 return None
             
-            # Add document to competencies subcollection with auto-generated ID
+            # Generate prefixed competence ID
+            competence_id = self._generate_prefixed_id('competence')
+            
+            # Add document to competencies subcollection with prefixed ID
             competencies_ref = self._get_collection('users').document(user_id).collection('competencies')
             competence_data = {
+                'competence_id': competence_id,
                 'title': title,
                 'description': competence.get('description', ''),
                 'category': competence.get('category', ''),
                 'price_range': competence.get('price_range', ''),
             }
-            # Use auto-generated document ID
-            doc_ref = competencies_ref.document()
-            doc_ref.set(competence_data)
+            # Use the generated competence_id as the document ID
+            competencies_ref.document(competence_id).set(competence_data)
             
-            # Return the competence with the generated ID
-            competence_data['competence_id'] = doc_ref.id
             return competence_data
         except Exception as e:
             logger.error(f"Error adding competence for {user_id}: {e}")
