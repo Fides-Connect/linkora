@@ -7,7 +7,8 @@ Contains User Templates for seeding and static Test Personas.
 USER_TEMPLATE = {
     # user_id matches firebase uid
     # name comes from auth provider
-    # email comes from auth provider
+    # email comes from auth provide
+    # photo_url comes from auth provider
     "location": "Berlin, Germany",
     "introduction": "Passionate developer and tech enthusiast. I love building things and helping others.",
     "type": "user",
@@ -147,6 +148,7 @@ USER_A = {
     "user_id": "user_alice_001",
     "name": "Alice Professional",
     "email": "alice@example.com",
+    "photo_url": "https://example.com/photos/alice.jpg",
     "location": "Berlin, Germany",
     "introduction": "Experienced electrician specializing in residential lighting installations.",
     "type": "user",
@@ -178,6 +180,7 @@ USER_B = {
     "user_id": "user_bob_002",
     "name": "Bob Spammer",
     "email": "bob@example.com",
+    "photo_url": "https://example.com/photos/bob.jpg",
     "location": "Jakarta, Indonesia",
     "introduction": "I do everything! Plumbing, electrical, driving, teaching, you name it!",
     "type": "user",
@@ -209,6 +212,7 @@ USER_C = {
     "user_id": "user_charlie_003",
     "name": "Charlie Ghost",
     "email": "charlie@example.com",
+    "photo_url": "https://example.com/photos/charlie.jpg",
     "location": "London, UK",
     "introduction": "Master electrician with 20 years experience. Specialist in residential wiring and lighting installation.",
     "type": "user",
@@ -240,6 +244,7 @@ USER_D = {
     "user_id": "user_david_004",
     "name": "David Generalist",
     "email": "david@example.com",
+    "photo_url": "https://example.com/photos/david.jpg",
     "location": "New York, USA",
     "introduction": "Experienced in all types of electrical work including wiring, installations, and repairs.",
     "type": "user",
@@ -271,6 +276,7 @@ USER_E = {
     "user_id": "user_eva_005",
     "name": "Eva Enthusiast",
     "email": "eva@example.com",
+    "photo_url": "https://example.com/photos/eva.jpg",
     "location": "Paris, France",
     "introduction": "Gardening enthusiast offering a variety of services for beautiful and healthy gardens.",
     "type": "user",

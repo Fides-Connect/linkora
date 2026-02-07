@@ -101,7 +101,8 @@ async def user_sync(request: web.Request) -> web.Response:
                  await seeding_service.seed_new_user(
                      user_id=user_id,
                      name=user_data["name"], 
-                     email=user_data["email"]
+                     email=user_data["email"],
+                     photo_url=user_data.get("photo_url", "")
                  )
             except Exception as e:
                 logger.error(f"Failed to seed data for new user {user_id}: {e}")

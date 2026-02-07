@@ -169,6 +169,8 @@ def init_firestore(test_data):
                 'user_id': user_id,
                 'name': p_data['name'],
                 'email': p_data['email'],
+                'photo_url': p_data.get('photo_url', ''),
+                'location': p_data.get('location', ''),
                 'introduction': p_data['introduction'],
                 'type': p_data.get('type', 'user'),
                 'is_service_provider': p_data.get('is_service_provider', False),

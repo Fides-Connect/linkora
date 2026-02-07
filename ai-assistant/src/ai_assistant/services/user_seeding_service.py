@@ -58,7 +58,7 @@ class UserSeedingService:
             logger.error(f"Failed to fetch Weaviate UUID for {user_id}: {e}")
         return None
 
-    async def seed_new_user(self, user_id: str, name: str, email: str):
+    async def seed_new_user(self, user_id: str, name: str, email: str, photo_url: str = ""):
         """Seed initial data for a new user if not already present."""
         if not self.firestore_service.db:
             logger.warning("Firestore not initialized, skipping seeding.")
@@ -73,6 +73,8 @@ class UserSeedingService:
         user_update = {k: v for k, v in USER_TEMPLATE.items()}
         user_update['user_id'] = user_id
         user_update['created_at'] = datetime.now(timezone.utc)
+        if photo_url:
+            user_update['photo_url'] = photo_url
         
         # We use the existing update_user_user method which does a set with merge=True
         await self.firestore_service.update_user(user_id, user_update)
