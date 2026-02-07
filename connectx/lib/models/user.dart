@@ -1,10 +1,11 @@
 import 'package:flutter/foundation.dart';
+import 'competence.dart';
 
 class User {
   final String userId;
   final String name;
   final String introduction;
-  final List<String> competencies;
+  final List<Competence> competencies;
   final double averageRating;
   final int reviewCount;
   final List<String> positiveFeedback;
@@ -26,7 +27,9 @@ class User {
       userId: json['user_id'] as String,
       name: json['name'] as String,
       introduction: json['introduction'] as String,
-      competencies: (json['competencies'] as List?)?.cast<String>() ?? [],
+      competencies: (json['competencies'] as List?)
+          ?.map((comp) => Competence.fromJson(comp as Map<String, dynamic>))
+          .toList() ?? [],
       averageRating: (json['average_rating'] as num).toDouble(),
       reviewCount: json['review_count'] as int,
       positiveFeedback: (json['positive_feedback'] as List?)?.cast<String>() ?? [],
@@ -39,7 +42,7 @@ class User {
       'user_id': userId,
       'name': name,
       'introduction': introduction,
-      'competencies': competencies,
+      'competencies': competencies.map((c) => c.toJson()).toList(),
       'average_rating': averageRating,
       'review_count': reviewCount,
       'positive_feedback': positiveFeedback,

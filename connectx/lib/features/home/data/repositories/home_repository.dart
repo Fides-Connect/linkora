@@ -72,18 +72,18 @@ class HomeRepository {
       'category': '',
       'price_range': '',
     };
-    await _apiService.post('/user/competencies', body: {'competence': competenceObj});
-    // Fetch fresh user from server
-    return getUser();
+    final data = await _apiService.post('/user/competencies', body: {'competence': competenceObj});
+    // API returns the updated user object
+    return User.fromJson(data);
   }
 
   /// Removes a single competence tag from the user.
-  /// Wraps API call to `DELETE /user/competencies/{competence}`.
+  /// Wraps API call to `DELETE /user/competencies/{competence_id}`.
   /// Returns the updated user.
-  Future<User> removeCompetence(String competence) async {
-    await _apiService.delete('/user/competencies/${Uri.encodeComponent(competence)}');
-    // Fetch fresh user from server
-    return getUser();
+  Future<User> removeCompetence(String competenceId) async {
+    final data = await _apiService.delete('/user/competencies/${Uri.encodeComponent(competenceId)}');
+    // API returns the updated user object
+    return User.fromJson(data);
   }
 
   /// Fetches proper public data for another user (e.g. a request sender).

@@ -72,7 +72,10 @@ void main() {
           'user_id': 'user_1',
           'name': 'Supporter 1',
           'introduction': 'Intro',
-          'competencies': ['A', 'B'],
+          'competencies': [
+            {'competence_id': 'comp1', 'title': 'A', 'description': '', 'category': '', 'price_range': ''},
+            {'competence_id': 'comp2', 'title': 'B', 'description': '', 'category': '', 'price_range': ''}
+          ],
           'average_rating': 5.0,
           'review_count': 10,
           'positive_feedback': ['Good'],

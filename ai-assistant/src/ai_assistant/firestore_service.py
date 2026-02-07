@@ -182,9 +182,9 @@ class FirestoreService:
             competencies = []
             for doc in docs:
                 comp_data = doc.to_dict()
-                # Extract just the title for the User model
-                if 'title' in comp_data:
-                    competencies.append(comp_data['title'])
+                # Include the document ID as competence_id
+                comp_data['competence_id'] = doc.id
+                competencies.append(comp_data)
             return competencies
         except Exception as e:
             logger.error(f"Error fetching competencies for {user_id}: {e}")
@@ -223,45 +223,57 @@ class FirestoreService:
             logger.error(f"Error updating {user_id}: {e}")
             return False
 
-    async def add_competence(self, user_id: str, competence: dict) -> bool:
+    async def add_competence(self, user_id: str, competence: dict) -> Optional[Dict[str, Any]]:
         """Add a competence to user's competencies subcollection.
         
         Args:
             user_id: The user's ID
             competence: Dictionary with 'title' (required), 'description', 'category', 'price_range' (optional)
+            
+        Returns:
+            The created competence object with auto-generated competence_id, or None if failed
         """
         if not self.db:
-            return False
+            return None
         try:
             title = competence.get('title')
             if not title:
                 logger.error(f"Competence missing title for user {user_id}")
-                return False
+                return None
             
-            # Add document to competencies subcollection
+            # Add document to competencies subcollection with auto-generated ID
             competencies_ref = self._get_collection('users').document(user_id).collection('competencies')
-            # Use the competence title as the document ID
             competence_data = {
                 'title': title,
                 'description': competence.get('description', ''),
                 'category': competence.get('category', ''),
                 'price_range': competence.get('price_range', ''),
             }
-            competencies_ref.document(title).set(competence_data)
-            return True
+            # Use auto-generated document ID
+            doc_ref = competencies_ref.document()
+            doc_ref.set(competence_data)
+            
+            # Return the competence with the generated ID
+            competence_data['competence_id'] = doc_ref.id
+            return competence_data
         except Exception as e:
             logger.error(f"Error adding competence for {user_id}: {e}")
-            return False
+            return None
 
-    async def remove_competence(self, user_id: str, competence: str) -> bool:
-        """Remove a competence from user's competencies subcollection."""
+    async def remove_competence(self, user_id: str, competence_id: str) -> bool:
+        """Remove a competence from user's competencies subcollection.
+        
+        Args:
+            user_id: The user's ID
+            competence_id: The competence document ID to delete
+        """
         if not self.db:
             return False
         try:
-            # Delete document from competencies subcollection
+            # Delete document from competencies subcollection using competence_id
             competencies_ref = self._get_collection('users').document(user_id).collection('competencies')
-            competencies_ref.document(competence).delete()
+            competencies_ref.document(competence_id).delete()
             return True
         except Exception as e:
-            logger.error(f"Error removing competence for {user_id}: {e}")
+            logger.error(f"Error removing competence {competence_id} for {user_id}: {e}")
             return False

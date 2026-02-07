@@ -188,9 +188,17 @@ async def add_competence(request: web.Request) -> web.Response:
         if not competence or not isinstance(competence, dict) or 'title' not in competence:
             return web.json_response({"error": "Missing or invalid competence object. Must include 'title' field."}, status=400)
             
-        success = await firestore_service.add_competence(user_id, competence)
-        if success:
-             return web.json_response({"status": "added"})
+        created_competence = await firestore_service.add_competence(user_id, competence)
+        if created_competence:
+            # Fetch and return the updated user object
+            user = await firestore_service.get_user(user_id)
+            if user:
+                # Handle datetime serialization if any
+                for k, v in user.items():
+                    if hasattr(v, 'isoformat'):
+                        user[k] = v.isoformat()
+                return web.json_response(user)
+            return web.json_response({"error": "Failed to fetch updated user"}, status=500)
         else:
              return web.json_response({"error": "Failed to add competence"}, status=500)
     except web.HTTPException:
@@ -200,14 +208,22 @@ async def add_competence(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 async def remove_competence(request: web.Request) -> web.Response:
-    """DELETE /user/competencies/{competence}"""
+    """DELETE /user/competencies/{competence_id}"""
     try:
         user_id = await get_current_user_id(request)
-        competence = request.match_info['competence']
+        competence_id = request.match_info['competence']
         
-        success = await firestore_service.remove_competence(user_id, competence)
+        success = await firestore_service.remove_competence(user_id, competence_id)
         if success:
-             return web.json_response({"status": "removed"})
+            # Fetch and return the updated user object
+            user = await firestore_service.get_user(user_id)
+            if user:
+                # Handle datetime serialization if any
+                for k, v in user.items():
+                    if hasattr(v, 'isoformat'):
+                        user[k] = v.isoformat()
+                return web.json_response(user)
+            return web.json_response({"error": "Failed to fetch updated user"}, status=500)
         else:
              return web.json_response({"error": "Failed to remove competence"}, status=500)
     except web.HTTPException:

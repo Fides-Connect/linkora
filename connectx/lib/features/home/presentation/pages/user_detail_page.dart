@@ -159,7 +159,7 @@ class UserDetailPage extends StatelessWidget {
                           runSpacing: 8.0,
                           children: user.competencies.map((competency) {
                             return Chip(
-                              label: Text(competency),
+                              label: Text(competency.title),
                               backgroundColor: Colors.white.withValues(alpha: 0.2),
                               labelStyle: const TextStyle(color: Colors.white),
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),

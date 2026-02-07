@@ -57,12 +57,11 @@ class UserSeedingService:
         await self.firestore_service.update_user(user_id, user_update)
         
         # 1b. Add Competencies Subcollection
-        for i, comp in enumerate(USER_TEMPLATE_COMPETENCES):
-            comp_id = f"{user_id}_comp_{i+1}"
-            comp_ref = self.firestore_service.db.collection('users').document(user_id).collection('competencies').document(comp_id)
+        for comp in USER_TEMPLATE_COMPETENCES:
+            # Use auto-generated document ID
+            comp_ref = self.firestore_service.db.collection('users').document(user_id).collection('competencies').document()
             
             comp_doc = {
-                'competence_id': comp_id,
                 'title': comp.get('title', ''),
                 'description': comp.get('description', ''),
                 'category': comp.get('category', ''),

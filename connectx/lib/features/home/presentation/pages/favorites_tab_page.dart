@@ -117,7 +117,7 @@ class FavoritesTabPage extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(4),
                               ),
                           child: Text(
-                            comp,
+                            comp.title,
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 11,

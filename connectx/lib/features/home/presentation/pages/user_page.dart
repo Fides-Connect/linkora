@@ -202,7 +202,7 @@ class _UserPageState extends State<UserPage> {
                         ...?profile?.competencies.map((competence) {
                           return InputChip(
                             label: Text(
-                              competence,
+                              competence.title,
                               style: const TextStyle(color: Colors.white),
                             ),
                             backgroundColor: Colors.white.withValues(alpha: 0.1),
@@ -211,7 +211,7 @@ class _UserPageState extends State<UserPage> {
                               size: 18,
                               color: Colors.white70,
                             ),
-                            onDeleted: () => _removeCompetence(competence),
+                            onDeleted: () => _removeCompetence(competence.competenceId),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
