@@ -132,7 +132,6 @@ def init_hub_spoke_schema():
                     Property(name="created_at", data_type=DataType.DATE),
                     Property(name="last_sign_in", data_type=DataType.DATE),
                     Property(name="has_open_request", data_type=DataType.BOOL),
-                    Property(name="last_active_date", data_type=DataType.DATE),
                 ],
                 references=[
                     ReferenceProperty(

@@ -34,8 +34,7 @@ class UserModelWeaviate:
                     "fcm_token": user_data.get("fcm_token", ""),
                     "has_open_request": user_data.get("has_open_request", False),
                     "created_at": user_data.get("created_at", datetime.now(UTC)),
-                    "last_sign_in": user_data.get("last_sign_in", datetime.now(UTC)),
-                    "last_active_date": user_data.get("last_active_date", datetime.now(UTC).isoformat()),
+                    "last_sign_in": user_data.get("last_sign_in", datetime.now(UTC).isoformat()),
                 }
             )
             
@@ -88,8 +87,8 @@ class UserModelWeaviate:
             
             obj = response.objects[0]
             
-            # Update last_active_date on any update
-            update_data['last_active_date'] = datetime.now(UTC).isoformat()
+            # Update last_sign_in on any update
+            update_data['last_sign_in'] = datetime.now(UTC).isoformat()
             
             # Merge existing properties with update data to preserve unmodified fields
             merged_properties = {**obj.properties, **update_data}

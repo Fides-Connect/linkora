@@ -3,7 +3,7 @@ Hub and Spoke Search: Hybrid Search with Grouping and Filtering
 ================================================================
 
 Handles:
-1. Ghost User Filtering (last_active_date)
+1. Ghost User Filtering (last_sign_in)
 2. Hybrid Search (vector + keyword, alpha=0.5)
 3. Result Grouping (client-side by owned_by)
 """
@@ -45,13 +45,13 @@ class HubSpokeSearch:
         
         Search Strategy:
         1. Perform hybrid search on Competence.description
-        2. Filter by owned_by.last_active_date (ghost filtering)
+        2. Filter by owned_by.last_sign_in (ghost filtering)
         3. Group by owned_by to prevent duplicate users
         
         Args:
             query: Search query text
             limit: Maximum results
-            max_inactive_days: Maximum days since last_active_date
+            max_inactive_days: Maximum days since last_sign_in
             group_by_user: Whether to group results by user
             alpha: Hybrid search weight (0=pure vector, 1=pure keyword, 0.5=balanced)
             
@@ -65,8 +65,8 @@ class HubSpokeSearch:
             cutoff_date = datetime.now(UTC) - timedelta(days=max_inactive_days)
             
             # Build query with ghost filtering and provider filtering
-            # Filter: owned_by.last_active_date >= cutoff_date AND owned_by.is_service_provider == True
-            filter_clause = Filter.by_ref("owned_by").by_property("last_active_date").greater_or_equal(cutoff_date) & \
+            # Filter: owned_by.last_sign_in >= cutoff_date AND owned_by.is_service_provider == True
+            filter_clause = Filter.by_ref("owned_by").by_property("last_sign_in").greater_or_equal(cutoff_date) & \
                            Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
             
             if group_by_user:
@@ -80,7 +80,7 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["name", "email", "type", "is_service_provider", "last_active_date"]
+                        return_properties=["name", "email", "type", "is_service_provider", "last_sign_in"]
                     )
                 )
                 
@@ -104,7 +104,7 @@ class HubSpokeSearch:
                                 'email': user.get('email'),
                                 'type': user.get('type'),
                                 'is_service_provider': user.get('is_service_provider', False),
-                                'last_active_date': user.get('last_active_date'),
+                                'last_sign_in': user.get('last_sign_in'),
                             }
                     
                     # Keep only the best-scoring competence per user
@@ -127,7 +127,7 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["name", "email", "type", "is_service_provider", "last_active_date"]
+                        return_properties=["name", "email", "type", "is_service_provider", "last_sign_in"]
                     )
                 )
                 
@@ -147,7 +147,7 @@ class HubSpokeSearch:
                                 'name': user.get('name'),
                                 'email': user.get('email'),
                                 'type': user.get('type'),
-                                'last_active_date': user.get('last_active_date'),
+                                'last_sign_in': user.get('last_sign_in'),
                             }
                     
                     results.append(competence)
@@ -214,7 +214,7 @@ class HubSpokeSearch:
         # Build base filter: ghost filtering + provider filtering
         cutoff_date = datetime.now(UTC) - timedelta(days=max_inactive_days)
         filter_clause = (
-            Filter.by_ref("owned_by").by_property("last_active_date").greater_or_equal(cutoff_date) &
+            Filter.by_ref("owned_by").by_property("last_sign_in").greater_or_equal(cutoff_date) &
             Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
         )
         
@@ -290,7 +290,7 @@ class HubSpokeSearch:
                         'email': user.get('email'),
                         'type': user.get('type'),
                         'is_service_provider': user.get('is_service_provider', False),
-                        'last_active_date': user.get('last_active_date'),
+                        'last_sign_in': user.get('last_sign_in'),
                     }
             
             # Keep only the best-scoring competence per user
@@ -322,7 +322,7 @@ class HubSpokeSearch:
                 - category: service category
                 - criterions: list of additional requirements
             limit: Maximum results
-            max_inactive_days: Maximum days since last_active_date
+            max_inactive_days: Maximum days since last_sign_in
             alpha: Hybrid search weight (0=pure vector, 1=pure keyword, 0.5=balanced)
             
         Returns:
@@ -353,7 +353,7 @@ class HubSpokeSearch:
                 return_metadata=MetadataQuery(score=True),
                 return_references=QueryReference(
                     link_on="owned_by",
-                    return_properties=["name", "email", "type", "is_service_provider", "last_active_date"]
+                    return_properties=["name", "email", "type", "is_service_provider", "last_sign_in"]
                 )
             )
             

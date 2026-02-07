@@ -123,7 +123,7 @@ class HubSpokeIngestion:
         
         Args:
             user_data: Dict with keys: name, email, type, fcm_token, 
-                         has_open_request, last_active_date
+                         has_open_request, last_sign_in
                          
         Returns:
             UUID of created user
@@ -131,8 +131,8 @@ class HubSpokeIngestion:
         try:
             collection = get_user_collection()
             
-            # Handle last_active_date: can be datetime or days offset
-            last_active = user_data.get("last_active_date")
+            # Handle last_sign_in: can be datetime or days offset
+            last_active = user_data.get("last_sign_in")
             if isinstance(last_active, int):
                 # Treat as days ago
                 from datetime import timedelta
@@ -150,7 +150,7 @@ class HubSpokeIngestion:
                     "fcm_token": user_data.get("fcm_token", ""),
                     "created_at": user_data.get("created_at", datetime.now(UTC)),
                     "has_open_request": user_data.get("has_open_request", False),
-                    "last_active_date": last_active,
+                    "last_sign_in": last_active,
                 }
             )
             

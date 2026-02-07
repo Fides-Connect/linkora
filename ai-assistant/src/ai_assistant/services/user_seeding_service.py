@@ -75,8 +75,8 @@ class UserSeedingService:
             comp_ref.set(comp_doc)
         
         # 2. Create Sample Requests
-        requests = USER_TEMPLATE_SERVICE_REQUESTS
-        for idx, req in enumerate(requests):
+        service_requests = USER_TEMPLATE_SERVICE_REQUESTS
+        for idx, req in enumerate(service_requests):
             # Create a deep copy to modify
             req_data = copy.deepcopy(req)
             

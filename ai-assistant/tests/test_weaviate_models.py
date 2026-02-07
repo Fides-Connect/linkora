@@ -46,7 +46,7 @@ class TestUserModelWeaviate:
         assert call_args['name'] == "Test User"
         assert call_args['email'] == "test@example.com"
         assert call_args['type'] == "client"  # New field
-        assert 'last_active_date' in call_args  # New field
+        assert 'last_sign_in' in call_args  # New field
 
     def test_create_user_failure(self, sample_user_data):
         """Test creating user with exception."""
@@ -123,7 +123,7 @@ class TestUserModelWeaviate:
         assert updated_properties['name'] == "New Name"
         assert updated_properties['email'] == "new@example.com"
         assert updated_properties['fcm_token'] == "new_token"
-        assert 'last_active_date' in updated_properties  # Should be updated
+        assert 'last_sign_in' in updated_properties  # Should be updated
         
         # Ensure other properties are not lost
         assert 'photo_url' in updated_properties

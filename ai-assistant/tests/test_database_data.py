@@ -14,7 +14,7 @@ USER_TEMPLATE = {
     "fcm_token": "", # Will be set by client
     "has_open_request": True,
     "favorites": [], # Will be populated with default friend
-    "last_active_date": 0, # Today
+    "last_sign_in": 0,  # 0 days ago (will be overridden with actual datetime in seeding service)
     "positive_feedback": ["Fast learner", "Great communicator"],
     "negative_feedback": [],
     "average_rating": 5.0,
@@ -146,7 +146,7 @@ USER_A = {
     "fcm_token": "token_alice",
     "has_open_request": False,
     "favorites": [],
-    "last_active_date": 1,  # Active 1 day ago
+    "last_sign_in": 1,  # 1 day ago (will be converted to datetime in init script)
     "positive_feedback": ["Punctual", "Clean work", "Friendly", "Explains everything clearly"],
     "negative_feedback": ["Sometimes late on big jobs"],
     "average_rating": 4.8,
@@ -176,7 +176,7 @@ USER_B = {
     "fcm_token": "token_bob",
     "has_open_request": False,
     "favorites": [],
-    "last_active_date": 5,  # Active 5 days ago
+    "last_sign_in": 5,  # 5 days ago (will be converted to datetime in init script)
     "positive_feedback": ["Quick response"],
     "negative_feedback": ["Unfocused", "Quality varies", "Too many services listed"],
     "average_rating": 3.2,
@@ -206,7 +206,7 @@ USER_C = {
     "fcm_token": "token_charlie",
     "has_open_request": False,
     "favorites": [],
-    "last_active_date": 365,  # Inactive for 365 days
+    "last_sign_in": 365,  # 365 days ago (will be converted to datetime in init script)
     "positive_feedback": ["Expert knowledge", "Great results"],
     "negative_feedback": ["Rarely available", "Slow to respond"],
     "average_rating": 4.5,
@@ -236,7 +236,7 @@ USER_D = {
     "fcm_token": "token_david",
     "has_open_request": False,
     "favorites": [],
-    "last_active_date": 10,  # Active 10 days ago
+    "last_sign_in": 10,  # 10 days ago (will be converted to datetime in init script)
     "positive_feedback": ["Versatile", "Helpful", "Good communicator"],
     "negative_feedback": ["Sometimes overbooked"],
     "average_rating": 4.2,
@@ -266,7 +266,7 @@ USER_E = {
     "fcm_token": "token_eva",
     "has_open_request": False,
     "favorites": [],
-    "last_active_date": 3,  # Active 3 days ago
+    "last_sign_in": 3,  # 3 days ago (will be converted to datetime in init script)
     "positive_feedback": ["Creative designs", "Very friendly", "Great with plants"],
     "negative_feedback": ["Sometimes hard to book in spring"],
     "average_rating": 4.7,

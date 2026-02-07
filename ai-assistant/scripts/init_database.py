@@ -24,7 +24,7 @@ import sys
 import argparse
 import logging
 import datetime
-from datetime import timezone
+from datetime import timezone, timedelta
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -118,12 +118,6 @@ def clean_firestore_collection(coll_ref, batch_size=50):
         if deleted >= batch_size:
             clean_firestore_collection(coll_ref, batch_size)
 
-
-def datetime_from_days_ago(days):
-    """Convert days ago integer to Firestore Timestamp (datetime)."""
-    return datetime.datetime.now(timezone.utc) - datetime.timedelta(days=days)
-
-
 def init_firestore(test_data):
     """Initialize Firestore with schema and test data."""
     if not db:
@@ -156,6 +150,20 @@ def init_firestore(test_data):
             user_id = p_data['user_id']
             user_ref = db.collection('users').document(user_id)
             
+            # Convert last_sign_in from relative (days) to absolute datetime if needed
+            last_sign_in = p_data.get('last_sign_in', 0)
+            if isinstance(last_sign_in, int):
+                # Convert days ago to absolute datetime
+                last_sign_in = datetime.datetime.now(timezone.utc) - timedelta(days=last_sign_in)
+            elif isinstance(last_sign_in, str):
+                # Parse ISO format string if provided
+                try:
+                    last_sign_in = datetime.datetime.fromisoformat(last_sign_in.replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    last_sign_in = datetime.datetime.now(timezone.utc)
+            elif not isinstance(last_sign_in, datetime.datetime):
+                last_sign_in = datetime.datetime.now(timezone.utc)
+            
             # Transform user data to match User schema
             user_doc = {
                 'user_id': user_id,
@@ -167,7 +175,7 @@ def init_firestore(test_data):
                 'fcm_token': p_data.get('fcm_token', ''),
                 'has_open_request': p_data.get('has_open_request', False),
                 'favorites': p_data.get('favorites', []),
-                'last_active': datetime_from_days_ago(p_data.get('last_active_date', 0)),
+                'last_sign_in': last_sign_in,
                 'positive_feedback': p_data.get('positive_feedback', []),
                 'negative_feedback': p_data.get('negative_feedback', []),
                 'average_rating': p_data.get('average_rating', 5.0),

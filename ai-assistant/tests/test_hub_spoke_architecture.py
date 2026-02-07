@@ -145,7 +145,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
             uuid=competence_uuid,
             return_references=QueryReference(
                 link_on="owned_by",
-                return_properties=["display_name", "last_active_date"]
+                return_properties=["display_name", "last_sign_in"]
             )
         )
         
@@ -272,7 +272,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         Test 4: Ghost User Filtering
         
         User C (Charlie Ghost) has excellent electrical skills but hasn't been
-        active for 365 days (last_active_date = 365 days ago).
+        active for 365 days (last_sign_in = 365 days ago).
         
         With max_inactive_days=180, User C should be EXCLUDED from results.
         
