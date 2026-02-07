@@ -60,14 +60,14 @@ void main() {
       final req1 = ServiceRequest(
           service_request_id: '1', title: 'In', amountValue: 10, startDate: DateTime(2023),
           seekerUserId: 'other_user', seekerUserName: 'Other', seekerUserInitials: 'OU',
-          providerUserId: 'user_1', providerUserName: 'Me', providerUserInitials: 'ME',
+          selectedProviderUserId: 'user_1', selectedProviderUserName: 'Me', selectedProviderUserInitials: 'ME',
           category: ServiceCategory.housekeeping,
           status: RequestStatus.pending, description: '', location: ''
       );
       final req2 = ServiceRequest(
           service_request_id: '2', title: 'Out', amountValue: 10, startDate: DateTime(2023),
           seekerUserId: 'user_1', seekerUserName: 'Me', seekerUserInitials: 'ME',
-          providerUserId: 'other_user', providerUserName: 'Other', providerUserInitials: 'OU',
+          selectedProviderUserId: 'other_user', selectedProviderUserName: 'Other', selectedProviderUserInitials: 'OU',
           category: ServiceCategory.housekeeping,
           status: RequestStatus.pending, description: '', location: ''
       );

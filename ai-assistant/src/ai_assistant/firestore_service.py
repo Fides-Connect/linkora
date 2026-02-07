@@ -51,7 +51,7 @@ class FirestoreService:
                 data['id'] = doc.id
                 requests.append(data)
             
-            query2 = requests_ref.where(filter=FieldFilter("provider_user_id", "==", user_id)).stream()
+            query2 = requests_ref.where(filter=FieldFilter("selected_provider_user_id", "==", user_id)).stream()
             for doc in query2:
                 data = doc.to_dict()
                 data['id'] = doc.id
@@ -72,14 +72,14 @@ class FirestoreService:
                         req['seeker_user_initials'] = ''
                 
                 # Add provider user info
-                if 'provider_user_id' in req:
-                    provider = await self.get_user(req['provider_user_id'])
+                if 'selected_provider_user_id' in req:
+                    provider = await self.get_user(req['selected_provider_user_id'])
                     if provider and 'name' in provider:
-                        req['provider_user_name'] = provider['name']
-                        req['provider_user_initials'] = "".join([n[0] for n in provider['name'].split() if n]).upper()[:2]
+                        req['selected_provider_user_name'] = provider['name']
+                        req['selected_provider_user_initials'] = "".join([n[0] for n in provider['name'].split() if n]).upper()[:2]
                     else:
-                        req['provider_user_name'] = ''
-                        req['provider_user_initials'] = ''
+                        req['selected_provider_user_name'] = ''
+                        req['selected_provider_user_initials'] = ''
             return requests
 
         except Exception as e:

@@ -208,12 +208,12 @@ class HomeRepository {
     
     // Find request where the userId matches seeker or provider
     final request = _localMockRequests.firstWhere(
-      (r) => r.seekerUserId == userId || r.providerUserId == userId || r.service_request_id == userId, 
+      (r) => r.seekerUserId == userId || r.selectedProviderUserId == userId || r.service_request_id == userId, 
       orElse: () => _localMockRequests.first
     );
 
     // Try to match with seeker or provider names
-    final userName = request.seekerUserId == userId ? request.seekerUserName : request.providerUserName;
+    final userName = request.seekerUserId == userId ? request.seekerUserName : request.selectedProviderUserName;
     if (mockUsers.containsKey(userName)) {
       return mockUsers[userName];
     }
@@ -256,9 +256,9 @@ class HomeRepository {
            seekerUserId: original.seekerUserId,
            seekerUserName: original.seekerUserName,
            seekerUserInitials: original.seekerUserInitials,
-           providerUserId: original.providerUserId,
-           providerUserName: original.providerUserName,
-           providerUserInitials: original.providerUserInitials,
+           selectedProviderUserId: original.selectedProviderUserId,
+           selectedProviderUserName: original.selectedProviderUserName,
+           selectedProviderUserInitials: original.selectedProviderUserInitials,
            category: original.category,
            status: status,
            updateText: original.updateText,

@@ -294,13 +294,13 @@ class HomeTabPage extends StatelessWidget {
                       radius: 20,
                       backgroundColor: Colors.white.withValues(alpha: 0.2),
                       child: Text(
-                        request.providerUserInitials,
+                        request.selectedProviderUserInitials,
                         style: const TextStyle(color: Colors.white),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      request.providerUserName,
+                      request.selectedProviderUserName,
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.7),
                         fontSize: 12,

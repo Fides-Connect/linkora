@@ -106,7 +106,7 @@ class RequestDetailPage extends StatelessWidget {
                         final currentUserId = viewModel.user?.userId ?? '';
                         final otherUserId = request.getType(currentUserId) == RequestType.incoming
                             ? request.seekerUserId
-                            : request.providerUserId;
+                            : request.selectedProviderUserId;
                         
                         final user = await viewModel.getOtherUser(otherUserId);
                         
@@ -152,7 +152,7 @@ class RequestDetailPage extends StatelessWidget {
                                 final currentUserId = viewModel.user?.userId ?? '';
                                 final isIncoming = request.getType(currentUserId) == RequestType.incoming;
                                 return Text(
-                                  isIncoming ? request.seekerUserInitials : request.providerUserInitials,
+                                  isIncoming ? request.seekerUserInitials : request.selectedProviderUserInitials,
                                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                                 );
                               },
@@ -169,7 +169,7 @@ class RequestDetailPage extends StatelessWidget {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      isIncoming ? request.seekerUserName : request.providerUserName,
+                                      isIncoming ? request.seekerUserName : request.selectedProviderUserName,
                                       style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                                     ),
                                     Text(

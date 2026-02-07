@@ -13,9 +13,9 @@ class ServiceRequest {
   final String seekerUserId;
   final String seekerUserName;
   final String seekerUserInitials;
-  final String providerUserId;
-  final String providerUserName;
-  final String providerUserInitials;
+  final String selectedProviderUserId;
+  final String selectedProviderUserName;
+  final String selectedProviderUserInitials;
   final ServiceCategory category;
   final RequestStatus status;
   final String? updateText;
@@ -32,9 +32,9 @@ class ServiceRequest {
     required this.seekerUserId,
     required this.seekerUserName,
     required this.seekerUserInitials,
-    required this.providerUserId,
-    required this.providerUserName,
-    required this.providerUserInitials,
+    required this.selectedProviderUserId,
+    required this.selectedProviderUserName,
+    required this.selectedProviderUserInitials,
     required this.category,
     required this.status,
     this.updateText,
@@ -53,9 +53,9 @@ class ServiceRequest {
       seekerUserId: json['seeker_user_id'] as String,
       seekerUserName: json['seeker_user_name'] as String,
       seekerUserInitials: json['seeker_user_initials'] as String,
-      providerUserId: json['provider_user_id'] as String,
-      providerUserName: json['provider_user_name'] as String,
-      providerUserInitials: json['provider_user_initials'] as String,
+      selectedProviderUserId: json['selected_provider_user_id'] as String,
+      selectedProviderUserName: json['selected_provider_user_name'] as String,
+      selectedProviderUserInitials: json['selected_provider_user_initials'] as String,
       category: ServiceCategoryExtension.fromJson(json['category'] as String),
       status: RequestStatus.values.asNameMap()[json['status'] as String] ??
           RequestStatus.unknown,
@@ -76,9 +76,9 @@ class ServiceRequest {
       'seeker_user_id': seekerUserId,
       'seeker_user_name': seekerUserName,
       'seeker_user_initials': seekerUserInitials,
-      'provider_user_id': providerUserId,
-      'provider_user_name': providerUserName,
-      'provider_user_initials': providerUserInitials,
+      'selected_provider_user_id': selectedProviderUserId,
+      'selected_provider_user_name': selectedProviderUserName,
+      'selected_provider_user_initials': selectedProviderUserInitials,
       'category': category.toJson(),
       'status': status.name,
       'update_text': updateText,
@@ -91,7 +91,7 @@ class ServiceRequest {
   RequestType getType(String currentUserId) {
     if (currentUserId == seekerUserId) {
       return RequestType.outgoing;
-    } else if (currentUserId == providerUserId) {
+    } else if (currentUserId == selectedProviderUserId) {
       return RequestType.incoming;
     }
     return RequestType.unknown;
