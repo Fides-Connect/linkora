@@ -17,12 +17,13 @@ ConnectX is the Flutter-based mobile application for the Linkora AI Voice Assist
 
 ## 🎯 Overview
 
-ConnectX is a lightweight mobile client that:
+ConnectX is a comprehensive mobile client for the Linkora platform that:
 - Captures user voice input via microphone
 - Streams audio to AI-Assistant server via WebRTC
 - Receives and plays AI-generated voice responses
 - Manages user authentication with Firebase
-- Provides intuitive UI for voice conversations
+- Provides a rich UI for managing service requests, favorites, and user profiles
+- Displays detailed provider competencies and reviews
 
 ### Architecture
 
@@ -32,6 +33,10 @@ ConnectX is a lightweight mobile client that:
 ├─────────────────────────────────────┤
 │  Presentation Layer (MVVM)          │
 │  ├── Pages (Views)                  │
+│  │   ├── Home (Requests)            │
+│  │   ├── Favorites                  │
+│  │   ├── User Profile               │
+│  │   └── Menu                       │
 │  ├── ViewModels (State Mgmt)        │
 │  └── Widgets                        │
 ├─────────────────────────────────────┤
@@ -63,6 +68,9 @@ ConnectX is a lightweight mobile client that:
 - **Voice Input**: Real-time audio capture and streaming
 - **Voice Output**: Playback of AI-generated responses
 - **Authentication**: Google Sign-In, Email/Password, Phone Auth
+- **Service Requests**: View and manage incoming/outgoing requests
+- **Favorites Management**: Save preferred providers for quick access
+- **User Profiles**: Detailed view of users, competencies, and reviews
 - **WebRTC**: Direct peer-to-peer audio streaming
 - **Visual Feedback**: Audio visualization during recording
 - **Chat History**: Conversation transcript display
@@ -215,19 +223,29 @@ connectx/
 │   │       └── presentation/
 │   │   └── home/                      # Main Home feature
 │   │       ├── data/                  # Repositories & Mock Data
+│   │       │   ├── mock_home_data.dart
+│   │       │   └── repositories/
 │   │       └── presentation/
-│   │           ├── pages/             # Home, Search, Favorites Pages
+│   │           ├── pages/             # App Pages (Tabs & Detail Views)
+│   │           │   ├── home_tab_page.dart
+│   │           │   ├── favorites_tab_page.dart
+│   │           │   ├── menu_tab_page.dart
+│   │           │   ├── request_detail_page.dart
+│   │           │   ├── user_detail_page.dart
+│   │           │   └── user_profile_page.dart
 │   │           └── viewmodels/        # HomeTab & Search ViewModels
 │   │
 │   ├── models/                        # Data models
 │   │   ├── chat_message.dart          # Chat message model
+│   │   ├── user.dart                  # User & favorites model
 │   │   ├── service_request.dart       # Service request model
-│   │   └── user.dart                  # User & favorites model
+│   │   └── competence.dart            # Competence model
 │   │
 │   ├── services/                      # Business logic
 │   │   ├── auth_service.dart          # Firebase authentication
 │   │   ├── speech_service.dart        # Speech recognition
-│   │   └── webrtc_service.dart        # WebRTC management
+│   │   ├── webrtc_service.dart        # WebRTC management
+│   │   └── user_service.dart          # User data management
 │   │
 │   ├── utils/                         # Helper methods
 │   │   └── constants.dart             # App constants

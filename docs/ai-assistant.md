@@ -25,6 +25,7 @@ The AI-Assistant server is a containerized service that:
 - Generates natural-sounding responses using Google Cloud TTS
 - Streams audio responses back to clients
 - Manages multi-stage conversations
+- Synchronizes data between Firestore (Relational) and Weaviate (Vector) databases
 - Performs semantic provider matching using Weaviate
 
 ### Why Server-Side Processing?
@@ -97,7 +98,15 @@ ai-assistant/
 │   ├── audio_track.py             # Audio track handling
 │   ├── peer_connection_handler.py # WebRTC management
 │   ├── signaling_server.py        # WebSocket signaling
-│   ├── data_provider.py           # Weaviate integration
+│   ├── app_endpoints.py           # REST API endpoints for App
+│   ├── user_endpoints.py          # User management endpoints
+│   ├── data_provider.py           # Data access abstraction
+│   ├── firestore_service.py       # Firestore (Ground Truth) service
+│   ├── hub_spoke_schema.py        # Weaviate Hub & Spoke definition
+│   ├── hub_spoke_ingestion.py     # Data sync pipeline (Firestore -> Weaviate)
+│   ├── hub_spoke_search.py        # Advanced search logic
+│   ├── weaviate_config.py         # Weaviate connection config
+│   ├── weaviate_models.py         # Weaviate data models
 │   ├── user_endpoints.py          # User management API
 │   ├── common_endpoints.py        # Shared API endpoints
 │   ├── weaviate_models.py         # Database models
@@ -117,12 +126,30 @@ ai-assistant/
 │       └── transcript_processor.py    # Transcript handling
 │
 ├── scripts/
-│   ├── init_hub_spoke_schema.py   # Database initialization
+│   ├── init_database.py           # Database initialization (Firestore + Weaviate)
+│   ├── delete_user.py             # User deletion utility
 │   ├── generate_admin_token.py    # Admin authentication
 │   ├── test_admin_interface.py    # Admin testing
 │   └── test_search_providers.py   # Search testing
 │
 ├── tests/                         # Unit and integration tests
+
+### Data Architecture: Hub & Spoke
+
+The system uses a **Hybrid Database Architecture**:
+1.  **Firestore**: Acts as the "Ground Truth" for relational data (Users, Service Requests, Reviews, Chat).
+2.  **Weaviate**: Acts as the "Search Engine" for semantic matching (Competencies, Providers).
+
+**Synchronization Flow:**
+- Writes go primarily to Firestore.
+- `HubSpokeIngestion` service syncs relevant changes (User profile, Competencies) to Weaviate in real-time.
+- `init_database.py` script ensures initial sync and test data population.
+
+**Hub & Spoke Model (Weaviate):**
+- **Hub**: The `User` object.
+- **Spoke**: The `Competence` (skill/service) object.
+- **Link**: Bidirectional references (`owned_by` <-> `has_competences`).
+- This allows searching for specific skills ("Spokes") while retrieving the full provider profile ("Hub").
 ├── Dockerfile                     # Container definition
 ├── docker-compose.yml             # Development setup
 ├── pyproject.toml                 # Dependencies
@@ -373,80 +400,77 @@ docker-compose up ai-assistant
 
 ## 🔌 API Endpoints
 
-### Health Check
+### Health Check & Signaling
 
 ```bash
-GET /health
-
-# Response
-{
-  "status": "healthy",
-  "active_connections": 0
-}
-```
-
-### WebSocket Signaling
-
-```bash
-WS /ws
-
-# Messages format
-{
-  "type": "offer|answer|ice",
-  "sdp": "<sdp-string>",
-  "candidate": "<ice-candidate>"
-}
+GET /health               # Service health status
+WS  /ws                   # WebRTC signaling WebSocket
+POST /sign_in_google      # Google authentication exchange
 ```
 
 ### User Management
 
 ```bash
-# Get current user
-GET /api/users/me
-Authorization: Bearer <firebase-token>
-
-# Update user
-PUT /api/users/me
-Authorization: Bearer <firebase-token>
-Body: {"name": "John Doe", "email": "john@example.com"}
+POST /user/sync           # Sync user data (Firestore <-> Weaviate)
+POST /user/logout         # User logout
+GET  /user                # Get current user profile
+PUT  /user                # Update current user profile
+GET  /users/{id}/user     # Get public profile of another user
 ```
 
-### Provider Search (Admin)
+### Competencies (Skills)
 
 ```bash
-# Search providers
-POST /api/providers/search
-Authorization: Bearer <admin-token>
-Body: {
-  "query": "plumber",
-  "filters": {"city": "Berlin"}
-}
+POST   /user/competencies       # Add competence (triggers Weaviate sync)
+DELETE /user/competencies/{id}  # Remove competence
+```
 
-# Response
-{
-  "providers": [
-    {
-      "name": "Berlin Plumbing",
-      "description": "Professional plumbing services",
-      "relevance_score": 0.92,
-      "phone": "+49 30 1234567",
-      "email": "info@berlinplumbing.de",
-      "city": "Berlin"
-    }
-  ]
-}
+### Service Requests
+
+```bash
+GET  /service_requests          # List all requests for user
+POST /service_requests          # Create new request
+PUT  /service_requests/{id}/status # Update status
+```
+
+### Favorites
+
+```bash
+GET    /favorites               # List favorites
+POST   /favorites/{user_id}     # Add favorite
+DELETE /favorites/{user_id}     # Remove favorite
+```
+
+### Reviews
+
+```bash
+POST   /reviews                 # Create review
+GET    /reviews/{id}            # Get review details
+GET    /reviews/user/{id}       # Get reviews FOR a user
+GET    /reviews/reviewer/{id}   # Get reviews BY a reviewer
+PATCH  /reviews/{id}            # Update review
+DELETE /reviews/{id}            # Delete review
+```
+
+### Chat & Messaging
+
+```bash
+# Chat Sessions
+POST   /provider_candidates/{cid}/chats          # Start chat
+GET    /provider_candidates/{cid}/chats/{id}     # Get chat details
+PATCH  /provider_candidates/{cid}/chats/{id}     # Update chat
+DELETE /provider_candidates/{cid}/chats/{id}     # Delete chat
+
+# Messages
+POST   .../chats/{id}/chat_messages              # Send message
+GET    .../chats/{id}/chat_messages              # List messages
 ```
 
 ### Admin Interface
 
 ```bash
-# Test provider search
-GET /admin/test-search?query=plumber&user_id=user123
-Authorization: Bearer <admin-token>
-
-# View conversation history
-GET /admin/conversations/<user_id>
-Authorization: Bearer <admin-token>
+GET /admin/test-search?query=...  # Test provider search
+GET /admin/conversations/{uid}    # View conversation history
 ```
 
 See the API Endpoints section above for available endpoints.
