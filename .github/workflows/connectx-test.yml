@@ -6,10 +6,6 @@ on:
     paths:
       - 'connectx/**'
       - '.github/workflows/connectx-test.yml'
-  pull_request:
-    paths:
-      - 'connectx/**'
-      - '.github/workflows/connectx-test.yml'
 
 jobs:
   build:
