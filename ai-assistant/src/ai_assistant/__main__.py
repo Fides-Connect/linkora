@@ -115,6 +115,29 @@ async def main():
     app.router.add_delete('/user/competencies/{competence}', app_endpoints.remove_competence)
     app.router.add_get('/users/{id}/user', app_endpoints.get_other_user)
     
+    # Review routes
+    app.router.add_post('/reviews', app_endpoints.create_review)
+    app.router.add_get('/reviews/{review_id}', app_endpoints.get_review)
+    app.router.add_get('/reviews/user/{user_id}', app_endpoints.get_reviews_for_user)
+    app.router.add_get('/reviews/reviewer/{reviewer_user_id}', app_endpoints.get_reviews_by_reviewer)
+    app.router.add_get('/reviews/request/{request_id}', app_endpoints.get_reviews_for_request)
+    app.router.add_patch('/reviews/{review_id}', app_endpoints.update_review)
+    app.router.add_delete('/reviews/{review_id}', app_endpoints.delete_review)
+    
+    # Chat routes
+    app.router.add_post('/chats', app_endpoints.create_chat)
+    app.router.add_get('/chats/{chat_id}', app_endpoints.get_chat)
+    app.router.add_get('/chats/request/{request_id}', app_endpoints.get_chats_for_request)
+    app.router.add_patch('/chats/{chat_id}', app_endpoints.update_chat)
+    app.router.add_delete('/chats/{chat_id}', app_endpoints.delete_chat)
+    
+    # Chat message routes
+    app.router.add_post('/chats/{chat_id}/messages', app_endpoints.create_chat_message)
+    app.router.add_get('/chats/{chat_id}/messages', app_endpoints.get_chat_messages)
+    app.router.add_get('/chats/{chat_id}/messages/{message_id}', app_endpoints.get_chat_message)
+    app.router.add_patch('/chats/{chat_id}/messages/{message_id}', app_endpoints.update_chat_message)
+    app.router.add_delete('/chats/{chat_id}/messages/{message_id}', app_endpoints.delete_chat_message)
+    
     # Register admin routes
     admin_service.register_routes(app)
     

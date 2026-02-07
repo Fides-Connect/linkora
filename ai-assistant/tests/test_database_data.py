@@ -19,6 +19,7 @@ USER_TEMPLATE = {
     "negative_feedback": [],
     "average_rating": 5.0,
     "review_count": 3,
+    # Note: created_at and updated_at will be set dynamically when seeding
 }
 
 USER_TEMPLATE_SERVICE_REQUESTS = [
@@ -150,6 +151,7 @@ USER_A = {
     "negative_feedback": ["Sometimes late on big jobs"],
     "average_rating": 4.8,
     "review_count": 25,
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 USER_A_COMPETENCES = [
@@ -179,6 +181,7 @@ USER_B = {
     "negative_feedback": ["Unfocused", "Quality varies", "Too many services listed"],
     "average_rating": 3.2,
     "review_count": 8,
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 USER_B_COMPETENCES = [
@@ -208,6 +211,7 @@ USER_C = {
     "negative_feedback": ["Rarely available", "Slow to respond"],
     "average_rating": 4.5,
     "review_count": 12,
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 USER_C_COMPETENCES = [
@@ -237,6 +241,7 @@ USER_D = {
     "negative_feedback": ["Sometimes overbooked"],
     "average_rating": 4.2,
     "review_count": 15,
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 USER_D_COMPETENCES = [
@@ -266,6 +271,7 @@ USER_E = {
     "negative_feedback": ["Sometimes hard to book in spring"],
     "average_rating": 4.7,
     "review_count": 18,
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 USER_E_COMPETENCES = [
@@ -274,30 +280,35 @@ USER_E_COMPETENCES = [
         "description": "Professional lawn mowing and edging services for residential properties.",
         "category": "Gardening",
         "price_range": "$40-$60/hour",
+        # Note: created_at and updated_at will be set dynamically in init script
     },
     {
         "title": "Garden Design",
         "description": "Creative garden design and landscaping planning services.",
         "category": "Gardening",
         "price_range": "$80-$120/hour",
+        # Note: created_at and updated_at will be set dynamically in init script
     },
     {
         "title": "Tree Pruning",
         "description": "Expert tree pruning and maintenance for healthy gardens.",
         "category": "Gardening",
         "price_range": "$60-$100/hour",
+        # Note: created_at and updated_at will be set dynamically in init script
     },
     {
         "title": "Flower Planting",
         "description": "Seasonal flower planting and garden bed preparation.",
         "category": "Gardening",
         "price_range": "$50-$80/hour",
+        # Note: created_at and updated_at will be set dynamically in init script
     },
     {
         "title": "Vegetable Garden Setup",
         "description": "Complete vegetable garden setup and maintenance for home growers.",
         "category": "Gardening",
         "price_range": "$70-$100/hour",
+        # Note: created_at and updated_at will be set dynamically in init script
     },
 ]
 
@@ -324,7 +335,6 @@ REQ_TEST_001 = {
     'description': "I need 5 pot lights installed in my living room. High ceilings.",
     'requested_competencies': ["Installing Pot Lights"],
     'status': 'pending',
-    # Note: 'created_at' will be generated dynamically in the init script
     'start_date': "2026-02-15T09:00:00Z",
     'end_date': "2026-02-15T14:00:00Z",
     'category': "Electrical",
@@ -333,6 +343,7 @@ REQ_TEST_001 = {
         'latitude': 40.7128,
         'longitude': -74.0060,
     },
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 CHAT_TEST_001 = {
@@ -340,6 +351,7 @@ CHAT_TEST_001 = {
     'service_request_id': "req_test_001",
     'title': "Pot Light Inquiry",
     # Chat Messages will be stored in subcollection
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 CHAT_MSG_TEST_001_1 = {
@@ -348,7 +360,7 @@ CHAT_MSG_TEST_001_1 = {
     'sender_user_id': "user_eva_005",
     'receiver_user_id': "AI_ASSISTANT",
     'message': "Can you find someone to help with pot lights?",
-    # Note: 'time' will be generated dynamically
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 CHAT_MSG_TEST_001_2 = {
@@ -357,7 +369,7 @@ CHAT_MSG_TEST_001_2 = {
     'sender_user_id': "AI_ASSISTANT",
     'receiver_user_id': "user_eva_005",
     'message': "I found Alice Professional who fits your request.",
-    # Note: 'time' will be generated dynamically
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 REV_TEST_001 = {
@@ -368,6 +380,7 @@ REV_TEST_001 = {
     'rating': 5,
     'positive_feedback': ["Punctual", "Professional"],
     'negative_feedback': []
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 
@@ -392,6 +405,7 @@ REQ_TEST_002_GHOST = {
         'latitude': 40.7200,
         'longitude': -74.0100,
     },
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 # Scenario 3: Ongoing chat between User A and AI
@@ -399,6 +413,7 @@ CHAT_TEST_002_PRO = {
     'chat_id': "chat_test_002",
     'service_request_id': None, # General inquiry
     'title': "Availability Update",
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 CHAT_MSG_TEST_002_1 = {
@@ -407,6 +422,7 @@ CHAT_MSG_TEST_002_1 = {
     'sender_user_id': "user_alice_001",
     'receiver_user_id': "AI_ASSISTANT",
     'message': "I will be on vacation next week, please pause requests.",
+    # Note: created_at and updated_at will be set dynamically in init script
 }
 
 

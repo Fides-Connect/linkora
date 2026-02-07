@@ -1,6 +1,6 @@
 import logging
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import firebase_admin
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -112,6 +112,9 @@ class FirestoreService:
             # Ensure timestamps are set
             if 'createdAt' not in request_data:
                 request_data['createdAt'] = datetime.utcnow()
+            if 'created_at' not in request_data:
+                request_data['created_at'] = datetime.utcnow()
+            request_data['updated_at'] = datetime.utcnow()
             
             # Create document with the prefixed ID
             ref = self._get_collection('requests').document(service_request_id)
@@ -127,7 +130,10 @@ class FirestoreService:
             return False
         try:
             ref = self._get_collection('requests').document(request_id)
-            ref.update({'status': status})
+            ref.update({
+                'status': status,
+                'updated_at': datetime.utcnow()
+            })
             return True
         except Exception as e:
             logger.error(f"Error updating request status {request_id}: {e}")
@@ -237,6 +243,8 @@ class FirestoreService:
         if not self.db:
             return False
         try:
+            # Add updated_at timestamp
+            user_data['updated_at'] = datetime.now(timezone.utc)
             # Use set with merge=True to create if not exists or update existing fields
             self._get_collection('users').document(user_id).set(user_data, merge=True)
             return True
@@ -273,6 +281,8 @@ class FirestoreService:
                 'description': competence.get('description', ''),
                 'category': competence.get('category', ''),
                 'price_range': competence.get('price_range', ''),
+                'created_at': datetime.utcnow(),
+                'updated_at': datetime.utcnow(),
             }
             # Use the generated competence_id as the document ID
             competencies_ref.document(competence_id).set(competence_data)
@@ -298,4 +308,277 @@ class FirestoreService:
             return True
         except Exception as e:
             logger.error(f"Error removing competence {competence_id} for {user_id}: {e}")
+            return False
+    # --- Review Operations ---
+
+    async def create_review(self, review_data: Dict[str, Any]) -> Optional[str]:
+        """Create a new review.
+        
+        Args:
+            review_data: Review data (should include request_id, user_id, reviewer_user_id, rating, etc.)
+            
+        Returns:
+            The generated review_id or None if failed
+        """
+        if not self.db:
+            return None
+        try:
+            # Generate prefixed review ID
+            review_id = self._generate_prefixed_id('review')
+            review_data['review_id'] = review_id
+            
+            # Ensure timestamps are set
+            if 'created_at' not in review_data:
+                review_data['created_at'] = datetime.utcnow()
+            review_data['updated_at'] = datetime.utcnow()
+            
+            # Create document with the prefixed ID
+            ref = self._get_collection('reviews').document(review_id)
+            ref.set(review_data)
+            return review_id
+        except Exception as e:
+            logger.error(f"Error creating review: {e}")
+            return None
+
+    async def get_review(self, review_id: str) -> Optional[Dict[str, Any]]:
+        """Get a review by ID."""
+        if not self.db:
+            return None
+        try:
+            doc = self._get_collection('reviews').document(review_id).get()
+            if doc.exists:
+                return doc.to_dict()
+            return None
+        except Exception as e:
+            logger.error(f"Error getting review {review_id}: {e}")
+            return None
+
+    async def get_reviews_by_user(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all reviews for a user (as reviewee)."""
+        if not self.db:
+            return []
+        try:
+            query = self._get_collection('reviews').where('user_id', '==', user_id)
+            docs = query.stream()
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            logger.error(f"Error getting reviews for user {user_id}: {e}")
+            return []
+
+    async def get_reviews_by_reviewer(self, reviewer_user_id: str) -> List[Dict[str, Any]]:
+        """Get all reviews written by a reviewer."""
+        if not self.db:
+            return []
+        try:
+            query = self._get_collection('reviews').where('reviewer_user_id', '==', reviewer_user_id)
+            docs = query.stream()
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            logger.error(f"Error getting reviews by reviewer {reviewer_user_id}: {e}")
+            return []
+
+    async def get_reviews_by_request(self, request_id: str) -> List[Dict[str, Any]]:
+        """Get all reviews for a service request."""
+        if not self.db:
+            return []
+        try:
+            query = self._get_collection('reviews').where('request_id', '==', request_id)
+            docs = query.stream()
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            logger.error(f"Error getting reviews for request {request_id}: {e}")
+            return []
+
+    async def update_review(self, review_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update a review."""
+        if not self.db:
+            return False
+        try:
+            ref = self._get_collection('reviews').document(review_id)
+            update_data['updated_at'] = datetime.utcnow()
+            ref.update(update_data)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating review {review_id}: {e}")
+            return False
+
+    async def delete_review(self, review_id: str) -> bool:
+        """Delete a review."""
+        if not self.db:
+            return False
+        try:
+            self._get_collection('reviews').document(review_id).delete()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting review {review_id}: {e}")
+            return False
+
+    # --- Chat Operations ---
+
+    async def create_chat(self, chat_data: Dict[str, Any]) -> Optional[str]:
+        """Create a new chat.
+        
+        Args:
+            chat_data: Chat data (should include title, service_request_id, etc.)
+            
+        Returns:
+            The generated chat_id or None if failed
+        """
+        if not self.db:
+            return None
+        try:
+            # Generate prefixed chat ID
+            chat_id = self._generate_prefixed_id('chat')
+            chat_data['chat_id'] = chat_id
+            
+            # Ensure timestamps are set
+            if 'created_at' not in chat_data:
+                chat_data['created_at'] = datetime.utcnow()
+            chat_data['updated_at'] = datetime.utcnow()
+            
+            # Create document with the prefixed ID
+            ref = self._get_collection('chats').document(chat_id)
+            ref.set(chat_data)
+            return chat_id
+        except Exception as e:
+            logger.error(f"Error creating chat: {e}")
+            return None
+
+    async def get_chat(self, chat_id: str) -> Optional[Dict[str, Any]]:
+        """Get a chat by ID."""
+        if not self.db:
+            return None
+        try:
+            doc = self._get_collection('chats').document(chat_id).get()
+            if doc.exists:
+                return doc.to_dict()
+            return None
+        except Exception as e:
+            logger.error(f"Error getting chat {chat_id}: {e}")
+            return None
+
+    async def get_chats_by_request(self, service_request_id: str) -> List[Dict[str, Any]]:
+        """Get all chats for a service request."""
+        if not self.db:
+            return []
+        try:
+            query = self._get_collection('chats').where('service_request_id', '==', service_request_id)
+            docs = query.stream()
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            logger.error(f"Error getting chats for request {service_request_id}: {e}")
+            return []
+
+    async def update_chat(self, chat_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update a chat."""
+        if not self.db:
+            return False
+        try:
+            ref = self._get_collection('chats').document(chat_id)
+            update_data['updated_at'] = datetime.utcnow()
+            ref.update(update_data)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating chat {chat_id}: {e}")
+            return False
+
+    async def delete_chat(self, chat_id: str) -> bool:
+        """Delete a chat and all its messages."""
+        if not self.db:
+            return False
+        try:
+            # Delete all messages in the subcollection first
+            messages_ref = self._get_collection('chats').document(chat_id).collection('messages')
+            messages = messages_ref.stream()
+            for msg in messages:
+                msg.reference.delete()
+            
+            # Delete the chat document
+            self._get_collection('chats').document(chat_id).delete()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting chat {chat_id}: {e}")
+            return False
+
+    # --- Chat Message Operations ---
+
+    async def create_chat_message(self, chat_id: str, message_data: Dict[str, Any]) -> Optional[str]:
+        """Create a new chat message in a chat's messages subcollection.
+        
+        Args:
+            chat_id: The chat ID
+            message_data: Message data (should include sender_user_id, receiver_user_id, message, etc.)
+            
+        Returns:
+            The generated chat_message_id or None if failed
+        """
+        if not self.db:
+            return None
+        try:
+            # Generate prefixed message ID
+            message_id = self._generate_prefixed_id('chat_message')
+            message_data['chat_message_id'] = message_id
+            message_data['chat_id'] = chat_id
+            
+            # Ensure timestamps are set
+            if 'created_at' not in message_data:
+                message_data['created_at'] = datetime.utcnow()
+            message_data['updated_at'] = datetime.utcnow()
+            
+            # Create document in messages subcollection
+            ref = self._get_collection('chats').document(chat_id).collection('messages').document(message_id)
+            ref.set(message_data)
+            return message_id
+        except Exception as e:
+            logger.error(f"Error creating chat message in {chat_id}: {e}")
+            return None
+
+    async def get_chat_messages(self, chat_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get all messages for a chat, ordered by time."""
+        if not self.db:
+            return []
+        try:
+            messages_ref = self._get_collection('chats').document(chat_id).collection('messages')
+            query = messages_ref.order_by('time').limit(limit)
+            docs = query.stream()
+            return [doc.to_dict() for doc in docs]
+        except Exception as e:
+            logger.error(f"Error getting messages for chat {chat_id}: {e}")
+            return []
+
+    async def get_chat_message(self, chat_id: str, message_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific chat message."""
+        if not self.db:
+            return None
+        try:
+            doc = self._get_collection('chats').document(chat_id).collection('messages').document(message_id).get()
+            if doc.exists:
+                return doc.to_dict()
+            return None
+        except Exception as e:
+            logger.error(f"Error getting message {message_id} from chat {chat_id}: {e}")
+            return None
+
+    async def update_chat_message(self, chat_id: str, message_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update a chat message."""
+        if not self.db:
+            return False
+        try:
+            ref = self._get_collection('chats').document(chat_id).collection('messages').document(message_id)
+            update_data['updated_at'] = datetime.utcnow()
+            ref.update(update_data)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating message {message_id} in chat {chat_id}: {e}")
+            return False
+
+    async def delete_chat_message(self, chat_id: str, message_id: str) -> bool:
+        """Delete a chat message."""
+        if not self.db:
+            return False
+        try:
+            self._get_collection('chats').document(chat_id).collection('messages').document(message_id).delete()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting message {message_id} from chat {chat_id}: {e}")
             return False

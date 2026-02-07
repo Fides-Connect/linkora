@@ -83,7 +83,8 @@ async def user_sync(request: web.Request) -> web.Response:
             })
         else:
             # Create new user in Weaviate
-            user_data["created_at"] = datetime.now(UTC)
+            now = datetime.now(UTC)
+            user_data["created_at"] = now
             uuid = UserModelWeaviate.create_user(user_data)
             
             if not uuid:

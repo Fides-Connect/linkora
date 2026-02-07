@@ -7,6 +7,17 @@ from .firestore_service import FirestoreService
 logger = logging.getLogger(__name__)
 firestore_service = FirestoreService()
 
+def serialize_datetime(obj):
+    """Recursively serialize datetime objects to ISO format strings."""
+    if isinstance(obj, dict):
+        return {k: serialize_datetime(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [serialize_datetime(item) for item in obj]
+    elif hasattr(obj, 'isoformat'):
+        return obj.isoformat()
+    else:
+        return obj
+
 async def get_current_user_id(request: web.Request) -> str:
     """Extract and verify Firebase ID token from Authorization header."""
     auth_header = request.headers.get('Authorization')
@@ -29,10 +40,7 @@ async def get_requests(request: web.Request) -> web.Response:
         user_id = await get_current_user_id(request)
         requests = await firestore_service.get_requests(user_id)
         # Convert datetime objects to string for JSON serialization
-        for r in requests:
-            for k, v in r.items():
-                if hasattr(v, 'isoformat'):
-                    r[k] = v.isoformat()
+        requests = serialize_datetime(requests)
         return web.json_response(requests)
     except web.HTTPException:
         raise
@@ -92,6 +100,8 @@ async def get_favorites(request: web.Request) -> web.Response:
     try:
         user_id = await get_current_user_id(request)
         favorites = await firestore_service.get_favorites(user_id)
+        # Handle datetime serialization
+        favorites = serialize_datetime(favorites)
         return web.json_response(favorites)
     except web.HTTPException:
         raise
@@ -147,10 +157,8 @@ async def get_user(request: web.Request) -> web.Response:
         user = await firestore_service.get_user(user_id)
         
         if user:
-            # Handle datetime serialization if any
-            for k, v in user.items():
-                if hasattr(v, 'isoformat'):
-                    user[k] = v.isoformat()
+            # Handle datetime serialization
+            user = serialize_datetime(user)
             return web.json_response(user)
         
         # If not found, return 404
@@ -193,10 +201,8 @@ async def add_competence(request: web.Request) -> web.Response:
             # Fetch and return the updated user object
             user = await firestore_service.get_user(user_id)
             if user:
-                # Handle datetime serialization if any
-                for k, v in user.items():
-                    if hasattr(v, 'isoformat'):
-                        user[k] = v.isoformat()
+                # Handle datetime serialization
+                user = serialize_datetime(user)
                 return web.json_response(user)
             return web.json_response({"error": "Failed to fetch updated user"}, status=500)
         else:
@@ -218,10 +224,8 @@ async def remove_competence(request: web.Request) -> web.Response:
             # Fetch and return the updated user object
             user = await firestore_service.get_user(user_id)
             if user:
-                # Handle datetime serialization if any
-                for k, v in user.items():
-                    if hasattr(v, 'isoformat'):
-                        user[k] = v.isoformat()
+                # Handle datetime serialization
+                user = serialize_datetime(user)
                 return web.json_response(user)
             return web.json_response({"error": "Failed to fetch updated user"}, status=500)
         else:
@@ -242,10 +246,8 @@ async def get_other_user(request: web.Request) -> web.Response:
         user = await firestore_service.get_user(target_user_id)
         
         if user:
-             # Handle datetime serialization if any
-            for k, v in user.items():
-                if hasattr(v, 'isoformat'):
-                    user[k] = v.isoformat()
+            # Handle datetime serialization
+            user = serialize_datetime(user)
             return web.json_response(user)
         
         return web.json_response({"error": "User not found"}, status=404)
@@ -254,3 +256,486 @@ async def get_other_user(request: web.Request) -> web.Response:
     except Exception as e:
         logger.error(f"Error in get_other_user: {e}")
         return web.json_response({"error": str(e)}, status=500)
+
+# --- Review Endpoints ---
+
+async def create_review(request: web.Request) -> web.Response:
+    """Create a new review.
+    
+    POST /reviews
+    Body: {
+        "request_id": "service_request_xyz",
+        "user_id": "user_abc",
+        "reviewer_user_id": "user_def",
+        "rating": 5,
+        "positive_feedback": ["Punctual", "Professional"],
+        "negative_feedback": [],
+        "comment": "Optional text comment"
+    }
+    """
+    try:
+        reviewer_user_id = await get_current_user_id(request)
+        body = await request.json()
+        
+        # Validate required fields
+        required_fields = ['request_id', 'user_id', 'rating']
+        for field in required_fields:
+            if field not in body:
+                return web.json_response({"error": f"Missing required field: {field}"}, status=400)
+        
+        # Validate rating
+        rating = body.get('rating')
+        if not isinstance(rating, (int, float)) or rating < 1 or rating > 5:
+            return web.json_response({"error": "Rating must be between 1 and 5"}, status=400)
+        
+        from datetime import datetime
+        review_data = {
+            'request_id': body['request_id'],
+            'user_id': body['user_id'],
+            'reviewer_user_id': reviewer_user_id,  # Use authenticated user
+            'rating': rating,
+            'positive_feedback': body.get('positive_feedback', []),
+            'negative_feedback': body.get('negative_feedback', []),
+            'comment': body.get('comment', ''),
+            'created_at': datetime.utcnow()
+        }
+        
+        review_id = await firestore_service.create_review(review_data)
+        
+        if not review_id:
+            return web.json_response({"error": "Failed to create review"}, status=500)
+        
+        return web.json_response({
+            "review_id": review_id,
+            "status": "created"
+        }, status=201)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating review: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def get_review(request: web.Request) -> web.Response:
+    """Get a review by ID.
+    
+    GET /reviews/{review_id}
+    """
+    try:
+        await get_current_user_id(request)
+        review_id = request.match_info.get('review_id')
+        
+        review = await firestore_service.get_review(review_id)
+        
+        if not review:
+            return web.json_response({"error": "Review not found"}, status=404)
+        
+        # Handle datetime serialization
+        review = serialize_datetime(review)
+        return web.json_response(review)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting review: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def get_reviews_for_user(request: web.Request) -> web.Response:
+    """Get all reviews for a user (as reviewee).
+    
+    GET /reviews/user/{user_id}
+    """
+    try:
+        await get_current_user_id(request)
+        user_id = request.match_info.get('user_id')
+        
+        reviews = await firestore_service.get_reviews_by_user(user_id)
+        
+        # Handle datetime serialization
+        reviews = serialize_datetime(reviews)
+        return web.json_response({"reviews": reviews})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting reviews for user: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def get_reviews_by_reviewer(request: web.Request) -> web.Response:
+    """Get all reviews written by a reviewer.
+    
+    GET /reviews/reviewer/{reviewer_user_id}
+    """
+    try:
+        await get_current_user_id(request)
+        reviewer_user_id = request.match_info.get('reviewer_user_id')
+        
+        reviews = await firestore_service.get_reviews_by_reviewer(reviewer_user_id)
+        
+        # Handle datetime serialization
+        reviews = serialize_datetime(reviews)
+        return web.json_response({"reviews": reviews})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting reviews by reviewer: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def get_reviews_for_request(request: web.Request) -> web.Response:
+    """Get all reviews for a service request.
+    
+    GET /reviews/request/{request_id}
+    """
+    try:
+        await get_current_user_id(request)
+        request_id = request.match_info.get('request_id')
+        
+        reviews = await firestore_service.get_reviews_by_request(request_id)
+        
+        # Handle datetime serialization
+        reviews = serialize_datetime(reviews)
+        return web.json_response({"reviews": reviews})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting reviews for request: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def update_review(request: web.Request) -> web.Response:
+    """Update a review.
+    
+    PATCH /reviews/{review_id}
+    Body: {
+        "rating": 4,
+        "positive_feedback": ["Updated"],
+        "comment": "Updated comment"
+    }
+    """
+    try:
+        await get_current_user_id(request)
+        review_id = request.match_info.get('review_id')
+        body = await request.json()
+        
+        # Validate rating if provided
+        if 'rating' in body:
+            rating = body['rating']
+            if not isinstance(rating, (int, float)) or rating < 1 or rating > 5:
+                return web.json_response({"error": "Rating must be between 1 and 5"}, status=400)
+        
+        success = await firestore_service.update_review(review_id, body)
+        
+        if not success:
+            return web.json_response({"error": "Failed to update review"}, status=500)
+        
+        return web.json_response({"status": "updated"})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating review: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def delete_review(request: web.Request) -> web.Response:
+    """Delete a review.
+    
+    DELETE /reviews/{review_id}
+    """
+    try:
+        await get_current_user_id(request)
+        review_id = request.match_info.get('review_id')
+        
+        success = await firestore_service.delete_review(review_id)
+        
+        if not success:
+            return web.json_response({"error": "Failed to delete review"}, status=500)
+        
+        return web.json_response({"status": "deleted"})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting review: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+# --- Chat Endpoints ---
+
+async def create_chat(request: web.Request) -> web.Response:
+    """Create a new chat.
+    
+    POST /chats
+    Body: {
+        "title": "Chat title",
+        "service_request_id": "service_request_xyz"
+    }
+    """
+    try:
+        await get_current_user_id(request)
+        body = await request.json()
+        
+        # Validate required fields
+        required_fields = ['title', 'service_request_id']
+        for field in required_fields:
+            if field not in body:
+                return web.json_response({"error": f"Missing required field: {field}"}, status=400)
+        
+        from datetime import datetime
+        chat_data = {
+            'title': body['title'],
+            'service_request_id': body['service_request_id'],
+            'created_at': datetime.utcnow()
+        }
+        
+        chat_id = await firestore_service.create_chat(chat_data)
+        
+        if not chat_id:
+            return web.json_response({"error": "Failed to create chat"}, status=500)
+        
+        return web.json_response({
+            "chat_id": chat_id,
+            "status": "created"
+        }, status=201)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating chat: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def get_chat(request: web.Request) -> web.Response:
+    """Get a chat by ID.
+    
+    GET /chats/{chat_id}
+    """
+    try:
+        await get_current_user_id(request)
+        chat_id = request.match_info.get('chat_id')
+        
+        chat = await firestore_service.get_chat(chat_id)
+        
+        if not chat:
+            return web.json_response({"error": "Chat not found"}, status=404)
+        
+        # Handle datetime serialization
+        chat = serialize_datetime(chat)
+        return web.json_response(chat)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting chat: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def get_chats_for_request(request: web.Request) -> web.Response:
+    """Get all chats for a service request.
+    
+    GET /chats/request/{request_id}
+    """
+    try:
+        await get_current_user_id(request)
+        request_id = request.match_info.get('request_id')
+        
+        chats = await firestore_service.get_chats_by_request(request_id)
+        
+        # Handle datetime serialization
+        chats = serialize_datetime(chats)
+        return web.json_response({"chats": chats})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting chats for request: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def update_chat(request: web.Request) -> web.Response:
+    """Update a chat.
+    
+    PATCH /chats/{chat_id}
+    Body: {
+        "title": "Updated title"
+    }
+    """
+    try:
+        await get_current_user_id(request)
+        chat_id = request.match_info.get('chat_id')
+        body = await request.json()
+        
+        success = await firestore_service.update_chat(chat_id, body)
+        
+        if not success:
+            return web.json_response({"error": "Failed to update chat"}, status=500)
+        
+        return web.json_response({"status": "updated"})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating chat: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def delete_chat(request: web.Request) -> web.Response:
+    """Delete a chat and all its messages.
+    
+    DELETE /chats/{chat_id}
+    """
+    try:
+        await get_current_user_id(request)
+        chat_id = request.match_info.get('chat_id')
+        
+        success = await firestore_service.delete_chat(chat_id)
+        
+        if not success:
+            return web.json_response({"error": "Failed to delete chat"}, status=500)
+        
+        return web.json_response({"status": "deleted"})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting chat: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+# --- Chat Message Endpoints ---
+
+async def create_chat_message(request: web.Request) -> web.Response:
+    """Create a new chat message.
+    
+    POST /chats/{chat_id}/messages
+    Body: {
+        "sender_user_id": "user_abc",
+        "receiver_user_id": "user_def",
+        "message": "Hello!"
+    }
+    """
+    try:
+        sender_user_id = await get_current_user_id(request)
+        chat_id = request.match_info.get('chat_id')
+        body = await request.json()
+        
+        # Validate required fields
+        required_fields = ['receiver_user_id', 'message']
+        for field in required_fields:
+            if field not in body:
+                return web.json_response({"error": f"Missing required field: {field}"}, status=400)
+        
+        from datetime import datetime
+        message_data = {
+            'sender_user_id': sender_user_id,  # Use authenticated user
+            'receiver_user_id': body['receiver_user_id'],
+            'message': body['message']
+        }
+        
+        message_id = await firestore_service.create_chat_message(chat_id, message_data)
+        
+        if not message_id:
+            return web.json_response({"error": "Failed to create message"}, status=500)
+        
+        return web.json_response({
+            "chat_message_id": message_id,
+            "status": "created"
+        }, status=201)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating message: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def get_chat_messages(request: web.Request) -> web.Response:
+    """Get all messages for a chat.
+    
+    GET /chats/{chat_id}/messages?limit=100
+    """
+    try:
+        await get_current_user_id(request)
+        chat_id = request.match_info.get('chat_id')
+        
+        # Get limit from query params
+        limit = int(request.query.get('limit', 100))
+        
+        messages = await firestore_service.get_chat_messages(chat_id, limit=limit)
+        
+        # Handle datetime serialization
+        messages = serialize_datetime(messages)
+        return web.json_response({"messages": messages})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting messages: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def get_chat_message(request: web.Request) -> web.Response:
+    """Get a specific chat message.
+    
+    GET /chats/{chat_id}/messages/{message_id}
+    """
+    try:
+        await get_current_user_id(request)
+        chat_id = request.match_info.get('chat_id')
+        message_id = request.match_info.get('message_id')
+        
+        message = await firestore_service.get_chat_message(chat_id, message_id)
+        
+        if not message:
+            return web.json_response({"error": "Message not found"}, status=404)
+        
+        # Handle datetime serialization
+        message = serialize_datetime(message)
+        return web.json_response(message)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting message: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def update_chat_message(request: web.Request) -> web.Response:
+    """Update a chat message.
+    
+    PATCH /chats/{chat_id}/messages/{message_id}
+    Body: {
+        "message": "Updated message text"
+    }
+    """
+    try:
+        await get_current_user_id(request)
+        chat_id = request.match_info.get('chat_id')
+        message_id = request.match_info.get('message_id')
+        body = await request.json()
+        
+        success = await firestore_service.update_chat_message(chat_id, message_id, body)
+        
+        if not success:
+            return web.json_response({"error": "Failed to update message"}, status=500)
+        
+        return web.json_response({"status": "updated"})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating message: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)
+
+
+async def delete_chat_message(request: web.Request) -> web.Response:
+    """Delete a chat message.
+    
+    DELETE /chats/{chat_id}/messages/{message_id}
+    """
+    try:
+        await get_current_user_id(request)
+        chat_id = request.match_info.get('chat_id')
+        message_id = request.match_info.get('message_id')
+        
+        success = await firestore_service.delete_chat_message(chat_id, message_id)
+        
+        if not success:
+            return web.json_response({"error": "Failed to delete message"}, status=500)
+        
+        return web.json_response({"status": "deleted"})
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting message: {e}")
+        return web.json_response({"error": "Internal server error"}, status=500)

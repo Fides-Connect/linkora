@@ -2,6 +2,7 @@ import logging
 import copy
 import sys
 import os
+from datetime import datetime, timezone
 
 # Ensure tests can be imported by adding project root to sys.path
 # This is required because test_database_data is in the tests folder
@@ -67,7 +68,9 @@ class UserSeedingService:
                 'title': comp.get('title', ''),
                 'description': comp.get('description', ''),
                 'category': comp.get('category', ''),
-                'price_range': comp.get('price_range', '')
+                'price_range': comp.get('price_range', ''),
+                'created_at': datetime.now(timezone.utc),
+                'updated_at': datetime.now(timezone.utc),
             }
             comp_ref.set(comp_doc)
         
@@ -86,6 +89,10 @@ class UserSeedingService:
                 req_data["seeker_user_id"] = req_data["seeker_user_id"].format(uid=user_id)
             if "selected_provider_user_id" in req_data and "{uid}" in req_data["selected_provider_user_id"]:
                 req_data["selected_provider_user_id"] = req_data["selected_provider_user_id"].format(uid=user_id)
+            
+            # Add timestamps
+            req_data['created_at'] = datetime.now(timezone.utc)
+            req_data['updated_at'] = datetime.now(timezone.utc)
             
             try:
                 requests_ref = self.firestore_service.db.collection('requests') # access public prop

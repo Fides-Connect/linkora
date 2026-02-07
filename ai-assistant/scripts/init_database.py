@@ -170,7 +170,9 @@ def init_firestore(test_data):
                 'positive_feedback': p_data.get('positive_feedback', []),
                 'negative_feedback': p_data.get('negative_feedback', []),
                 'average_rating': p_data.get('average_rating', 5.0),
-                'review_count': p_data.get('review_count', 0)
+                'review_count': p_data.get('review_count', 0),
+                'created_at': datetime.datetime.now(timezone.utc),
+                'updated_at': datetime.datetime.now(timezone.utc),
             }
             
             batch.set(user_ref, user_doc)
@@ -192,7 +194,9 @@ def init_firestore(test_data):
                     'competence_id': comp_id,
                     'title': comp['title'],
                     'description': comp.get('description', ''),
-                    'price_range': comp.get('price_range', '')
+                    'price_range': comp.get('price_range', ''),
+                    'created_at': datetime.datetime.now(timezone.utc),
+                    'updated_at': datetime.datetime.now(timezone.utc),
                 }
                 comp_ref.set(comp_doc)
                 
@@ -206,9 +210,11 @@ def init_firestore(test_data):
             req_id = req.get('service_request_id', 'unknown_req')
             req_ref = db.collection(req_collection_name).document(req_id)
             
-            # Add dynamic timestamp if missing
+            # Add dynamic timestamps if missing
             if 'created_at' not in req:
                 req['created_at'] = datetime.datetime.now(timezone.utc)
+            if 'updated_at' not in req:
+                req['updated_at'] = datetime.datetime.now(timezone.utc)
                 
             req_ref.set(req)
         logger.info(f"  ✓ {len(requests)} Service Requests created")
@@ -222,9 +228,11 @@ def init_firestore(test_data):
             chat_id = chat.get('chat_id', 'unknown_chat')
             chat_ref = db.collection('chats').document(chat_id)
             
-            # Add dynamic timestamp if missing
+            # Add dynamic timestamps if missing
             if 'created_at' not in chat:
-                chat['created_at'] = int(datetime.datetime.now(timezone.utc).timestamp() * 1000)
+                chat['created_at'] = datetime.datetime.now(timezone.utc)
+            if 'updated_at' not in chat:
+                chat['updated_at'] = datetime.datetime.now(timezone.utc)
                 
             chat_ref.set(chat)
         logger.info(f"  ✓ {len(chats)} Chat Sessions created")
@@ -241,9 +249,11 @@ def init_firestore(test_data):
                 # Subcollection 'messages' under 'chats' document
                 msg_ref = db.collection('chats').document(chat_id).collection('messages').document(msg_id)
                 
-                # Add dynamic timestamp if missing
-                if 'timestamp' not in msg:
-                    msg['timestamp'] = int(datetime.datetime.now(timezone.utc).timestamp() * 1000)
+                # Add dynamic timestamps if missing
+                if 'created_at' not in msg:
+                    msg['created_at'] = datetime.datetime.now(timezone.utc)
+                if 'updated_at' not in msg:
+                    msg['updated_at'] = datetime.datetime.now(timezone.utc)
                 
                 msg_ref.set(msg)
                 count += 1
@@ -255,6 +265,13 @@ def init_firestore(test_data):
         for rev in reviews:
             rev_id = rev.get('review_id', 'unknown_rev')
             rev_ref = db.collection('reviews').document(rev_id)
+            
+            # Add dynamic timestamps if missing
+            if 'created_at' not in rev:
+                rev['created_at'] = datetime.datetime.now(timezone.utc)
+            if 'updated_at' not in rev:
+                rev['updated_at'] = datetime.datetime.now(timezone.utc)
+            
             rev_ref.set(rev)
         logger.info(f"  ✓ {len(reviews)} Reviews created")
 
