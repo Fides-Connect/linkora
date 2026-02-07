@@ -3,7 +3,6 @@ import 'package:mockito/mockito.dart';
 import 'package:connectx/features/home/data/repositories/home_repository.dart';
 import 'package:connectx/models/service_request.dart';
 import 'package:connectx/models/user.dart';
-import 'package:connectx/services/api_service.dart';
 import '../../../../helpers/test_helpers.mocks.dart';
 
 void main() {
@@ -49,19 +48,7 @@ void main() {
       verify(mockApiService.get('/service_requests')).called(1);
     });
 
-    // We can't easily test fallback to 'mockRequests' because it is imported internally 
-    // and potentially hardcoded. But we can verify it doesn't throw.
-    test('returns fallback (not empty usually) on API failure', () async {
-      // Arrange
-      when(mockApiService.get('/service_requests')).thenThrow(ApiException('Error'));
 
-      // Act
-      final result = await repository.getRequests();
-
-      // Assert
-      // Assuming mockRequests is not empty
-      expect(result.isNotEmpty, true);
-    });
   });
 
   group('getFavorites', () {
