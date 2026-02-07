@@ -16,6 +16,7 @@ from ai_assistant.hub_spoke_schema import (
     get_user_collection,
     get_competence_collection
 )
+from weaviate.classes.query import Filter
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +206,7 @@ class HubSpokeIngestion:
             # Step 3: Create Competence with owned_by reference
             competence_uuid = competence_collection.data.insert(
                 properties={
+                    "competence_id": competence_data.get("competence_id", ""),
                     "title": competence_data.get("title"),
                     "description": description,
                     "category": category,
@@ -544,3 +546,35 @@ class HubSpokeIngestion:
         except Exception as e:
             logger.error(f"Error deleting competences: {e}")
             return {"success": False, "error": str(e), "deleted_uuids": []}
+
+    @staticmethod
+    def remove_competence_by_firestore_id(firestore_id: str) -> bool:
+        """
+        Remove a competence by its Firestore ID.
+        
+        Args:
+            firestore_id: The Firestore competence_id (e.g., 'competence_12345')
+            
+        Returns:
+            bool: True if deletion was successful (or if not found, as it's idempotent-ish)
+        """
+        try:
+            collection = get_competence_collection()
+            # Find by competence_id
+            response = collection.query.fetch_objects(
+                filters=Filter.by_property("competence_id").equal(firestore_id),
+                limit=1
+            )
+            
+            if not response.objects:
+                logger.warning(f"Competence not found for deletion: {firestore_id}")
+                return False
+                
+            uuid = response.objects[0].uuid
+            collection.data.delete_by_id(uuid)
+            logger.info(f"Deleted competence {firestore_id} (UUID: {uuid})")
+            return True
+        except Exception as e:
+            logger.error(f"Error removing competence {firestore_id}: {e}")
+            # Log error but don't crash main loop if used in bulk
+            return False

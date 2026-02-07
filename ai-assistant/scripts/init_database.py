@@ -339,9 +339,20 @@ def load_weaviate_data(test_personas):
     
     for persona in test_personas:
         logger.info(f"  Processing {persona['name']}")
+        
+        # Inject competence_id to match Firestore logic
+        user_id = persona['user']['user_id']
+        competences_data = persona['competences']
+        
+        # We must iterate to inject IDs, replicating init_firestore logic:
+        # comp_id = f"{user_id}_comp_{i+1}"
+        for i, comp in enumerate(competences_data):
+            # Check if updated in place or if we need copy - safe to update in place for script
+            comp['competence_id'] = f"{user_id}_comp_{i+1}"
+            
         result = HubSpokeIngestion.create_user_with_competences(
             user_data=persona['user'],
-            competences_data=persona['competences'],
+            competences_data=competences_data,
             apply_sanitization=True,
             apply_enrichment=True
         )

@@ -4,6 +4,12 @@ from aiohttp import web
 from firebase_admin import auth
 from .firestore_service import FirestoreService
 
+# Weaviate imports
+from .weaviate_models import UserModelWeaviate
+from .hub_spoke_ingestion import HubSpokeIngestion
+from .hub_spoke_schema import get_user_collection
+from weaviate.classes.query import Filter
+
 logger = logging.getLogger(__name__)
 firestore_service = FirestoreService()
 
@@ -177,7 +183,14 @@ async def update_user(request: web.Request) -> web.Response:
         
         success = await firestore_service.update_user(user_id, body)
         if success:
-             return web.json_response({"status": "updated"})
+            # Sync to Weaviate
+            try:
+                # We reuse the body, assuming fields match or UserModelWeaviate handles it safely
+                UserModelWeaviate.update_user(user_id, body)
+            except Exception as e:
+                logger.error(f"Failed to sync user {user_id} update to Weaviate: {e}")
+
+            return web.json_response({"status": "updated"})
         else:
              return web.json_response({"error": "Failed to update user"}, status=500)
     except web.HTTPException:
@@ -198,6 +211,23 @@ async def add_competence(request: web.Request) -> web.Response:
             
         created_competence = await firestore_service.add_competence(user_id, competence)
         if created_competence:
+            # Sync to Weaviate
+            try:
+                # Need Weaviate User UUID
+                coll = get_user_collection()
+                res = coll.query.fetch_objects(
+                    filters=Filter.by_property("user_id").equal(user_id),
+                    limit=1
+                )
+                if res.objects:
+                    user_uuid = str(res.objects[0].uuid)
+                    HubSpokeIngestion.create_competence(
+                        competence_data=created_competence,
+                        user_uuid=user_uuid
+                    )
+            except Exception as e:
+                logger.error(f"Failed to sync new competence to Weaviate: {e}")
+
             # Fetch and return the updated user object
             user = await firestore_service.get_user(user_id)
             if user:
@@ -221,6 +251,12 @@ async def remove_competence(request: web.Request) -> web.Response:
         
         success = await firestore_service.remove_competence(user_id, competence_id)
         if success:
+            # Sync to Weaviate
+            try:
+                HubSpokeIngestion.remove_competence_by_firestore_id(competence_id)
+            except Exception as e:
+                logger.error(f"Failed to remove competence {competence_id} from Weaviate: {e}")
+
             # Fetch and return the updated user object
             user = await firestore_service.get_user(user_id)
             if user:

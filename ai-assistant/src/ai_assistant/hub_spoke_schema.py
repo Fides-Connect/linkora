@@ -101,6 +101,7 @@ def init_hub_spoke_schema():
                 name=COMPETENCE_COLLECTION,
                 vector_config=Configure.Vectors.text2vec_model2vec(),
                 properties=[
+                    Property(name="competence_id", data_type=DataType.TEXT),  # Link to Firestore ID
                     Property(name="title", data_type=DataType.TEXT),
                     Property(
                         name="description", 

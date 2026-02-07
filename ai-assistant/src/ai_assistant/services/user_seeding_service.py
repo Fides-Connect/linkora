@@ -19,6 +19,11 @@ if project_root not in sys.path:
 
 from ..firestore_service import FirestoreService
 
+# Weaviate imports
+from ..hub_spoke_ingestion import HubSpokeIngestion
+from ..hub_spoke_schema import get_user_collection
+from weaviate.classes.query import Filter
+
 try:
     from tests.test_database_data import USER_TEMPLATE, USER_TEMPLATE_SERVICE_REQUESTS, USER_TEMPLATE_COMPETENCES, USER_TEMPLATE_PROVIDER_CANDIDATES, USER_A
 except ImportError:
@@ -39,6 +44,20 @@ class UserSeedingService:
     def __init__(self, firestore_service: FirestoreService):
         self.firestore_service = firestore_service
 
+    def _get_weaviate_user_uuid(self, user_id: str) -> str:
+        """Helper to get Weaviate UUID for a user."""
+        try:
+            coll = get_user_collection()
+            res = coll.query.fetch_objects(
+                filters=Filter.by_property("user_id").equal(user_id),
+                limit=1
+            )
+            if res.objects:
+                return str(res.objects[0].uuid)
+        except Exception as e:
+            logger.error(f"Failed to fetch Weaviate UUID for {user_id}: {e}")
+        return None
+
     async def seed_new_user(self, user_id: str, name: str, email: str):
         """Seed initial data for a new user if not already present."""
         if not self.firestore_service.db:
@@ -57,6 +76,9 @@ class UserSeedingService:
         # We use the existing update_user_user method which does a set with merge=True
         await self.firestore_service.update_user(user_id, user_update)
         
+        # Get Weaviate UUID for syncing competencies
+        weaviate_uuid = self._get_weaviate_user_uuid(user_id)
+        
         # 1b. Add Competencies Subcollection
         for comp in USER_TEMPLATE_COMPETENCES:
             # Generate prefixed competence ID
@@ -73,6 +95,20 @@ class UserSeedingService:
                 'updated_at': datetime.now(timezone.utc),
             }
             comp_ref.set(comp_doc)
+            
+            # Sync to Weaviate
+            if weaviate_uuid:
+                try:
+                    comp_data_weaviate = {
+                        "competence_id": competence_id,
+                        "title": comp_doc['title'],
+                        "description": comp_doc['description'],
+                        "category": comp_doc['category'],
+                        "price_range": comp_doc['price_range']
+                    }
+                    HubSpokeIngestion.create_competence(comp_data_weaviate, weaviate_uuid)
+                except Exception as e:
+                    logger.error(f"Failed to sync seeded competence {competence_id} to Weaviate: {e}")
         
         # 2. Create Sample Requests
         service_requests = USER_TEMPLATE_SERVICE_REQUESTS
