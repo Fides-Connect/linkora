@@ -61,6 +61,7 @@ class TestAppEndpoints:
         # Arrange
         mock_request.headers = {'Authorization': 'Bearer token'}
         mock_request.json = AsyncMock(return_value={
+            "seeker_user_id": "test_user_id",
             "title": "Need help",
             "category": "plumbing"
         })
