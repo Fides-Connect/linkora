@@ -26,7 +26,7 @@ class UserModelWeaviate:
             uuid = collection.data.insert(
                 properties={
                     "user_id": user_data.get("user_id"),
-                    "name": user_data.get("name") or user_data.get("display_name", ""),
+                    "name": user_data.get("name"),
                     "email": user_data.get("email"),
                     "location": user_data.get("location", ""),
                     "type": "client",  # Default type for users
@@ -264,29 +264,4 @@ class ProviderModelWeaviate:
             
         except Exception as e:
             logger.error(f"Error in vector search: {e}")
-            return []
-    
-    
-    @staticmethod
-    def get_all_providers(limit: int = 100) -> List[Dict[str, Any]]:
-        """Get all providers (User with type='provider')."""
-        try:
-            collection = get_users_collection()
-            
-            response = collection.query.fetch_objects(
-                filters=Filter.by_property("type").equal("provider"),
-                limit=limit
-            )
-            
-            providers = []
-            for obj in response.objects:
-                provider = obj.properties.copy()
-                provider['provider_id'] = provider.get('user_id')
-                providers.append(provider)
-            
-            logger.info(f"Retrieved {len(providers)} providers")
-            return providers
-            
-        except Exception as e:
-            logger.error(f"Error getting all providers: {e}")
             return []
