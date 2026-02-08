@@ -456,6 +456,20 @@ class AppLocalizations {
     return MessagesEN.completed;
   }
 
+  String get accepted {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.accepted;
+    }
+    return MessagesEN.accepted;
+  }
+
+  String get rejected {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.rejected;
+    }
+    return MessagesEN.rejected;
+  }
+
   String get unknown {
     if (locale.languageCode == 'de') {
       return MessagesDE.unknown;

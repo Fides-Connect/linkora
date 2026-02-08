@@ -568,8 +568,8 @@ class HubSpokeIngestion:
             )
             
             if not response.objects:
-                logger.warning(f"Competence not found for deletion: {firestore_id}")
-                return False
+                logger.info(f"Competence not found for deletion (already deleted?): {firestore_id}")
+                return True
                 
             uuid = response.objects[0].uuid
             collection.data.delete_by_id(uuid)

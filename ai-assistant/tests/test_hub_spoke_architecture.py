@@ -32,7 +32,7 @@ from src.ai_assistant.hub_spoke_ingestion import (
     enrich_text
 )
 from src.ai_assistant.hub_spoke_search import HubSpokeSearch
-from tests.test_database_data import TEST_PERSONAS
+from ai_assistant.seed_data import TEST_PERSONAS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

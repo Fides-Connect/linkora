@@ -1,7 +1,6 @@
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
-import firebase_admin
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
@@ -100,7 +99,7 @@ class FirestoreService:
             logger.error(f"Error fetching requests for user {user_id}: {e}")
             return []
 
-    async def create_request(self, request_data: Dict[str, Any]) -> str:
+    async def add_service_request(self, request_data: Dict[str, Any]) -> str:
         """Create a new service request."""
         if not self.db:
             return ""

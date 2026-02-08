@@ -91,6 +91,7 @@ void main() {
     test('handles request timeout', () async {
       // Arrange
       when(mockAuth.currentUser).thenReturn(mockUser);
+      when(mockUser.getIdToken()).thenAnswer((_) async => 'fake_token');
       when(mockClient.get(any, headers: anyNamed('headers')))
           .thenThrow(TimeoutException('Request timed out')); // Simulate timeout from client
 

@@ -55,7 +55,6 @@ class WeaviateDataProvider(DataProvider):
                     "location": "where service is needed",
                     "criterions": ["criterion 1", "criterion 2", ...]
                 }
-            category: Optional category filter
             limit: Maximum number of results
         """
         logger.info(f"Searching providers with query: '{query_text[:100]}...'")
@@ -63,7 +62,7 @@ class WeaviateDataProvider(DataProvider):
         # Try to parse query_text as JSON for structured search
         try:
             search_request = json.loads(query_text)
-            if isinstance(search_request, dict): #and any(k in search_request for k in ['category', 'location', 'available_time', 'criterions'])
+            if isinstance(search_request, dict): #and any(k in search_request for k in ['location', 'available_time', 'criterions'])
                 # Use structured hybrid search
                 logger.info(f"Using structured hybrid search with request: {search_request}")
                 from .hub_spoke_search import HubSpokeSearch

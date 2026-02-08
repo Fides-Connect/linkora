@@ -104,7 +104,7 @@ async def main():
 
     # Register app endpoints
     app.router.add_get('/service_requests', app_endpoints.get_service_requests)
-    app.router.add_post('/service_requests', app_endpoints.create_service_request)
+    app.router.add_post('/service_requests', app_endpoints.add_service_request)
     app.router.add_put('/service_requests/{service_request_id}/status', app_endpoints.update_service_request_status)
     app.router.add_get('/favorites', app_endpoints.get_favorites)
     app.router.add_post('/favorites/{user_id}', app_endpoints.add_favorite)

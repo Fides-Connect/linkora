@@ -2,9 +2,8 @@
 Unit tests for FirestoreService.
 """
 import pytest
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+from unittest.mock import Mock, patch
 from datetime import datetime, timezone
-import collections
 
 from ai_assistant.firestore_service import FirestoreService
 
@@ -40,7 +39,7 @@ class TestFirestoreService:
         # Mock _generate_prefixed_id to return a predictable ID
         with patch.object(firestore, '_generate_prefixed_id', return_value='service_request_123'):
             # Act
-            req_id = await firestore.create_request(request_data)
+            req_id = await firestore.add_service_request(request_data)
 
             # Assert
             assert req_id == 'service_request_123'

@@ -29,6 +29,8 @@ class MessagesDE {
   static const String pending = 'Ausstehend';
   static const String waitingForAnswer = 'Warten auf Antwort';
   static const String completed = 'Abgeschlossen';
+  static const String accepted = 'Angenommen';
+  static const String rejected = 'Abgelehnt';
   static const String unknown = 'Unbekannt';
   static const String acceptButton = 'Annehmen';
   static const String rejectButton = 'Ablehnen';

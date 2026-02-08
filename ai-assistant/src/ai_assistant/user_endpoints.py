@@ -44,7 +44,6 @@ async def user_sync(request: web.Request) -> web.Response:
             "fcm_token": body.get("fcm_token", ""),
             "is_service_provider": body.get("is_service_provider", False),
             "last_sign_in": datetime.now(UTC),
-            "last_sign_in": datetime.now(UTC).isoformat()
         }
         await firestore_service.update_user(user_id, firestore_user_data)
 

@@ -3,7 +3,6 @@ Unit tests for UserSeedingService.
 """
 import pytest
 from unittest.mock import Mock, patch, AsyncMock, ANY
-from datetime import datetime
 
 from ai_assistant.services.user_seeding_service import UserSeedingService
 

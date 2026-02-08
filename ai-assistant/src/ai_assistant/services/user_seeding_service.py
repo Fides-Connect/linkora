@@ -1,40 +1,21 @@
 import logging
 import copy
-import sys
-import os
+from typing import Optional
 from datetime import datetime, timezone
 
-# Ensure tests can be imported by adding project root to sys.path
-# This is required because test_database_data is in the tests folder
-# which is not a standard package.
-
-# Assuming we are in src/ai_assistant/services/
-# We want to add /app/ (root) to path to be able to import tests.*
-# In typical detailed structure: /app/src/ai_assistant/services
-current_dir = os.path.dirname(os.path.abspath(__file__))
-# up to ai_assistant, up to src, up to root
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
 from ..firestore_service import FirestoreService
+from ..seed_data import (
+    USER_TEMPLATE, 
+    USER_TEMPLATE_SERVICE_REQUESTS, 
+    USER_TEMPLATE_COMPETENCES, 
+    USER_TEMPLATE_PROVIDER_CANDIDATES, 
+    USER_A
+)
 
 # Weaviate imports
 from ..hub_spoke_ingestion import HubSpokeIngestion
 from ..hub_spoke_schema import get_user_collection
 from weaviate.classes.query import Filter
-
-try:
-    from tests.test_database_data import USER_TEMPLATE, USER_TEMPLATE_SERVICE_REQUESTS, USER_TEMPLATE_COMPETENCES, USER_TEMPLATE_PROVIDER_CANDIDATES, USER_A
-except ImportError:
-    # Fallback or error if tests are not present (e.g. lean docker build)
-    # Ideally tests/test_database_data.py should be moved to src/ if it's needed here.
-    logging.getLogger(__name__).error("Could not import USER_TEMPLATE from tests.test_database_data")
-    USER_TEMPLATE = {}
-    USER_TEMPLATE_SERVICE_REQUESTS = []
-    USER_TEMPLATE_COMPETENCES = []
-    USER_TEMPLATE_PROVIDER_CANDIDATES = []
-    USER_A = {}
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +25,7 @@ class UserSeedingService:
     def __init__(self, firestore_service: FirestoreService):
         self.firestore_service = firestore_service
 
-    def _get_weaviate_user_uuid(self, user_id: str) -> str:
+    def _get_weaviate_user_uuid(self, user_id: str) -> Optional[str]:
         """Helper to get Weaviate UUID for a user."""
         try:
             coll = get_user_collection()
@@ -65,9 +46,6 @@ class UserSeedingService:
             return
 
         logger.info(f"Seeding data for new user: {user_id} ({name})")
-        
-        # Prepare data from template
-        initials = "".join([n[0] for n in name.split() if n]).upper()[:2]
         
         # 1. Update User with Template Defaults (intro, competencies, feedback)
         user_update = {k: v for k, v in USER_TEMPLATE.items()}

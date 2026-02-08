@@ -23,8 +23,7 @@ import os
 import sys
 import argparse
 import logging
-import datetime
-from datetime import timezone, timedelta
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -83,19 +82,18 @@ except Exception as e:
 
 def get_test_data():
     """Import test data dynamically."""
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tests'))
     try:
-        import test_database_data
+        from ai_assistant import seed_data
         return {
-            'personas': test_database_data.TEST_PERSONAS,
-            'requests': getattr(test_database_data, 'TEST_SERVICE_REQUESTS', []),
-            'provider_candidates': getattr(test_database_data, 'TEST_PROVIDER_CANDIDATES', []),
-            'chats': getattr(test_database_data, 'TEST_CHATS', []),
-            'chat_messages': getattr(test_database_data, 'TEST_CHAT_MESSAGES', []),
-            'reviews': getattr(test_database_data, 'TEST_REVIEWS', [])
+            'personas': seed_data.TEST_PERSONAS,
+            'requests': getattr(seed_data, 'TEST_SERVICE_REQUESTS', []),
+            'provider_candidates': getattr(seed_data, 'TEST_PROVIDER_CANDIDATES', []),
+            'chats': getattr(seed_data, 'TEST_CHATS', []),
+            'chat_messages': getattr(seed_data, 'TEST_CHAT_MESSAGES', []),
+            'reviews': getattr(seed_data, 'TEST_REVIEWS', [])
         }
-    except ImportError:
-        logger.error("Could not import test data from tests/test_database_data.py")
+    except ImportError as e:
+        logger.error(f"Could not import test data from ai_assistant.seed_data: {e}")
         return {'personas': [], 'requests': [], 'provider_candidates': [], 'chats': [], 'reviews': []}
 
 
@@ -145,7 +143,6 @@ def init_firestore(test_data):
         
         for persona in test_personas:
             p_data = persona['user']
-            c_data_list = persona['competences']
             
             user_id = p_data['user_id']
             user_ref = db.collection('users').document(user_id)
@@ -154,15 +151,15 @@ def init_firestore(test_data):
             last_sign_in = p_data.get('last_sign_in', 0)
             if isinstance(last_sign_in, int):
                 # Convert days ago to absolute datetime
-                last_sign_in = datetime.datetime.now(timezone.utc) - timedelta(days=last_sign_in)
+                last_sign_in = datetime.now(timezone.utc) - timedelta(days=last_sign_in)
             elif isinstance(last_sign_in, str):
                 # Parse ISO format string if provided
                 try:
-                    last_sign_in = datetime.datetime.fromisoformat(last_sign_in.replace('Z', '+00:00'))
+                    last_sign_in = datetime.fromisoformat(last_sign_in.replace('Z', '+00:00'))
                 except (ValueError, AttributeError):
-                    last_sign_in = datetime.datetime.now(timezone.utc)
+                    last_sign_in = datetime.now(timezone.utc)
             elif not isinstance(last_sign_in, datetime.datetime):
-                last_sign_in = datetime.datetime.now(timezone.utc)
+                last_sign_in = datetime.now(timezone.utc)
             
             # Transform user data to match User schema
             user_doc = {

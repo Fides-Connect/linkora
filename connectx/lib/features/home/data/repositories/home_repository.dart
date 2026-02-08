@@ -96,15 +96,15 @@ class HomeRepository {
     return null;
   }
 
-  /// Creates a new service request.
+  /// Adds a new service request.
   /// Wraps API call to `POST /service_requests`.
-  Future<void> createRequest(ServiceRequest request) async {
+  Future<void> addServiceRequest(ServiceRequest request) async {
     await _apiService.post('/service_requests', body: request.toJson());
   }
 
-  /// Updates the status (Accepted, Rejected, Completed) of an existing request.
+  /// Updates the status (Accepted, Rejected, Completed) of an existing service request.
   /// Wraps API call to `PUT /service_requests/{requestId}/status`.
-  Future<void> updateRequestStatus(String requestId, RequestStatus status) async {
+  Future<void> updateServiceRequestStatus(String requestId, RequestStatus status) async {
     await _apiService.put('/service_requests/${Uri.encodeComponent(requestId)}/status', body: {'status': status.name});
   }
 }

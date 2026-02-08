@@ -343,11 +343,11 @@ class RequestDetailPage extends StatelessWidget {
         break;
       case RequestStatus.accepted:
         color = Colors.green;
-        text = 'Accepted';
+        text = localizations?.accepted ?? 'Accepted';
         break;
       case RequestStatus.rejected:
         color = Colors.red;
-        text = 'Rejected';
+        text = localizations?.rejected ?? 'Rejected';
         break;
       default:
         color = Colors.grey;

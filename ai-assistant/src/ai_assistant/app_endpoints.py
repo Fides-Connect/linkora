@@ -1,5 +1,4 @@
 import logging
-import json
 from aiohttp import web
 from firebase_admin import auth
 from .firestore_service import FirestoreService
@@ -54,7 +53,7 @@ async def get_service_requests(request: web.Request) -> web.Response:
         logger.error(f"Error in get_service_requests: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-async def create_service_request(request: web.Request) -> web.Response:
+async def add_service_request(request: web.Request) -> web.Response:
     """POST /service_requests"""
     try:
         user_id = await get_current_user_id(request)
@@ -62,10 +61,8 @@ async def create_service_request(request: web.Request) -> web.Response:
         
         # Enforce userId to be the authenticated user
         body['userId'] = user_id
-        # Also ensure userName matches if possible, or trust client? 
-        # Client sends everything. We'll trust client for now but override userId.
         
-        request_id = await firestore_service.create_request(body)
+        request_id = await firestore_service.add_service_request(body)
         if request_id:
             return web.json_response({"id": request_id, "status": "created"}, status=201)
         else:
@@ -79,7 +76,7 @@ async def create_service_request(request: web.Request) -> web.Response:
 async def update_service_request_status(request: web.Request) -> web.Response:
     """PUT /service_requests/{service_request_id}/status"""
     try:
-        user_id = await get_current_user_id(request) # Auth check
+        await get_current_user_id(request) # Auth check
         service_request_id = request.match_info['service_request_id']
         body = await request.json()
         status = body.get('status')
@@ -247,7 +244,7 @@ async def remove_competence(request: web.Request) -> web.Response:
     """DELETE /user/competencies/{competence_id}"""
     try:
         user_id = await get_current_user_id(request)
-        competence_id = request.match_info['competence']
+        competence_id = request.match_info['competence_id']
         
         success = await firestore_service.remove_competence(user_id, competence_id)
         if success:
