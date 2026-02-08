@@ -23,18 +23,26 @@ class TestUserSyncEndpoint:
             "fcm_token": "test_fcm_token"
         })
         
-        # Mock UserModelWeaviate
-        with patch('ai_assistant.user_endpoints.UserModelWeaviate') as mock_model:
-            mock_model.get_user_by_id.return_value = None  # User doesn't exist
-            mock_model.create_user.return_value = "uuid_123"  # Successfully created
+        # Mock dependencies in ai_assistant.user_endpoints
+        with patch('ai_assistant.user_endpoints.firestore_service') as mock_firestore, \
+             patch('ai_assistant.user_endpoints.UserModelWeaviate') as mock_weaviate, \
+             patch('ai_assistant.user_endpoints.seeding_service') as mock_seeding:
+            
+            # Setup behavior
+            mock_firestore.get_user = AsyncMock(return_value=None)  # User does not exist in Firestore
+            mock_firestore.update_user = AsyncMock(return_value=True)
+            mock_seeding.seed_new_user = AsyncMock(return_value=True)
+            mock_weaviate.create_user.return_value = "new_uuid"
             
             # Act
             response = await user_sync(request)
             
             # Assert
             assert response.status == 200
-            assert mock_model.get_user_by_id.called
-            assert mock_model.create_user.called
+            mock_firestore.get_user.assert_called_once_with("test_user_123")
+            mock_seeding.seed_new_user.assert_called_once()
+            mock_firestore.update_user.assert_called_once()
+            mock_weaviate.create_user.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_user_sync_updates_existing_user(self):
@@ -49,22 +57,32 @@ class TestUserSyncEndpoint:
             "fcm_token": "updated_fcm_token"
         })
         
-        # Mock UserModelWeaviate
-        with patch('ai_assistant.user_endpoints.UserModelWeaviate') as mock_model:
-            mock_model.get_user_by_id.return_value = {
+        # Mock dependencies
+        with patch('ai_assistant.user_endpoints.firestore_service') as mock_firestore, \
+             patch('ai_assistant.user_endpoints.UserModelWeaviate') as mock_weaviate:
+            
+            # Setup behavior
+            # User exists in Firestore
+            mock_firestore.get_user = AsyncMock(return_value={'user_id': 'test_user_123'})
+            mock_firestore.update_user = AsyncMock(return_value=True)
+            
+            # User exists in Weaviate
+            mock_weaviate.get_user_by_id.return_value = {
                 "user_id": "test_user_123",
                 "name": "Old User",
                 "email": "old@example.com"
             }
-            mock_model.update_user.return_value = True  # Successfully updated
+            mock_weaviate.update_user.return_value = True
             
             # Act
             response = await user_sync(request)
             
             # Assert
             assert response.status == 200
-            assert mock_model.get_user_by_id.called
-            assert mock_model.update_user.called
+            mock_firestore.get_user.assert_called_once_with("test_user_123")
+            mock_firestore.update_user.assert_called_once()
+            mock_weaviate.get_user_by_id.assert_called_once_with("test_user_123")
+            mock_weaviate.update_user.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_user_sync_missing_user_id(self):

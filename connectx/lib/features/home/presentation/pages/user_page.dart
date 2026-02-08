@@ -102,7 +102,7 @@ class _UserPageState extends State<UserPage> {
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
-          localizations?.menuUser ?? 'Supporter Profile',
+          localizations?.menuUser ?? 'Profile',
           style: const TextStyle(color: Colors.white),
         ),
         backgroundColor: Colors.transparent,
