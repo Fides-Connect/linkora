@@ -46,7 +46,7 @@ class HomeRepository {
   }
 
   /// Fetches the logged-in user's own data.
-  /// Wraps API call to `GET /data`.
+  /// Wraps API call to `GET /user`.
   Future<User> getUser() async {
     final data = await _apiService.get('/user');
     return User.fromJson(data);
@@ -57,8 +57,8 @@ class HomeRepository {
   /// Returns the updated user.
   Future<User> updateUser(User user) async {
     await _apiService.put('/user', body: user.toJson());
-    // Return the user we just sent, assuming success
-    return user;
+    // Return the updated user
+    return getUser();
   }
 
   /// Adds a single competence tag to the user.

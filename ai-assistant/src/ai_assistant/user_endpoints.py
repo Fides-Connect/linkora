@@ -36,8 +36,9 @@ async def user_sync(request: web.Request) -> web.Response:
         if not user_id:
             return web.json_response({"error": "Missing user_id"}, status=400)
         
-        # Sync with Firestore (Ground Truth)
-        firestore_user_data = {
+        # Prepare user data
+        user_data = {
+            "user_id": user_id,
             "name": body.get("name", ""),
             "email": body.get("email", ""),
             "photo_url": body.get("photo_url", ""),
@@ -45,81 +46,60 @@ async def user_sync(request: web.Request) -> web.Response:
             "is_service_provider": body.get("is_service_provider", False),
             "last_sign_in": datetime.now(UTC),
         }
-        await firestore_service.update_user(user_id, firestore_user_data)
+        
+        # Firestore data (exclude user_id as it's the document key)
+        firestore_data = {k: v for k, v in user_data.items() if k != "user_id"}
+        
+        # check if user exists in Firestore
+        existing_firestore_user = await firestore_service.get_user(user_id)
 
-        # Sync with Weaviate (for Provider Search)
-        # Check if user exists
-        existing_user = UserModelWeaviate.get_user_by_id(user_id)
-        
-        user_data = {
-            "user_id": user_id,
-            "name": body.get("name", ""),
-            "email": body.get("email", ""),
-            "photo_url": body.get("photo_url", ""),
-            "fcm_token": body.get("fcm_token", ""),
-            "is_service_provider": body.get("is_service_provider", False),  # Accept from client
-            "last_sign_in": datetime.now(UTC),
-        }
-        
-        if existing_user:
+        if existing_firestore_user:
             # Update existing user
-            success = UserModelWeaviate.update_user(user_id, user_data)
-            if not success:
-                return web.json_response({"error": "Failed to update user"}, status=500)
+            await firestore_service.update_user(user_id, firestore_data)
+            
+            # Update Weaviate (Self-healing: create if missing)
+            if UserModelWeaviate.get_user_by_id(user_id):
+                UserModelWeaviate.update_user(user_id, user_data)
+            else:
+                user_data["created_at"] = datetime.now(UTC)
+                UserModelWeaviate.create_user(user_data)
             
             logger.info(f"Updated user: {user_id}")
-            # Prepare response without datetime objects
-            response_data = {
-                "user_id": user_id,
-                "name": user_data["name"],
-                "email": user_data["email"],
-                "photo_url": user_data["photo_url"],
-                "fcm_token": user_data["fcm_token"],
-            }
-            return web.json_response({
-                "status": "updated",
-                "user": response_data
-            })
+            status = "updated"
         else:
-            # Seed initial data in Firestore for new users (if not already seeded)
-            # Use Firestore as ground truth to avoid duplicates
+            # Create new user
+            # 1. Seed initial data (Competencies, etc.)
             try:
-                # Check if user already exists in Firestore before seeding
-                existing_firestore_user = await firestore_service.get_user(user_id)
-                if not existing_firestore_user:
-                     await seeding_service.seed_new_user(
-                         user_id=user_id,
-                         name=user_data["name"], 
-                         email=user_data["email"],
-                         photo_url=user_data.get("photo_url", "")
-                     )
-                else:
-                    logger.info(f"User {user_id} already exists in Firestore, skipping seeding.")
+                await seeding_service.seed_new_user(
+                    user_id=user_id,
+                    name=user_data["name"], 
+                    email=user_data["email"],
+                    photo_url=user_data["photo_url"]
+                )
             except Exception as e:
                 logger.error(f"Failed to seed data for new user {user_id}: {e}")
 
-            # Also create new user in Weaviate
-            now = datetime.now(UTC)
-            user_data["created_at"] = now
-            uuid = UserModelWeaviate.create_user(user_data)
-            
-            if not uuid:
-                return web.json_response({"error": "Failed to create user"}, status=500)
-            
-            logger.info(f"Created new user in Weaviate: {user_id}")
+            # 2. Update with latest fields (FCM token, is_service_provider)
+            await firestore_service.update_user(user_id, firestore_data)
 
-            # Prepare response without datetime objects
-            response_data = {
+            # 3. Create in Weaviate
+            user_data["created_at"] = datetime.now(UTC)
+            UserModelWeaviate.create_user(user_data)
+            
+            logger.info(f"Created new user: {user_id}")
+            status = "created"
+
+        # Prepare response
+        return web.json_response({
+            "status": status,
+            "user": {
                 "user_id": user_id,
                 "name": user_data["name"],
                 "email": user_data["email"],
                 "photo_url": user_data["photo_url"],
                 "fcm_token": user_data["fcm_token"],
             }
-            return web.json_response({
-                "status": "created",
-                "user": response_data
-            })
+        })
     
     except Exception as e:
         logger.error(f"Error in user_sync: {e}")

@@ -7,8 +7,14 @@ import '../models/service_category.dart';
 extension ServiceRequestFormatting on ServiceRequest {
   String getAmount(String currentUserId) {
     final requestType = getType(currentUserId);
-    final prefix = requestType == RequestType.incoming ? '+ ' : '- ';
-    return '$prefix${amountValue.toStringAsFixed(2)} $currency';
+    // final prefix = requestType == RequestType.incoming ? '+ ' : '- ';
+    if (requestType == RequestType.incoming) {
+      return '+ ${amountValue.toStringAsFixed(2)} $currency';
+    } else if (requestType == RequestType.outgoing) {
+      return '- ${amountValue.toStringAsFixed(2)} $currency';
+    } else {
+      return '? ${amountValue.toStringAsFixed(2)} $currency';
+    }
   }
 
   String getDate(AppLocalizations? localizations) {

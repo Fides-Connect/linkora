@@ -74,6 +74,46 @@ class User {
     };
   }
 
+  User copyWith({
+    String? userId,
+    String? name,
+    String? introduction,
+    String? location,
+    String? email,
+    String? photoUrl,
+    bool? isServiceProvider,
+    List<Competence>? competencies,
+    double? averageRating,
+    int? reviewCount,
+    List<String>? positiveFeedback,
+    List<String>? negativeFeedback,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) {
+    return User(
+      userId: userId ?? this.userId,
+      name: name ?? this.name,
+      introduction: introduction ?? this.introduction,
+      location: location ?? this.location,
+      email: email ?? this.email,
+      photoUrl: photoUrl ?? this.photoUrl,
+      isServiceProvider: isServiceProvider ?? this.isServiceProvider,
+      competencies: competencies != null
+          ? List<Competence>.from(competencies)
+          : List<Competence>.from(this.competencies),
+      averageRating: averageRating ?? this.averageRating,
+      reviewCount: reviewCount ?? this.reviewCount,
+      positiveFeedback: positiveFeedback != null
+          ? List<String>.from(positiveFeedback)
+          : List<String>.from(this.positiveFeedback),
+      negativeFeedback: negativeFeedback != null
+          ? List<String>.from(negativeFeedback)
+          : List<String>.from(this.negativeFeedback),
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+    );
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
