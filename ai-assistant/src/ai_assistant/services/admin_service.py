@@ -177,12 +177,10 @@ class AdminService:
         try:
             # Get database statistics
             users = UserModelWeaviate.get_all_users(limit=1000)
-            providers = ProviderModelWeaviate.get_all_providers(limit=1000)
             
             stats = {
                 "database": {
                     "total_users": len(users),
-                    "total_providers": len(providers),
                     "users_with_fcm_token": sum(1 for u in users if u.get('fcm_token')),
                 },
                 "system": self.get_system_info()
