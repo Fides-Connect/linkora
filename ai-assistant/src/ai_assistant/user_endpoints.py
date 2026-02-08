@@ -81,7 +81,24 @@ async def user_sync(request: web.Request) -> web.Response:
                 "user": response_data
             })
         else:
-            # Create new user in Weaviate
+            # Seed initial data in Firestore for new users (if not already seeded)
+            # Use Firestore as ground truth to avoid duplicates
+            try:
+                # Check if user already exists in Firestore before seeding
+                existing_firestore_user = await firestore_service.get_user(user_id)
+                if not existing_firestore_user:
+                     await seeding_service.seed_new_user(
+                         user_id=user_id,
+                         name=user_data["name"], 
+                         email=user_data["email"],
+                         photo_url=user_data.get("photo_url", "")
+                     )
+                else:
+                    logger.info(f"User {user_id} already exists in Firestore, skipping seeding.")
+            except Exception as e:
+                logger.error(f"Failed to seed data for new user {user_id}: {e}")
+
+            # Also create new user in Weaviate
             now = datetime.now(UTC)
             user_data["created_at"] = now
             uuid = UserModelWeaviate.create_user(user_data)
@@ -90,21 +107,6 @@ async def user_sync(request: web.Request) -> web.Response:
                 return web.json_response({"error": "Failed to create user"}, status=500)
             
             logger.info(f"Created new user in Weaviate: {user_id}")
-
-            # Also seed initial data in Firestore for new users
-            # We treat 'unknown to Weaviate' effectively as 'new user' here.
-            # Ideally we check Firestore too, but this provides a simple trigger.
-            # The seeding service logic should be idempotent or safe to run multiple times 
-            # (e.g. merge=True everywhere).
-            try:
-                 await seeding_service.seed_new_user(
-                     user_id=user_id,
-                     name=user_data["name"], 
-                     email=user_data["email"],
-                     photo_url=user_data.get("photo_url", "")
-                 )
-            except Exception as e:
-                logger.error(f"Failed to seed data for new user {user_id}: {e}")
 
             # Prepare response without datetime objects
             response_data = {

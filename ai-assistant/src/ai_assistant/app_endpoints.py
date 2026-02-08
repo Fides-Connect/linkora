@@ -292,7 +292,7 @@ async def get_other_user(request: web.Request) -> web.Response:
 
 # --- Review Endpoints ---
 
-async def create_review(request: web.Request) -> web.Response:
+async def add_review(request: web.Request) -> web.Response:
     """Create a new review.
     
     POST /reviews

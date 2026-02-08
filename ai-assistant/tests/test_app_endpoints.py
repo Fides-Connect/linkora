@@ -81,7 +81,7 @@ class TestAppEndpoints:
         # Verify call arguments
         mock_firestore.add_service_request.assert_called_once()
         ca = mock_firestore.add_service_request.call_args[0][0]
-        assert ca['userId'] == 'test_user_id'
+        assert ca['seeker_user_id'] == 'test_user_id'
         assert ca['title'] == 'Need help'
 
     @pytest.mark.asyncio

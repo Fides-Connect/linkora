@@ -116,7 +116,7 @@ async def main():
     app.router.add_get('/users/{user_id}/user', app_endpoints.get_other_user)
     
     # Review routes
-    app.router.add_post('/reviews', app_endpoints.create_review)
+    app.router.add_post('/reviews', app_endpoints.add_review)
     app.router.add_get('/reviews/{review_id}', app_endpoints.get_review)
     app.router.add_get('/reviews/user/{user_id}', app_endpoints.get_reviews_for_user)
     app.router.add_get('/reviews/reviewer/{reviewer_user_id}', app_endpoints.get_reviews_by_reviewer)
