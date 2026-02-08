@@ -9,7 +9,7 @@ It handles:
 2. Weaviate: Cleans schema/data and loads vector test data.
 
 Collections initialized:
-- Firestore: users, requests, reviews, chat_sessions
+- Firestore: users, requests, reviews, chat, chat_messages
 - Weaviate: User, Competence
 
 Usage:
@@ -158,7 +158,7 @@ def init_firestore(test_data):
                     last_sign_in = datetime.fromisoformat(last_sign_in.replace('Z', '+00:00'))
                 except (ValueError, AttributeError):
                     last_sign_in = datetime.now(timezone.utc)
-            elif not isinstance(last_sign_in, datetime.datetime):
+            elif not isinstance(last_sign_in, datetime):
                 last_sign_in = datetime.now(timezone.utc)
             
             # Transform user data to match User schema
@@ -179,8 +179,8 @@ def init_firestore(test_data):
                 'negative_feedback': p_data.get('negative_feedback', []),
                 'average_rating': p_data.get('average_rating', 5.0),
                 'review_count': p_data.get('review_count', 0),
-                'created_at': datetime.datetime.now(timezone.utc),
-                'updated_at': datetime.datetime.now(timezone.utc),
+                'created_at': datetime.now(timezone.utc),
+                'updated_at': datetime.now(timezone.utc),
             }
             
             batch.set(user_ref, user_doc)
@@ -203,8 +203,8 @@ def init_firestore(test_data):
                     'title': comp['title'],
                     'description': comp.get('description', ''),
                     'price_range': comp.get('price_range', ''),
-                    'created_at': datetime.datetime.now(timezone.utc),
-                    'updated_at': datetime.datetime.now(timezone.utc),
+                    'created_at': datetime.now(timezone.utc),
+                    'updated_at': datetime.now(timezone.utc),
                 }
                 comp_ref.set(comp_doc)
                 
@@ -220,9 +220,9 @@ def init_firestore(test_data):
             
             # Add dynamic timestamps if missing
             if 'created_at' not in req:
-                req['created_at'] = datetime.datetime.now(timezone.utc)
+                req['created_at'] = datetime.now(timezone.utc)
             if 'updated_at' not in req:
-                req['updated_at'] = datetime.datetime.now(timezone.utc)
+                req['updated_at'] = datetime.now(timezone.utc)
                 
             req_ref.set(req)
         logger.info(f"  ✓ {len(requests)} Service Requests created")
@@ -241,9 +241,9 @@ def init_firestore(test_data):
             
             # Add dynamic timestamps if missing
             if 'created_at' not in candidate:
-                candidate['created_at'] = datetime.datetime.now(timezone.utc)
+                candidate['created_at'] = datetime.now(timezone.utc)
             if 'updated_at' not in candidate:
-                candidate['updated_at'] = datetime.datetime.now(timezone.utc)
+                candidate['updated_at'] = datetime.now(timezone.utc)
                 
             cand_ref.set(candidate)
         logger.info(f"  ✓ {len(provider_candidates)} Provider Candidates created")
@@ -270,9 +270,9 @@ def init_firestore(test_data):
             
             # Add dynamic timestamps if missing
             if 'created_at' not in chat:
-                chat['created_at'] = datetime.datetime.now(timezone.utc)
+                chat['created_at'] = datetime.now(timezone.utc)
             if 'updated_at' not in chat:
-                chat['updated_at'] = datetime.datetime.now(timezone.utc)
+                chat['updated_at'] = datetime.now(timezone.utc)
                 
             chat_ref.set(chat)
         logger.info(f"  ✓ {len(chats)} Chat Sessions created")
@@ -307,9 +307,9 @@ def init_firestore(test_data):
                 
                 # Add dynamic timestamps if missing
                 if 'created_at' not in msg:
-                    msg['created_at'] = datetime.datetime.now(timezone.utc)
+                    msg['created_at'] = datetime.now(timezone.utc)
                 if 'updated_at' not in msg:
-                    msg['updated_at'] = datetime.datetime.now(timezone.utc)
+                    msg['updated_at'] = datetime.now(timezone.utc)
                 
                 msg_ref.set(msg)
                 count += 1
@@ -324,9 +324,9 @@ def init_firestore(test_data):
             
             # Add dynamic timestamps if missing
             if 'created_at' not in rev:
-                rev['created_at'] = datetime.datetime.now(timezone.utc)
+                rev['created_at'] = datetime.now(timezone.utc)
             if 'updated_at' not in rev:
-                rev['updated_at'] = datetime.datetime.now(timezone.utc)
+                rev['updated_at'] = datetime.now(timezone.utc)
             
             rev_ref.set(rev)
         logger.info(f"  ✓ {len(reviews)} Reviews created")

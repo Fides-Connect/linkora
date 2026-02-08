@@ -75,7 +75,7 @@ class TestAppEndpoints:
         # response is web.Response, body is bytes
         import json
         body = json.loads(response.body.decode())
-        assert body['id'] == 'req_123'
+        assert body['service_request_id'] == 'req_123'
         assert body['status'] == 'created'
         
         # Verify call arguments

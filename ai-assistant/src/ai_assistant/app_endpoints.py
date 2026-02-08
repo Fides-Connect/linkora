@@ -59,12 +59,12 @@ async def add_service_request(request: web.Request) -> web.Response:
         user_id = await get_current_user_id(request)
         body = await request.json()
         
-        # Enforce userId to be the authenticated user
-        body['userId'] = user_id
+        # Enforce seeker_user_id to be the authenticated user
+        body['seeker_user_id'] = user_id
         
-        request_id = await firestore_service.add_service_request(body)
-        if request_id:
-            return web.json_response({"id": request_id, "status": "created"}, status=201)
+        service_request_id = await firestore_service.add_service_request(body)
+        if service_request_id:
+            return web.json_response({"service_request_id": service_request_id, "status": "created"}, status=201)
         else:
             return web.json_response({"error": "Failed to create service request"}, status=500)
     except web.HTTPException:
