@@ -117,6 +117,12 @@ class TestAppEndpoints:
         mock_request.match_info = {'service_request_id': 'req_123'}
         mock_request.json = AsyncMock(return_value={'status': 'completed'})
         
+        # Mock permission check: user is the seeker
+        mock_firestore.get_service_request = AsyncMock(return_value={
+            'id': 'req_123',
+            'seeker_user_id': 'test_user_id',
+            'selected_provider_user_id': 'other_user'
+        })
         mock_firestore.update_request_status = AsyncMock(return_value=True)
 
         # Act

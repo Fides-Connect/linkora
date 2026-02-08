@@ -18,7 +18,7 @@ class HomeRepository {
     return [];
   }
 
-  /// Fetches the current user's favorite user IDs.
+  /// Fetches the current user's favorite users.
   /// Used in the Favorites Tab.
   /// Wraps API call to `GET /favorites`.
   Future<List<User>> getFavorites() async {

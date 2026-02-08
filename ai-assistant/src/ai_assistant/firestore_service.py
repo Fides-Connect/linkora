@@ -123,6 +123,21 @@ class FirestoreService:
             logger.error(f"Error creating request: {e}")
             return ""
 
+    async def get_service_request(self, request_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single service request by ID."""
+        if not self.db:
+            return None
+        try:
+            doc = self._get_collection('service_requests').document(request_id).get()
+            if doc.exists:
+                data = doc.to_dict()
+                data['id'] = doc.id
+                return data
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching request {request_id}: {e}")
+            return None
+
     async def update_request_status(self, request_id: str, status: str) -> bool:
         """Update request status."""
         if not self.db:

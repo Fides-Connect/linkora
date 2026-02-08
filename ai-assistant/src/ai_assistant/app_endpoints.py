@@ -76,7 +76,7 @@ async def add_service_request(request: web.Request) -> web.Response:
 async def update_service_request_status(request: web.Request) -> web.Response:
     """PUT /service_requests/{service_request_id}/status"""
     try:
-        await get_current_user_id(request) # Auth check
+        user_id = await get_current_user_id(request) # Auth check
         service_request_id = request.match_info['service_request_id']
         body = await request.json()
         status = body.get('status')
@@ -84,8 +84,16 @@ async def update_service_request_status(request: web.Request) -> web.Response:
         if not status:
             return web.json_response({"error": "Missing status"}, status=400)
             
-        # TODO: Check if user is allowed to update this request (owner or provider)
-        # For now, just update.
+        # Check if user is allowed to update this request (owner or provider)
+        service_request = await firestore_service.get_service_request(service_request_id)
+        if not service_request:
+            return web.json_response({"error": "Service request not found"}, status=404)
+            
+        seeker_id = service_request.get('seeker_user_id')
+        provider_id = service_request.get('selected_provider_user_id')
+        
+        if user_id != seeker_id and user_id != provider_id:
+             return web.json_response({"error": "Unauthorized to update this service request"}, status=403)
         
         success = await firestore_service.update_request_status(service_request_id, status)
         if success:

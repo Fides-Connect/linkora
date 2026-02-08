@@ -367,29 +367,3 @@ class TestProviderModelWeaviate:
             result = ProviderModelWeaviate.vector_search_providers("need plumber")
             
             assert result == []
-    
-    def test_get_all_providers_success(self, mock_collection):
-        """Test getting all providers."""
-        with patch('ai_assistant.weaviate_models.get_users_collection', return_value=mock_collection):
-            mock_obj1 = Mock()
-            mock_obj1.properties = {"user_id": "p1", "name": "Provider 1", "type": "provider"}
-            mock_obj2 = Mock()
-            mock_obj2.properties = {"user_id": "p2", "name": "Provider 2", "type": "provider"}
-            mock_response = Mock()
-            mock_response.objects = [mock_obj1, mock_obj2]
-            mock_collection.query.fetch_objects.return_value = mock_response
-            
-            result = ProviderModelWeaviate.get_all_providers(limit=100)
-            
-            assert len(result) == 2
-            assert result[0]["name"] == "Provider 1"
-            assert result[1]["name"] == "Provider 2"
-    
-    def test_get_all_providers_exception(self, mock_collection):
-        """Test getting all providers with exception."""
-        with patch('ai_assistant.weaviate_models.get_providers_collection', return_value=mock_collection):
-            mock_collection.query.fetch_objects.side_effect = Exception("Database error")
-            
-            result = ProviderModelWeaviate.get_all_providers()
-            
-            assert result == []

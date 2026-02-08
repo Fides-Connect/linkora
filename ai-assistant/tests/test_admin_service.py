@@ -137,8 +137,7 @@ class TestAdminService:
         mock_providers = [{'provider_id': '1'}]
         
         with patch.object(AdminAuth, 'verify_token', return_value=True), \
-             patch.object(UserModelWeaviate, 'get_all_users', return_value=mock_users), \
-             patch.object(ProviderModelWeaviate, 'get_all_providers', return_value=mock_providers):
+             patch.object(UserModelWeaviate, 'get_all_users', return_value=mock_users):
             
             response = await admin_service.get_stats(request)
             assert response.status == 200
@@ -355,8 +354,7 @@ class TestAdminServiceIntegration:
             assert AdminAuth.verify_token(request) is True
             
             # Endpoints should work
-            with patch.object(UserModelWeaviate, 'get_all_users', return_value=[]), \
-                 patch.object(ProviderModelWeaviate, 'get_all_providers', return_value=[]):
+            with patch.object(UserModelWeaviate, 'get_all_users', return_value=[]):
                 
                 response = await admin_service.get_stats(request)
                 assert response.status == 200
