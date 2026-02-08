@@ -540,6 +540,20 @@ class AppLocalizations {
     return MessagesEN.description;
   }
 
+  String get requester {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.requester;
+    }
+    return MessagesEN.requester;
+  }
+
+  String get provider {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.provider;
+    }
+    return MessagesEN.provider;
+  }
+
   String get addToFavorites {
     if (locale.languageCode == 'de') {
       return MessagesDE.addToFavorites;

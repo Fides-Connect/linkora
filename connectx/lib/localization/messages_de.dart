@@ -41,6 +41,8 @@ class MessagesDE {
   static const String date = 'Datum';
   static const String amount = 'Betrag';
   static const String description = 'Beschreibung';
+  static const String requester = 'Anfrager';
+  static const String provider = 'Anbieter';
 
   static const String saveButton = 'Speichern';
 

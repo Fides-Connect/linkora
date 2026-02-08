@@ -41,6 +41,8 @@ class MessagesEN {
   static const String date = 'Date';
   static const String amount = 'Amount';
   static const String description = 'Description';
+  static const String requester = 'Requester';
+  static const String provider = 'Provider';
   
   static const String saveButton = 'Save';
 

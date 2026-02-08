@@ -173,7 +173,9 @@ class RequestDetailPage extends StatelessWidget {
                                       style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                                     ),
                                     Text(
-                                      isIncoming ? 'Requester' : 'Provider',
+                                      isIncoming 
+                                          ? (localizations?.requester ?? 'Requester') 
+                                          : (localizations?.provider ?? 'Provider'),
                                       style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
                                     ),
                                   ],
