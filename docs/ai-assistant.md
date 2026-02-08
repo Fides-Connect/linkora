@@ -108,9 +108,6 @@ ai-assistant/
 │   ├── weaviate_config.py         # Weaviate connection config
 │   ├── weaviate_models.py         # Weaviate data models
 │   ├── common_endpoints.py        # Shared API endpoints
-│   ├── hub_spoke_schema.py        # Database schema
-│   ├── hub_spoke_search.py        # Search implementation
-│   ├── hub_spoke_ingestion.py     # Data ingestion
 │   └── services/
 │       ├── admin_service.py           # Admin interface
 │       ├── conversation_service.py    # Multi-stage conversations
