@@ -6,10 +6,16 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:connectx/services/webrtc_service.dart';
 import 'package:connectx/services/speech_service.dart';
 import 'package:connectx/services/wrappers.dart';
+import 'package:connectx/services/api_service.dart';
+import 'package:connectx/services/auth_service.dart';
+import 'package:connectx/features/home/data/repositories/home_repository.dart';
+import 'package:http/http.dart' as http;
 
+@GenerateNiceMocks([
+  MockSpec<SpeechService>(),
+])
 @GenerateMocks([
   WebRTCService,
-  SpeechService,
   WebSocketChannel,
   WebSocketSink,
   RTCPeerConnection,
@@ -24,5 +30,9 @@ import 'package:connectx/services/wrappers.dart';
   FirebaseAuthWrapper,
   User,
   RTCRtpSender,
+  ApiService,
+  HomeRepository,
+  AuthService,
+  http.Client,
 ])
 void main() {}
