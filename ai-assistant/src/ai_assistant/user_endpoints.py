@@ -55,14 +55,17 @@ async def user_sync(request: web.Request) -> web.Response:
 
         if existing_firestore_user:
             # Update existing user
-            await firestore_service.update_user(user_id, firestore_data)
+            if not await firestore_service.update_user(user_id, firestore_data):
+                return web.json_response({"error": "Failed to update Firestore user"}, status=500)
             
             # Update Weaviate (Self-healing: create if missing)
             if UserModelWeaviate.get_user_by_id(user_id):
-                UserModelWeaviate.update_user(user_id, user_data)
+                if not UserModelWeaviate.update_user(user_id, user_data):
+                     return web.json_response({"error": "Failed to update Weaviate user"}, status=500)
             else:
                 user_data["created_at"] = datetime.now(UTC)
-                UserModelWeaviate.create_user(user_data)
+                if not UserModelWeaviate.create_user(user_data):
+                    return web.json_response({"error": "Failed to self-heal/create Weaviate user"}, status=500)
             
             logger.info(f"Updated user: {user_id}")
             status = "updated"
@@ -78,13 +81,17 @@ async def user_sync(request: web.Request) -> web.Response:
                 )
             except Exception as e:
                 logger.error(f"Failed to seed data for new user {user_id}: {e}")
+                # We optionally fail here if seeding is critical, but the prompt focused on sync writes.
+                # Continuing as firestore update below might still be valuable.
 
             # 2. Update with latest fields (FCM token, is_service_provider)
-            await firestore_service.update_user(user_id, firestore_data)
+            if not await firestore_service.update_user(user_id, firestore_data):
+                 return web.json_response({"error": "Failed to create/update Firestore user"}, status=500)
 
             # 3. Create in Weaviate
             user_data["created_at"] = datetime.now(UTC)
-            UserModelWeaviate.create_user(user_data)
+            if not UserModelWeaviate.create_user(user_data):
+                 return web.json_response({"error": "Failed to create Weaviate user"}, status=500)
             
             logger.info(f"Created new user: {user_id}")
             status = "created"

@@ -187,7 +187,7 @@ curl http://localhost:8090/v1/meta
 
 ```bash
 cd ../ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 ```
 
 ### Step 3: Configure AI-Assistant

@@ -97,7 +97,7 @@ curl http://localhost:8090/v1/meta
 
 ```bash
 cd ../ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 ```
 
 **This script:**
@@ -165,7 +165,7 @@ WEAVIATE_URL=http://localhost:8090
 2. **Initialize Cloud Database:**
    ```bash
    cd ai-assistant
-   python scripts/init_hub_spoke_schema.py --load-test-data
+   python scripts/init_database.py --load-test-data
    ```
 
 3. **Configure AI-Assistant (in `.env`):**

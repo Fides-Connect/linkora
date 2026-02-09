@@ -96,7 +96,7 @@ class TestUserModelWeaviate:
         mock_obj.uuid = "uuid_123"
         mock_obj.properties = {
             "user_id": "user_123",
-            "display_name": "Old Name",
+            "name": "Old Name",
             "email": "old@example.com",
             "photo_url": "https://example.com/photo.jpg",
             "fcm_token": "old_token",

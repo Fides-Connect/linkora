@@ -145,7 +145,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
             uuid=competence_uuid,
             return_references=QueryReference(
                 link_on="owned_by",
-                return_properties=["display_name", "last_sign_in"]
+                return_properties=["name", "last_sign_in"]
             )
         )
         

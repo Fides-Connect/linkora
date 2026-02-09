@@ -224,7 +224,6 @@ connectx/
 │   │       └── presentation/
 │   │   └── home/                      # Main Home feature
 │   │       ├── data/                  # Repositories & Mock Data
-│   │       │   ├── mock_home_data.dart
 │   │       │   └── repositories/
 │   │       └── presentation/
 │   │           ├── pages/             # App Pages (Tabs & Detail Views)
@@ -232,8 +231,7 @@ connectx/
 │   │           │   ├── favorites_tab_page.dart
 │   │           │   ├── menu_tab_page.dart
 │   │           │   ├── request_detail_page.dart
-│   │           │   ├── user_detail_page.dart
-│   │           │   └── user_profile_page.dart
+│   │           │   └── user_detail_page.dart
 │   │           └── viewmodels/        # HomeTab & Search ViewModels
 │   │
 │   ├── models/                        # Data models

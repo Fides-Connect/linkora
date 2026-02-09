@@ -25,7 +25,7 @@ The AI-Assistant server is a containerized service that:
 - Generates natural-sounding responses using Google Cloud TTS
 - Streams audio responses back to clients
 - Manages multi-stage conversations
-- Synchronizes data between Firestore (Relational) and Weaviate (Vector) databases
+- Synchronizes data between Firestore (Document) and Weaviate (Vector) databases
 - Performs semantic provider matching using Weaviate
 
 ### Why Server-Side Processing?
