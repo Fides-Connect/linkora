@@ -8,7 +8,9 @@ from ..seed_data import (
     USER_TEMPLATE, 
     USER_TEMPLATE_SERVICE_REQUESTS, 
     USER_TEMPLATE_COMPETENCES, 
-    USER_TEMPLATE_PROVIDER_CANDIDATES, 
+    USER_TEMPLATE_PROVIDER_CANDIDATES,
+    USER_TEMPLATE_AVAILABILITY_TIMES,
+    COMPETENCE_AVAILABILITY_TIMES,
     USER_A
 )
 
@@ -60,7 +62,29 @@ class UserSeedingService:
         # Get Weaviate UUID for syncing competencies
         weaviate_uuid = self._get_weaviate_user_uuid(user_id)
         
-        # 1b. Add Competencies Subcollection
+        # 1b. Add User Availability Times Subcollection
+        for avail_time in USER_TEMPLATE_AVAILABILITY_TIMES:
+            # Generate prefixed availability_time ID
+            availability_time_id = self.firestore_service._generate_prefixed_id('availability_time')
+            avail_ref = self.firestore_service.db.collection('users').document(user_id).collection('availability_time').document(availability_time_id)
+            
+            avail_doc = {
+                'availability_time_id': availability_time_id,
+                'monday_time_ranges': avail_time.get('monday_time_ranges', []),
+                'tuesday_time_ranges': avail_time.get('tuesday_time_ranges', []),
+                'wednesday_time_ranges': avail_time.get('wednesday_time_ranges', []),
+                'thursday_time_ranges': avail_time.get('thursday_time_ranges', []),
+                'friday_time_ranges': avail_time.get('friday_time_ranges', []),
+                'saturday_time_ranges': avail_time.get('saturday_time_ranges', []),
+                'sunday_time_ranges': avail_time.get('sunday_time_ranges', []),
+                'absence_days': avail_time.get('absence_days', []),
+                'created_at': datetime.now(timezone.utc),
+                'updated_at': datetime.now(timezone.utc),
+            }
+            avail_ref.set(avail_doc)
+            logger.info(f"Created availability time {availability_time_id} for user {user_id}")
+        
+        # 1c. Add Competencies Subcollection
         for comp in USER_TEMPLATE_COMPETENCES:
             # Generate prefixed competence ID
             competence_id = self.firestore_service._generate_prefixed_id('competence')
@@ -90,6 +114,29 @@ class UserSeedingService:
                     HubSpokeIngestion.create_competence(comp_data_weaviate, weaviate_uuid)
                 except Exception as e:
                     logger.error(f"Failed to sync seeded competence {competence_id} to Weaviate: {e}")
+            
+            # 1d. Add Competence Availability Times if available
+            comp_key = f"{{uid}}_comp_{USER_TEMPLATE_COMPETENCES.index(comp) + 1}"
+            if comp_key in COMPETENCE_AVAILABILITY_TIMES:
+                for comp_avail_time in COMPETENCE_AVAILABILITY_TIMES[comp_key]:
+                    comp_avail_id = self.firestore_service._generate_prefixed_id('availability_time')
+                    comp_avail_ref = self.firestore_service.db.collection('users').document(user_id).collection('competencies').document(competence_id).collection('availability_time').document(comp_avail_id)
+                    
+                    comp_avail_doc = {
+                        'availability_time_id': comp_avail_id,
+                        'monday_time_ranges': comp_avail_time.get('monday_time_ranges', []),
+                        'tuesday_time_ranges': comp_avail_time.get('tuesday_time_ranges', []),
+                        'wednesday_time_ranges': comp_avail_time.get('wednesday_time_ranges', []),
+                        'thursday_time_ranges': comp_avail_time.get('thursday_time_ranges', []),
+                        'friday_time_ranges': comp_avail_time.get('friday_time_ranges', []),
+                        'saturday_time_ranges': comp_avail_time.get('saturday_time_ranges', []),
+                        'sunday_time_ranges': comp_avail_time.get('sunday_time_ranges', []),
+                        'absence_days': comp_avail_time.get('absence_days', []),
+                        'created_at': datetime.now(timezone.utc),
+                        'updated_at': datetime.now(timezone.utc),
+                    }
+                    comp_avail_ref.set(comp_avail_doc)
+                    logger.info(f"Created competence availability time {comp_avail_id} for competence {competence_id}")
         
         # 2. Create Sample Requests
         service_requests = USER_TEMPLATE_SERVICE_REQUESTS

@@ -505,9 +505,9 @@ USER_E_AVAILABILITY_TIMES = [
     }
 ]
 
-# Competence-specific availability times (for Garden Design, Installing Pot Lights, and Template)
+# Competence-specific availability times (includes template for new users and test personas)
 COMPETENCE_AVAILABILITY_TIMES = {
-    "{uid}_comp_1": [  # Software Development (Template competence)
+    "{uid}_comp_1": [  # Software Development (Template competence - only for new seed users)
         {
             "availability_time_id": "avail_comp_template_001",
             "monday_time_ranges": [

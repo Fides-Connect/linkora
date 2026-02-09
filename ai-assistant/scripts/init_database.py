@@ -247,6 +247,10 @@ def init_firestore(test_data):
         # Add Availability Times for specific Competences
         from ai_assistant.seed_data import COMPETENCE_AVAILABILITY_TIMES
         for comp_id, avail_times in COMPETENCE_AVAILABILITY_TIMES.items():
+            # Skip template entries with {uid} placeholder (for seeding service only)
+            if '{uid}' in comp_id:
+                continue
+                
             # Extract user_id from comp_id (format: user_xxx_comp_N)
             user_id = '_'.join(comp_id.split('_')[:-2])
             
