@@ -104,9 +104,33 @@ class RequestDetailPage extends StatelessWidget {
                       try {
                         // Get the other user's ID based on request type
                         final currentUserId = viewModel.user?.userId ?? '';
-                        final otherUserId = request.getType(currentUserId) == RequestType.incoming
-                            ? request.seekerUserId
-                            : request.selectedProviderUserId;
+                        final requestType = request.getType(currentUserId);
+                        
+                        String otherUserId;
+                        if (requestType == RequestType.incoming) {
+                          otherUserId = request.seekerUserId;
+                        } else if (requestType == RequestType.outgoing) {
+                          otherUserId = request.selectedProviderUserId;
+                        } else {
+                          // Handle unknown request type (e.g. ID mismatch)
+                          if (context.mounted) Navigator.pop(context); // Close loading
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(localizations?.errorOccurred ?? 'Unknown request type')),
+                            );
+                          }
+                          return;
+                        }
+
+                        if (otherUserId.isEmpty) {
+                          if (context.mounted) Navigator.pop(context); // Close loading
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(localizations?.featureNotAvailable ?? 'User not found')),
+                            );
+                          }
+                          return;
+                        }
                         
                         final user = await viewModel.getOtherUser(otherUserId);
                         
