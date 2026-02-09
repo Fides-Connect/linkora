@@ -127,13 +127,17 @@ def init_hub_spoke_schema():
                     Property(name="name", data_type=DataType.TEXT),
                     Property(name="email", data_type=DataType.TEXT),
                     Property(name="location", data_type=DataType.TEXT),
-                    Property(name="type", data_type=DataType.TEXT),  # "client" or "provider"
+                    Property(name="self_introduction", data_type=DataType.TEXT),
                     Property(name="is_service_provider", data_type=DataType.BOOL),  # True if user offers services
                     Property(name="photo_url", data_type=DataType.TEXT),
                     Property(name="fcm_token", data_type=DataType.TEXT),
                     Property(name="created_at", data_type=DataType.DATE),
                     Property(name="last_sign_in", data_type=DataType.DATE),
                     Property(name="has_open_request", data_type=DataType.BOOL),
+                    Property(name="feedback_positive", data_type=DataType.TEXT_ARRAY),
+                    Property(name="feedback_negative", data_type=DataType.TEXT_ARRAY),
+                    Property(name="average_rating", data_type=DataType.NUMBER),
+                    Property(name="review_count", data_type=DataType.INT),
                 ],
                 references=[
                     ReferenceProperty(

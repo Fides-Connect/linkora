@@ -72,7 +72,7 @@ class HomeTabViewModel extends ChangeNotifier {
   Future<void> updateIntroduction(String introduction) async {
     if (_user == null) return;
     
-    final updatedUser = _user!.copyWith(introduction: introduction);
+    final updatedUser = _user!.copyWith(selfIntroduction: introduction);
 
     try {
       // Use the user returned by the repository to ensure consistency

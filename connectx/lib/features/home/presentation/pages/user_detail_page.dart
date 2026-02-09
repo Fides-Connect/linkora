@@ -125,7 +125,7 @@ class UserDetailPage extends StatelessWidget {
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            user.introduction,
+                            user.selfIntroduction,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 16,
@@ -235,14 +235,14 @@ class UserDetailPage extends StatelessWidget {
 
                   FeedbackDisplay(
                     title: localizations?.positiveFeedback ?? 'Positive Feedback',
-                    feedbackItems: user.positiveFeedback,
+                    feedbackItems: user.feedbackPositive,
                     titleColor: Colors.greenAccent,
                     chipColor: const Color(0x3369F0AE),
                   ),
 
                   FeedbackDisplay(
                     title: localizations?.negativeFeedback ?? 'Negative Feedback',
-                    feedbackItems: user.negativeFeedback,
+                    feedbackItems: user.feedbackNegative,
                     titleColor: Colors.redAccent,
                     chipColor: const Color(0x33FF5252),
                   ),

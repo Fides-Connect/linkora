@@ -29,11 +29,15 @@ class UserModelWeaviate:
                     "name": user_data.get("name"),
                     "email": user_data.get("email"),
                     "location": user_data.get("location", ""),
-                    "type": "client",  # Default type for users
+                    "self_introduction": user_data.get("self_introduction", ""),
                     "is_service_provider": user_data.get("is_service_provider", False),  # Default False for regular users
                     "photo_url": user_data.get("photo_url", ""),
                     "fcm_token": user_data.get("fcm_token", ""),
                     "has_open_request": user_data.get("has_open_request", False),
+                    "feedback_positive": user_data.get("feedback_positive", []),
+                    "feedback_negative": user_data.get("feedback_negative", []),
+                    "average_rating": user_data.get("average_rating", 0.0),
+                    "review_count": user_data.get("review_count", 0),
                     "created_at": user_data.get("created_at", datetime.now(UTC)),
                     "last_sign_in": user_data.get("last_sign_in", datetime.now(UTC).isoformat()),
                 }

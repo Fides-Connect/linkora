@@ -4,6 +4,9 @@ class Competence {
   final String description;
   final String category;
   final String priceRange;
+  final int yearOfExperience;
+  final List<String> feedbackPositive;
+  final List<String> feedbackNegative;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -13,6 +16,9 @@ class Competence {
     this.description = '',
     this.category = '',
     this.priceRange = '',
+    this.yearOfExperience = 0,
+    this.feedbackPositive = const [],
+    this.feedbackNegative = const [],
     this.createdAt,
     this.updatedAt,
   });
@@ -24,6 +30,9 @@ class Competence {
       description: json['description'] as String? ?? '',
       category: json['category'] as String? ?? '',
       priceRange: json['price_range'] as String? ?? '',
+      yearOfExperience: json['year_of_experience'] as int? ?? 0,
+      feedbackPositive: (json['feedback_positive'] as List?)?.cast<String>() ?? [],
+      feedbackNegative: (json['feedback_negative'] as List?)?.cast<String>() ?? [],
       createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'] as String) : null,
       updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'] as String) : null,
     );
@@ -36,6 +45,9 @@ class Competence {
       'description': description,
       'category': category,
       'price_range': priceRange,
+      'year_of_experience': yearOfExperience,
+      'feedback_positive': feedbackPositive,
+      'feedback_negative': feedbackNegative,
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
     };
@@ -50,10 +62,11 @@ class Competence {
         other.description == description &&
         other.category == category &&
         other.priceRange == priceRange &&
+        other.yearOfExperience == yearOfExperience &&
         other.createdAt == createdAt &&
         other.updatedAt == updatedAt;
   }
 
   @override
-  int get hashCode => Object.hash(competenceId, title, description, category, priceRange, createdAt, updatedAt);
+  int get hashCode => Object.hash(competenceId, title, description, category, priceRange, yearOfExperience, createdAt, updatedAt);
 }

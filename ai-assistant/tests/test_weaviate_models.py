@@ -45,8 +45,7 @@ class TestUserModelWeaviate:
         assert call_args['user_id'] == "user_123"
         assert call_args['name'] == "Test User"
         assert call_args['email'] == "test@example.com"
-        assert call_args['type'] == "client"  # New field
-        assert 'last_sign_in' in call_args  # New field
+        assert 'last_sign_in' in call_args
 
     def test_create_user_failure(self, sample_user_data):
         """Test creating user with exception."""

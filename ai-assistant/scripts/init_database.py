@@ -168,15 +168,17 @@ def init_firestore(test_data):
                 'email': p_data['email'],
                 'photo_url': p_data.get('photo_url', ''),
                 'location': p_data.get('location', ''),
-                'introduction': p_data['introduction'],
-                'type': p_data.get('type', 'user'),
+                'self_introduction': p_data['self_introduction'],
                 'is_service_provider': p_data.get('is_service_provider', False),
                 'fcm_token': p_data.get('fcm_token', ''),
                 'has_open_request': p_data.get('has_open_request', False),
                 'favorites': p_data.get('favorites', []),
+                'user_app_settings': p_data.get('user_app_settings', {}),
+                'open_incoming_service_requests': p_data.get('open_incoming_service_requests', []),
+                'open_outgoing_service_requests': p_data.get('open_outgoing_service_requests', []),
                 'last_sign_in': last_sign_in,
-                'positive_feedback': p_data.get('positive_feedback', []),
-                'negative_feedback': p_data.get('negative_feedback', []),
+                'feedback_positive': p_data.get('feedback_positive', []),
+                'feedback_negative': p_data.get('feedback_negative', []),
                 'average_rating': p_data.get('average_rating', 5.0),
                 'review_count': p_data.get('review_count', 0),
                 'created_at': datetime.now(timezone.utc),
@@ -200,15 +202,76 @@ def init_firestore(test_data):
                 
                 comp_doc = {
                     'competence_id': comp_id,
+                    'user_id': user_id,
                     'title': comp['title'],
                     'description': comp.get('description', ''),
+                    'category': comp.get('category', ''),
                     'price_range': comp.get('price_range', ''),
+                    'year_of_experience': comp.get('year_of_experience', 0),
+                    'feedback_positive': comp.get('feedback_positive', []),
+                    'feedback_negative': comp.get('feedback_negative', []),
                     'created_at': datetime.now(timezone.utc),
                     'updated_at': datetime.now(timezone.utc),
                 }
                 comp_ref.set(comp_doc)
                 
         logger.info("  ✓ Competencies subcollections created")
+        
+        # Add Availability Times Subcollection for Users
+        for persona in test_personas:
+            user_id = persona['user']['user_id']
+            avail_times = persona.get('availability_times', [])
+            
+            for avail in avail_times:
+                avail_id = avail.get('availability_time_id', f"avail_{user_id}_auto")
+                avail_ref = db.collection('users').document(user_id).collection('availability_time').document(avail_id)
+                
+                avail_doc = {
+                    'availability_time_id': avail_id,
+                    'user_id': user_id,
+                    'monday_time_ranges': avail.get('monday_time_ranges', []),
+                    'tuesday_time_ranges': avail.get('tuesday_time_ranges', []),
+                    'wednesday_time_ranges': avail.get('wednesday_time_ranges', []),
+                    'thursday_time_ranges': avail.get('thursday_time_ranges', []),
+                    'friday_time_ranges': avail.get('friday_time_ranges', []),
+                    'saturday_time_ranges': avail.get('saturday_time_ranges', []),
+                    'sunday_time_ranges': avail.get('sunday_time_ranges', []),
+                    'absence_days': avail.get('absence_days', []),
+                    'created_at': datetime.now(timezone.utc),
+                    'updated_at': datetime.now(timezone.utc),
+                }
+                avail_ref.set(avail_doc)
+                
+        logger.info("  ✓ User availability_time subcollections created")
+        
+        # Add Availability Times for specific Competences
+        from ai_assistant.seed_data import COMPETENCE_AVAILABILITY_TIMES
+        for comp_id, avail_times in COMPETENCE_AVAILABILITY_TIMES.items():
+            # Extract user_id from comp_id (format: user_xxx_comp_N)
+            user_id = '_'.join(comp_id.split('_')[:-2])
+            
+            for avail in avail_times:
+                avail_id = avail.get('availability_time_id', f"avail_{comp_id}_auto")
+                avail_ref = (db.collection('users').document(user_id)
+                           .collection('competencies').document(comp_id)
+                           .collection('availability_time').document(avail_id))
+                
+                avail_doc = {
+                    'availability_time_id': avail_id,
+                    'monday_time_ranges': avail.get('monday_time_ranges', []),
+                    'tuesday_time_ranges': avail.get('tuesday_time_ranges', []),
+                    'wednesday_time_ranges': avail.get('wednesday_time_ranges', []),
+                    'thursday_time_ranges': avail.get('thursday_time_ranges', []),
+                    'friday_time_ranges': avail.get('friday_time_ranges', []),
+                    'saturday_time_ranges': avail.get('saturday_time_ranges', []),
+                    'sunday_time_ranges': avail.get('sunday_time_ranges', []),
+                    'absence_days': avail.get('absence_days', []),
+                    'created_at': datetime.now(timezone.utc),
+                    'updated_at': datetime.now(timezone.utc),
+                }
+                avail_ref.set(avail_doc)
+                
+        logger.info("  ✓ Competence availability_time subcollections created")
 
     # 3. Create Service Requests
     requests = test_data.get('requests', [])

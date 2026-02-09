@@ -36,7 +36,7 @@ class _UserPageState extends State<UserPage> {
       
       // Fallback if profile not loaded yet (though it should be)
       if (profile != null) {
-        _introduction = profile.introduction;
+        _introduction = profile.selfIntroduction;
         _introController.text = _introduction;
       }
       _isInitialized = true;
@@ -302,14 +302,14 @@ class _UserPageState extends State<UserPage> {
 
                   FeedbackDisplay(
                     title: localizations?.positiveFeedback ?? 'Positive Feedback',
-                    feedbackItems: profile?.positiveFeedback ?? [],
+                    feedbackItems: profile?.feedbackPositive ?? [],
                     titleColor: Colors.greenAccent,
                     chipColor: const Color(0x3369F0AE),
                   ),
 
                   FeedbackDisplay(
                     title: localizations?.negativeFeedback ?? 'Negative Feedback',
-                    feedbackItems: profile?.negativeFeedback ?? [],
+                    feedbackItems: profile?.feedbackNegative ?? [],
                     titleColor: Colors.redAccent,
                     chipColor: const Color(0x33FF5252),
                   ),

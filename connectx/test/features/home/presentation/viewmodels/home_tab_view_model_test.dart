@@ -23,12 +23,12 @@ void main() {
       final mockUser = User(
           userId: 'user_1',
           name: 'Me',
-          introduction: 'Hi',
+          selfIntroduction: 'Hi',
           competencies: [],
           averageRating: 0,
           reviewCount: 0,
-          positiveFeedback: [],
-          negativeFeedback: []
+          feedbackPositive: [],
+          feedbackNegative: []
       );
 
       when(mockRepository.getRequests()).thenAnswer((_) async => mockRequests);
@@ -53,8 +53,8 @@ void main() {
     test('filters requests into incoming and outgoing', () async {
       // Arrange
       final mockUser = User(
-          userId: 'user_1', name: 'Me', introduction: 'Hi', competencies: [], averageRating: 0,
-          reviewCount: 0, positiveFeedback: [], negativeFeedback: []
+          userId: 'user_1', name: 'Me', selfIntroduction: 'Hi', competencies: [], averageRating: 0,
+          reviewCount: 0, feedbackPositive: [], feedbackNegative: []
       );
       
       final req1 = ServiceRequest(

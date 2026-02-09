@@ -174,12 +174,12 @@ class FirestoreService:
                         favorite_users.append({
                             'user_id': user_data.get('user_id', favorite_id),
                             'name': user_data.get('name', ''),
-                            'introduction': user_data.get('introduction', ''),
+                            'self_introduction': user_data.get('self_introduction', ''),
                             'competencies': user_data.get('competencies', []),
                             'average_rating': user_data.get('average_rating', 0.0),
                             'review_count': user_data.get('review_count', 0),
-                            'positive_feedback': user_data.get('positive_feedback', []),
-                            'negative_feedback': user_data.get('negative_feedback', [])
+                            'feedback_positive': user_data.get('feedback_positive', []),
+                            'feedback_negative': user_data.get('feedback_negative', [])
                         })
                 return favorite_users
             return []

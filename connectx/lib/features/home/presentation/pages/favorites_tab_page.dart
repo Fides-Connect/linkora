@@ -97,7 +97,7 @@ class FavoritesTabPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      user.introduction,
+                      user.selfIntroduction,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
