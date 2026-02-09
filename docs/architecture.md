@@ -110,22 +110,26 @@ RTCPeerConnection → MediaStream → WebSocket Signaling
 Firebase Auth → Google Sign-In → JWT Token → Server Validation
 ```
 
-#### UI Architecture
+#### UI Architecture (Feature-First)
 ```
-pages/          # Screen-level widgets
-├── login_page.dart
-├── chat_page.dart
-└── settings_page.dart
+features/       # Feature modules
+├── auth/
+│   └── presentation/
+└── home/
+    ├── data/
+    │   ├── repositories/    # Data fetching logic
+    │   └── mock_home_data.dart
+    └── presentation/
+        ├── pages/           # View Layer (Home, Search, Favorites)
+        └── viewmodels/      # State Layer (SearchViewModel, HomeTabViewModel)
 
-widgets/        # Reusable components
-├── audio_visualizer.dart
-├── chat_bubble.dart
-└── mic_button.dart
+core/           # Shared resources
+├── providers/  # Global providers
+└── widgets/    # Shared components (AppBackground)
 
-services/       # Business logic
-├── auth_service.dart
-├── peer_connection_handler.dart
-└── signaling_service.dart
+services/       # core business logic
+├── speech_service.dart
+└── webrtc_service.dart
 ```
 
 ### WebRTC Implementation

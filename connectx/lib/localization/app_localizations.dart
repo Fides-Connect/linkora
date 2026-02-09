@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'messages_de.dart';
 import 'messages_en.dart';
 
@@ -79,6 +81,13 @@ class AppLocalizations {
       return MessagesDE.okButton;
     }
     return MessagesEN.okButton;
+  }
+
+  String get saveButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.saveButton;
+    }
+    return MessagesEN.saveButton;
   }
 
   String get cancelButton {
@@ -208,6 +217,321 @@ class AppLocalizations {
     }
     return MessagesEN.errorOccurred;
   }
+
+  // Navigation Bar
+  String get navHome {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.navHome;
+    }
+    return MessagesEN.navHome;
+  }
+
+  String get navSearch {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.navSearch;
+    }
+    return MessagesEN.navSearch;
+  }
+
+  String get navFavorites {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.navFavorites;
+    }
+    return MessagesEN.navFavorites;
+  }
+
+  String get navMenu {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.navMenu;
+    }
+    return MessagesEN.navMenu;
+  }
+
+  // Placeholder pages
+  String get homeScreenEmpty {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.homeScreenEmpty;
+    }
+    return MessagesEN.homeScreenEmpty;
+  }
+
+  String get favoritesScreenEmpty {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.favoritesScreenEmpty;
+    }
+    return MessagesEN.favoritesScreenEmpty;
+  }
+
+  String get menuScreenEmpty {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.menuScreenEmpty;
+    }
+    return MessagesEN.menuScreenEmpty;
+  }
+
+  // Menu items
+  String get menuLogout {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.menuLogout;
+    }
+    return MessagesEN.menuLogout;
+  }
+
+  String get menuLanguage {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.menuLanguage;
+    }
+    return MessagesEN.menuLanguage;
+  }
+
+  String get languageEnglish {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.languageEnglish;
+    }
+    return MessagesEN.languageEnglish;
+  }
+
+  String get languageGerman {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.languageGerman;
+    }
+    return MessagesEN.languageGerman;
+  }
+
+  // Supporter Profile
+  String get menuSupporterProfile {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.menuSupporterProfile;
+    }
+    return MessagesEN.menuSupporterProfile;
+  }
+
+  String get competenciesTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.competenciesTitle;
+    }
+    return MessagesEN.competenciesTitle;
+  }
+
+  String get addCompetence {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.addCompetence;
+    }
+    return MessagesEN.addCompetence;
+  }
+
+  String get enterCompetence {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.enterCompetence;
+    }
+    return MessagesEN.enterCompetence;
+  }
+
+  String get delete {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.delete;
+    }
+    return MessagesEN.delete;
+  }
+
+  // Self Introduction
+  String get selfIntroductionTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.selfIntroductionTitle;
+    }
+    return MessagesEN.selfIntroductionTitle;
+  }
+
+  String get editIntroduction {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.editIntroduction;
+    }
+    return MessagesEN.editIntroduction;
+  }
+
+  String get enterIntroduction {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.enterIntroduction;
+    }
+    return MessagesEN.enterIntroduction;
+  }
+
+  // Feedback
+  String get feedbackTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.feedbackTitle;
+    }
+    return MessagesEN.feedbackTitle;
+  }
+
+  String get averageRating {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.averageRating;
+    }
+    return MessagesEN.averageRating;
+  }
+
+  String get positiveFeedback {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.positiveFeedback;
+    }
+    return MessagesEN.positiveFeedback;
+  }
+
+  String get negativeFeedback {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.negativeFeedback;
+    }
+    return MessagesEN.negativeFeedback;
+  }
+
+  String get removeFromFavorites {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.removeFromFavorites;
+    }
+    return MessagesEN.removeFromFavorites;
+  }
+
+  String get requestServiceButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.requestServiceButton;
+    }
+    return MessagesEN.requestServiceButton;
+  }
+
+  String get featureNotAvailable {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.featureNotAvailable;
+    }
+    return MessagesEN.featureNotAvailable;
+  }
+
+  // Requests
+  String get incomingRequestsTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.incomingRequestsTitle;
+    }
+    return MessagesEN.incomingRequestsTitle;
+  }
+
+  String get yourLastRequestsTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.yourLastRequestsTitle;
+    }
+    return MessagesEN.yourLastRequestsTitle;
+  }
+
+  String get openDetailsButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.openDetailsButton;
+    }
+    return MessagesEN.openDetailsButton;
+  }
+
+  String get actionNeededButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.actionRequired;
+    }
+    return MessagesEN.actionRequired;
+  }
+
+  String get pending {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.pending;
+    }
+    return MessagesEN.pending;
+  }
+
+  String get waitingForAnswer {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.waitingForAnswer;
+    }
+    return MessagesEN.waitingForAnswer;
+  }
+
+  String get completed {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.completed;
+    }
+    return MessagesEN.completed;
+  }
+
+  String get unknown {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.unknown;
+    }
+    return MessagesEN.unknown;
+  }
+
+  String get acceptButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.acceptButton;
+    }
+    return MessagesEN.acceptButton;
+  }
+
+  String get rejectButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.rejectButton;
+    }
+    return MessagesEN.rejectButton;
+  }
+
+  String get cancelRequestButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.cancelRequestButton;
+    }
+    return MessagesEN.cancelRequestButton;
+  }
+  
+  String get location {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.location;
+    }
+    return MessagesEN.location;
+  }
+  
+  String get dateFrom {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.dateFrom;
+    }
+    return MessagesEN.dateFrom;
+  }
+  
+  String get dateTo {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.dateTo;
+    }
+    return MessagesEN.dateTo;
+  }
+
+  String get date {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.date;
+    }
+    return MessagesEN.date;
+  }
+
+  String get amount {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.amount;
+    }
+    return MessagesEN.amount;
+  }
+
+  String get description {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.description;
+    }
+    return MessagesEN.description;
+  }
+
+  String get addToFavorites {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.addToFavorites;
+    }
+    return MessagesEN.addToFavorites;
+  }
 }
 
 class _AppLocalizationsDelegate
@@ -221,6 +545,16 @@ class _AppLocalizationsDelegate
 
   @override
   Future<AppLocalizations> load(Locale locale) async {
+    final String localeName = locale.countryCode == null || locale.countryCode!.isEmpty
+        ? locale.languageCode
+        : locale.toString();
+    
+    // Initialize date formatting for the active locale
+    await initializeDateFormatting(localeName);
+    
+    // Set the default locale for Intl (DateFormat uses this by default)
+    Intl.defaultLocale = localeName;
+    
     return AppLocalizations(locale);
   }
 

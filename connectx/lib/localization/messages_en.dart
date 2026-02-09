@@ -18,6 +18,33 @@ class MessagesEN {
 
   // Common button labels
   static const String okButton = 'OK';
+  static const String requestServiceButton = 'Request Service';
+  static const String featureNotAvailable = 'This feature is not available yet';
+  
+  // Requests
+  static const String incomingRequestsTitle = 'Incoming Requests';
+  static const String yourLastRequestsTitle = 'Your Last Requests';
+  static const String openDetailsButton = 'Open Details';
+  static const String actionRequired = 'Action Required';
+  static const String pending = 'Pending';
+  static const String waitingForAnswer = 'Waiting for Answer';
+  static const String completed = 'Completed';
+  static const String unknown = 'Unknown';
+  static const String acceptButton = 'Accept';
+  static const String rejectButton = 'Reject';
+  static const String cancelRequestButton = 'Cancel Request';
+  static const String location = 'Location';
+  static const String dateFrom = 'From';
+  static const String dateTo = 'To';
+  static const String date = 'Date';
+  static const String amount = 'Amount';
+  static const String description = 'Description';
+  
+  static const String saveButton = 'Save';
+
+  static const String addToFavorites = 'Add to Favorites';
+  static const String removeFromFavorites = 'Remove from Favorites';
+
   static const String cancelButton = 'Cancel';
   static const String allowButton = 'Allow';
   static const String denyButton = 'Deny';
@@ -42,4 +69,39 @@ class MessagesEN {
   static const String connectionLostMessage = 'The connection to AI-Assistant has been closed.';
   static const String errorTitle = 'Error';
   static const String errorOccurred = 'An error occurred while connecting to AI-Assistant.';
+
+  // Navigation Bar
+  static const String navHome = 'Home';
+  static const String navSearch = 'Assistant';
+  static const String navFavorites = 'Favorites';
+  static const String navMenu = 'Menu';
+
+  // Placeholder pages
+  static const String homeScreenEmpty = 'Home Screen (Empty)';
+  static const String favoritesScreenEmpty = 'Favorites Screen (Empty)';
+  static const String menuScreenEmpty = 'Menu Screen (Empty)';
+
+  // Menu items
+  static const String menuLogout = 'Logout';
+  static const String menuLanguage = 'Language';
+  static const String languageEnglish = 'English';
+  static const String languageGerman = 'German';
+
+  // Supporter Profile
+  static const String menuSupporterProfile = 'Supporter Profile';
+  static const String competenciesTitle = 'Competencies';
+  static const String addCompetence = 'Add Competence';
+  static const String enterCompetence = 'Enter competence';
+  static const String delete = 'Delete';
+
+  // Self Introduction
+  static const String selfIntroductionTitle = 'Self Introduction';
+  static const String editIntroduction = 'Edit Introduction';
+  static const String enterIntroduction = 'Enter your introduction';
+
+  // Feedback
+  static const String feedbackTitle = 'Feedback';
+  static const String averageRating = 'Average Rating';
+  static const String positiveFeedback = 'Positive Feedback';
+  static const String negativeFeedback = 'Negative Feedback';
 }

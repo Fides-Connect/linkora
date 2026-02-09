@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../models/chat_message.dart';
+import '../../../../models/chat_message.dart';
 
 class ChatDisplay extends StatelessWidget {
   final List<ChatMessage> messages;

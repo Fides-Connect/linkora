@@ -38,7 +38,13 @@ class SpeechService {
   /// Set the language code for the AI Assistant
   void setLanguageCode(String languageCode) {
     _languageCode = languageCode;
-    debugPrint('SpeechService: Language set to $_languageCode');
+  }
+  
+  /// Check if microphone is currently muted
+  bool get isMicrophoneMuted => _webrtcService?.isMicrophoneMuted ?? true;
+
+  void setMicrophoneMuted(bool muted) {
+    _webrtcService?.setMicrophoneMuted(muted);
   }
 
   void stopSpeech() async {

@@ -1,0 +1,131 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_signin_button/flutter_signin_button.dart';
+import 'package:provider/provider.dart';
+
+import '../../../../core/providers/user_provider.dart';
+import '../../../../theme.dart';
+import '../../../../core/widgets/app_background.dart';
+import '../../../../localization/app_localizations.dart';
+import '../../../../main.dart';
+
+class StartPage extends StatelessWidget {
+  const StartPage({super.key});
+
+  Future<void> _onGoogleSignInPressed(BuildContext context) async {
+    final userProvider = Provider.of<UserProvider>(context, listen: false);
+    try {
+      await userProvider.signInWithGoogle();
+    } catch (e) {
+      // Error is stored in provider, ui updates automatically via Consumer
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context);
+    final screenHeight = MediaQuery.of(context).size.height;
+    final logoTextGap = (screenHeight * 0.08).clamp(10.0, 80.0).toDouble();
+
+    return Theme(
+      data: appTheme,
+      child: Scaffold(
+        backgroundColor: appTheme.scaffoldBackgroundColor,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          actions: [
+            PopupMenuButton<Locale>(
+              icon: const Icon(Icons.language),
+              tooltip: localizations?.selectLanguage ?? 'Select Language',
+              onSelected: (Locale locale) {
+                ConnectXApp.setLocale(context, locale);
+              },
+              itemBuilder: (BuildContext context) => [
+                const PopupMenuItem<Locale>(
+                  value: Locale('en', ''),
+                  child: Text('English'),
+                ),
+                const PopupMenuItem<Locale>(
+                  value: Locale('de', ''),
+                  child: Text('Deutsch'),
+                ),
+              ],
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            const AppBackground(),
+            SafeArea(
+              child: Center(
+                child: Consumer<UserProvider>(
+                    builder: (context, userProvider, _) {
+                        return SingleChildScrollView(
+                          padding: const EdgeInsets.all(24.0),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                localizations?.welcomeTitle ?? 'Welcome to ConnectX',
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                localizations?.welcomeMessage ?? 'Sign in to start communicating with the AI assistant',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(fontSize: 16),
+                              ),
+                              SizedBox(height: logoTextGap),
+                              SizedBox(
+                                width: 100,
+                                height: 100,
+                                child: Image.asset(
+                                  'assets/images/LinkoraLogo.png',
+                                  fit: BoxFit.contain,
+                                  semanticLabel: 'Linkora Logo',
+                                ),
+                              ),
+                              SizedBox(height: logoTextGap),
+                              
+                              if (userProvider.isLoading)
+                                const SizedBox(
+                                  width: 220,
+                                  height: 48,
+                                  child: Center(child: CircularProgressIndicator()),
+                                )
+                              else ...[
+                                // Google Sign-In Button
+                                SignInButton(
+                                  Buttons.GoogleDark,
+                                  onPressed: () => _onGoogleSignInPressed(context),
+                                ),
+                              ],
+                              if (userProvider.error != null) ...[
+                                const SizedBox(height: 12),
+                                Text(
+                                  userProvider.error!,
+                                  style: TextStyle(
+                                    color: userProvider.error!.contains('Code sent') ? Colors.green : Colors.red,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                    }
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

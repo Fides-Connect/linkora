@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../utils/constants.dart';
+import '../../../../utils/constants.dart';
 
 class AINeuralVisualizer extends StatefulWidget {
   final bool isListening;
