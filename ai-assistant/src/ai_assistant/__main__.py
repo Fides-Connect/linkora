@@ -13,7 +13,6 @@ from firebase_admin import credentials
 
 from .signaling_server import SignalingServer
 from .common_endpoints import sign_in_google, setup_cors
-from .user_endpoints import user_sync, user_logout
 from .services.admin_service import AdminService
 from . import app_endpoints
 
@@ -99,19 +98,22 @@ async def main():
     app.router.add_get('/ws', signaling_server.handle_websocket)
     app.router.add_get('/health', signaling_server.health_check)
     app.router.add_post('/sign_in_google', sign_in_google)
-    app.router.add_post('/user/sync', user_sync)
-    app.router.add_post('/user/logout', user_logout)
 
     # Register app endpoints
     app.router.add_get('/service_requests', app_endpoints.get_service_requests)
     app.router.add_post('/service_requests', app_endpoints.add_service_request)
     app.router.add_put('/service_requests/{service_request_id}/status', app_endpoints.update_service_request_status)
+    app.router.add_put('/service_requests/{service_request_id}', app_endpoints.update_service_request)
+    app.router.add_delete('/service_requests/{service_request_id}', app_endpoints.delete_service_request)
     app.router.add_get('/favorites', app_endpoints.get_favorites)
     app.router.add_post('/favorites/{user_id}', app_endpoints.add_favorite)
     app.router.add_delete('/favorites/{user_id}', app_endpoints.remove_favorite)
+    app.router.add_post('/users', app_endpoints.add_user)
     app.router.add_get('/user', app_endpoints.get_user)
     app.router.add_put('/user', app_endpoints.update_user)
+    app.router.add_delete('/users/{user_id}', app_endpoints.delete_user)
     app.router.add_post('/user/competencies', app_endpoints.add_competence)
+    app.router.add_put('/user/competencies/{competence_id}', app_endpoints.update_competence)
     app.router.add_delete('/user/competencies/{competence_id}', app_endpoints.remove_competence)
     app.router.add_get('/users/{user_id}/user', app_endpoints.get_other_user)
     

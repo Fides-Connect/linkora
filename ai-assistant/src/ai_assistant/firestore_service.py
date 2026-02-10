@@ -3,6 +3,21 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
+from pydantic import ValidationError
+from .firestore_schemas import (
+    UserSchema,
+    UserUpdateSchema,
+    CompetenceSchema,
+    CompetenceUpdateSchema,
+    ServiceRequestSchema,
+    ServiceRequestUpdateSchema,
+    ReviewSchema,
+    ReviewUpdateSchema,
+    ChatSchema,
+    ChatUpdateSchema,
+    ChatMessageSchema,
+    ChatMessageUpdateSchema
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +60,27 @@ class FirestoreService:
         doc_ref = self.db.collection('_temp').document()
         auto_id = doc_ref.id
         return f"{prefix}_{auto_id}"
+    
+    def _validate_data(self, data: Dict[str, Any], schema_class) -> Dict[str, Any]:
+        """Validate data against a Pydantic schema.
+        
+        Args:
+            data: The data to validate
+            schema_class: The Pydantic model class to validate against
+            
+        Returns:
+            Validated data as a dictionary
+            
+        Raises:
+            ValidationError: If validation fails with detailed error messages
+        """
+        try:
+            # Validate and convert to dict
+            validated = schema_class(**data)
+            return validated.model_dump()
+        except ValidationError as e:
+            logger.error(f"Validation error for {schema_class.__name__}: {e}")
+            raise
 
     # --- Request Operations ---
 
@@ -108,12 +144,9 @@ class FirestoreService:
             service_request_id = self._generate_prefixed_id('service_request')
             request_data['service_request_id'] = service_request_id
             
-            # Ensure timestamps are set
+            # Set legacy createdAt field if not present
             if 'createdAt' not in request_data:
                 request_data['createdAt'] = datetime.now(timezone.utc)
-            if 'created_at' not in request_data:
-                request_data['created_at'] = datetime.now(timezone.utc)
-            request_data['updated_at'] = datetime.now(timezone.utc)
             
             # Populate provider fields if provider is selected
             if 'selected_provider_user_id' in request_data and request_data['selected_provider_user_id']:
@@ -140,9 +173,16 @@ class FirestoreService:
                     request_data['seeker_user_name'] = ''
                     request_data['seeker_user_initials'] = ''
             
+            # Validate data against schema (timestamps excluded)
+            validated_data = self._validate_data(request_data, ServiceRequestSchema)
+            
+            # Add timestamps after validation
+            validated_data['created_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(timezone.utc)
+            
             # Create document with the prefixed ID
             ref = self._get_collection('service_requests').document(service_request_id)
-            ref.set(request_data)
+            ref.set(validated_data)
             return service_request_id
         except Exception as e:
             logger.error(f"Error creating request: {e}")
@@ -176,6 +216,85 @@ class FirestoreService:
             return True
         except Exception as e:
             logger.error(f"Error updating request status {request_id}: {e}")
+            return False
+
+    async def update_service_request(self, request_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update a service request with full data.
+        
+        Args:
+            request_id: The service request ID to update
+            update_data: Data to update
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        if not self.db:
+            return False
+        try:
+            # Check if service request exists
+            ref = self._get_collection('service_requests').document(request_id)
+            if not ref.get().exists:
+                logger.warning(f"Cannot update service request {request_id}: service request does not exist")
+                return False
+            
+            # Validate update data against UpdateSchema
+            validated_data = self._validate_data(update_data, ServiceRequestUpdateSchema)
+            
+            # Add updated_at timestamp after validation
+            validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Update the document
+            ref.update(validated_data)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating service request {request_id}: {e}")
+            return False
+
+    async def delete_service_request(self, request_id: str) -> bool:
+        """Delete a service request and all its subcollections (provider_candidates with chats and messages).
+        
+        Args:
+            request_id: The service request ID to delete
+            
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        if not self.db:
+            return False
+        try:
+            service_request_ref = self._get_collection('service_requests').document(request_id)
+            
+            # Delete all provider_candidates and their nested chats/messages
+            providers_ref = service_request_ref.collection('provider_candidates')
+            providers = providers_ref.stream()
+            
+            for provider in providers:
+                provider_id = provider.id
+                
+                # Delete all chats and messages for this provider
+                chats_ref = providers_ref.document(provider_id).collection('chats')
+                chats = chats_ref.stream()
+                
+                for chat in chats:
+                    chat_id = chat.id
+                    
+                    # Delete all messages in this chat
+                    messages_ref = chats_ref.document(chat_id).collection('messages')
+                    messages = messages_ref.stream()
+                    for message in messages:
+                        message.reference.delete()
+                    
+                    # Delete the chat
+                    chat.reference.delete()
+                
+                # Delete the provider candidate
+                provider.reference.delete()
+            
+            # Delete the service request document
+            service_request_ref.delete()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting service request {request_id}: {e}")
             return False
 
     # --- Favorites Operations ---
@@ -282,13 +401,83 @@ class FirestoreService:
         if not self.db:
             return False
         try:
-            # Add updated_at timestamp
-            user_data['updated_at'] = datetime.now(timezone.utc)
-            # Use set with merge=True to create if not exists or update existing fields
-            self._get_collection('users').document(user_id).set(user_data, merge=True)
+            # Check if user exists
+            user_ref = self._get_collection('users').document(user_id)
+            if not user_ref.get().exists:
+                logger.warning(f"Cannot update user {user_id}: user does not exist")
+                return False
+            
+            # Validate update data against UpdateSchema
+            validated_data = self._validate_data(user_data, UserUpdateSchema)
+            
+            # Add updated_at timestamp after validation
+            validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Update the document (will fail if document doesn't exist)
+            user_ref.update(validated_data)
             return True
         except Exception as e:
             logger.error(f"Error updating {user_id}: {e}")
+            return False
+
+    async def create_user(self, user_id: str, user_data: Dict[str, Any]) -> bool:
+        """Create a new user.
+        
+        Args:
+            user_id: The user's ID (typically Firebase UID)
+            user_data: User data to create
+            
+        Returns:
+            True if created successfully, False otherwise
+        """
+        if not self.db:
+            return False
+        try:
+            # Add user_id to data for validation
+            user_data['user_id'] = user_id
+            
+            # Validate data against schema (timestamps excluded)
+            validated_data = self._validate_data(user_data, UserSchema)
+            
+            # Add timestamps after validation
+            validated_data['created_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Remove user_id from document data (it's the document key)
+            validated_data.pop('user_id', None)
+            
+            # Create the user document
+            self._get_collection('users').document(user_id).set(validated_data)
+            return True
+        except Exception as e:
+            logger.error(f"Error creating user {user_id}: {e}")
+            return False
+
+    async def delete_user(self, user_id: str) -> bool:
+        """Delete a user and all their subcollections (competencies).
+        
+        Args:
+            user_id: The user's ID to delete
+            
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        if not self.db:
+            return False
+        try:
+            user_ref = self._get_collection('users').document(user_id)
+            
+            # Delete all competencies in subcollection first
+            competencies_ref = user_ref.collection('competencies')
+            competencies = competencies_ref.stream()
+            for comp in competencies:
+                comp.reference.delete()
+            
+            # Delete the user document
+            user_ref.delete()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting user {user_id}: {e}")
             return False
 
     async def add_competence(self, user_id: str, competence: dict) -> Optional[Dict[str, Any]]:
@@ -320,13 +509,19 @@ class FirestoreService:
                 'description': competence.get('description', ''),
                 'category': competence.get('category', ''),
                 'price_range': competence.get('price_range', ''),
-                'created_at': datetime.utcnow(),
-                'updated_at': datetime.utcnow(),
             }
-            # Use the generated competence_id as the document ID
-            competencies_ref.document(competence_id).set(competence_data)
             
-            return competence_data
+            # Validate data against schema (timestamps excluded)
+            validated_data = self._validate_data(competence_data, CompetenceSchema)
+            
+            # Add timestamps after validation
+            validated_data['created_at'] = datetime.utcnow()
+            validated_data['updated_at'] = datetime.utcnow()
+            
+            # Use the generated competence_id as the document ID
+            competencies_ref.document(competence_id).set(validated_data)
+            
+            return validated_data
         except Exception as e:
             logger.error(f"Error adding competence for {user_id}: {e}")
             return None
@@ -348,6 +543,40 @@ class FirestoreService:
         except Exception as e:
             logger.error(f"Error removing competence {competence_id} for {user_id}: {e}")
             return False
+
+    async def update_competence(self, user_id: str, competence_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update a competence.
+        
+        Args:
+            user_id: The user's ID
+            competence_id: The competence document ID to update
+            update_data: Data to update
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        if not self.db:
+            return False
+        try:
+            # Check if competence exists
+            competence_ref = self._get_collection('users').document(user_id).collection('competencies').document(competence_id)
+            if not competence_ref.get().exists:
+                logger.warning(f"Cannot update competence {competence_id} for user {user_id}: competence does not exist")
+                return False
+            
+            # Validate update data against UpdateSchema
+            validated_data = self._validate_data(update_data, CompetenceUpdateSchema)
+            
+            # Add updated_at timestamp after validation
+            validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Update document in competencies subcollection
+            competence_ref.update(validated_data)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating competence {competence_id} for {user_id}: {e}")
+            return False
+
     # --- Review Operations ---
 
     async def create_review(self, review_data: Dict[str, Any]) -> Optional[str]:
@@ -366,14 +595,16 @@ class FirestoreService:
             review_id = self._generate_prefixed_id('review')
             review_data['review_id'] = review_id
             
-            # Ensure timestamps are set
-            if 'created_at' not in review_data:
-                review_data['created_at'] = datetime.utcnow()
-            review_data['updated_at'] = datetime.utcnow()
+            # Validate data against schema (timestamps excluded)
+            validated_data = self._validate_data(review_data, ReviewSchema)
+            
+            # Add timestamps after validation
+            validated_data['created_at'] = datetime.utcnow()
+            validated_data['updated_at'] = datetime.utcnow()
             
             # Create document with the prefixed ID
             ref = self._get_collection('reviews').document(review_id)
-            ref.set(review_data)
+            ref.set(validated_data)
             return review_id
         except Exception as e:
             logger.error(f"Error creating review: {e}")
@@ -433,9 +664,15 @@ class FirestoreService:
         if not self.db:
             return False
         try:
+            # Validate update data against UpdateSchema
+            validated_data = self._validate_data(update_data, ReviewUpdateSchema)
+            
+            # Add updated_at timestamp after validation
+            validated_data['updated_at'] = datetime.utcnow()
+            
+            # Update the document
             ref = self._get_collection('reviews').document(review_id)
-            update_data['updated_at'] = datetime.utcnow()
-            ref.update(update_data)
+            ref.update(validated_data)
             return True
         except Exception as e:
             logger.error(f"Error updating review {review_id}: {e}")
@@ -478,10 +715,12 @@ class FirestoreService:
             chat_data['chat_id'] = chat_id
             chat_data['provider_candidate_id'] = provider_candidate_id
             
-            # Ensure timestamps are set
-            if 'created_at' not in chat_data:
-                chat_data['created_at'] = datetime.now(timezone.utc)
-            chat_data['updated_at'] = datetime.now(timezone.utc)
+            # Validate data against schema (timestamps excluded)
+            validated_data = self._validate_data(chat_data, ChatSchema)
+            
+            # Add timestamps after validation
+            validated_data['created_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(timezone.utc)
             
             # Create document in chats subcollection under provider_candidate
             ref = (self._get_collection('requests')
@@ -490,7 +729,7 @@ class FirestoreService:
                    .document(provider_candidate_id)
                    .collection('chats')
                    .document(chat_id))
-            ref.set(chat_data)
+            ref.set(validated_data)
             return chat_id
         except Exception as e:
             logger.error(f"Error creating chat: {e}")
@@ -564,8 +803,15 @@ class FirestoreService:
                    .document(provider_candidate_id)
                    .collection('chats')
                    .document(chat_id))
-            update_data['updated_at'] = datetime.now(timezone.utc)
-            ref.update(update_data)
+            
+            # Validate update data against UpdateSchema
+            validated_data = self._validate_data(update_data, ChatUpdateSchema)
+            
+            # Add updated_at timestamp after validation
+            validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Update the document
+            ref.update(validated_data)
             return True
         except Exception as e:
             logger.error(f"Error updating chat {chat_id}: {e}")
@@ -624,10 +870,12 @@ class FirestoreService:
             message_data['chat_message_id'] = message_id
             message_data['chat_id'] = chat_id
             
-            # Ensure timestamps are set
-            if 'created_at' not in message_data:
-                message_data['created_at'] = datetime.now(timezone.utc)
-            message_data['updated_at'] = datetime.now(timezone.utc)
+            # Validate data against schema (timestamps excluded)
+            validated_data = self._validate_data(message_data, ChatMessageSchema)
+            
+            # Add timestamps after validation
+            validated_data['created_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(timezone.utc)
             
             # Create document in messages subcollection
             ref = (self._get_collection('service_requests')
@@ -638,7 +886,7 @@ class FirestoreService:
                    .document(chat_id)
                    .collection('messages')
                    .document(message_id))
-            ref.set(message_data)
+            ref.set(validated_data)
             return message_id
         except Exception as e:
             logger.error(f"Error creating chat message in {chat_id}: {e}")
@@ -719,8 +967,15 @@ class FirestoreService:
                    .document(chat_id)
                    .collection('messages')
                    .document(message_id))
-            update_data['updated_at'] = datetime.now(timezone.utc)
-            ref.update(update_data)
+            
+            # Validate update data against UpdateSchema
+            validated_data = self._validate_data(update_data, ChatMessageUpdateSchema)
+            
+            # Add updated_at timestamp after validation
+            validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Update the document
+            ref.update(validated_data)
             return True
         except Exception as e:
             logger.error(f"Error updating message {message_id} in chat {chat_id}: {e}")

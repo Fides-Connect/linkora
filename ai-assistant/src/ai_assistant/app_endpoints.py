@@ -1,6 +1,8 @@
 import logging
+from datetime import datetime, UTC
 from aiohttp import web
 from firebase_admin import auth
+from pydantic import ValidationError
 from .firestore_service import FirestoreService
 
 # Weaviate imports
@@ -9,8 +11,12 @@ from .hub_spoke_ingestion import HubSpokeIngestion
 from .hub_spoke_schema import get_user_collection
 from weaviate.classes.query import Filter
 
+from .services.user_seeding_service import UserSeedingService
+from .common_endpoints import _sessions
+
 logger = logging.getLogger(__name__)
 firestore_service = FirestoreService()
+seeding_service = UserSeedingService(firestore_service)
 
 def serialize_datetime(obj):
     """Recursively serialize datetime objects to ISO format strings."""
@@ -67,6 +73,12 @@ async def add_service_request(request: web.Request) -> web.Response:
             return web.json_response({"service_request_id": service_request_id, "status": "created"}, status=201)
         else:
             return web.json_response({"error": "Failed to create service request"}, status=500)
+    except ValidationError as e:
+        logger.warning(f"Validation error in add_service_request: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
     except web.HTTPException:
         raise
     except Exception as e:
@@ -104,6 +116,71 @@ async def update_service_request_status(request: web.Request) -> web.Response:
         raise
     except Exception as e:
         logger.error(f"Error in update_service_request_status: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def update_service_request(request: web.Request) -> web.Response:
+    """PUT /service_requests/{service_request_id} - Full update of service request.
+    
+    Authorization: Only the creator (seeker) can update the service request.
+    """
+    try:
+        user_id = await get_current_user_id(request)
+        service_request_id = request.match_info['service_request_id']
+        body = await request.json()
+        
+        # Check authorization - only creator can update
+        service_request = await firestore_service.get_service_request(service_request_id)
+        if not service_request:
+            return web.json_response({"error": "Service request not found"}, status=404)
+        
+        seeker_id = service_request.get('seeker_user_id')
+        if user_id != seeker_id:
+            return web.json_response({"error": "Forbidden: Only the creator can update this service request"}, status=403)
+        
+        success = await firestore_service.update_service_request(service_request_id, body)
+        if success:
+            return web.json_response({"status": "updated"})
+        else:
+            return web.json_response({"error": "Failed to update service request"}, status=500)
+    except ValidationError as e:
+        logger.warning(f"Validation error in update_service_request: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in update_service_request: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def delete_service_request(request: web.Request) -> web.Response:
+    """DELETE /service_requests/{service_request_id} - Delete service request and all subcollections.
+    
+    Authorization: Only the creator (seeker) can delete the service request.
+    """
+    try:
+        user_id = await get_current_user_id(request)
+        service_request_id = request.match_info['service_request_id']
+        
+        # Check authorization - only creator can delete
+        service_request = await firestore_service.get_service_request(service_request_id)
+        if not service_request:
+            return web.json_response({"error": "Service request not found"}, status=404)
+        
+        seeker_id = service_request.get('seeker_user_id')
+        if user_id != seeker_id:
+            return web.json_response({"error": "Forbidden: Only the creator can delete this service request"}, status=403)
+        
+        success = await firestore_service.delete_service_request(service_request_id)
+        if success:
+            return web.json_response({"status": "deleted"})
+        else:
+            return web.json_response({"error": "Failed to delete service request"}, status=500)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in delete_service_request: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 async def get_favorites(request: web.Request) -> web.Response:
@@ -186,6 +263,11 @@ async def update_user(request: web.Request) -> web.Response:
         user_id = await get_current_user_id(request)
         body = await request.json()
         
+        # Check if user exists
+        user = await firestore_service.get_user(user_id)
+        if not user:
+            return web.json_response({"error": "User not found"}, status=404)
+        
         success = await firestore_service.update_user(user_id, body)
         if success:
             # Sync to Weaviate
@@ -198,10 +280,80 @@ async def update_user(request: web.Request) -> web.Response:
             return web.json_response({"status": "updated"})
         else:
              return web.json_response({"error": "Failed to update user"}, status=500)
+    except ValidationError as e:
+        logger.warning(f"Validation error in update_user: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
     except web.HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error in update_user: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def add_user(request: web.Request) -> web.Response:
+    """POST /users - Create a new user."""
+    try:
+        body = await request.json()
+        user_id = body.get("user_id")
+        
+        if not user_id:
+            return web.json_response({"error": "Missing user_id"}, status=400)
+        
+        success = await firestore_service.create_user(user_id, body)
+        if success:
+            # Sync to Weaviate
+            try:
+                body['user_id'] = user_id
+                body['created_at'] = datetime.now(UTC)
+                UserModelWeaviate.create_user(body)
+            except Exception as e:
+                logger.error(f"Failed to sync user {user_id} to Weaviate: {e}")
+            
+            return web.json_response({"status": "created", "user_id": user_id}, status=201)
+        else:
+            return web.json_response({"error": "Failed to create user"}, status=500)
+    except ValidationError as e:
+        logger.warning(f"Validation error in add_user: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in add_user: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def delete_user(request: web.Request) -> web.Response:
+    """DELETE /users/{user_id} - Delete a user and all subcollections.
+    
+    Authorization: Only the user themselves can delete their account.
+    """
+    try:
+        authenticated_user_id = await get_current_user_id(request)
+        user_id = request.match_info.get('user_id')
+        
+        # Authorization check: user can only delete themselves
+        if authenticated_user_id != user_id:
+            return web.json_response({"error": "Forbidden: You can only delete your own account"}, status=403)
+        
+        success = await firestore_service.delete_user(user_id)
+        if success:
+            # Delete from Weaviate
+            try:
+                UserModelWeaviate.delete_user(user_id)
+            except Exception as e:
+                logger.error(f"Failed to delete user {user_id} from Weaviate: {e}")
+            
+            return web.json_response({"status": "deleted"})
+        else:
+            return web.json_response({"error": "Failed to delete user"}, status=500)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in delete_user: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 async def add_competence(request: web.Request) -> web.Response:
@@ -242,6 +394,12 @@ async def add_competence(request: web.Request) -> web.Response:
             return web.json_response({"error": "Failed to fetch updated user"}, status=500)
         else:
              return web.json_response({"error": "Failed to add competence"}, status=500)
+    except ValidationError as e:
+        logger.warning(f"Validation error in add_competence: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
     except web.HTTPException:
         raise
     except Exception as e:
@@ -275,6 +433,49 @@ async def remove_competence(request: web.Request) -> web.Response:
         raise
     except Exception as e:
         logger.error(f"Error in remove_competence: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def update_competence(request: web.Request) -> web.Response:
+    """PUT /user/competencies/{competence_id} - Update a competence.
+    
+    Authorization: Only the owner can update their competence.
+    """
+    try:
+        user_id = await get_current_user_id(request)
+        competence_id = request.match_info['competence_id']
+        body = await request.json()
+        
+        # Check if competence exists
+        competencies_ref = firestore_service._get_collection('users').document(user_id).collection('competencies')
+        comp_doc = competencies_ref.document(competence_id).get()
+        if not comp_doc.exists:
+            return web.json_response({"error": "Competence not found"}, status=404)
+        
+        success = await firestore_service.update_competence(user_id, competence_id, body)
+        if success:
+            # Sync to Weaviate
+            try:
+                # Update in Weaviate by fetching the updated data
+                comp_doc = competencies_ref.document(competence_id).get()
+                if comp_doc.exists:
+                    competence_data = comp_doc.to_dict()
+                    HubSpokeIngestion.update_competence(competence_data)
+            except Exception as e:
+                logger.error(f"Failed to sync competence {competence_id} update to Weaviate: {e}")
+            
+            return web.json_response({"status": "updated"})
+        else:
+            return web.json_response({"error": "Failed to update competence"}, status=500)
+    except ValidationError as e:
+        logger.warning(f"Validation error in update_competence: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in update_competence: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 async def get_other_user(request: web.Request) -> web.Response:
@@ -326,7 +527,7 @@ async def add_review(request: web.Request) -> web.Response:
         
         # Validate rating
         rating = body.get('rating')
-        if not isinstance(rating, (int, float)) or rating < 1 or rating > 5:
+        if not isinstance(rating, (int, float)) or rating < 1 | rating > 5:
             return web.json_response({"error": "Rating must be between 1 and 5"}, status=400)
         
         from datetime import datetime
@@ -350,6 +551,12 @@ async def add_review(request: web.Request) -> web.Response:
             "review_id": review_id,
             "status": "created"
         }, status=201)
+    except ValidationError as e:
+        logger.warning(f"Validation error in add_review: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
     except web.HTTPException:
         raise
     except Exception as e:
@@ -459,10 +666,15 @@ async def update_review(request: web.Request) -> web.Response:
         review_id = request.match_info.get('review_id')
         body = await request.json()
         
+        # Check if review exists
+        review = await firestore_service.get_review(review_id)
+        if not review:
+            return web.json_response({"error": "Review not found"}, status=404)
+        
         # Validate rating if provided
         if 'rating' in body:
             rating = body['rating']
-            if not isinstance(rating, (int, float)) or rating < 1 or rating > 5:
+            if not isinstance(rating, (int, float)) | rating < 1 | rating > 5:
                 return web.json_response({"error": "Rating must be between 1 and 5"}, status=400)
         
         success = await firestore_service.update_review(review_id, body)
@@ -633,6 +845,11 @@ async def update_chat(request: web.Request) -> web.Response:
         
         if not service_request_id:
             return web.json_response({"error": "Missing service_request_id query parameter"}, status=400)
+        
+        # Check if chat exists
+        chat = await firestore_service.get_chat(provider_candidate_id, chat_id, service_request_id)
+        if not chat:
+            return web.json_response({"error": "Chat not found"}, status=404)
         
         body = await request.json()
         
@@ -805,6 +1022,11 @@ async def update_chat_message(request: web.Request) -> web.Response:
         if not service_request_id:
             return web.json_response({"error": "Missing service_request_id query parameter"}, status=400)
         
+        # Check if message exists
+        message = await firestore_service.get_chat_message(provider_candidate_id, chat_id, service_request_id, message_id)
+        if not message:
+            return web.json_response({"error": "Message not found"}, status=404)
+        
         body = await request.json()
         
         success = await firestore_service.update_chat_message(provider_candidate_id, chat_id, service_request_id, message_id, body)
@@ -846,3 +1068,90 @@ async def delete_chat_message(request: web.Request) -> web.Response:
     except Exception as e:
         logger.error(f"Error deleting message: {e}")
         return web.json_response({"error": "Internal server error"}, status=500)
+
+# --- User Sync and Logout Endpoints ---
+
+async def user_sync(request: web.Request) -> web.Response:
+    """Sync user with backend database.
+    Creates new user if doesn't exist, updates existing user.
+    Handles FCM token registration for push notifications.
+    """
+    try:
+        body = await request.json()
+        user_id = body.get("user_id")
+        if not user_id:
+            return web.json_response({"error": "Missing user_id"}, status=400)
+        user_data = {
+            "user_id": user_id,
+            "name": body.get("name", ""),
+            "email": body.get("email", ""),
+            "photo_url": body.get("photo_url", ""),
+            "fcm_token": body.get("fcm_token", ""),
+            "is_service_provider": body.get("is_service_provider", False),
+            "last_sign_in": datetime.now(UTC),
+        }
+        existing_firestore_user = await firestore_service.get_user(user_id)
+        if existing_firestore_user:
+            if not await firestore_service.update_user(user_id, user_data):
+                return web.json_response({"error": "Failed to update Firestore user"}, status=500)
+            if UserModelWeaviate.get_user_by_id(user_id):
+                if not UserModelWeaviate.update_user(user_id, user_data):
+                    return web.json_response({"error": "Failed to update Weaviate user"}, status=500)
+            else:
+                user_data["created_at"] = datetime.now(UTC)
+                if not UserModelWeaviate.create_user(user_data):
+                    return web.json_response({"error": "Failed to self-heal/create Weaviate user"}, status=500)
+            logger.info(f"Updated user: {user_id}")
+            status = "updated"
+        else:
+            try:
+                await seeding_service.seed_new_user(
+                    user_id=user_id,
+                    name=user_data["name"],
+                    email=user_data["email"],
+                    photo_url=user_data["photo_url"]
+                )
+            except Exception as e:
+                logger.error(f"Failed to seed data for new user {user_id}: {e}")
+            if not await firestore_service.update_user(user_id, user_data):
+                return web.json_response({"error": "Failed to create/update Firestore user"}, status=500)
+            user_data["created_at"] = datetime.now(UTC)
+            if not UserModelWeaviate.create_user(user_data):
+                return web.json_response({"error": "Failed to create Weaviate user"}, status=500)
+            logger.info(f"Created new user: {user_id}")
+            status = "created"
+        return web.json_response({
+            "status": status,
+            "user": {
+                "user_id": user_id,
+                "name": user_data["name"],
+                "email": user_data["email"],
+                "photo_url": user_data["photo_url"],
+                "fcm_token": user_data["fcm_token"],
+            }
+        })
+    except ValidationError as e:
+        logger.warning(f"Validation error in user_sync: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error in user_sync: {e}")
+        return web.json_response({"error": "Internal server error", "details": str(e)}, status=500)
+
+async def user_logout(request: web.Request) -> web.Response:
+    """Handle user logout."""
+    try:
+        body = await request.json()
+        user_id = body.get("user_id")
+        if not user_id:
+            return web.json_response({"error": "Missing user_id"}, status=400)
+        sessions_to_remove = [sid for sid, sess in _sessions.items() if sess.get("user_id") == user_id]
+        for sid in sessions_to_remove:
+            del _sessions[sid]
+        logger.info(f"User logged out: {user_id}")
+        return web.json_response({"status": "logged_out"})
+    except Exception as e:
+        logger.error(f"Error in user_logout: {e}")
+        return web.json_response({"error": "Internal server error", "details": str(e)}, status=500)
