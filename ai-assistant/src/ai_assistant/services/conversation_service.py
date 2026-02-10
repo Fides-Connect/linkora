@@ -4,6 +4,7 @@ Handles conversation flow, stage management, and orchestration.
 """
 import logging
 import json
+from datetime import datetime
 from typing import Optional, AsyncIterator, Dict, Any
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage
@@ -18,6 +19,13 @@ from ..prompts_templates import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def json_serializer(obj):
+    """JSON serializer for objects not serializable by default json code."""
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
 
 
 class ConversationStage:
@@ -109,7 +117,7 @@ class ConversationService:
             ])
         
         elif stage == ConversationStage.FINALIZE:
-            provider_list_json = json.dumps(self.context["providers_found"], ensure_ascii=False)
+            provider_list_json = json.dumps(self.context["providers_found"], ensure_ascii=False, default=json_serializer)
             provider_count = len(self.context["providers_found"])
             language_instruction = get_language_instruction(self.language)
             return ChatPromptTemplate.from_messages([
