@@ -9,9 +9,9 @@ class HomeRepository {
       : _apiService = apiService ?? ApiService();
 
   /// Fetches the list of incoming and outgoing service requests.
-  /// Wraps API call to `GET /service_requests`.
+  /// Wraps API call to `GET /api/v1/service-requests`.
   Future<List<ServiceRequest>> getRequests() async {
-    final data = await _apiService.get('/service_requests');
+    final data = await _apiService.get('/api/v1/service-requests');
     if (data is List) {
       return data.map((json) => ServiceRequest.fromJson(json)).toList();
     }
@@ -20,9 +20,9 @@ class HomeRepository {
 
   /// Fetches the current user's favorite users.
   /// Used in the Favorites Tab.
-  /// Wraps API call to `GET /favorites`.
+  /// Wraps API call to `GET /api/v1/me/favorites`.
   Future<List<User>> getFavorites() async {
-    final data = await _apiService.get('/favorites');
+    final data = await _apiService.get('/api/v1/me/favorites');
     if (data is List) {
       return data.map((json) => User.fromJson(json)).toList();
     }
@@ -30,39 +30,39 @@ class HomeRepository {
   }
 
   /// Adds a user to favorites.
-  /// Wraps API call to `POST /favorites/{id}`.
+  /// Wraps API call to `POST /api/v1/me/favorites` with user_id in body.
   /// Returns the updated list of favorites.
   Future<List<User>> addFavorite(User user) async {
-    await _apiService.post('/favorites/${Uri.encodeComponent(user.userId)}'); 
+    await _apiService.post('/api/v1/me/favorites', body: {'user_id': user.userId}); 
     return getFavorites();
   }
 
   /// Removes a user from favorites.
-  /// Wraps API call to `DELETE /favorites/{id}`.
+  /// Wraps API call to `DELETE /api/v1/me/favorites/{user_id}`.
   /// Returns the updated list of favorites.
   Future<List<User>> removeFavorite(User user) async {
-    await _apiService.delete('/favorites/${Uri.encodeComponent(user.userId)}');
+    await _apiService.delete('/api/v1/me/favorites/${Uri.encodeComponent(user.userId)}');
     return getFavorites();
   }
 
   /// Fetches the logged-in user's own data.
-  /// Wraps API call to `GET /user`.
+  /// Wraps API call to `GET /api/v1/me`.
   Future<User> getUser() async {
-    final data = await _apiService.get('/user');
+    final data = await _apiService.get('/api/v1/me');
     return User.fromJson(data);
   }
 
   /// Updates the logged-in user's entire data.
-  /// Wraps API call to `PUT /user`.
+  /// Wraps API call to `PATCH /api/v1/me`.
   /// Returns the updated user.
   Future<User> updateUser(User user) async {
-    await _apiService.put('/user', body: user.toJson());
+    await _apiService.patch('/api/v1/me', body: user.toJson());
     // Return the updated user
     return getUser();
   }
 
   /// Adds a single competence tag to the user.
-  /// Wraps API call to `POST /user/competencies`.
+  /// Wraps API call to `POST /api/v1/me/competencies`.
   /// Returns the updated user.
   Future<User> addCompetence(String competence) async {
     // Create competence object with title field (other fields can be added later)
@@ -72,24 +72,24 @@ class HomeRepository {
       'category': '',
       'price_range': '',
     };
-    final data = await _apiService.post('/user/competencies', body: {'competence': competenceObj});
+    final data = await _apiService.post('/api/v1/me/competencies', body: {'competence': competenceObj});
     // API returns the updated user object
     return User.fromJson(data);
   }
 
   /// Removes a single competence tag from the user.
-  /// Wraps API call to `DELETE /user/competencies/{competence_id}`.
+  /// Wraps API call to `DELETE /api/v1/me/competencies/{competence_id}`.
   /// Returns the updated user.
   Future<User> removeCompetence(String competenceId) async {
-    final data = await _apiService.delete('/user/competencies/${Uri.encodeComponent(competenceId)}');
+    final data = await _apiService.delete('/api/v1/me/competencies/${Uri.encodeComponent(competenceId)}');
     // API returns the updated user object
     return User.fromJson(data);
   }
 
   /// Fetches proper public data for another user (e.g. a request sender).
-  /// Wraps API call to `GET /users/{id}/user`.
+  /// Wraps API call to `GET /api/v1/users/{user_id}`.
   Future<User?> getOtherUser(String userId) async {
-    final data = await _apiService.get('/users/${Uri.encodeComponent(userId)}/user');
+    final data = await _apiService.get('/api/v1/users/${Uri.encodeComponent(userId)}');
     if (data != null) {
       return User.fromJson(data);
     }
@@ -97,14 +97,14 @@ class HomeRepository {
   }
 
   /// Adds a new service request.
-  /// Wraps API call to `POST /service_requests`.
+  /// Wraps API call to `POST /api/v1/service-requests`.
   Future<void> addServiceRequest(ServiceRequest request) async {
-    await _apiService.post('/service_requests', body: request.toJson());
+    await _apiService.post('/api/v1/service-requests', body: request.toJson());
   }
 
   /// Updates the status (Accepted, Rejected, Completed) of an existing service request.
-  /// Wraps API call to `PUT /service_requests/{requestId}/status`.
+  /// Wraps API call to `PATCH /api/v1/service-requests/{requestId}`.
   Future<void> updateServiceRequestStatus(String requestId, RequestStatus status) async {
-    await _apiService.put('/service_requests/${Uri.encodeComponent(requestId)}/status', body: {'status': status.name});
+    await _apiService.patch('/api/v1/service-requests/${Uri.encodeComponent(requestId)}', body: {'status': status.name});
   }
 }

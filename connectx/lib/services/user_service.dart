@@ -73,7 +73,7 @@ class UserService {
       final backendUrl = serverUrl.startsWith('http')
           ? serverUrl
           : 'http://$serverUrl';
-      final url = Uri.parse('$backendUrl/user/sync');
+      final url = Uri.parse('$backendUrl/api/v1/auth/sync');
 
       debugPrint('Syncing user with backend: ${user.uid}');
 
@@ -117,7 +117,7 @@ class UserService {
       final backendUrl = serverUrl.startsWith('http')
           ? serverUrl
           : 'http://$serverUrl';
-      final url = Uri.parse('$backendUrl/user/logout');
+      final url = Uri.parse('$backendUrl/api/v1/auth/logout');
 
       debugPrint('Logging out user: ${user.uid}');
 

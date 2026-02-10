@@ -86,6 +86,18 @@ class ApiService {
     ).timeout(_timeout));
   }
 
+  Future<dynamic> patch(String endpoint, {dynamic body}) async {
+    final url = Uri.parse('$_baseUrl$endpoint');
+    final headers = await _getHeaders();
+
+    debugPrint('PATCH $url');
+    return _performRequest(() => _client.patch(
+      url,
+      headers: headers,
+      body: body != null ? jsonEncode(body) : null,
+    ).timeout(_timeout));
+  }
+
   Future<dynamic> delete(String endpoint) async {
     final url = Uri.parse('$_baseUrl$endpoint');
     final headers = await _getHeaders();

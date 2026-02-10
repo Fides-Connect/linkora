@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch, AsyncMock
 from aiohttp.web import Request, Response
 from datetime import datetime
 
-from ai_assistant.user_endpoints import user_sync, user_logout
+from ai_assistant.api.v1.endpoints.auth import user_sync, user_logout
 
 
 class TestUserSyncEndpoint:
@@ -23,10 +23,10 @@ class TestUserSyncEndpoint:
             "fcm_token": "test_fcm_token"
         })
         
-        # Mock dependencies in ai_assistant.user_endpoints
-        with patch('ai_assistant.user_endpoints.firestore_service') as mock_firestore, \
-             patch('ai_assistant.user_endpoints.UserModelWeaviate') as mock_weaviate, \
-             patch('ai_assistant.user_endpoints.seeding_service') as mock_seeding:
+        # Mock dependencies in ai_assistant.api.v1.endpoints.auth
+        with patch('ai_assistant.api.v1.endpoints.auth.firestore_service') as mock_firestore, \
+             patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate, \
+             patch('ai_assistant.api.v1.endpoints.auth.seeding_service') as mock_seeding:
             
             # Setup behavior
             mock_firestore.get_user = AsyncMock(return_value=None)  # User does not exist in Firestore
@@ -58,8 +58,8 @@ class TestUserSyncEndpoint:
         })
         
         # Mock dependencies
-        with patch('ai_assistant.user_endpoints.firestore_service') as mock_firestore, \
-             patch('ai_assistant.user_endpoints.UserModelWeaviate') as mock_weaviate:
+        with patch('ai_assistant.api.v1.endpoints.auth.firestore_service') as mock_firestore, \
+             patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate:
             
             # Setup behavior
             # User exists in Firestore
@@ -114,7 +114,7 @@ class TestUserLogoutEndpoint:
         })
         
         # Mock sessions
-        with patch('ai_assistant.user_endpoints._sessions') as mock_sessions:
+        with patch('ai_assistant.api.v1.endpoints.auth._sessions') as mock_sessions:
             mock_sessions.items.return_value = [
                 ("session_1", {"user_id": "test_user_123"}),
                 ("session_2", {"user_id": "other_user"})

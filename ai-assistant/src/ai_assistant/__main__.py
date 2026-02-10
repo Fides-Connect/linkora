@@ -12,9 +12,9 @@ import firebase_admin
 from firebase_admin import credentials
 
 from .signaling_server import SignalingServer
-from .common_endpoints import sign_in_google, setup_cors
+from .common_endpoints import setup_cors
 from .services.admin_service import AdminService
-from . import app_endpoints
+from .api.v1.router import register_v1_routes
 
 # Configure logging
 logging.basicConfig(
@@ -97,49 +97,9 @@ async def main():
     app = web.Application()
     app.router.add_get('/ws', signaling_server.handle_websocket)
     app.router.add_get('/health', signaling_server.health_check)
-    app.router.add_post('/sign_in_google', sign_in_google)
 
-    # Register app endpoints
-    app.router.add_get('/service_requests', app_endpoints.get_service_requests)
-    app.router.add_post('/service_requests', app_endpoints.add_service_request)
-    app.router.add_put('/service_requests/{service_request_id}/status', app_endpoints.update_service_request_status)
-    app.router.add_put('/service_requests/{service_request_id}', app_endpoints.update_service_request)
-    app.router.add_delete('/service_requests/{service_request_id}', app_endpoints.delete_service_request)
-    app.router.add_get('/favorites', app_endpoints.get_favorites)
-    app.router.add_post('/favorites/{user_id}', app_endpoints.add_favorite)
-    app.router.add_delete('/favorites/{user_id}', app_endpoints.remove_favorite)
-    app.router.add_post('/users', app_endpoints.add_user)
-    app.router.add_get('/user', app_endpoints.get_user)
-    app.router.add_put('/user', app_endpoints.update_user)
-    app.router.add_delete('/users/{user_id}', app_endpoints.delete_user)
-    app.router.add_post('/user/competencies', app_endpoints.add_competence)
-    app.router.add_put('/user/competencies/{competence_id}', app_endpoints.update_competence)
-    app.router.add_delete('/user/competencies/{competence_id}', app_endpoints.remove_competence)
-    app.router.add_get('/users/{user_id}/user', app_endpoints.get_other_user)
-    
-    # Review routes
-    app.router.add_post('/reviews', app_endpoints.add_review)
-    app.router.add_get('/reviews/{review_id}', app_endpoints.get_review)
-    app.router.add_get('/reviews/user/{user_id}', app_endpoints.get_reviews_for_user)
-    app.router.add_get('/reviews/reviewer/{reviewer_user_id}', app_endpoints.get_reviews_by_reviewer)
-    app.router.add_get('/reviews/service_request/{service_request_id}', app_endpoints.get_reviews_for_service_request)
-    app.router.add_patch('/reviews/{review_id}', app_endpoints.update_review)
-    app.router.add_delete('/reviews/{review_id}', app_endpoints.delete_review)
-    
-    # Chat routes
-    app.router.add_post('/provider_candidates/{provider_candidate_id}/chats', app_endpoints.create_chat)
-    app.router.add_get('/provider_candidates/{provider_candidate_id}/chats/{chat_id}', app_endpoints.get_chat)
-    app.router.add_get('/service_requests/{service_request_id}/chats', app_endpoints.get_chats_for_service_request)
-    app.router.add_get('/provider_candidates/{provider_candidate_id}/chats', app_endpoints.get_chats_for_provider_candidate)
-    app.router.add_patch('/provider_candidates/{provider_candidate_id}/chats/{chat_id}', app_endpoints.update_chat)
-    app.router.add_delete('/provider_candidates/{provider_candidate_id}/chats/{chat_id}', app_endpoints.delete_chat)
-    
-    # Chat message routes
-    app.router.add_post('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages', app_endpoints.create_chat_message)
-    app.router.add_get('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages', app_endpoints.get_chat_messages)
-    app.router.add_get('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages/{chat_message_id}', app_endpoints.get_chat_message)
-    app.router.add_patch('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages/{chat_message_id}', app_endpoints.update_chat_message)
-    app.router.add_delete('/provider_candidates/{provider_candidate_id}/chats/{chat_id}/chat_messages/{chat_message_id}', app_endpoints.delete_chat_message)
+    # Register v1 API routes
+    register_v1_routes(app)
     
     # Register admin routes
     admin_service.register_routes(app)
@@ -151,7 +111,8 @@ async def main():
     logger.info(f"Starting AI Assistant server on {host}:{port}")
     logger.info(f"WebSocket endpoint: ws://{host}:{port}/ws")
     logger.info(f"Health check: http://{host}:{port}/health")
-    logger.info(f"Sign-In Google: http://{host}:{port}/sign_in_google")
+    logger.info(f"API v1: http://{host}:{port}/api/v1/")
+    logger.info(f"Sign-In: http://{host}:{port}/api/v1/auth/sign-in-google")
     
     runner = web.AppRunner(app)
     setup_cors(app)
