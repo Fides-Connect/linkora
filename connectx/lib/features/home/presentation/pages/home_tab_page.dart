@@ -15,10 +15,10 @@ class HomeTabPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
     final viewModel = context.watch<HomeTabViewModel>();
-    
+
     final incomingRequests = viewModel.incomingRequests;
     final outgoingRequests = viewModel.outgoingRequests;
-    
+
     if (viewModel.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -47,7 +47,9 @@ class HomeTabPage extends StatelessWidget {
                   if (incomingRequests.isEmpty)
                     Text(
                       'No incoming requests',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
                     )
                   else
                     ...incomingRequests.map(
@@ -74,7 +76,9 @@ class HomeTabPage extends StatelessWidget {
                   if (outgoingRequests.isEmpty)
                     Text(
                       'No requests yet',
-                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
                     )
                   else
                     ...outgoingRequests.map(
@@ -173,10 +177,7 @@ class HomeTabPage extends StatelessWidget {
                 final currentUserId = viewModel.user?.userId ?? '';
                 return Text(
                   request.getAmount(currentUserId),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                  ),
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
                 );
               },
             ),

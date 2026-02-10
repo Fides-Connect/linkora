@@ -115,6 +115,31 @@ class FirestoreService:
                 request_data['created_at'] = datetime.now(timezone.utc)
             request_data['updated_at'] = datetime.now(timezone.utc)
             
+            # Populate provider fields if provider is selected
+            if 'selected_provider_user_id' in request_data and request_data['selected_provider_user_id']:
+                provider = await self.get_user(request_data['selected_provider_user_id'])
+                if provider and 'name' in provider:
+                    request_data['selected_provider_user_name'] = provider['name']
+                    request_data['selected_provider_user_initials'] = "".join([n[0] for n in provider['name'].split() if n]).upper()[:2]
+                else:
+                    request_data['selected_provider_user_name'] = ''
+                    request_data['selected_provider_user_initials'] = ''
+            else:
+                # No provider selected, set empty strings
+                request_data['selected_provider_user_id'] = ''
+                request_data['selected_provider_user_name'] = ''
+                request_data['selected_provider_user_initials'] = ''
+            
+            # Populate seeker fields
+            if 'seeker_user_id' in request_data and request_data['seeker_user_id']:
+                seeker = await self.get_user(request_data['seeker_user_id'])
+                if seeker and 'name' in seeker:
+                    request_data['seeker_user_name'] = seeker['name']
+                    request_data['seeker_user_initials'] = "".join([n[0] for n in seeker['name'].split() if n]).upper()[:2]
+                else:
+                    request_data['seeker_user_name'] = ''
+                    request_data['seeker_user_initials'] = ''
+            
             # Create document with the prefixed ID
             ref = self._get_collection('service_requests').document(service_request_id)
             ref.set(request_data)

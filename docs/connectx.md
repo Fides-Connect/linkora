@@ -232,6 +232,7 @@ connectx/
 │   │           │   ├── menu_tab_page.dart
 │   │           │   ├── request_detail_page.dart
 │   │           │   └── user_detail_page.dart
+│   │           │   └── user_page.dart
 │   │           └── viewmodels/        # HomeTab & Search ViewModels
 │   │
 │   ├── models/                        # Data models

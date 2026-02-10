@@ -123,7 +123,7 @@ class HubSpokeIngestion:
         Create a User (Hub).
         
         Args:
-            user_data: Dict with keys: name, email, type, fcm_token, 
+            user_data: Dict with keys: name, email, fcm_token, 
                          has_open_request, last_sign_in
                          
         Returns:

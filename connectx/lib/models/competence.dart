@@ -31,10 +31,16 @@ class Competence {
       category: json['category'] as String? ?? '',
       priceRange: json['price_range'] as String? ?? '',
       yearOfExperience: json['year_of_experience'] as int? ?? 0,
-      feedbackPositive: (json['feedback_positive'] as List?)?.cast<String>() ?? [],
-      feedbackNegative: (json['feedback_negative'] as List?)?.cast<String>() ?? [],
-      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'] as String) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'] as String) : null,
+      feedbackPositive:
+          (json['feedback_positive'] as List?)?.cast<String>() ?? [],
+      feedbackNegative:
+          (json['feedback_negative'] as List?)?.cast<String>() ?? [],
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'] as String)
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'] as String)
+          : null,
     );
   }
 
@@ -63,10 +69,23 @@ class Competence {
         other.category == category &&
         other.priceRange == priceRange &&
         other.yearOfExperience == yearOfExperience &&
+        other.feedbackPositive == feedbackPositive &&
+        other.feedbackNegative == feedbackNegative &&
         other.createdAt == createdAt &&
         other.updatedAt == updatedAt;
   }
 
   @override
-  int get hashCode => Object.hash(competenceId, title, description, category, priceRange, yearOfExperience, createdAt, updatedAt);
+  int get hashCode => Object.hash(
+    competenceId,
+    title,
+    description,
+    category,
+    priceRange,
+    yearOfExperience,
+    feedbackPositive,
+    feedbackNegative,
+    createdAt,
+    updatedAt,
+  );
 }

@@ -80,7 +80,7 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["name", "email", "type", "is_service_provider", "last_sign_in"]
+                        return_properties=["name", "email", "is_service_provider", "last_sign_in"]
                     )
                 )
                 
@@ -102,7 +102,6 @@ class HubSpokeSearch:
                                 'uuid': user_uuid,
                                 'name': user.get('name'),
                                 'email': user.get('email'),
-                                'type': user.get('type'),
                                 'is_service_provider': user.get('is_service_provider', False),
                                 'last_sign_in': user.get('last_sign_in'),
                             }
@@ -127,7 +126,7 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["name", "email", "type", "is_service_provider", "last_sign_in"]
+                        return_properties=["name", "email", "is_service_provider", "last_sign_in"]
                     )
                 )
                 
@@ -146,7 +145,6 @@ class HubSpokeSearch:
                                 'uuid': str(owned_by_refs[0].uuid),
                                 'name': user.get('name'),
                                 'email': user.get('email'),
-                                'type': user.get('type'),
                                 'last_sign_in': user.get('last_sign_in'),
                             }
                     
@@ -288,7 +286,6 @@ class HubSpokeSearch:
                         'uuid': user_uuid,
                         'name': user.get('name'),
                         'email': user.get('email'),
-                        'type': user.get('type'),
                         'is_service_provider': user.get('is_service_provider', False),
                         'last_sign_in': user.get('last_sign_in'),
                     }
@@ -353,7 +350,7 @@ class HubSpokeSearch:
                 return_metadata=MetadataQuery(score=True),
                 return_references=QueryReference(
                     link_on="owned_by",
-                    return_properties=["name", "email", "type", "is_service_provider", "last_sign_in"]
+                    return_properties=["name", "email", "is_service_provider", "last_sign_in"]
                 )
             )
             

@@ -282,8 +282,7 @@ class TestProviderModelWeaviate:
             mock_obj = Mock()
             mock_obj.properties = {
                 "user_id": "provider_123",
-                "name": "John's Plumbing",
-                "type": "provider"
+                "name": "John's Plumbing"
             }
             mock_response = Mock()
             mock_response.objects = [mock_obj]

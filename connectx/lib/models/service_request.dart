@@ -1,7 +1,15 @@
 import 'service_category.dart';
 
 enum RequestType { incoming, outgoing, unknown }
-enum RequestStatus { pending, waitingForAnswer, completed, accepted, rejected, unknown }
+
+enum RequestStatus {
+  pending,
+  waitingForAnswer,
+  completed,
+  accepted,
+  rejected,
+  unknown,
+}
 
 class ServiceRequest {
   final String serviceRequestId;
@@ -53,21 +61,29 @@ class ServiceRequest {
       amountValue: (json['amount_value'] as num).toDouble(),
       currency: json['currency'] as String? ?? '€',
       startDate: DateTime.parse(json['start_date'] as String),
-      endDate: json['end_date'] != null ? DateTime.parse(json['end_date'] as String) : null,
+      endDate: json['end_date'] != null
+          ? DateTime.parse(json['end_date'] as String)
+          : null,
       seekerUserId: json['seeker_user_id'] as String,
       seekerUserName: json['seeker_user_name'] as String,
       seekerUserInitials: json['seeker_user_initials'] as String,
       selectedProviderUserId: json['selected_provider_user_id'] as String,
       selectedProviderUserName: json['selected_provider_user_name'] as String,
-      selectedProviderUserInitials: json['selected_provider_user_initials'] as String,
+      selectedProviderUserInitials:
+          json['selected_provider_user_initials'] as String,
       category: ServiceCategoryExtension.fromJson(json['category'] as String),
-      status: RequestStatus.values.asNameMap()[json['status'] as String] ??
+      status:
+          RequestStatus.values.asNameMap()[json['status'] as String] ??
           RequestStatus.unknown,
       updateText: json['update_text'] as String?,
       description: json['description'] as String,
       location: json['location'] as String,
-      createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'] as String) : null,
-      updatedAt: json['updated_at'] != null ? DateTime.tryParse(json['updated_at'] as String) : null,
+      createdAt: json['created_at'] != null
+          ? DateTime.tryParse(json['created_at'] as String)
+          : null,
+      updatedAt: json['updated_at'] != null
+          ? DateTime.tryParse(json['updated_at'] as String)
+          : null,
     );
   }
 

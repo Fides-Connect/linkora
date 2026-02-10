@@ -10,10 +10,7 @@ import 'user_detail_page.dart';
 class RequestDetailPage extends StatelessWidget {
   final ServiceRequest request;
 
-  const RequestDetailPage({
-    super.key,
-    required this.request,
-  });
+  const RequestDetailPage({super.key, required this.request});
 
   @override
   Widget build(BuildContext context) {
@@ -22,10 +19,7 @@ class RequestDetailPage extends StatelessWidget {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(
-          request.title,
-          style: const TextStyle(color: Colors.white),
-        ),
+        title: Text(request.title, style: const TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -52,7 +46,11 @@ class RequestDetailPage extends StatelessWidget {
                         CircleAvatar(
                           radius: 30,
                           backgroundColor: Colors.blue,
-                          child: Icon(request.icon, color: Colors.white, size: 30),
+                          child: Icon(
+                            request.icon,
+                            color: Colors.white,
+                            size: 30,
+                          ),
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -73,7 +71,9 @@ class RequestDetailPage extends StatelessWidget {
                             return Text(
                               amount,
                               style: TextStyle(
-                                color: amount.startsWith('+') ? Colors.greenAccent : Colors.white,
+                                color: amount.startsWith('+')
+                                    ? Colors.greenAccent
+                                    : Colors.white,
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -82,7 +82,7 @@ class RequestDetailPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 16),
                         // Status
-                         _buildStatusChip(context, request),
+                        _buildStatusChip(context, request),
                       ],
                     ),
                   ),
@@ -93,19 +93,20 @@ class RequestDetailPage extends StatelessWidget {
                   InkWell(
                     onTap: () async {
                       final viewModel = context.read<HomeTabViewModel>();
-                      
+
                       // Show loading indicator
                       showDialog(
                         context: context,
                         barrierDismissible: false,
-                        builder: (context) => const Center(child: CircularProgressIndicator()),
+                        builder: (context) =>
+                            const Center(child: CircularProgressIndicator()),
                       );
-                      
+
                       try {
                         // Get the other user's ID based on request type
                         final currentUserId = viewModel.user?.userId ?? '';
                         final requestType = request.getType(currentUserId);
-                        
+
                         String otherUserId;
                         if (requestType == RequestType.incoming) {
                           otherUserId = request.seekerUserId;
@@ -113,30 +114,42 @@ class RequestDetailPage extends StatelessWidget {
                           otherUserId = request.selectedProviderUserId;
                         } else {
                           // Handle unknown request type (e.g. ID mismatch)
-                          if (context.mounted) Navigator.pop(context); // Close loading
+                          if (context.mounted)
+                            Navigator.pop(context); // Close loading
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(localizations?.errorOccurred ?? 'Unknown request type')),
+                              SnackBar(
+                                content: Text(
+                                  localizations?.errorOccurred ??
+                                      'Unknown request type',
+                                ),
+                              ),
                             );
                           }
                           return;
                         }
 
                         if (otherUserId.isEmpty) {
-                          if (context.mounted) Navigator.pop(context); // Close loading
+                          if (context.mounted)
+                            Navigator.pop(context); // Close loading
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(localizations?.featureNotAvailable ?? 'User not found')),
+                              SnackBar(
+                                content: Text(
+                                  localizations?.featureNotAvailable ??
+                                      'User not found',
+                                ),
+                              ),
                             );
                           }
                           return;
                         }
-                        
+
                         final user = await viewModel.getOtherUser(otherUserId);
-                        
+
                         // Close loading indicator
                         if (context.mounted) Navigator.pop(context);
-                        
+
                         if (user != null && context.mounted) {
                           Navigator.push(
                             context,
@@ -149,35 +162,54 @@ class RequestDetailPage extends StatelessWidget {
                           );
                         } else if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text(localizations?.featureNotAvailable ?? 'User not found')),
+                            SnackBar(
+                              content: Text(
+                                localizations?.featureNotAvailable ??
+                                    'User not found',
+                              ),
+                            ),
                           );
                         }
                       } catch (e) {
                         // Close loading indicator
                         if (context.mounted) Navigator.pop(context);
                         if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Error: $e')),
-                          );
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(SnackBar(content: Text('Error: $e')));
                         }
                       }
                     },
                     borderRadius: BorderRadius.circular(12),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 8.0,
+                        horizontal: 4.0,
+                      ),
                       child: Row(
                         children: [
                           CircleAvatar(
                             radius: 25,
-                            backgroundColor: Colors.white.withValues(alpha: 0.2),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.2,
+                            ),
                             child: Builder(
                               builder: (context) {
-                                final viewModel = context.read<HomeTabViewModel>();
-                                final currentUserId = viewModel.user?.userId ?? '';
-                                final isIncoming = request.getType(currentUserId) == RequestType.incoming;
+                                final viewModel = context
+                                    .read<HomeTabViewModel>();
+                                final currentUserId =
+                                    viewModel.user?.userId ?? '';
+                                final isIncoming =
+                                    request.getType(currentUserId) ==
+                                    RequestType.incoming;
                                 return Text(
-                                  isIncoming ? request.seekerUserInitials : request.selectedProviderUserInitials,
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                  isIncoming
+                                      ? request.seekerUserInitials
+                                      : request.selectedProviderUserInitials,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 );
                               },
                             ),
@@ -186,28 +218,48 @@ class RequestDetailPage extends StatelessWidget {
                           Expanded(
                             child: Builder(
                               builder: (context) {
-                                final viewModel = context.read<HomeTabViewModel>();
-                                final currentUserId = viewModel.user?.userId ?? '';
-                                final isIncoming = request.getType(currentUserId) == RequestType.incoming;
+                                final viewModel = context
+                                    .read<HomeTabViewModel>();
+                                final currentUserId =
+                                    viewModel.user?.userId ?? '';
+                                final isIncoming =
+                                    request.getType(currentUserId) ==
+                                    RequestType.incoming;
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      isIncoming ? request.seekerUserName : request.selectedProviderUserName,
-                                      style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                                      isIncoming
+                                          ? request.seekerUserName
+                                          : request.selectedProviderUserName,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                     Text(
-                                      isIncoming 
-                                          ? (localizations?.requester ?? 'Requester') 
-                                          : (localizations?.provider ?? 'Provider'),
-                                      style: TextStyle(color: Colors.white.withValues(alpha: 0.7)),
+                                      isIncoming
+                                          ? (localizations?.requester ??
+                                                'Requester')
+                                          : (localizations?.provider ??
+                                                'Provider'),
+                                      style: TextStyle(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.7,
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 );
                               },
                             ),
                           ),
-                          const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
+                          const Icon(
+                            Icons.arrow_forward_ios,
+                            color: Colors.white54,
+                            size: 16,
+                          ),
                         ],
                       ),
                     ),
@@ -216,15 +268,27 @@ class RequestDetailPage extends StatelessWidget {
                   const Divider(color: Colors.white24, height: 32),
 
                   // Details
-                  _buildDetailRow(context, localizations?.date ?? 'Date', request.getDate(localizations)),
-                   if (request.getSecondDateLine(localizations) != null)
+                  _buildDetailRow(
+                    context,
+                    localizations?.date ?? 'Date',
+                    request.getDate(localizations),
+                  ),
+                  if (request.getSecondDateLine(localizations) != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 4.0),
-                      child: _buildDetailRow(context, '', request.getSecondDateLine(localizations)!),
+                      child: _buildDetailRow(
+                        context,
+                        '',
+                        request.getSecondDateLine(localizations)!,
+                      ),
                     ),
-                  
+
                   const SizedBox(height: 16),
-                  _buildDetailRow(context, localizations?.location ?? 'Location', request.location),
+                  _buildDetailRow(
+                    context,
+                    localizations?.location ?? 'Location',
+                    request.location,
+                  ),
 
                   const Divider(color: Colors.white24, height: 32),
 
@@ -255,30 +319,39 @@ class RequestDetailPage extends StatelessWidget {
                       final viewModel = context.read<HomeTabViewModel>();
                       final currentUserId = viewModel.user?.userId ?? '';
                       final requestType = request.getType(currentUserId);
-                      
+
                       if (requestType == RequestType.incoming) {
                         return Row(
                           children: [
                             Expanded(
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.redAccent.withValues(alpha: 0.8),
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  backgroundColor: Colors.redAccent.withValues(
+                                    alpha: 0.8,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
                                   shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12)),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
                                 onPressed: () {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                        content: Text(
-                                            localizations?.featureNotAvailable ??
-                                                'N/A')),
+                                      content: Text(
+                                        localizations?.featureNotAvailable ??
+                                            'N/A',
+                                      ),
+                                    ),
                                   );
                                 },
                                 child: Text(
                                   localizations?.rejectButton ?? 'Reject',
                                   style: const TextStyle(
-                                      color: Colors.white, fontSize: 16),
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                  ),
                                 ),
                               ),
                             ),
@@ -287,56 +360,72 @@ class RequestDetailPage extends StatelessWidget {
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.blueAccent,
-                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 16,
+                                  ),
                                   shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(12)),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
                                 onPressed: () {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                        content: Text(
-                                            localizations?.featureNotAvailable ??
-                                                'N/A')),
+                                      content: Text(
+                                        localizations?.featureNotAvailable ??
+                                            'N/A',
+                                      ),
+                                    ),
                                   );
                                 },
                                 child: Text(
                                   localizations?.acceptButton ?? 'Accept',
                                   style: const TextStyle(
-                                      color: Colors.white, fontSize: 16),
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                  ),
                                 ),
                               ),
                             ),
                           ],
                         );
                       }
-                      
+
                       if (requestType == RequestType.outgoing &&
                           request.status == RequestStatus.waitingForAnswer) {
                         return SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.redAccent.withValues(alpha: 0.8),
+                              backgroundColor: Colors.redAccent.withValues(
+                                alpha: 0.8,
+                              ),
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                             onPressed: () {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                    content: Text(localizations?.featureNotAvailable ??
-                                        'Feature not available')),
+                                  content: Text(
+                                    localizations?.featureNotAvailable ??
+                                        'Feature not available',
+                                  ),
+                                ),
                               );
                             },
                             child: Text(
-                              localizations?.cancelRequestButton ?? 'Cancel Request',
+                              localizations?.cancelRequestButton ??
+                                  'Cancel Request',
                               style: const TextStyle(
-                                  color: Colors.white, fontSize: 16),
+                                color: Colors.white,
+                                fontSize: 16,
+                              ),
                             ),
                           ),
                         );
                       }
-                      
+
                       return const SizedBox.shrink();
                     },
                   ),
@@ -379,7 +468,7 @@ class RequestDetailPage extends StatelessWidget {
         color = Colors.grey;
         text = localizations?.unknown ?? 'Unknown';
     }
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
