@@ -279,11 +279,29 @@ def init_firestore(test_data):
 
     # 3. Create Service Requests
     requests = test_data.get('requests', [])
+    # Track which requests belong to which users for updating their open request arrays
+    user_outgoing_requests = {}  # seeker_user_id -> [request_ids]
+    user_incoming_requests = {}  # provider_user_id -> [request_ids]
+    
     if requests:
         for req in requests:
             req_collection_name = 'service_requests'
             req_id = req.get('service_request_id', 'unknown_req')
             req_ref = db.collection(req_collection_name).document(req_id)
+            
+            # Track the request for updating user open request arrays
+            seeker_id = req.get('seeker_user_id')
+            provider_id = req.get('selected_provider_user_id')
+            
+            if seeker_id:
+                if seeker_id not in user_outgoing_requests:
+                    user_outgoing_requests[seeker_id] = []
+                user_outgoing_requests[seeker_id].append(req_id)
+            
+            if provider_id:
+                if provider_id not in user_incoming_requests:
+                    user_incoming_requests[provider_id] = []
+                user_incoming_requests[provider_id].append(req_id)
             
             # Add dynamic timestamps if missing
             if 'created_at' not in req:
@@ -293,6 +311,17 @@ def init_firestore(test_data):
                 
             req_ref.set(req)
         logger.info(f"  ✓ {len(requests)} Service Requests created")
+    
+    # 3c. Update user documents with open incoming/outgoing service request arrays
+    for user_id, outgoing_req_ids in user_outgoing_requests.items():
+        user_ref = db.collection('users').document(user_id)
+        user_ref.set({'open_outgoing_service_requests': outgoing_req_ids}, merge=True)
+        logger.info(f"  ✓ Updated user {user_id} with {len(outgoing_req_ids)} outgoing requests")
+    
+    for user_id, incoming_req_ids in user_incoming_requests.items():
+        user_ref = db.collection('users').document(user_id)
+        user_ref.set({'open_incoming_service_requests': incoming_req_ids}, merge=True)
+        logger.info(f"  ✓ Updated user {user_id} with {len(incoming_req_ids)} incoming requests")
     
     # 3b. Create Provider Candidates as subcollections
     provider_candidates = test_data.get('provider_candidates', [])

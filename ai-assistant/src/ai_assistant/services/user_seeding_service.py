@@ -2,6 +2,7 @@ import logging
 import copy
 from typing import Optional
 from datetime import datetime, timezone
+from firebase_admin import firestore
 
 from ..firestore_service import FirestoreService
 from ..seed_data import (
@@ -140,6 +141,10 @@ class UserSeedingService:
         
         # 2. Create Sample Requests
         service_requests = USER_TEMPLATE_SERVICE_REQUESTS
+        # Track which requests belong to which users for updating their open request arrays
+        user_outgoing_requests = {}  # seeker_user_id -> [request_ids]
+        user_incoming_requests = {}  # provider_user_id -> [request_ids]
+        
         for idx, req in enumerate(service_requests):
             # Create a deep copy to modify
             req_data = copy.deepcopy(req)
@@ -153,6 +158,20 @@ class UserSeedingService:
                 req_data["seeker_user_id"] = req_data["seeker_user_id"].format(uid=user_id)
             if "selected_provider_user_id" in req_data and "{uid}" in req_data["selected_provider_user_id"]:
                 req_data["selected_provider_user_id"] = req_data["selected_provider_user_id"].format(uid=user_id)
+            
+            # Track the request for updating user open request arrays
+            seeker_id = req_data.get("seeker_user_id")
+            provider_id = req_data.get("selected_provider_user_id")
+            
+            if seeker_id:
+                if seeker_id not in user_outgoing_requests:
+                    user_outgoing_requests[seeker_id] = []
+                user_outgoing_requests[seeker_id].append(req_id)
+            
+            if provider_id:
+                if provider_id not in user_incoming_requests:
+                    user_incoming_requests[provider_id] = []
+                user_incoming_requests[provider_id].append(req_id)
             
             # Add timestamps
             req_data['created_at'] = datetime.now(timezone.utc)
@@ -184,6 +203,28 @@ class UserSeedingService:
                         
             except Exception as e:
                 logger.error(f"Failed to seed request {req_id}: {e}")
+
+        # 2c. Update user documents with open incoming/outgoing service request arrays
+        # Use ArrayUnion to append to existing arrays without overwriting
+        for user_id_to_update, outgoing_req_ids in user_outgoing_requests.items():
+            try:
+                user_ref = self.firestore_service.db.collection('users').document(user_id_to_update)
+                user_ref.update({
+                    'open_outgoing_service_requests': firestore.ArrayUnion(outgoing_req_ids)
+                })
+                logger.info(f"Updated user {user_id_to_update} with {len(outgoing_req_ids)} outgoing requests")
+            except Exception as e:
+                logger.error(f"Failed to update outgoing requests for user {user_id_to_update}: {e}")
+        
+        for user_id_to_update, incoming_req_ids in user_incoming_requests.items():
+            try:
+                user_ref = self.firestore_service.db.collection('users').document(user_id_to_update)
+                user_ref.update({
+                    'open_incoming_service_requests': firestore.ArrayUnion(incoming_req_ids)
+                })
+                logger.info(f"Updated user {user_id_to_update} with {len(incoming_req_ids)} incoming requests")
+            except Exception as e:
+                logger.error(f"Failed to update incoming requests for user {user_id_to_update}: {e}")
 
         # 3. Add Default Friend (Alice)
         # Ensure Alice exists first
