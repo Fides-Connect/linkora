@@ -32,7 +32,7 @@ class TestUserSyncEndpoint:
             mock_firestore.get_user = AsyncMock(return_value=None)  # User does not exist in Firestore
             mock_firestore.update_user = AsyncMock(return_value=True)
             mock_seeding.seed_new_user = AsyncMock(return_value=True)
-            mock_weaviate.create_user.return_value = "new_uuid"
+            mock_weaviate.add_user.return_value = "new_uuid"
             
             # Act
             response = await user_sync(request)
@@ -42,7 +42,7 @@ class TestUserSyncEndpoint:
             mock_firestore.get_user.assert_called_once_with("test_user_123")
             mock_seeding.seed_new_user.assert_called_once()
             mock_firestore.update_user.assert_called_once()
-            mock_weaviate.create_user.assert_called_once()
+            mock_weaviate.add_user.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_user_sync_updates_existing_user(self):

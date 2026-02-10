@@ -14,7 +14,7 @@ class TestUserSeedingService:
         service.db = Mock()
         # Mock ID generation
         service._generate_prefixed_id = Mock(side_effect=lambda prefix: f"{prefix}_123")
-        service.create_user = AsyncMock()
+        service.add_user = AsyncMock()
         service.update_user = AsyncMock()
         service.add_favorite = AsyncMock()
         return service
@@ -58,8 +58,8 @@ class TestUserSeedingService:
             await seeding_service.seed_new_user(user_id, name, email)
             
             # Assert 1: Main user update
-            mock_firestore.create_user.assert_any_call(user_id, ANY)
-            call_args = mock_firestore.create_user.call_args_list[0][0]
+            mock_firestore.add_user.assert_any_call(user_id, ANY)
+            call_args = mock_firestore.add_user.call_args_list[0][0]
             assert call_args[1]['intro'] == "Hello"
             assert call_args[1]['user_id'] == user_id
             

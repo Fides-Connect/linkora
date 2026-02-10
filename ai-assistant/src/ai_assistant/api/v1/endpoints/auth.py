@@ -113,7 +113,7 @@ async def user_sync(request: web.Request) -> web.Response:
                     }, status=500)
             else:
                 user_data["created_at"] = datetime.now(UTC)
-                if not UserModelWeaviate.create_user(user_data):
+                if not UserModelWeaviate.add_user(user_data):
                     return web.json_response({
                         "error": "Failed to self-heal/create Weaviate user"
                     }, status=500)
@@ -144,7 +144,7 @@ async def user_sync(request: web.Request) -> web.Response:
                 }, status=500)
             
             user_data["created_at"] = datetime.now(UTC)
-            if not UserModelWeaviate.create_user(user_data):
+            if not UserModelWeaviate.add_user(user_data):
                 return web.json_response({
                     "error": "Failed to create Weaviate user"
                 }, status=500)

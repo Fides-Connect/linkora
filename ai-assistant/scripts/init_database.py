@@ -445,7 +445,7 @@ def load_weaviate_data(test_personas):
             # Check if updated in place or if we need copy - safe to update in place for script
             comp['competence_id'] = f"{user_id}_comp_{i+1}"
             
-        result = HubSpokeIngestion.create_user_with_competences(
+        result = HubSpokeIngestion.add_user_with_competences(
             user_data=persona['user'],
             competences_data=competences_data,
             apply_sanitization=True,

@@ -301,13 +301,13 @@ async def add_user(request: web.Request) -> web.Response:
         if not user_id:
             return web.json_response({"error": "Missing user_id"}, status=400)
         
-        success = await firestore_service.create_user(user_id, body)
+        success = await firestore_service.add_user(user_id, body)
         if success:
             # Sync to Weaviate
             try:
                 body['user_id'] = user_id
                 body['created_at'] = datetime.now(UTC)
-                UserModelWeaviate.create_user(body)
+                UserModelWeaviate.add_user(body)
             except Exception as e:
                 logger.error(f"Failed to sync user {user_id} to Weaviate: {e}")
             
@@ -1099,7 +1099,7 @@ async def user_sync(request: web.Request) -> web.Response:
                     return web.json_response({"error": "Failed to update Weaviate user"}, status=500)
             else:
                 user_data["created_at"] = datetime.now(UTC)
-                if not UserModelWeaviate.create_user(user_data):
+                if not UserModelWeaviate.add_user(user_data):
                     return web.json_response({"error": "Failed to self-heal/create Weaviate user"}, status=500)
             logger.info(f"Updated user: {user_id}")
             status = "updated"
@@ -1116,7 +1116,7 @@ async def user_sync(request: web.Request) -> web.Response:
             if not await firestore_service.update_user(user_id, user_data):
                 return web.json_response({"error": "Failed to create/update Firestore user"}, status=500)
             user_data["created_at"] = datetime.now(UTC)
-            if not UserModelWeaviate.create_user(user_data):
+            if not UserModelWeaviate.add_user(user_data):
                 return web.json_response({"error": "Failed to create Weaviate user"}, status=500)
             logger.info(f"Created new user: {user_id}")
             status = "created"

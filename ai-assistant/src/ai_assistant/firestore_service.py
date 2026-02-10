@@ -429,7 +429,7 @@ class FirestoreService:
             logger.error(f"Error updating {user_id}: {e}")
             return False
 
-    async def create_user(self, user_id: str, user_data: Dict[str, Any]) -> bool:
+    async def add_user(self, user_id: str, user_data: Dict[str, Any]) -> bool:
         """Create a new user.
         
         Args:

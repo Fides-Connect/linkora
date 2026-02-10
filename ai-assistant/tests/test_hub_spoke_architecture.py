@@ -79,7 +79,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         cls.personas_map = {}
         for persona in TEST_PERSONAS:
             logger.info(f"Loading {persona['name']}")
-            result = HubSpokeIngestion.create_user_with_competences(
+            result = HubSpokeIngestion.add_user_with_competences(
                 user_data=persona['user'],
                 competences_data=persona['competences'],
                 apply_sanitization=True,

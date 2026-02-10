@@ -118,16 +118,16 @@ class HubSpokeIngestion:
     """
     
     @staticmethod
-    def create_user(user_data: Dict[str, Any]) -> Optional[str]:
+    def add_user(user_data: Dict[str, Any]) -> Optional[str]:
         """
-        Create a User (Hub).
+        Adds a User (Hub).
         
         Args:
             user_data: Dict with keys: name, email, fcm_token, 
                          has_open_request, last_sign_in
                          
         Returns:
-            UUID of created user
+            UUID of added user
         """
         try:
             collection = get_user_collection()
@@ -240,7 +240,7 @@ class HubSpokeIngestion:
             return None
     
     @staticmethod
-    def create_user_with_competences(
+    def add_user_with_competences(
         user_data: Dict[str, Any],
         competences_data: List[Dict[str, Any]],
         apply_sanitization: bool = True,
@@ -262,7 +262,7 @@ class HubSpokeIngestion:
         """
         try:
             # Create user
-            user_uuid = HubSpokeIngestion.create_user(user_data)
+            user_uuid = HubSpokeIngestion.add_user(user_data)
             if not user_uuid:
                 return None
             
