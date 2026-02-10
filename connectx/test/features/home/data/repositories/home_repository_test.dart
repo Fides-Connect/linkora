@@ -36,7 +36,7 @@ void main() {
           'location': 'Test Loc',
         }
       ];
-      when(mockApiService.get('/service_requests')).thenAnswer((_) async => mockJsonList);
+      when(mockApiService.get('/api/v1/service-requests')).thenAnswer((_) async => mockJsonList);
 
       // Act
       final result = await repository.getRequests();
@@ -45,7 +45,7 @@ void main() {
       expect(result, isA<List<ServiceRequest>>());
       expect(result.length, 1);
       expect(result.first.title, 'Test Request');
-      verify(mockApiService.get('/service_requests')).called(1);
+      verify(mockApiService.get('/api/v1/service-requests')).called(1);
     });
 
 
@@ -69,7 +69,7 @@ void main() {
           'negative_feedback': []
         }
       ];
-      when(mockApiService.get('/favorites')).thenAnswer((_) async => mockJsonList);
+      when(mockApiService.get('/api/v1/me/favorites')).thenAnswer((_) async => mockJsonList);
 
       // Act
       final result = await repository.getFavorites();
