@@ -25,21 +25,32 @@ class HomeTabViewModel extends ChangeNotifier {
   String? get error => _error;
 
   Future<void> loadData() async {
+    debugPrint('[HomeTabViewModel] loadData() called');
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
+      debugPrint('[HomeTabViewModel] Fetching user...');
       _user = await _repository.getUser();
+      debugPrint('[HomeTabViewModel] User fetched: ${_user?.name}');
+      
+      debugPrint('[HomeTabViewModel] Fetching requests...');
       final requests = await _repository.getRequests();
+      debugPrint('[HomeTabViewModel] Requests fetched: ${requests.length}');
       
       // Use getType() method with current user's ID to determine request type
       final currentUserId = _user?.userId ?? '';
       _incomingRequests = requests.where((r) => r.getType(currentUserId) == RequestType.incoming).toList();
       _outgoingRequests = requests.where((r) => r.getType(currentUserId) == RequestType.outgoing).toList();
+      debugPrint('[HomeTabViewModel] Incoming: ${_incomingRequests.length}, Outgoing: ${_outgoingRequests.length}');
       
+      debugPrint('[HomeTabViewModel] Fetching favorites...');
       _favorites = await _repository.getFavorites();
+      debugPrint('[HomeTabViewModel] Favorites fetched: ${_favorites.length}');
+      debugPrint('[HomeTabViewModel] loadData() completed successfully');
     } catch (e) {
+      debugPrint('[HomeTabViewModel] loadData() error: $e');
       _error = e.toString();
     } finally {
       _isLoading = false;

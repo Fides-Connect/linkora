@@ -99,7 +99,9 @@ async def user_sync(request: web.Request) -> web.Response:
         
         existing_firestore_user = await firestore_service.get_user(user_id)
         if existing_firestore_user:
-            if not await firestore_service.update_user(user_id, user_data):
+            # Remove user_id from update data (it's the document key)
+            update_data = {k: v for k, v in user_data.items() if k != "user_id"}
+            if not await firestore_service.update_user(user_id, update_data):
                 return web.json_response({
                     "error": "Failed to update Firestore user"
                 }, status=500)
@@ -126,12 +128,19 @@ async def user_sync(request: web.Request) -> web.Response:
                     email=user_data["email"],
                     photo_url=user_data["photo_url"]
                 )
+                
+                # Only update FCM token and last_sign_in after seeding
+                # Don't overwrite template data with empty values
+                update_data = {
+                    "fcm_token": user_data["fcm_token"],
+                    "last_sign_in": user_data["last_sign_in"]
+                }
+                await firestore_service.update_user(user_id, update_data)
+                
             except Exception as e:
                 logger.error(f"Failed to seed data for new user {user_id}: {e}")
-            
-            if not await firestore_service.update_user(user_id, user_data):
                 return web.json_response({
-                    "error": "Failed to create/update Firestore user"
+                    "error": f"Failed to seed user: {str(e)}"
                 }, status=500)
             
             user_data["created_at"] = datetime.now(UTC)

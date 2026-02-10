@@ -15,7 +15,7 @@ USER_TEMPLATE = {
     "fcm_token": "", # Will be set by client
     "has_open_request": True,
     "favorites": [], # Will be populated with default friend
-    "last_sign_in": 0,  # 0 days ago (will be overridden with actual datetime in seeding service)
+    "last_sign_in": None,  # Will be set during actual sign-in
     "user_app_settings": {},  # Map with key-value pairs for app settings
     "open_incoming_service_requests": [],  # Array of incoming service request IDs
     "open_outgoing_service_requests": [],  # Array of outgoing service request IDs

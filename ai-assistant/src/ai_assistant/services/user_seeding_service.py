@@ -51,14 +51,16 @@ class UserSeedingService:
         logger.info(f"Seeding data for new user: {user_id} ({name})")
         
         # 1. Update User with Template Defaults (intro, competencies, feedback)
-        user_update = {k: v for k, v in USER_TEMPLATE.items()}
-        user_update['user_id'] = user_id
-        user_update['created_at'] = datetime.now(timezone.utc)
+        user = {k: v for k, v in USER_TEMPLATE.items()}
+        user['user_id'] = user_id
+        user['name'] = name
+        user['email'] = email
+        # Don't set created_at here - create_user handles timestamps
         if photo_url:
-            user_update['photo_url'] = photo_url
+            user['photo_url'] = photo_url
         
-        # We use the existing update_user_user method which does a set with merge=True
-        await self.firestore_service.update_user(user_id, user_update)
+        # Create user document in Firestore with the provided user_id and template data
+        await self.firestore_service.create_user(user_id, user)
         
         # Get Weaviate UUID for syncing competencies
         weaviate_uuid = self._get_weaviate_user_uuid(user_id)
@@ -230,7 +232,7 @@ class UserSeedingService:
         # Ensure Alice exists first
         user_a_id = USER_A["user_id"]
         try:
-            alice_user_data = {k:v for k,v in USER_A.items() if k != "favorites"}
+            alice_user_data = {k:v for k,v in USER_A.items() if k != "favorites" and k != "user_id"}
             await self.firestore_service.update_user(user_a_id, alice_user_data)
             
             # Add to user's favorites

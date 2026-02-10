@@ -148,7 +148,7 @@ class AuthService {
     if (rawServer == null || rawServer.isEmpty) {
       return false;
     }
-    final String url = 'http://$rawServer/sign_in_google';
+    final String url = 'http://$rawServer/api/v1/auth/sign-in-google';
 
     try {
       final response = await http

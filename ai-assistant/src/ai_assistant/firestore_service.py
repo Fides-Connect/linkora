@@ -61,12 +61,13 @@ class FirestoreService:
         auto_id = doc_ref.id
         return f"{prefix}_{auto_id}"
     
-    def _validate_data(self, data: Dict[str, Any], schema_class) -> Dict[str, Any]:
+    def _validate_data(self, data: Dict[str, Any], schema_class, exclude_unset: bool = False) -> Dict[str, Any]:
         """Validate data against a Pydantic schema.
         
         Args:
             data: The data to validate
             schema_class: The Pydantic model class to validate against
+            exclude_unset: If True, only include fields that were explicitly set (for updates)
             
         Returns:
             Validated data as a dictionary
@@ -77,7 +78,14 @@ class FirestoreService:
         try:
             # Validate and convert to dict
             validated = schema_class(**data)
-            return validated.model_dump()
+            # For updates (exclude_unset=True), only include explicitly set fields
+            # For creates (exclude_unset=False), include all fields with defaults
+            return validated.model_dump(
+                mode='python',
+                exclude_none=False,
+                exclude_defaults=False,
+                exclude_unset=exclude_unset
+            )
         except ValidationError as e:
             logger.error(f"Validation error for {schema_class.__name__}: {e}")
             raise
@@ -238,7 +246,7 @@ class FirestoreService:
                 return False
             
             # Validate update data against UpdateSchema
-            validated_data = self._validate_data(update_data, ServiceRequestUpdateSchema)
+            validated_data = self._validate_data(update_data, ServiceRequestUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
             validated_data['updated_at'] = datetime.now(timezone.utc)
@@ -307,7 +315,7 @@ class FirestoreService:
             doc = self._get_collection('users').document(user_id).get()
             if doc.exists:
                 data = doc.to_dict()
-                favorite_ids = data.get('favorites', [])
+                favorite_ids = data.get('favorites') or []  # Handle None explicitly
                 
                 # Fetch full user data for each favorite user ID
                 favorite_users = []
@@ -383,7 +391,8 @@ class FirestoreService:
             doc = self._get_collection('users').document(user_id).get()
             if doc.exists:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                # data['id'] = doc.id
+                data['user_id'] = doc.id
                 
                 # Fetch competencies from subcollection
                 competencies = await self.get_competencies(user_id)
@@ -408,7 +417,7 @@ class FirestoreService:
                 return False
             
             # Validate update data against UpdateSchema
-            validated_data = self._validate_data(user_data, UserUpdateSchema)
+            validated_data = self._validate_data(user_data, UserUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
             validated_data['updated_at'] = datetime.now(timezone.utc)
@@ -565,7 +574,7 @@ class FirestoreService:
                 return False
             
             # Validate update data against UpdateSchema
-            validated_data = self._validate_data(update_data, CompetenceUpdateSchema)
+            validated_data = self._validate_data(update_data, CompetenceUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
             validated_data['updated_at'] = datetime.now(timezone.utc)
@@ -665,7 +674,7 @@ class FirestoreService:
             return False
         try:
             # Validate update data against UpdateSchema
-            validated_data = self._validate_data(update_data, ReviewUpdateSchema)
+            validated_data = self._validate_data(update_data, ReviewUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
             validated_data['updated_at'] = datetime.utcnow()
@@ -805,7 +814,7 @@ class FirestoreService:
                    .document(chat_id))
             
             # Validate update data against UpdateSchema
-            validated_data = self._validate_data(update_data, ChatUpdateSchema)
+            validated_data = self._validate_data(update_data, ChatUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
             validated_data['updated_at'] = datetime.now(timezone.utc)
@@ -969,7 +978,7 @@ class FirestoreService:
                    .document(message_id))
             
             # Validate update data against UpdateSchema
-            validated_data = self._validate_data(update_data, ChatMessageUpdateSchema)
+            validated_data = self._validate_data(update_data, ChatMessageUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
             validated_data['updated_at'] = datetime.now(timezone.utc)
