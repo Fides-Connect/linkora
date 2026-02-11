@@ -7,7 +7,7 @@ from aiohttp import web
 from datetime import datetime
 
 from ai_assistant.api import deps
-from ai_assistant.api.v1.endpoints import me, service_requests, users
+from ai_assistant.api.v1.endpoints import me, service_requests
 
 class TestAppEndpoints:
     

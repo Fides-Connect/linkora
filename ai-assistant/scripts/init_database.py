@@ -86,7 +86,7 @@ def get_test_data():
         from ai_assistant import seed_data
         return {
             'personas': seed_data.TEST_PERSONAS,
-            'requests': getattr(seed_data, 'TEST_SERVICE_REQUESTS', []),
+            'service_requests': getattr(seed_data, 'TEST_SERVICE_REQUESTS', []),
             'provider_candidates': getattr(seed_data, 'TEST_PROVIDER_CANDIDATES', []),
             'chats': getattr(seed_data, 'TEST_CHATS', []),
             'chat_messages': getattr(seed_data, 'TEST_CHAT_MESSAGES', []),
@@ -94,7 +94,7 @@ def get_test_data():
         }
     except ImportError as e:
         logger.error(f"Could not import test data from ai_assistant.seed_data: {e}")
-        return {'personas': [], 'requests': [], 'provider_candidates': [], 'chats': [], 'reviews': []}
+        return {'personas': [], 'service_requests': [], 'provider_candidates': [], 'chats': [], 'reviews': []}
 
 
 def clean_firestore_collection(coll_ref, batch_size=50):
@@ -278,7 +278,7 @@ def init_firestore(test_data):
         logger.info("  ✓ Competence availability_time subcollections created")
 
     # 3. Create Service Requests
-    requests = test_data.get('requests', [])
+    requests = test_data.get('service_requests', [])
     # Track which requests belong to which users for updating their open request arrays
     user_outgoing_requests = {}  # seeker_user_id -> [request_ids]
     user_incoming_requests = {}  # provider_user_id -> [request_ids]

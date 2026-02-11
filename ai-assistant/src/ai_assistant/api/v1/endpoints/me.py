@@ -3,7 +3,6 @@
 Current user management endpoints.
 """
 import logging
-from datetime import datetime, UTC
 from aiohttp import web
 from pydantic import ValidationError
 from weaviate.classes.query import Filter

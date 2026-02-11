@@ -209,7 +209,6 @@ async def get_chat(request: web.Request) -> web.Response:
     """GET /api/v1/service-requests/{id}/chats/{chat_id} - Get a specific chat."""
     try:
         await get_current_user_id(request)
-        service_request_id = request.match_info['id']
         chat_id = request.match_info['chat_id']
         
         # Get provider_candidate_id from query params

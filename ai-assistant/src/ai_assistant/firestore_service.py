@@ -716,7 +716,7 @@ class FirestoreService:
             validated_data['updated_at'] = datetime.now(timezone.utc)
             
             # Create document in chats subcollection under provider_candidate
-            ref = (self._get_collection('requests')
+            ref = (self._get_collection('service_requests')
                    .document(service_request_id)
                    .collection('provider_candidates')
                    .document(provider_candidate_id)
@@ -739,7 +739,7 @@ class FirestoreService:
             return None
         try:
             # First get the provider_candidate to know the request_id
-            candidate_docs = self._get_collection('requests').stream()
+            candidate_docs = self._get_collection('service_requests').stream()
             for req_doc in candidate_docs:
                 candidate_ref = req_doc.reference.collection('provider_candidates').document(provider_candidate_id)
                 candidate_doc = candidate_ref.get()
@@ -761,7 +761,7 @@ class FirestoreService:
         try:
             chats = []
             # Get all provider_candidates for this request
-            candidates_ref = (self._get_collection('requests')
+            candidates_ref = (self._get_collection('service_requests')
                             .document(service_request_id)
                             .collection('provider_candidates'))
             candidates = candidates_ref.stream()
