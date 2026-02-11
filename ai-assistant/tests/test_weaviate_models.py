@@ -308,7 +308,7 @@ class TestProviderModelWeaviate:
     def test_search_providers_by_category_success(self, mock_collection):
         """Test searching providers by category."""
         with patch('ai_assistant.weaviate_models.HubSpokeSearch') as mock_search:
-            mock_search.search_competences.return_value = [
+            mock_search.search_competencies.return_value = [
                 {
                     'category': 'plumbing',
                     'description': 'Service 1',
@@ -332,7 +332,7 @@ class TestProviderModelWeaviate:
     def test_search_providers_by_category_empty(self, mock_collection):
         """Test searching providers with no results."""
         with patch('ai_assistant.weaviate_models.HubSpokeSearch') as mock_search:
-            mock_search.search_competences.return_value = []
+            mock_search.search_competencies.return_value = []
             
             result = ProviderModelWeaviate.search_providers_by_category("nonexistent", limit=10)
             
@@ -341,7 +341,7 @@ class TestProviderModelWeaviate:
     def test_vector_search_providers_success(self, mock_collection):
         """Test vector search for providers."""
         with patch('ai_assistant.weaviate_models.HubSpokeSearch') as mock_search:
-            mock_search.search_competences.return_value = [
+            mock_search.search_competencies.return_value = [
                 {
                     'category': 'plumbing',
                     'description': 'Plumbing service',
@@ -360,7 +360,7 @@ class TestProviderModelWeaviate:
     def test_vector_search_providers_exception(self, mock_collection):
         """Test vector search with exception."""
         with patch('ai_assistant.weaviate_models.HubSpokeSearch') as mock_search:
-            mock_search.search_competences.side_effect = Exception("Search error")
+            mock_search.search_competencies.side_effect = Exception("Search error")
             
             result = ProviderModelWeaviate.vector_search_providers("need plumber")
             

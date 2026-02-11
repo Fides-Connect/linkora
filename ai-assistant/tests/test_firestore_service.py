@@ -24,7 +24,7 @@ class TestFirestoreService:
         return firestore.db.collection
 
     @pytest.mark.asyncio
-    async def test_create_request(self, firestore, mock_db_collection):
+    async def test_create_service_request(self, firestore, mock_db_collection):
         """Test creating a service request."""
         # Arrange
         request_data = {
@@ -56,8 +56,8 @@ class TestFirestoreService:
             assert 'updated_at' in call_args
 
     @pytest.mark.asyncio
-    async def test_get_requests(self, firestore, mock_db_collection):
-        """Test fetching requests for a user."""
+    async def test_get_service_requests(self, firestore, mock_db_collection):
+        """Test fetching service requests for a user."""
         # Arrange
         user_id = "user123"
         
@@ -93,7 +93,7 @@ class TestFirestoreService:
             mock_get_user.side_effect = lambda uid: {"name": "Test User" if uid == user_id else "Other User"}
             
             # Act
-            requests = await firestore.get_requests(user_id)
+            requests = await firestore.get_service_requests(user_id)
 
             # Assert
             assert len(requests) == 2
@@ -106,8 +106,8 @@ class TestFirestoreService:
             assert requests[1]['selected_provider_user_name'] == 'Test User'
 
     @pytest.mark.asyncio
-    async def test_update_request_status(self, firestore, mock_db_collection):
-        """Test updating request status."""
+    async def test_update_service_request_status(self, firestore, mock_db_collection):
+        """Test updating service request status."""
         # Arrange
         request_id = "req123"
         status = "accepted"
@@ -116,7 +116,7 @@ class TestFirestoreService:
         mock_db_collection.return_value.document.return_value = mock_doc_ref
         
         # Act
-        success = await firestore.update_request_status(request_id, status)
+        success = await firestore.update_service_request_status(request_id, status)
         
         # Assert
         assert success is True

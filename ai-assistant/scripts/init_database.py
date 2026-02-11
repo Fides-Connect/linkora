@@ -193,7 +193,7 @@ def init_firestore(test_data):
         # Add Competencies Subcollection (Separate loop to avoid large batches)
         for persona in test_personas:
             user_id = persona['user']['user_id']
-            c_data_list = persona['competences']
+            c_data_list = persona['competencies']
             
             for i, comp in enumerate(c_data_list):
                 comp_id = f"{user_id}_comp_{i+1}"
@@ -244,7 +244,7 @@ def init_firestore(test_data):
                 
         logger.info("  ✓ User availability_time subcollections created")
         
-        # Add Availability Times for specific Competences
+        # Add Availability Times for specific competencies
         from ai_assistant.seed_data import COMPETENCE_AVAILABILITY_TIMES
         for comp_id, avail_times in COMPETENCE_AVAILABILITY_TIMES.items():
             # Skip template entries with {uid} placeholder (for seeding service only)
@@ -437,23 +437,23 @@ def load_weaviate_data(test_personas):
         
         # Inject competence_id to match Firestore logic
         user_id = persona['user']['user_id']
-        competences_data = persona['competences']
+        competencies_data = persona['competencies']
         
         # We must iterate to inject IDs, replicating init_firestore logic:
         # comp_id = f"{user_id}_comp_{i+1}"
-        for i, comp in enumerate(competences_data):
+        for i, comp in enumerate(competencies_data):
             # Check if updated in place or if we need copy - safe to update in place for script
             comp['competence_id'] = f"{user_id}_comp_{i+1}"
             
-        result = HubSpokeIngestion.add_user_with_competences(
+        result = HubSpokeIngestion.add_user_with_competencies(
             user_data=persona['user'],
-            competences_data=competences_data,
+            competencies_data=competencies_data,
             apply_sanitization=True,
             apply_enrichment=True
         )
         if result:
             logger.info(f"    ✓ User UUID: {result['user_uuid']}")
-            logger.info(f"    ✓ Competences: {len(result['competence_uuids'])}")
+            logger.info(f"    ✓ Competencies: {len(result['competence_uuids'])}")
         else:
             logger.error(f"    ✗ Failed to create {persona['name']}")
 

@@ -219,8 +219,8 @@ class ProviderModelWeaviate:
     def search_providers_by_category(category: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Search providers by category using hub_spoke search."""
         try:
-            # Use HubSpokeSearch to find competences in this category
-            results = HubSpokeSearch.search_competences(
+            # Use HubSpokeSearch to find competencies in this category
+            results = HubSpokeSearch.search_competencies(
                 query=category,
                 limit=limit,
                 max_inactive_days=180,
@@ -256,7 +256,7 @@ class ProviderModelWeaviate:
         """
         try:
             # Use HubSpokeSearch for hybrid search
-            results = HubSpokeSearch.search_competences(
+            results = HubSpokeSearch.search_competencies(
                 query=query_text,
                 limit=limit,
                 max_inactive_days=180,  # Exclude inactive providers

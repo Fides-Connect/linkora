@@ -180,13 +180,10 @@ class TestServiceRequestSchema:
             "service_request_id": "service_request_abc123",
             "title": "Need help with plumbing",
             "seeker_user_id": "user_123",
-            "seeker_user_name": "John Doe",
-            "seeker_user_initials": "JD",
             "selected_provider_user_id": "user_456",
-            "selected_provider_user_name": "Jane Smith",
-            "selected_provider_user_initials": "JS",
             "status": "pending",
-            "createdAt": datetime.now(UTC)
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC)
         }
         
         request = ServiceRequestSchema(**request_data)
@@ -199,7 +196,8 @@ class TestServiceRequestSchema:
             "service_request_id": "service_request_xyz789",
             "title": "Need help with plumbing",
             "seeker_user_id": "user_123",
-            "createdAt": datetime.now(UTC)
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC)
         }
         
         request = ServiceRequestSchema(**request_data)
@@ -212,7 +210,7 @@ class TestServiceRequestSchema:
         request_data = {
             "service_request_id": "wrong_abc123",
             "seeker_user_id": "user_123",
-            "createdAt": datetime.now(UTC)
+            "created_at": datetime.now(UTC)
         }
         
         with pytest.raises(ValidationError) as exc_info:
@@ -227,7 +225,7 @@ class TestServiceRequestSchema:
             "service_request_id": "service_request_abc123",
             "seeker_user_id": "user_123",
             "status": "invalid_status",
-            "createdAt": datetime.now(UTC)
+            "created_at": datetime.now(UTC)
         }
         
         with pytest.raises(ValidationError) as exc_info:

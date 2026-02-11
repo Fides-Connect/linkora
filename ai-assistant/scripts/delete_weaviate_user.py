@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Delete User Script
-Deletes a user and all their competences from Weaviate.
+Deletes a user and all their competencies from Weaviate.
 
 Usage:
-    python scripts/delete_user.py --user-id <user_id>
+    python scripts/delete_weaviate_user.py --user-id <user_id>
 """
 import sys
 import os
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
  # TODO : add remove user endpoint and remove skills endpoint to admin interface
 def delete_user_by_id(user_id: str) -> bool:
     """
-    Delete a user and all their competences from Weaviate.
+    Delete a user and all their competencies from Weaviate.
     
     Args:
         user_id: The user_id to delete
@@ -55,15 +55,15 @@ def delete_user_by_id(user_id: str) -> bool:
         user_data = result.objects[0].properties
         logger.info(f"Found user: {user_data.get('name')} (UUID: {user_uuid})")
         
-        # Step 2: Find and delete all competences owned by this user
-        logger.info("Searching for competences owned by this user...")
-        competences = competence_collection.query.fetch_objects(
+        # Step 2: Find and delete all competencies owned by this user
+        logger.info("Searching for competencies owned by this user...")
+        competencies = competence_collection.query.fetch_objects(
             return_references=["owned_by"],
-            limit=1000  # Adjust if user has more competences
+            limit=1000  # Adjust if user has more competencies
         )
         
-        deleted_competences = 0
-        for comp in competences.objects:
+        deleted_competencies = 0
+        for comp in competencies.objects:
             # Check if this competence is owned by our user
             if hasattr(comp, 'references') and 'owned_by' in comp.references:
                 owned_by_refs = comp.references['owned_by'].objects
@@ -72,9 +72,9 @@ def delete_user_by_id(user_id: str) -> bool:
                     comp_title = comp.properties.get('title', 'Unknown')
                     logger.info(f"  Deleting competence: {comp_title} (UUID: {competence_uuid})")
                     competence_collection.data.delete_by_id(competence_uuid)
-                    deleted_competences += 1
+                    deleted_competencies += 1
         
-        logger.info(f"Deleted {deleted_competences} competence(s)")
+        logger.info(f"Deleted {deleted_competencies} competencies")
         
         # Step 3: Delete the user
         logger.info(f"Deleting user: {user_data.get('name')}")
@@ -99,7 +99,7 @@ def main():
     
     # Confirmation prompt
     if not args.confirm:
-        print(f"\n⚠️  WARNING: This will permanently delete user with user_id: {args.user_id}")
+        print(f"\n⚠️  WARNING: This will permanently delete user with user_id from Weaviate: {args.user_id}")
         print("   This action cannot be undone!")
         response = input("\nAre you sure you want to continue? (yes/no): ")
         if response.lower() != 'yes':

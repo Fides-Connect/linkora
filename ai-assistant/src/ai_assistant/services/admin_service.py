@@ -367,15 +367,15 @@ class AdminService:
             }, status=500)
     
     @AdminAuth.require_auth
-    async def list_competences(self, request: web.Request) -> web.Response:
+    async def list_competencies(self, request: web.Request) -> web.Response:
         """
-        GET /admin/competences?limit=100
-        List all competences (spokes) in the system.
+        GET /admin/competencies?limit=100
+        List all competencies (spokes) in the system.
         """
         try:
             limit = int(request.query.get('limit', 100))
             
-            # Fetch competences with 'owned_by' reference to show who owns them
+            # Fetch competencies with 'owned_by' reference to show who owns them
             collection = get_competence_collection()
             result = collection.query.fetch_objects(
                 limit=limit,
@@ -384,7 +384,7 @@ class AdminService:
                 ]
             )
             
-            competences_display = []
+            competencies_display = []
             for obj in result.objects:
                 props = obj.properties
                 owner_name = "Unknown"
@@ -400,7 +400,7 @@ class AdminService:
                         if owner.properties and 'name' in owner.properties:
                             owner_name = owner.properties['name']
                 
-                competences_display.append({
+                competencies_display.append({
                     "competence_id": str(obj.uuid),
                     "title": props.get('title'),
                     "category": props.get('category'),
@@ -413,15 +413,15 @@ class AdminService:
                 })
             
             return web.json_response({
-                "competences": competences_display,
-                "count": len(competences_display),
+                "competencies": competencies_display,
+                "count": len(competencies_display),
                 "limit": limit
             })
             
         except Exception as e:
-            logger.error(f"Error listing competences: {e}")
+            logger.error(f"Error listing competencies: {e}")
             return web.json_response({
-                "error": "Failed to list competences",
+                "error": "Failed to list competencies",
                 "message": str(e)
             }, status=500)
 
@@ -573,7 +573,7 @@ class AdminService:
         app.router.add_get('/admin/users/{user_id}', self.get_user_detail)
         
         # Competence management (Hub & Spoke)
-        app.router.add_get('/admin/competences', self.list_competences)
+        app.router.add_get('/admin/competencies', self.list_competencies)
         app.router.add_post('/admin/search/providers', self.search_providers)
         
         # Notifications

@@ -49,7 +49,7 @@ async def get_service_requests(request: web.Request) -> web.Response:
     """GET /service_requests"""
     try:
         user_id = await get_current_user_id(request)
-        requests = await firestore_service.get_requests(user_id)
+        requests = await firestore_service.get_service_requests(user_id)
         # Convert datetime objects to string for JSON serialization
         requests = serialize_datetime(requests)
         return web.json_response(requests)
@@ -107,7 +107,7 @@ async def update_service_request_status(request: web.Request) -> web.Response:
         if user_id != seeker_id and user_id != provider_id:
              return web.json_response({"error": "Unauthorized to update this service request"}, status=403)
         
-        success = await firestore_service.update_request_status(service_request_id, status)
+        success = await firestore_service.update_service_request_status(service_request_id, status)
         if success:
             return web.json_response({"status": "updated"})
         else:

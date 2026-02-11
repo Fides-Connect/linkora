@@ -90,9 +90,40 @@ class FirestoreService:
             logger.error(f"Validation error for {schema_class.__name__}: {e}")
             raise
 
-    # --- Request Operations ---
+    # --- Service Request Operations ---
 
-    async def get_requests(self, user_id: str) -> List[Dict[str, Any]]:
+    async def _enrich_service_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Enrich a service request with user names and initials.
+        
+        Args:
+            request: The service request dict
+            
+        Returns:
+            The enriched request dict
+        """
+        # Add seeker user info
+        if 'seeker_user_id' in request:
+            seeker = await self.get_user(request['seeker_user_id'])
+            if seeker and 'name' in seeker:
+                request['seeker_user_name'] = seeker['name']
+                request['seeker_user_initials'] = "".join([n[0] for n in seeker['name'].split() if n]).upper()[:2]
+            else:
+                request['seeker_user_name'] = ''
+                request['seeker_user_initials'] = ''
+        
+        # Add provider user info
+        if 'selected_provider_user_id' in request:
+            provider = await self.get_user(request['selected_provider_user_id'])
+            if provider and 'name' in provider:
+                request['selected_provider_user_name'] = provider['name']
+                request['selected_provider_user_initials'] = "".join([n[0] for n in provider['name'].split() if n]).upper()[:2]
+            else:
+                request['selected_provider_user_name'] = ''
+                request['selected_provider_user_initials'] = ''
+        
+        return request
+
+    async def get_service_requests(self, user_id: str) -> List[Dict[str, Any]]:
         """Fetch incoming and outgoing service requests involving the user."""
         if not self.db:
             return []
@@ -117,26 +148,8 @@ class FirestoreService:
                     requests.append(data)
             
             # Enrich requests with user names and initials
-            for req in requests:
-                # Add seeker user info
-                if 'seeker_user_id' in req:
-                    seeker = await self.get_user(req['seeker_user_id'])
-                    if seeker and 'name' in seeker:
-                        req['seeker_user_name'] = seeker['name']
-                        req['seeker_user_initials'] = "".join([n[0] for n in seeker['name'].split() if n]).upper()[:2]
-                    else:
-                        req['seeker_user_name'] = ''
-                        req['seeker_user_initials'] = ''
-                
-                # Add provider user info
-                if 'selected_provider_user_id' in req:
-                    provider = await self.get_user(req['selected_provider_user_id'])
-                    if provider and 'name' in provider:
-                        req['selected_provider_user_name'] = provider['name']
-                        req['selected_provider_user_initials'] = "".join([n[0] for n in provider['name'].split() if n]).upper()[:2]
-                    else:
-                        req['selected_provider_user_name'] = ''
-                        req['selected_provider_user_initials'] = ''
+            for i, req in enumerate(requests):
+                requests[i] = await self._enrich_service_request(req)
             return requests
 
         except Exception as e:
@@ -152,41 +165,12 @@ class FirestoreService:
             service_request_id = self._generate_prefixed_id('service_request')
             request_data['service_request_id'] = service_request_id
             
-            # Set legacy createdAt field if not present
-            if 'createdAt' not in request_data:
-                request_data['createdAt'] = datetime.now(timezone.utc)
-            
-            # Populate provider fields if provider is selected
-            if 'selected_provider_user_id' in request_data and request_data['selected_provider_user_id']:
-                provider = await self.get_user(request_data['selected_provider_user_id'])
-                if provider and 'name' in provider:
-                    request_data['selected_provider_user_name'] = provider['name']
-                    request_data['selected_provider_user_initials'] = "".join([n[0] for n in provider['name'].split() if n]).upper()[:2]
-                else:
-                    request_data['selected_provider_user_name'] = ''
-                    request_data['selected_provider_user_initials'] = ''
-            else:
-                # No provider selected, set empty strings
-                request_data['selected_provider_user_id'] = ''
-                request_data['selected_provider_user_name'] = ''
-                request_data['selected_provider_user_initials'] = ''
-            
-            # Populate seeker fields
-            if 'seeker_user_id' in request_data and request_data['seeker_user_id']:
-                seeker = await self.get_user(request_data['seeker_user_id'])
-                if seeker and 'name' in seeker:
-                    request_data['seeker_user_name'] = seeker['name']
-                    request_data['seeker_user_initials'] = "".join([n[0] for n in seeker['name'].split() if n]).upper()[:2]
-                else:
-                    request_data['seeker_user_name'] = ''
-                    request_data['seeker_user_initials'] = ''
-            
+            # Add timestamps before validation (they will be validated as well)
+            request_data['created_at'] = datetime.now(timezone.utc)
+            request_data['updated_at'] = datetime.now(timezone.utc)
+
             # Validate data against schema (timestamps excluded)
             validated_data = self._validate_data(request_data, ServiceRequestSchema)
-            
-            # Add timestamps after validation
-            validated_data['created_at'] = datetime.now(timezone.utc)
-            validated_data['updated_at'] = datetime.now(timezone.utc)
             
             # Create document with the prefixed ID
             ref = self._get_collection('service_requests').document(service_request_id)
@@ -205,14 +189,14 @@ class FirestoreService:
             if doc.exists:
                 data = doc.to_dict()
                 data['id'] = doc.id
-                return data
+                return await self._enrich_service_request(data)
             return None
         except Exception as e:
             logger.error(f"Error fetching request {request_id}: {e}")
             return None
 
-    async def update_request_status(self, request_id: str, status: str) -> bool:
-        """Update request status."""
+    async def update_service_request_status(self, request_id: str, status: str) -> bool:
+        """Update service request status."""
         if not self.db:
             return False
         try:

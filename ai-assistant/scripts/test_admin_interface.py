@@ -141,15 +141,15 @@ async def run_tests():
             if 'data' in result:
                 print(f"Response data: {result['data']}")
         
-        # Test 4: List Competences (Spokes)
-        print_header("Test 4: List Competences (Spokes)")
-        result = await test_endpoint(session, 'GET', '/admin/competences?limit=5')
+        # Test 4: List Competencies (Spokes)
+        print_header("Test 4: List Competencies (Spokes)")
+        result = await test_endpoint(session, 'GET', '/admin/competencies?limit=5')
         if result['success']:
-            print_success(f"Retrieved {result['data'].get('count', 0)} competences")
+            print_success(f"Retrieved {result['data'].get('count', 0)} competencies")
             print_result(result['data'])
         else:
             error_msg = result.get('error', 'Unknown error')
-            print_error(f"List competences failed: {error_msg}")
+            print_error(f"List competencies failed: {error_msg}")
             if 'data' in result:
                 print(f"Response data: {result['data']}")
         

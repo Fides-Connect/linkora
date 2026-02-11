@@ -141,7 +141,7 @@ def init_hub_spoke_schema():
                 ],
                 references=[
                     ReferenceProperty(
-                        name="has_competences",
+                        name="has_competencies",
                         target_collection=COMPETENCE_COLLECTION
                     )
                 ]

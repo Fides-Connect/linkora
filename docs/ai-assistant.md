@@ -122,7 +122,7 @@ ai-assistant/
 │
 ├── scripts/
 │   ├── init_database.py           # Database initialization (Firestore + Weaviate)
-│   ├── delete_user.py             # User deletion utility
+│   ├── delete_weaviate_user.py    # User deletion utility for Weaviate
 │   ├── generate_admin_token.py    # Admin authentication
 │   ├── test_admin_interface.py    # Admin testing
 │   └── test_search_providers.py   # Search testing
@@ -143,7 +143,7 @@ The system uses a **Hybrid Database Architecture**:
 **Hub & Spoke Model (Weaviate):**
 - **Hub**: The `User` object.
 - **Spoke**: The `Competence` (skill/service) object.
-- **Link**: Bidirectional references (`owned_by` <-> `has_competences`).
+- **Link**: Bidirectional references (`owned_by` <-> `has_competencies`).
 - This allows searching for specific skills ("Spokes") while retrieving the full provider profile ("Hub").
 ├── Dockerfile                     # Container definition
 ├── docker-compose.yml             # Development setup

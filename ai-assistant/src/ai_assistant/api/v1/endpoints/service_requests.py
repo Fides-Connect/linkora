@@ -19,7 +19,7 @@ async def get_service_requests(request: web.Request) -> web.Response:
     """GET /api/v1/service-requests - Get service requests for current user."""
     try:
         user_id = await get_current_user_id(request)
-        requests = await firestore_service.get_requests(user_id)
+        requests = await firestore_service.get_service_requests(user_id)
         requests = serialize_datetime(requests)
         return web.json_response(requests)
     except web.HTTPException:

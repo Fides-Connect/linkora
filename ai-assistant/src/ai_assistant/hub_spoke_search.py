@@ -33,7 +33,7 @@ class HubSpokeSearch:
     """
     
     @staticmethod
-    def search_competences(
+    def search_competencies(
         query: str,
         limit: int = 10,
         max_inactive_days: int = 180,
@@ -41,7 +41,7 @@ class HubSpokeSearch:
         alpha: float = 0.5
     ) -> List[Dict[str, Any]]:
         """
-        Search for competences with ghost filtering and grouping.
+        Search for competencies with ghost filtering and grouping.
         
         Search Strategy:
         1. Perform hybrid search on Competence.description
@@ -117,7 +117,7 @@ class HubSpokeSearch:
                 return results
                 
             else:
-                # Hybrid search WITHOUT grouping (may return multiple competences per user)
+                # Hybrid search WITHOUT grouping (may return multiple competencies per user)
                 response = competence_collection.query.hybrid(
                     query=query,
                     limit=limit,
@@ -150,17 +150,17 @@ class HubSpokeSearch:
                     
                     results.append(competence)
                 
-                logger.info(f"Ungrouped search found {len(results)} competences for: '{query[:50]}...'")
+                logger.info(f"Ungrouped search found {len(results)} competencies for: '{query[:50]}...'")
                 return results
             
         except Exception as e:
-            logger.error(f"Error searching competences: {e}")
+            logger.error(f"Error searching competencies: {e}")
             return []
     
     @staticmethod
-    def get_user_competences(user_uuid: str) -> List[Dict[str, Any]]:
+    def get_user_competencies(user_uuid: str) -> List[Dict[str, Any]]:
         """
-        Get all competences for a specific user.
+        Get all competencies for a specific user.
         
         Args:
             user_uuid: UUID of the user
@@ -175,7 +175,7 @@ class HubSpokeSearch:
             response = user_collection.query.fetch_object_by_id(
                 uuid=user_uuid,
                 return_references=QueryReference(
-                    link_on="has_competences",
+                    link_on="has_competencies",
                     return_properties=["title", "description", "category", "price_range"]
                 )
             )
@@ -183,19 +183,19 @@ class HubSpokeSearch:
             if not response:
                 return []
             
-            # Extract competences from references
-            competences = []
-            if response.references and 'has_competences' in response.references:
-                for comp_obj in response.references['has_competences'].objects:
+            # Extract competencies from references
+            competencies = []
+            if response.references and 'has_competencies' in response.references:
+                for comp_obj in response.references['has_competencies'].objects:
                     comp = comp_obj.properties.copy()
                     comp['uuid'] = str(comp_obj.uuid)
-                    competences.append(comp)
+                    competencies.append(comp)
             
-            logger.info(f"Retrieved {len(competences)} competences for user {user_uuid}")
-            return competences
+            logger.info(f"Retrieved {len(competencies)} competencies for user {user_uuid}")
+            return competencies
             
         except Exception as e:
-            logger.error(f"Error getting user competences: {e}")
+            logger.error(f"Error getting user competencies: {e}")
             return []
     
     @staticmethod

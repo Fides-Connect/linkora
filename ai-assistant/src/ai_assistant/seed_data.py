@@ -15,7 +15,7 @@ USER_TEMPLATE = {
     "fcm_token": "", # Will be set by client
     "has_open_request": True,
     "favorites": [], # Will be populated with default friend
-    "last_sign_in": None,  # Will be set during actual sign-in
+    "last_sign_in": 0,  # 0 days ago (will be overridden with actual datetime in seeding service)
     "user_app_settings": {},  # Map with key-value pairs for app settings
     "open_incoming_service_requests": [],  # Array of incoming service request IDs
     "open_outgoing_service_requests": [],  # Array of outgoing service request IDs
@@ -127,7 +127,7 @@ USER_TEMPLATE_PROVIDER_CANDIDATES = [
     ],
 ]
 
-USER_TEMPLATE_COMPETENCES = [
+USER_TEMPLATE_COMPETENCIES = [
     {
         "title": "Software Development",
         "description": "Professional software development services including architecture, design, and implementation.",
@@ -204,7 +204,7 @@ USER_A = {
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
-USER_A_COMPETENCES = [
+USER_A_COMPETENCIES = [
     {
         "title": "Installing Pot Lights",
         "description": "Expert installation of recessed lighting and pot lights in residential and commercial spaces.",
@@ -262,7 +262,7 @@ USER_B = {
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
-USER_B_COMPETENCES = [
+USER_B_COMPETENCIES = [
     {
         "title": "Everything Services",
         "description": "Plumber Electrician Driver Nurse Teacher Plumber Driver Electrician Plumber Driver Nurse Teacher Electrician Plumber Driver Nurse Teacher Electrician Plumber Driver Nurse Teacher Electrician Plumber Driver Nurse Teacher",
@@ -314,7 +314,7 @@ USER_C = {
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
-USER_C_COMPETENCES = [
+USER_C_COMPETENCIES = [
     {
         "title": "Expert Electrician",
         "description": "Master electrician with 20 years experience. Specialist in residential wiring and lighting installation.",
@@ -366,7 +366,7 @@ USER_D = {
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
-USER_D_COMPETENCES = [
+USER_D_COMPETENCIES = [
     {
         "title": "General Electrical Work",
         "description": "Experienced in all types of electrical work including wiring, installations, and repairs.",
@@ -427,7 +427,7 @@ USER_E = {
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
-USER_E_COMPETENCES = [
+USER_E_COMPETENCIES = [
     {
         "title": "Lawn Mowing",
         "description": "Professional lawn mowing and edging services for residential properties.",
@@ -563,11 +563,11 @@ COMPETENCE_AVAILABILITY_TIMES = {
 
 # All test personas for easy iteration
 TEST_PERSONAS = [
-    {"user": USER_A, "competences": USER_A_COMPETENCES, "availability_times": USER_A_AVAILABILITY_TIMES, "name": "User A (The Pro)"},
-    {"user": USER_B, "competences": USER_B_COMPETENCES, "availability_times": USER_B_AVAILABILITY_TIMES, "name": "User B (The Spammer)"},
-    {"user": USER_C, "competences": USER_C_COMPETENCES, "availability_times": USER_C_AVAILABILITY_TIMES, "name": "User C (The Ghost)"},
-    {"user": USER_D, "competences": USER_D_COMPETENCES, "availability_times": USER_D_AVAILABILITY_TIMES, "name": "User D (The Generalist)"},
-    {"user": USER_E, "competences": USER_E_COMPETENCES, "availability_times": USER_E_AVAILABILITY_TIMES, "name": "User E (The Enthusiast)"},
+    {"user": USER_A, "competencies": USER_A_COMPETENCIES, "availability_times": USER_A_AVAILABILITY_TIMES, "name": "User A (The Pro)"},
+    {"user": USER_B, "competencies": USER_B_COMPETENCIES, "availability_times": USER_B_AVAILABILITY_TIMES, "name": "User B (The Spammer)"},
+    {"user": USER_C, "competencies": USER_C_COMPETENCIES, "availability_times": USER_C_AVAILABILITY_TIMES, "name": "User C (The Ghost)"},
+    {"user": USER_D, "competencies": USER_D_COMPETENCIES, "availability_times": USER_D_AVAILABILITY_TIMES, "name": "User D (The Generalist)"},
+    {"user": USER_E, "competencies": USER_E_COMPETENCIES, "availability_times": USER_E_AVAILABILITY_TIMES, "name": "User E (The Enthusiast)"},
 ]
 
 # --- Database Test Data (Requests, Chat, Reviews) ---

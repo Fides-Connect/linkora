@@ -281,7 +281,7 @@ class TestAdminService:
         assert '/admin/health' in routes
         assert '/admin/stats' in routes
         assert '/admin/users' in routes
-        assert '/admin/competences' in routes
+        assert '/admin/competencies' in routes
 
 
 class TestAdminServiceErrorHandling:

@@ -28,7 +28,7 @@ class TestUserSeedingService:
          # Mock the templates imported in the service
          # We need to patch where they are IMPORTED, not defined
          with patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE', {"intro": "Hello"}), \
-              patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_COMPETENCES', [{"title": "Coding"}]), \
+              patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_COMPETENCIES', [{"title": "Coding"}]), \
               patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_SERVICE_REQUESTS', [{"title": "Help", "seeker_user_id": "{uid}"}]), \
               patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_PROVIDER_CANDIDATES', [[{"provider_candidate_user_id": "p1"}]]), \
               patch('ai_assistant.services.user_seeding_service.USER_A', {"user_id": "alice", "name": "Alice"}):

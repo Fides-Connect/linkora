@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class Competence {
   final String competenceId;
   final String title;
@@ -69,8 +71,8 @@ class Competence {
         other.category == category &&
         other.priceRange == priceRange &&
         other.yearOfExperience == yearOfExperience &&
-        other.feedbackPositive == feedbackPositive &&
-        other.feedbackNegative == feedbackNegative &&
+        listEquals(other.feedbackPositive, feedbackPositive) &&
+        listEquals(other.feedbackNegative, feedbackNegative) &&
         other.createdAt == createdAt &&
         other.updatedAt == updatedAt;
   }

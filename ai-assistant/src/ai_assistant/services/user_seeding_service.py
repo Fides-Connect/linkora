@@ -8,7 +8,7 @@ from ..firestore_service import FirestoreService
 from ..seed_data import (
     USER_TEMPLATE, 
     USER_TEMPLATE_SERVICE_REQUESTS, 
-    USER_TEMPLATE_COMPETENCES, 
+    USER_TEMPLATE_COMPETENCIES, 
     USER_TEMPLATE_PROVIDER_CANDIDATES,
     USER_TEMPLATE_AVAILABILITY_TIMES,
     COMPETENCE_AVAILABILITY_TIMES,
@@ -88,7 +88,7 @@ class UserSeedingService:
             logger.info(f"Created availability time {availability_time_id} for user {user_id}")
         
         # 1c. Add Competencies Subcollection
-        for comp in USER_TEMPLATE_COMPETENCES:
+        for comp in USER_TEMPLATE_COMPETENCIES:
             # Generate prefixed competence ID
             competence_id = self.firestore_service._generate_prefixed_id('competence')
             comp_ref = self.firestore_service.db.collection('users').document(user_id).collection('competencies').document(competence_id)
@@ -119,7 +119,7 @@ class UserSeedingService:
                     logger.error(f"Failed to sync seeded competence {competence_id} to Weaviate: {e}")
             
             # 1d. Add Competence Availability Times if available
-            comp_key = f"{{uid}}_comp_{USER_TEMPLATE_COMPETENCES.index(comp) + 1}"
+            comp_key = f"{{uid}}_comp_{USER_TEMPLATE_COMPETENCIES.index(comp) + 1}"
             if comp_key in COMPETENCE_AVAILABILITY_TIMES:
                 for comp_avail_time in COMPETENCE_AVAILABILITY_TIMES[comp_key]:
                     comp_avail_id = self.firestore_service._generate_prefixed_id('availability_time')

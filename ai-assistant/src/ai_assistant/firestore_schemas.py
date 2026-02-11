@@ -125,15 +125,20 @@ class ServiceRequestSchema(BaseModel):
     model_config = ConfigDict(extra='forbid')
     
     service_request_id: str = Field(..., min_length=1)
-    title: str = Field(..., min_length=1, max_length=200)
+    created_at: datetime
+    updated_at: datetime
     seeker_user_id: str = Field(..., min_length=1)
-    seeker_user_name: str = Field(default="")
-    seeker_user_initials: str = Field(default="", max_length=10)
     selected_provider_user_id: str = Field(default="")
-    selected_provider_user_name: str = Field(default="")
-    selected_provider_user_initials: str = Field(default="", max_length=10)
+    title: str = Field(..., min_length=1, max_length=200)
+    amount_value: Optional[float] = Field(None, ge=0.0)
+    currency: Optional[str] = Field(None, max_length=10)
+    description: str = Field(default="", max_length=1000)
+    requested_competencies: List[str] = Field(default_factory=list)
     status: str = Field(default="pending", max_length=50)
-    createdAt: datetime
+    start_data: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    category: Optional[str] = Field(None, max_length=100)
+    location: Optional[str] = Field(None, max_length=200)
     
     @field_validator('service_request_id')
     @classmethod
@@ -161,22 +166,32 @@ class ServiceRequestUpdateSchema(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
     
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
-    seeker_user_id: Optional[str] = Field(None, min_length=1)
-    seeker_user_name: Optional[str] = None
-    seeker_user_initials: Optional[str] = Field(None, max_length=10)
+    updated_at: Optional[datetime] = None
     selected_provider_user_id: Optional[str] = None
-    selected_provider_user_name: Optional[str] = None
-    selected_provider_user_initials: Optional[str] = Field(None, max_length=10)
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    amount_value: Optional[float] = Field(None, ge=0.0)
+    currency: Optional[str] = Field(None, max_length=10)
+    description: Optional[str] = Field(None, max_length=1000)
+    requested_competencies: Optional[List[str]] = None
     status: Optional[str] = Field(None, max_length=50)
-    createdAt: Optional[datetime] = None
+    start_data: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    category: Optional[str] = Field(None, max_length=100)
+    location: Optional[str] = Field(None, max_length=200)
     
     @field_validator('status')
     @classmethod
     def validate_status(cls, v: Optional[str]) -> Optional[str]:
         """Validate status values."""
         if v is not None:
-            valid_statuses = ['pending', 'active', 'completed', 'cancelled']
+            valid_statuses = [
+                'pending',
+                'waitingForAnswer',
+                'accepted',
+                'rejected',
+                'active',
+                'completed',
+                'cancelled']
             if v not in valid_statuses:
                 raise ValueError(f'status must be one of {valid_statuses}')
         return v
