@@ -33,6 +33,7 @@ def peer_handler(mock_ai_assistant, mock_websocket):
         mock_pc_instance.createAnswer = AsyncMock()
         mock_pc_instance.setLocalDescription = AsyncMock()
         mock_pc_instance.addTrack = Mock()
+        mock_pc_instance.getSenders = Mock(return_value=[])  # Default to no senders (initial connection)
         mock_pc_instance.connectionState = 'new'
         mock_pc_instance.iceConnectionState = 'new'
         mock_pc_instance.iceGatheringState = 'new'
@@ -164,3 +165,104 @@ class TestEventHandlers:
         # Event handlers should be registered on the peer connection
         # This is tested indirectly through the initialization
         assert peer_handler.pc is not None
+
+
+class TestRenegotiation:
+    """Test WebRTC renegotiation for mid-stream device switching."""
+    
+    @pytest.mark.asyncio
+    async def test_handle_offer_detects_renegotiation(self, peer_handler):
+        """Test that handle_offer detects renegotiation."""
+        offer = RTCSessionDescription(
+            sdp='test-sdp',
+            type='offer'
+        )
+        
+        # Mock local description
+        mock_answer = Mock()
+        mock_answer.sdp = 'answer-sdp'
+        mock_answer.type = 'answer'
+        peer_handler.pc.localDescription = mock_answer
+        peer_handler.pc.createAnswer.return_value = mock_answer
+        
+        # Mock existing senders to simulate renegotiation
+        mock_sender = Mock()
+        peer_handler.pc.getSenders = Mock(return_value=[mock_sender])
+        
+        # Mock track ready event
+        peer_handler.track_ready.set()
+        
+        with patch.object(peer_handler, '_send_message', new=AsyncMock()):
+            await peer_handler.handle_offer(offer)
+        
+        # Verify getSenders was called to detect renegotiation
+        peer_handler.pc.getSenders.assert_called()
+        
+        # Verify remote description was set
+        peer_handler.pc.setRemoteDescription.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_handle_offer_skips_output_track_on_renegotiation(self, peer_handler):
+        """Test that output track is not re-added during renegotiation."""
+        offer = RTCSessionDescription(
+            sdp='test-sdp',
+            type='offer'
+        )
+        
+        # Mock local description
+        mock_answer = Mock()
+        mock_answer.sdp = 'answer-sdp'
+        mock_answer.type = 'answer'
+        peer_handler.pc.localDescription = mock_answer
+        peer_handler.pc.createAnswer.return_value = mock_answer
+        
+        # Mock existing senders to simulate renegotiation
+        mock_sender = Mock()
+        peer_handler.pc.getSenders = Mock(return_value=[mock_sender])
+        
+        # Mock audio processor
+        mock_audio_processor = Mock()
+        mock_output_track = Mock()
+        mock_output_track.id = 'output-track-123'
+        mock_audio_processor.get_output_track = Mock(return_value=mock_output_track)
+        peer_handler.audio_processor = mock_audio_processor
+        
+        with patch.object(peer_handler, '_send_message', new=AsyncMock()):
+            await peer_handler.handle_offer(offer)
+        
+        # Verify addTrack was NOT called for output track during renegotiation
+        peer_handler.pc.addTrack.assert_not_called()
+    
+    @pytest.mark.asyncio
+    async def test_handle_offer_adds_output_track_on_initial_connection(self, peer_handler):
+        """Test that output track is added during initial connection."""
+        offer = RTCSessionDescription(
+            sdp='test-sdp',
+            type='offer'
+        )
+        
+        # Mock local description
+        mock_answer = Mock()
+        mock_answer.sdp = 'answer-sdp'
+        mock_answer.type = 'answer'
+        peer_handler.pc.localDescription = mock_answer
+        peer_handler.pc.createAnswer.return_value = mock_answer
+        
+        # Mock NO existing senders to simulate initial connection
+        peer_handler.pc.getSenders = Mock(return_value=[])
+        
+        # Mock audio processor
+        mock_audio_processor = Mock()
+        mock_output_track = Mock()
+        mock_output_track.id = 'output-track-123'
+        mock_audio_processor.get_output_track = Mock(return_value=mock_output_track)
+        peer_handler.audio_processor = mock_audio_processor
+        
+        # Mock track ready event
+        peer_handler.track_ready.set()
+        
+        with patch.object(peer_handler, '_send_message', new=AsyncMock()):
+            await peer_handler.handle_offer(offer)
+        
+        # Verify addTrack WAS called for output track during initial connection
+        peer_handler.pc.addTrack.assert_called_once_with(mock_output_track)

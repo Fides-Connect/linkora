@@ -198,6 +198,107 @@ class TestInterruptHandling:
     def test_interrupt_event_created(self, audio_processor):
         """Test that interrupt event is created."""
         assert audio_processor.interrupt_event is not None
+
+
+class TestTrackReplacement:
+    """Test input track replacement for mid-stream device switching."""
+    
+    @pytest.mark.asyncio
+    async def test_replace_input_track(self, audio_processor, mock_input_track):
+        """Test replacing input track during renegotiation."""
+        # Mock _process_audio to prevent it from actually running
+        with patch.object(audio_processor, '_process_audio', new=AsyncMock()) as mock_process:
+            # Setup processor in running state
+            audio_processor.running = True
+            audio_processor.processing_task = asyncio.create_task(asyncio.sleep(0.1))
+            
+            # Create new mock track
+            new_track = Mock()
+            new_track.kind = "audio"
+            new_track.id = "new-track-456"
+            
+            # Replace track
+            await audio_processor.replace_input_track(new_track)
+            
+            # Verify track was replaced
+            assert audio_processor.input_track == new_track
+            assert audio_processor.input_track.id == "new-track-456"
+            
+            # Verify new processing task was created
+            assert audio_processor.processing_task is not None
+    
+    @pytest.mark.asyncio
+    async def test_replace_input_track_cancels_old_task(self, audio_processor):
+        """Test that old processing task is cancelled during track replacement."""
+        # Mock _process_audio to prevent it from actually running
+        with patch.object(audio_processor, '_process_audio', new=AsyncMock()):
+            # Setup processor with running task
+            audio_processor.running = True
+            old_task = asyncio.create_task(asyncio.sleep(0.1))
+            audio_processor.processing_task = old_task
+            
+            # Create new mock track
+            new_track = Mock()
+            new_track.kind = "audio"
+            new_track.id = "new-track-789"
+            
+            # Replace track
+            await audio_processor.replace_input_track(new_track)
+            
+            # Verify old task was cancelled
+            assert old_task.cancelled()
+    
+    @pytest.mark.asyncio
+    async def test_replace_input_track_clears_audio_queue(self, audio_processor):
+        """Test that audio queue is cleared during track replacement."""
+        # Mock _process_audio to prevent it from actually running
+        with patch.object(audio_processor, '_process_audio', new=AsyncMock()):
+            # Setup processor
+            audio_processor.running = True
+            audio_processor.processing_task = asyncio.create_task(asyncio.sleep(0.1))
+            
+            # Add items to audio queue
+            await audio_processor.audio_queue.put(b'old_audio_1')
+            await audio_processor.audio_queue.put(b'old_audio_2')
+            assert audio_processor.audio_queue.qsize() == 2
+            
+            # Create new mock track
+            new_track = Mock()
+            new_track.kind = "audio"
+            new_track.id = "new-track-clear"
+            
+            # Replace track
+            await audio_processor.replace_input_track(new_track)
+            
+            # Verify queue was cleared
+            assert audio_processor.audio_queue.qsize() == 0
+    
+    @pytest.mark.asyncio
+    async def test_replace_input_track_restarts_processing(self, audio_processor):
+        """Test that processing is restarted after track replacement."""
+        # Mock _process_audio to prevent it from actually running
+        with patch.object(audio_processor, '_process_audio', new=AsyncMock()) as mock_process:
+            # Setup processor
+            audio_processor.running = True
+            old_task = asyncio.create_task(asyncio.sleep(0.1))
+            audio_processor.processing_task = old_task
+            
+            # Create new mock track
+            new_track = Mock()
+            new_track.kind = "audio"
+            new_track.id = "new-track-restart"
+            
+            # Replace track
+            await audio_processor.replace_input_track(new_track)
+            
+            # Give a moment for the task to be created
+            await asyncio.sleep(0.01)
+            
+            # Verify new processing task was created and is different from old one
+            assert audio_processor.processing_task is not None
+            assert audio_processor.processing_task != old_task
+            # Verify old task was cancelled
+            assert old_task.cancelled()
         assert isinstance(audio_processor.interrupt_event, asyncio.Event)
 
 
