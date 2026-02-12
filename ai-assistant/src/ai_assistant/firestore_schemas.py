@@ -30,8 +30,8 @@ class UserSchema(BaseModel):
     favorites: List[str] = Field(default_factory=list)
     last_sign_in: Optional[datetime] = None
     user_app_settings: dict = Field(default_factory=dict)
-    open_incoming_service_requests: List[str] = Field(default_factory=list)
-    open_outgoing_service_requests: List[str] = Field(default_factory=list)
+    incoming_service_requests: List[str] = Field(default_factory=list)
+    outgoing_service_requests: List[str] = Field(default_factory=list)
     feedback_positive: List[str] = Field(default_factory=list)
     feedback_negative: List[str] = Field(default_factory=list)
     average_rating: float = Field(default=0.0, ge=0.0, le=5.0)
@@ -65,8 +65,8 @@ class UserUpdateSchema(BaseModel):
     favorites: Optional[List[str]] = None
     last_sign_in: Optional[datetime] = None
     user_app_settings: Optional[dict] = None
-    open_incoming_service_requests: Optional[List[str]] = None
-    open_outgoing_service_requests: Optional[List[str]] = None
+    incoming_service_requests: Optional[List[str]] = None
+    outgoing_service_requests: Optional[List[str]] = None
     feedback_positive: Optional[List[str]] = None
     feedback_negative: Optional[List[str]] = None
     average_rating: Optional[float] = Field(None, ge=0.0, le=5.0)
@@ -169,7 +169,7 @@ class ServiceRequestSchema(BaseModel):
     @classmethod
     def validate_status(cls, v: str) -> str:
         """Validate status values."""
-        valid_statuses = ['pending', 'active', 'completed', 'cancelled', 'expired']
+        valid_statuses = ['pending', 'accepted', 'rejected', 'active', 'waitingForAnswer', 'completed', 'cancelled', 'expired', 'unknown']
         if v and v not in valid_statuses:
             raise ValueError(f'status must be one of {valid_statuses}')
         return v
@@ -213,15 +213,7 @@ class ServiceRequestUpdateSchema(BaseModel):
     def validate_status(cls, v: Optional[str]) -> Optional[str]:
         """Validate status values."""
         if v is not None:
-            valid_statuses = [
-                'pending',
-                'waitingForAnswer',
-                'accepted',
-                'rejected',
-                'active',
-                'completed',
-                'cancelled',
-                'expired']
+            valid_statuses = ['pending', 'accepted', 'rejected', 'active', 'waitingForAnswer', 'completed', 'cancelled', 'expired', 'unknown']
             if v not in valid_statuses:
                 raise ValueError(f'status must be one of {valid_statuses}')
         return v

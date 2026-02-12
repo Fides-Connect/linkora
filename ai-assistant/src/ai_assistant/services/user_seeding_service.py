@@ -2,7 +2,6 @@ import logging
 import copy
 from typing import Optional
 from datetime import datetime, timezone
-from firebase_admin import firestore
 
 from ..firestore_service import FirestoreService
 from ..seed_data import (
@@ -67,12 +66,7 @@ class UserSeedingService:
         
         # 1b. Add User Availability Times Subcollection
         for avail_time in USER_TEMPLATE_AVAILABILITY_TIMES:
-            # Generate prefixed availability_time ID
-            availability_time_id = self.firestore_service._generate_prefixed_id('availability_time')
-            avail_ref = self.firestore_service.db.collection('users').document(user_id).collection('availability_time').document(availability_time_id)
-            
             avail_doc = {
-                'availability_time_id': availability_time_id,
                 'monday_time_ranges': avail_time.get('monday_time_ranges', []),
                 'tuesday_time_ranges': avail_time.get('tuesday_time_ranges', []),
                 'wednesday_time_ranges': avail_time.get('wednesday_time_ranges', []),
@@ -81,28 +75,26 @@ class UserSeedingService:
                 'saturday_time_ranges': avail_time.get('saturday_time_ranges', []),
                 'sunday_time_ranges': avail_time.get('sunday_time_ranges', []),
                 'absence_days': avail_time.get('absence_days', []),
-                'created_at': datetime.now(timezone.utc),
-                'updated_at': datetime.now(timezone.utc),
             }
-            avail_ref.set(avail_doc)
-            logger.info(f"Created availability time {availability_time_id} for user {user_id}")
+            availability_time_id = await self.firestore_service.create_availability_time(user_id, avail_doc)
+            if availability_time_id:
+                logger.info(f"Created availability time {availability_time_id} for user {user_id}")
         
         # 1c. Add Competencies Subcollection
         for comp in USER_TEMPLATE_COMPETENCIES:
-            # Generate prefixed competence ID
-            competence_id = self.firestore_service._generate_prefixed_id('competence')
-            comp_ref = self.firestore_service.db.collection('users').document(user_id).collection('competencies').document(competence_id)
-            
             comp_doc = {
-                'competence_id': competence_id,
                 'title': comp.get('title', ''),
                 'description': comp.get('description', ''),
                 'category': comp.get('category', ''),
                 'price_range': comp.get('price_range', ''),
-                'created_at': datetime.now(timezone.utc),
-                'updated_at': datetime.now(timezone.utc),
+                'year_of_experience': comp.get('year_of_experience', 0),
+                'feedback_positive': comp.get('feedback_positive', []),
+                'feedback_negative': comp.get('feedback_negative', []),
             }
-            comp_ref.set(comp_doc)
+            comp_result = await self.firestore_service.create_competence(user_id, comp_doc)
+            if not comp_result:
+                continue
+            competence_id = comp_result.get('competence_id')
             
             # Sync to Weaviate
             if weaviate_uuid:
@@ -119,14 +111,10 @@ class UserSeedingService:
                     logger.error(f"Failed to sync seeded competence {competence_id} to Weaviate: {e}")
             
             # 1d. Add Competence Availability Times if available
-            comp_key = f"{{uid}}_comp_{USER_TEMPLATE_COMPETENCIES.index(comp) + 1}"
+            comp_key = f"competence_{{uid}}_{USER_TEMPLATE_COMPETENCIES.index(comp) + 1}"
             if comp_key in COMPETENCE_AVAILABILITY_TIMES:
                 for comp_avail_time in COMPETENCE_AVAILABILITY_TIMES[comp_key]:
-                    comp_avail_id = self.firestore_service._generate_prefixed_id('availability_time')
-                    comp_avail_ref = self.firestore_service.db.collection('users').document(user_id).collection('competencies').document(competence_id).collection('availability_time').document(comp_avail_id)
-                    
                     comp_avail_doc = {
-                        'availability_time_id': comp_avail_id,
                         'monday_time_ranges': comp_avail_time.get('monday_time_ranges', []),
                         'tuesday_time_ranges': comp_avail_time.get('tuesday_time_ranges', []),
                         'wednesday_time_ranges': comp_avail_time.get('wednesday_time_ranges', []),
@@ -135,11 +123,12 @@ class UserSeedingService:
                         'saturday_time_ranges': comp_avail_time.get('saturday_time_ranges', []),
                         'sunday_time_ranges': comp_avail_time.get('sunday_time_ranges', []),
                         'absence_days': comp_avail_time.get('absence_days', []),
-                        'created_at': datetime.now(timezone.utc),
-                        'updated_at': datetime.now(timezone.utc),
                     }
-                    comp_avail_ref.set(comp_avail_doc)
-                    logger.info(f"Created competence availability time {comp_avail_id} for competence {competence_id}")
+                    comp_avail_id = await self.firestore_service.create_availability_time(
+                        user_id, comp_avail_doc, competence_id=competence_id
+                    )
+                    if comp_avail_id:
+                        logger.info(f"Created competence availability time {comp_avail_id} for competence {competence_id}")
         
         # 2. Create Sample Requests
         service_requests = USER_TEMPLATE_SERVICE_REQUESTS
@@ -151,10 +140,6 @@ class UserSeedingService:
             # Create a deep copy to modify
             req_data = copy.deepcopy(req)
             
-            # Generate prefixed service request ID
-            req_id = self.firestore_service._generate_prefixed_id('service_request')
-            req_data["service_request_id"] = req_id
-            
             # Replace {uid} in seeker_user_id and selected_provider_user_id
             if "seeker_user_id" in req_data and "{uid}" in req_data["seeker_user_id"]:
                 req_data["seeker_user_id"] = req_data["seeker_user_id"].format(uid=user_id)
@@ -165,66 +150,64 @@ class UserSeedingService:
             seeker_id = req_data.get("seeker_user_id")
             provider_id = req_data.get("selected_provider_user_id")
             
-            if seeker_id:
-                if seeker_id not in user_outgoing_requests:
-                    user_outgoing_requests[seeker_id] = []
-                user_outgoing_requests[seeker_id].append(req_id)
-            
-            if provider_id:
-                if provider_id not in user_incoming_requests:
-                    user_incoming_requests[provider_id] = []
-                user_incoming_requests[provider_id].append(req_id)
-            
-            # Add timestamps
-            req_data['created_at'] = datetime.now(timezone.utc)
-            req_data['updated_at'] = datetime.now(timezone.utc)
-            
             try:
-                requests_ref = self.firestore_service.db.collection('service_requests') # access public prop
-                requests_ref.document(req_id).set(req_data, merge=True)
+                # Create service request using service layer
+                req_id = await self.firestore_service.create_service_request(req_data)
+                if not req_id:
+                    logger.error(f"Failed to create service request")
+                    continue
+                    
                 logger.info(f"Created seed request: {req_id}")
+                
+                # Track for user arrays
+                if seeker_id:
+                    if seeker_id not in user_outgoing_requests:
+                        user_outgoing_requests[seeker_id] = []
+                    user_outgoing_requests[seeker_id].append(req_id)
+                
+                if provider_id:
+                    if provider_id not in user_incoming_requests:
+                        user_incoming_requests[provider_id] = []
+                    user_incoming_requests[provider_id].append(req_id)
                 
                 # 2b. Add Provider Candidates as Subcollection
                 if idx < len(USER_TEMPLATE_PROVIDER_CANDIDATES):
                     candidates = USER_TEMPLATE_PROVIDER_CANDIDATES[idx]
                     for candidate in candidates:
                         candidate_data = copy.deepcopy(candidate)
-                        
-                        # Generate prefixed provider candidate ID
-                        candidate_id = self.firestore_service._generate_prefixed_id('provider_candidate')
-                        candidate_data["provider_candidate_id"] = candidate_id
                         candidate_data["service_request_id"] = req_id
                         
                         if "{uid}" in candidate_data.get("provider_candidate_user_id", ""):
                             candidate_data["provider_candidate_user_id"] = candidate_data["provider_candidate_user_id"].format(uid=user_id)
                         
-                        # Store in provider_candidates subcollection using candidate_id as document ID
-                        candidate_ref = requests_ref.document(req_id).collection('provider_candidates').document(candidate_id)
-                        candidate_ref.set(candidate_data)
-                        logger.info(f"Created provider candidate: {candidate_id} for request {req_id}")
+                        # Create provider candidate using service layer
+                        candidate_id = await self.firestore_service.create_provider_candidate(
+                            req_id, candidate_data
+                        )
+                        if candidate_id:
+                            logger.info(f"Created provider candidate: {candidate_id} for request {req_id}")
                         
             except Exception as e:
-                logger.error(f"Failed to seed request {req_id}: {e}")
+                logger.error(f"Failed to seed request: {e}")
 
         # 2c. Update user documents with open incoming/outgoing service request arrays
-        # Use ArrayUnion to append to existing arrays without overwriting
         for user_id_to_update, outgoing_req_ids in user_outgoing_requests.items():
             try:
-                user_ref = self.firestore_service.db.collection('users').document(user_id_to_update)
-                user_ref.update({
-                    'open_outgoing_service_requests': firestore.ArrayUnion(outgoing_req_ids)
-                })
-                logger.info(f"Updated user {user_id_to_update} with {len(outgoing_req_ids)} outgoing requests")
+                success = await self.firestore_service.add_outgoing_service_requests(
+                    user_id_to_update, outgoing_req_ids
+                )
+                if success:
+                    logger.info(f"Updated user {user_id_to_update} with {len(outgoing_req_ids)} outgoing requests")
             except Exception as e:
                 logger.error(f"Failed to update outgoing requests for user {user_id_to_update}: {e}")
         
         for user_id_to_update, incoming_req_ids in user_incoming_requests.items():
             try:
-                user_ref = self.firestore_service.db.collection('users').document(user_id_to_update)
-                user_ref.update({
-                    'open_incoming_service_requests': firestore.ArrayUnion(incoming_req_ids)
-                })
-                logger.info(f"Updated user {user_id_to_update} with {len(incoming_req_ids)} incoming requests")
+                success = await self.firestore_service.add_incoming_service_requests(
+                    user_id_to_update, incoming_req_ids
+                )
+                if success:
+                    logger.info(f"Updated user {user_id_to_update} with {len(incoming_req_ids)} incoming requests")
             except Exception as e:
                 logger.error(f"Failed to update incoming requests for user {user_id_to_update}: {e}")
 

@@ -547,6 +547,54 @@ class FirestoreService:
             logger.error(f"Error removing favorite {favorite_user_id} for {user_id}: {e}")
             return False
 
+    async def add_outgoing_service_requests(self, user_id: str, request_ids: List[str]) -> bool:
+        """Add service request IDs to user's outgoing requests."""
+        if not self.db:
+            return False
+        try:
+            ref = self._get_collection('users').document(user_id)
+            ref.update({'outgoing_service_requests': firestore.ArrayUnion(request_ids)})
+            return True
+        except Exception as e:
+            logger.error(f"Error adding outgoing requests for {user_id}: {e}")
+            return False
+
+    async def add_incoming_service_requests(self, user_id: str, request_ids: List[str]) -> bool:
+        """Add service request IDs to user's incoming requests."""
+        if not self.db:
+            return False
+        try:
+            ref = self._get_collection('users').document(user_id)
+            ref.update({'incoming_service_requests': firestore.ArrayUnion(request_ids)})
+            return True
+        except Exception as e:
+            logger.error(f"Error adding incoming requests for {user_id}: {e}")
+            return False
+
+    async def remove_outgoing_service_requests(self, user_id: str, request_ids: List[str]) -> bool:
+        """Remove service request IDs from user's outgoing requests."""
+        if not self.db:
+            return False
+        try:
+            ref = self._get_collection('users').document(user_id)
+            ref.update({'outgoing_service_requests': firestore.ArrayRemove(request_ids)})
+            return True
+        except Exception as e:
+            logger.error(f"Error removing outgoing requests for {user_id}: {e}")
+            return False
+
+    async def remove_incoming_service_requests(self, user_id: str, request_ids: List[str]) -> bool:
+        """Remove service request IDs from user's incoming requests."""
+        if not self.db:
+            return False
+        try:
+            ref = self._get_collection('users').document(user_id)
+            ref.update({'incoming_service_requests': firestore.ArrayRemove(request_ids)})
+            return True
+        except Exception as e:
+            logger.error(f"Error removing incoming requests for {user_id}: {e}")
+            return False
+
     # --- User Operations ---
 
     async def get_competencies(self, user_id: str) -> List[str]:

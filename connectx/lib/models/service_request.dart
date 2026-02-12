@@ -4,10 +4,13 @@ enum RequestType { incoming, outgoing, unknown }
 
 enum RequestStatus {
   pending,
-  waitingForAnswer,
-  completed,
   accepted,
   rejected,
+  active,
+  waitingForAnswer,
+  completed,
+  cancelled,
+  expired,
   unknown,
 }
 

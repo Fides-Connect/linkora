@@ -130,6 +130,118 @@ async def remove_my_favorite(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def add_my_outgoing_service_requests(request: web.Request) -> web.Response:
+    """POST /api/v1/me/outgoing-service-requests - Add service request IDs to user's outgoing requests."""
+    try:
+        user_id = await get_current_user_id(request)
+        body = await request.json()
+        request_ids = body.get('request_ids', [])
+        
+        if not request_ids:
+            return web.json_response({"error": "Missing request_ids in request body"}, status=400)
+        
+        if not isinstance(request_ids, list):
+            return web.json_response({"error": "request_ids must be an array"}, status=400)
+        
+        success = await firestore_service.add_outgoing_service_requests(user_id, request_ids)
+        if success:
+            return web.json_response({
+                "status": "added",
+                "count": len(request_ids)
+            })
+        else:
+            return web.json_response({"error": "Failed to add outgoing service requests"}, status=500)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in add_my_outgoing_service_requests: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def add_my_incoming_service_requests(request: web.Request) -> web.Response:
+    """POST /api/v1/me/incoming-service-requests - Add service request IDs to user's incoming requests."""
+    try:
+        user_id = await get_current_user_id(request)
+        body = await request.json()
+        request_ids = body.get('request_ids', [])
+        
+        if not request_ids:
+            return web.json_response({"error": "Missing request_ids in request body"}, status=400)
+        
+        if not isinstance(request_ids, list):
+            return web.json_response({"error": "request_ids must be an array"}, status=400)
+        
+        success = await firestore_service.add_incoming_service_requests(user_id, request_ids)
+        if success:
+            return web.json_response({
+                "status": "added",
+                "count": len(request_ids)
+            })
+        else:
+            return web.json_response({"error": "Failed to add incoming service requests"}, status=500)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in add_my_incoming_service_requests: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def remove_my_outgoing_service_requests(request: web.Request) -> web.Response:
+    """DELETE /api/v1/me/outgoing-service-requests - Remove service request IDs from user's outgoing requests."""
+    try:
+        user_id = await get_current_user_id(request)
+        body = await request.json()
+        request_ids = body.get('request_ids', [])
+        
+        if not request_ids:
+            return web.json_response({"error": "Missing request_ids in request body"}, status=400)
+        
+        if not isinstance(request_ids, list):
+            return web.json_response({"error": "request_ids must be an array"}, status=400)
+        
+        success = await firestore_service.remove_outgoing_service_requests(user_id, request_ids)
+        if success:
+            return web.json_response({
+                "status": "removed",
+                "count": len(request_ids)
+            })
+        else:
+            return web.json_response({"error": "Failed to remove outgoing service requests"}, status=500)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in remove_my_outgoing_service_requests: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def remove_my_incoming_service_requests(request: web.Request) -> web.Response:
+    """DELETE /api/v1/me/incoming-service-requests - Remove service request IDs from user's incoming requests."""
+    try:
+        user_id = await get_current_user_id(request)
+        body = await request.json()
+        request_ids = body.get('request_ids', [])
+        
+        if not request_ids:
+            return web.json_response({"error": "Missing request_ids in request body"}, status=400)
+        
+        if not isinstance(request_ids, list):
+            return web.json_response({"error": "request_ids must be an array"}, status=400)
+        
+        success = await firestore_service.remove_incoming_service_requests(user_id, request_ids)
+        if success:
+            return web.json_response({
+                "status": "removed",
+                "count": len(request_ids)
+            })
+        else:
+            return web.json_response({"error": "Failed to remove incoming service requests"}, status=500)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in remove_my_incoming_service_requests: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
 async def get_my_competencies(request: web.Request) -> web.Response:
     """GET /api/v1/me/competencies - Get current user's competencies."""
     try:

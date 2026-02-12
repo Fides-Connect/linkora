@@ -17,6 +17,12 @@ class TestUserSeedingService:
         service.create_user = AsyncMock()
         service.update_user = AsyncMock()
         service.add_favorite = AsyncMock()
+        service.create_availability_time = AsyncMock(return_value="avail_123")
+        service.create_competence = AsyncMock(return_value={"competence_id": "comp_123"})
+        service.create_service_request = AsyncMock(return_value="req_123")
+        service.create_provider_candidate = AsyncMock(return_value="cand_123")
+        service.add_outgoing_service_requests = AsyncMock()
+        service.add_incoming_service_requests = AsyncMock()
         return service
     
     @pytest.fixture
@@ -42,16 +48,6 @@ class TestUserSeedingService:
         name = "New Name"
         email = "new@example.com"
         
-        # Mock subcollection references
-        # db.collection('users').document(uid).collection('competencies').document(id)
-        mock_user_ref = Mock()
-        mock_comp_coll = Mock()
-        mock_comp_doc = Mock()
-        
-        mock_firestore.db.collection.return_value.document.return_value = mock_user_ref
-        mock_user_ref.collection.return_value = mock_comp_coll
-        mock_comp_coll.document.return_value = mock_comp_doc
-        
         # Mock Weaviate UUID lookup to avoid syncing
         with patch.object(seeding_service, '_get_weaviate_user_uuid', return_value=None):
             # Act
@@ -63,15 +59,15 @@ class TestUserSeedingService:
             assert call_args[1]['intro'] == "Hello"
             assert call_args[1]['user_id'] == user_id
             
-            # Assert 2: Competencies created
-            mock_comp_doc.set.assert_called()
+            # Assert 2: Competencies created via service layer
+            mock_firestore.create_competence.assert_called()
             
-            # Assert 3: Service Requests created
-            # Verify _generate_prefixed_id was called for request
-            # Verify {uid} replacement happened in request
-            # This logic is complex to assert fully with mocks but we check basic flow
-            assert mock_firestore._generate_prefixed_id.call_count >= 2 # 1 comp + 1 req + 1 candidate
+            # Assert 3: Service Requests created via service layer
+            mock_firestore.create_service_request.assert_called()
             
-            # Assert 4: Default friend added
+            # Assert 4: Provider candidates created via service layer
+            mock_firestore.create_provider_candidate.assert_called()
+            
+            # Assert 5: Default friend added
             mock_firestore.update_user.assert_any_call("alice", ANY)
             mock_firestore.add_favorite.assert_called_with(user_id, "alice")

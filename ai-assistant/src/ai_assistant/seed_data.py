@@ -17,8 +17,8 @@ USER_TEMPLATE = {
     "favorites": [], # Will be populated with default friend
     "last_sign_in": 0,  # 0 days ago (will be overridden with actual datetime in seeding service)
     "user_app_settings": {},  # Map with key-value pairs for app settings
-    "open_incoming_service_requests": [],  # Array of incoming service request IDs
-    "open_outgoing_service_requests": [],  # Array of outgoing service request IDs
+    "incoming_service_requests": [],  # Array of incoming service request IDs
+    "outgoing_service_requests": [],  # Array of outgoing service request IDs
     "feedback_positive": ["Fast learner", "Great communicator"],
     "feedback_negative": [],
     "average_rating": 5.0,
@@ -195,8 +195,8 @@ USER_A = {
     "favorites": [],
     "last_sign_in": 1,  # 1 day ago (will be converted to datetime in init script)
     "user_app_settings": {},
-    "open_incoming_service_requests": [],
-    "open_outgoing_service_requests": [],
+    "incoming_service_requests": [],
+    "outgoing_service_requests": [],
     "feedback_positive": ["Punctual", "Clean work", "Friendly", "Explains everything clearly"],
     "feedback_negative": ["Sometimes late on big jobs"],
     "average_rating": 4.8,
@@ -253,8 +253,8 @@ USER_B = {
     "favorites": [],
     "last_sign_in": 5,  # 5 days ago (will be converted to datetime in init script)
     "user_app_settings": {},
-    "open_incoming_service_requests": [],
-    "open_outgoing_service_requests": [],
+    "incoming_service_requests": [],
+    "outgoing_service_requests": [],
     "feedback_positive": ["Quick response"],
     "feedback_negative": ["Unfocused", "Quality varies", "Too many services listed"],
     "average_rating": 3.2,
@@ -305,8 +305,8 @@ USER_C = {
     "favorites": [],
     "last_sign_in": 365,  # 365 days ago (will be converted to datetime in init script)
     "user_app_settings": {},
-    "open_incoming_service_requests": [],
-    "open_outgoing_service_requests": [],
+    "incoming_service_requests": [],
+    "outgoing_service_requests": [],
     "feedback_positive": ["Expert knowledge", "Great results"],
     "feedback_negative": ["Rarely available", "Slow to respond"],
     "average_rating": 4.5,
@@ -357,8 +357,8 @@ USER_D = {
     "favorites": [],
     "last_sign_in": 10,  # 10 days ago (will be converted to datetime in init script)
     "user_app_settings": {},
-    "open_incoming_service_requests": [],
-    "open_outgoing_service_requests": [],
+    "incoming_service_requests": [],
+    "outgoing_service_requests": [],
     "feedback_positive": ["Versatile", "Helpful", "Good communicator"],
     "feedback_negative": ["Sometimes overbooked"],
     "average_rating": 4.2,
@@ -418,8 +418,8 @@ USER_E = {
     "favorites": [],
     "last_sign_in": 3,  # 3 days ago (will be converted to datetime in init script)
     "user_app_settings": {},
-    "open_incoming_service_requests": [],
-    "open_outgoing_service_requests": [],
+    "incoming_service_requests": [],
+    "outgoing_service_requests": [],
     "feedback_positive": ["Creative designs", "Very friendly", "Great with plants"],
     "feedback_negative": ["Sometimes hard to book in spring"],
     "average_rating": 4.7,

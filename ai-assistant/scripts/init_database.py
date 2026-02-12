@@ -174,8 +174,8 @@ async def init_firestore(test_data):
                 'has_open_request': p_data.get('has_open_request', False),
                 'favorites': p_data.get('favorites', []),
                 'user_app_settings': p_data.get('user_app_settings', {}),
-                'open_incoming_service_requests': p_data.get('open_incoming_service_requests', []),
-                'open_outgoing_service_requests': p_data.get('open_outgoing_service_requests', []),
+                'incoming_service_requests': p_data.get('incoming_service_requests', []),
+                'outgoing_service_requests': p_data.get('outgoing_service_requests', []),
                 'last_sign_in': last_sign_in,
                 'feedback_positive': p_data.get('feedback_positive', []),
                 'feedback_negative': p_data.get('feedback_negative', []),
@@ -345,15 +345,15 @@ async def init_firestore(test_data):
                 
         logger.info(f"  ✓ {len(requests)} Service Requests created")
     
-    # 3c. Update user documents with open incoming/outgoing service request arrays
+    # 3c. Update user documents with incoming/outgoing service request arrays
     for user_id, outgoing_req_ids in user_outgoing_requests.items():
         user_ref = db.collection('users').document(user_id)
-        user_ref.set({'open_outgoing_service_requests': outgoing_req_ids}, merge=True)
+        user_ref.set({'outgoing_service_requests': outgoing_req_ids}, merge=True)
         logger.info(f"  ✓ Updated user {user_id} with {len(outgoing_req_ids)} outgoing requests")
     
     for user_id, incoming_req_ids in user_incoming_requests.items():
         user_ref = db.collection('users').document(user_id)
-        user_ref.set({'open_incoming_service_requests': incoming_req_ids}, merge=True)
+        user_ref.set({'incoming_service_requests': incoming_req_ids}, merge=True)
         logger.info(f"  ✓ Updated user {user_id} with {len(incoming_req_ids)} incoming requests")
     
     # 3b. Create Provider Candidates as subcollections using validated schema
