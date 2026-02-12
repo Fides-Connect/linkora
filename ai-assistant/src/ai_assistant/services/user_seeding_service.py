@@ -51,7 +51,6 @@ class UserSeedingService:
         
         # 1. Update User with Template Defaults (intro, competencies, feedback)
         user = {k: v for k, v in USER_TEMPLATE.items()}
-        user['user_id'] = user_id
         user['name'] = name
         user['email'] = email
         # Don't set created_at here - create_user handles timestamps
@@ -94,7 +93,7 @@ class UserSeedingService:
             comp_result = await self.firestore_service.create_competence(user_id, comp_doc)
             if not comp_result:
                 continue
-            competence_id = comp_result.get('competence_id')
+            competence_id = comp_result.get('id')
             
             # Sync to Weaviate
             if weaviate_uuid:
@@ -213,9 +212,9 @@ class UserSeedingService:
 
         # 3. Add Default Friend (Alice)
         # Ensure Alice exists first
-        user_a_id = USER_A["user_id"]
+        user_a_id = USER_A.get("id", "user_alice_001")
         try:
-            alice_user_data = {k:v for k,v in USER_A.items() if k != "favorites" and k != "user_id"}
+            alice_user_data = {k:v for k,v in USER_A.items() if k != "id"}
             await self.firestore_service.update_user(user_a_id, alice_user_data)
             
             # Add to user's favorites

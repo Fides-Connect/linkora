@@ -5,7 +5,7 @@ Contains User Templates for seeding and static Test Personas.
 
 # Data template for new users
 USER_TEMPLATE = {
-    # user_id matches firebase uid
+    # id matches firebase uid
     # name comes from auth provider
     # email comes from auth provider
     # photo_url comes from auth provider
@@ -96,8 +96,6 @@ USER_TEMPLATE_PROVIDER_CANDIDATES = [
             "status": "pending"
         },
         {
-            "provider_candidate_id": "candidate_{uid}_002_2",
-            "service_request_id": "request_{uid}_002",
             "provider_candidate_user_id": "user_alice_001",
             "matching_score": 65.5,
             "introduction": "Hello! I'm willing to learn garden design and would love to try.",
@@ -156,8 +154,6 @@ USER_TEMPLATE_COMPETENCIES = [
 
 USER_TEMPLATE_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "availability_time_template_001",
-        "user_id": "{uid}",
         "monday_time_ranges": [
             {"start_time": "08:00", "end_time": "12:00"},
             {"start_time": "13:30", "end_time": "17:30"}
@@ -180,7 +176,7 @@ USER_TEMPLATE_AVAILABILITY_TIMES = [
 # Test Persona: User A - The Pro
 # Active user with specific electrical skill
 USER_A = {
-    "user_id": "user_alice_001",
+    "id": "user_alice_001",
     "name": "Alice Professional",
     "email": "alice@example.com",
     "photo_url": "https://example.com/photos/alice.jpg",
@@ -212,8 +208,6 @@ USER_A_COMPETENCIES = [
 
 USER_A_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "availability_time_alice_001",
-        "user_id": "user_alice_001",
         "monday_time_ranges": [{"start_time": "08:00", "end_time": "17:00"}],
         "tuesday_time_ranges": [
             {"start_time": "08:00", "end_time": "12:30"},
@@ -235,7 +229,7 @@ USER_A_AVAILABILITY_TIMES = [
 # Test Persona: User B - The Spammer
 # Description stuffed with keywords to test spam filtering
 USER_B = {
-    "user_id": "user_bob_002",
+    "id": "user_bob_002",
     "name": "Bob Spammer",
     "email": "bob@example.com",
     "photo_url": "https://example.com/photos/bob.jpg",
@@ -267,8 +261,6 @@ USER_B_COMPETENCIES = [
 
 USER_B_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "availability_time_bob_001",
-        "user_id": "user_bob_002",
         "monday_time_ranges": [{"start_time": "00:00", "end_time": "23:59"}],
         "tuesday_time_ranges": [{"start_time": "00:00", "end_time": "23:59"}],
         "wednesday_time_ranges": [{"start_time": "00:00", "end_time": "23:59"}],
@@ -284,7 +276,7 @@ USER_B_AVAILABILITY_TIMES = [
 # Test Persona: User C - The Ghost
 # Perfect match but inactive for 365 days
 USER_C = {
-    "user_id": "user_charlie_003",
+    "id": "user_charlie_003",
     "name": "Charlie Ghost",
     "email": "charlie@example.com",
     "photo_url": "https://example.com/photos/charlie.jpg",
@@ -316,8 +308,6 @@ USER_C_COMPETENCIES = [
 
 USER_C_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "availability_time_charlie_001",
-        "user_id": "user_charlie_003",
         "monday_time_ranges": [],
         "tuesday_time_ranges": [],
         "wednesday_time_ranges": [],
@@ -333,7 +323,7 @@ USER_C_AVAILABILITY_TIMES = [
 # Test Persona: User D - The Generalist
 # Broad electrical work
 USER_D = {
-    "user_id": "user_david_004",
+    "id": "user_david_004",
     "name": "David Generalist",
     "email": "david@example.com",
     "photo_url": "https://example.com/photos/david.jpg",
@@ -365,8 +355,6 @@ USER_D_COMPETENCIES = [
 
 USER_D_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "availability_time_david_001",
-        "user_id": "user_david_004",
         "monday_time_ranges": [
             {"start_time": "09:00", "end_time": "12:00"},
             {"start_time": "14:00", "end_time": "18:00"}
@@ -391,7 +379,7 @@ USER_D_AVAILABILITY_TIMES = [
 # Test Persona: User E - The Enthusiast
 # Multiple gardening skills to test result grouping
 USER_E = {
-    "user_id": "user_eva_005",
+    "id": "user_eva_005",
     "name": "Eva Enthusiast",
     "email": "eva@example.com",
     "photo_url": "https://example.com/photos/eva.jpg",
@@ -464,8 +452,6 @@ USER_E_COMPETENCIES = [
 
 USER_E_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "availability_time_eva_001",
-        "user_id": "user_eva_005",
         "monday_time_ranges": [{"start_time": "07:00", "end_time": "19:00"}],
         "tuesday_time_ranges": [{"start_time": "07:00", "end_time": "19:00"}],
         "wednesday_time_ranges": [
@@ -491,7 +477,6 @@ USER_E_AVAILABILITY_TIMES = [
 COMPETENCE_AVAILABILITY_TIMES = {
     "competence_{uid}_1": [  # Software Development (Template competence - only for new seed users)
         {
-            "availability_time_id": "availability_time_comp_template_001",
             "monday_time_ranges": [
                 {"start_time": "10:00", "end_time": "12:00"},
                 {"start_time": "14:00", "end_time": "18:00"}
@@ -507,7 +492,6 @@ COMPETENCE_AVAILABILITY_TIMES = {
     ],
     "competence_user_eva_005_2": [  # Garden Design
         {
-            "availability_time_id": "availability_time_comp_garden_design_001",
             "monday_time_ranges": [{"start_time": "08:00", "end_time": "16:00"}],
             "tuesday_time_ranges": [
                 {"start_time": "08:00", "end_time": "12:00"},
@@ -526,7 +510,6 @@ COMPETENCE_AVAILABILITY_TIMES = {
     ],
     "competence_user_alice_001_1": [  # Installing Pot Lights
         {
-            "availability_time_id": "availability_time_comp_pot_lights_001",
             "monday_time_ranges": [{"start_time": "09:00", "end_time": "17:00"}],
             "tuesday_time_ranges": [{"start_time": "09:00", "end_time": "17:00"}],
             "wednesday_time_ranges": [
@@ -575,7 +558,6 @@ REQ_TEST_001 = {
 # --- Test Provider Candidates ---
 
 PROV_CAND_TEST_001_ALICE = {
-    'provider_candidate_id': "provider_candidate_test_001_alice",
     'service_request_id': "service_request_test_001",
     'provider_candidate_user_id': "user_alice_001",
     'matching_score': 95.0,
@@ -586,7 +568,6 @@ PROV_CAND_TEST_001_ALICE = {
 }
 
 PROV_CAND_TEST_001_DAVID = {
-    'provider_candidate_id': "provider_candidate_test_001_david",
     'service_request_id': "service_request_test_001",
     'provider_candidate_user_id': "user_david_004",
     'matching_score': 78.0,
@@ -597,7 +578,6 @@ PROV_CAND_TEST_001_DAVID = {
 }
 
 PROV_CAND_TEST_002_CHARLIE = {
-    'provider_candidate_id': "provider_candidate_test_002_charlie",
     'service_request_id': "service_request_test_002",
     'provider_candidate_user_id': "user_charlie_003",
     'matching_score': 88.0,

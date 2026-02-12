@@ -21,7 +21,7 @@ void main() {
       final mockRequests = <ServiceRequest>[];
       final mockFavorites = <User>[];
       final mockUser = User(
-          userId: 'user_1',
+          id: 'user_1',
           name: 'Me',
           selfIntroduction: 'Hi',
           competencies: [],
@@ -53,7 +53,7 @@ void main() {
     test('filters requests into incoming and outgoing', () async {
       // Arrange
       final mockUser = User(
-          userId: 'user_1', name: 'Me', selfIntroduction: 'Hi', competencies: [], averageRating: 0,
+          id: 'user_1', name: 'Me', selfIntroduction: 'Hi', competencies: [], averageRating: 0,
           reviewCount: 0, feedbackPositive: [], feedbackNegative: []
       );
       

@@ -40,7 +40,7 @@ class HomeTabViewModel extends ChangeNotifier {
       debugPrint('[HomeTabViewModel] Requests fetched: ${requests.length}');
       
       // Use getType() method with current user's ID to determine request type
-      final currentUserId = _user?.userId ?? '';
+      final currentUserId = _user?.id ?? '';
       _incomingRequests = requests.where((r) => r.getType(currentUserId) == RequestType.incoming).toList();
       _outgoingRequests = requests.where((r) => r.getType(currentUserId) == RequestType.outgoing).toList();
       debugPrint('[HomeTabViewModel] Incoming: ${_incomingRequests.length}, Outgoing: ${_outgoingRequests.length}');
@@ -59,7 +59,7 @@ class HomeTabViewModel extends ChangeNotifier {
   }
 
   bool isFavorite(User user) {
-    return _favorites.any((p) => p.userId == user.userId);
+    return _favorites.any((p) => p.id == user.id);
   }
 
   Future<void> toggleFavorite(User user) async {

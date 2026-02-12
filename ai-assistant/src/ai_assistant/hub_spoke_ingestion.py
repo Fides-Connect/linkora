@@ -146,7 +146,7 @@ class HubSpokeIngestion:
                     "name": user_data.get("name"),
                     "email": user_data.get("email"),
                     "location": user_data.get("location", ""),
-                    "user_id": user_data.get("user_id"),
+                    "user_id": user_data.get("id"),
                     "self_introduction": user_data.get("self_introduction", ""),
                     "is_service_provider": user_data.get("is_service_provider", False),
                     "fcm_token": user_data.get("fcm_token", ""),

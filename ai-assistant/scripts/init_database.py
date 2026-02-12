@@ -24,6 +24,7 @@ import sys
 import argparse
 import logging
 import asyncio
+import traceback
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
@@ -120,6 +121,7 @@ def clean_firestore_collection(coll_ref, batch_size=50):
         if deleted >= batch_size:
             clean_firestore_collection(coll_ref, batch_size)
 
+
 async def init_firestore(test_data):
     """Initialize Firestore with schema and test data."""
     if not db or not firestore_service:
@@ -139,184 +141,201 @@ async def init_firestore(test_data):
     test_personas = test_data.get('personas', [])
     if not test_personas:
         logger.warning("  No test personas provided. Firestore users/competencies skipped.")
-    else:
-        # 2. Populate Users & Competencies using firestore_service
-        logger.info("  Populating Users and Competencies...")
+        return
+    
+    # 2. Populate Users & Competencies using firestore_service
+    logger.info("  Populating Users and Competencies...")
+    
+    for i, persona in enumerate(test_personas):
+        p_data = persona['user']
+        persona_name = persona.get('name', f'Persona {i}')
+        user_id = p_data.get('id')
         
-        for persona in test_personas:
-            p_data = persona['user']
-            
-            user_id = p_data['user_id']
-            
-            # Convert last_sign_in from relative (days) to absolute datetime if needed
-            last_sign_in = p_data.get('last_sign_in', 0)
-            if isinstance(last_sign_in, int):
-                # Convert days ago to absolute datetime
-                last_sign_in = datetime.now(timezone.utc) - timedelta(days=last_sign_in)
-            elif isinstance(last_sign_in, str):
-                # Parse ISO format string if provided
-                try:
-                    last_sign_in = datetime.fromisoformat(last_sign_in.replace('Z', '+00:00'))
-                except (ValueError, AttributeError):
-                    last_sign_in = datetime.now(timezone.utc)
-            elif not isinstance(last_sign_in, datetime):
+        if not user_id:
+            logger.error(f"Skipping {persona_name}: missing 'id' field in persona data")
+            continue
+        
+        # Convert last_sign_in from relative (days) to absolute datetime if needed
+        last_sign_in = p_data.get('last_sign_in', 0)
+        if isinstance(last_sign_in, int):
+            # Convert days ago to absolute datetime
+            last_sign_in = datetime.now(timezone.utc) - timedelta(days=last_sign_in)
+        elif isinstance(last_sign_in, str):
+            # Parse ISO format string if provided
+            try:
+                last_sign_in = datetime.fromisoformat(last_sign_in.replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
                 last_sign_in = datetime.now(timezone.utc)
+        elif not isinstance(last_sign_in, datetime):
+            last_sign_in = datetime.now(timezone.utc)
+        
+        # Transform user data to match User schema
+        user_data = {
+            'name': p_data['name'],
+            'email': p_data['email'],
+            'photo_url': p_data.get('photo_url', ''),
+            'location': p_data.get('location', ''),
+            'self_introduction': p_data['self_introduction'],
+            'is_service_provider': p_data.get('is_service_provider', False),
+            'fcm_token': p_data.get('fcm_token', ''),
+            'has_open_request': p_data.get('has_open_request', False),
+            'user_app_settings': p_data.get('user_app_settings', {}),
+            'last_sign_in': last_sign_in,
+            'feedback_positive': p_data.get('feedback_positive', []),
+            'feedback_negative': p_data.get('feedback_negative', []),
+            'average_rating': p_data.get('average_rating', 5.0),
+            'review_count': p_data.get('review_count', 0),
+        }
+        
+        # Create user with the ID from persona data
+        success = await firestore_service.create_user(user_id=user_id, user_data=user_data)
+        if not success:
+            logger.error(f"Failed to create user {persona_name}")
+            continue
+        
+        logger.info(f"  Created user: {persona_name} -> {user_id}")
+        
+        # Create favorites subcollection
+        favorites = p_data.get('favorites', [])
+        if favorites:
+            for fav_id in favorites:
+                await firestore_service.add_favorite(user_id, fav_id)
+        
+        # Create outgoing service requests subcollection
+        outgoing = p_data.get('outgoing_service_requests', [])
+        if outgoing:
+            await firestore_service.add_outgoing_service_requests(user_id, outgoing)
+        
+        # Create incoming service requests subcollection
+        incoming = p_data.get('incoming_service_requests', [])
+        if incoming:
+            await firestore_service.add_incoming_service_requests(user_id, incoming)
+    
+    logger.info("  ✓ User documents created")
+    
+    # Add Competencies Subcollection
+    for i, persona in enumerate(test_personas):
+        persona_name = persona.get('name', f'Persona {i}')
+        user_id = persona['user'].get('id')
+        if not user_id:
+            logger.warning(f"Skipping competencies for {persona_name}: missing 'id' field")
+            continue
             
-            # Transform user data to match User schema
-            user_data = {
-                'name': p_data['name'],
-                'email': p_data['email'],
-                'photo_url': p_data.get('photo_url', ''),
-                'location': p_data.get('location', ''),
-                'self_introduction': p_data['self_introduction'],
-                'is_service_provider': p_data.get('is_service_provider', False),
-                'fcm_token': p_data.get('fcm_token', ''),
-                'has_open_request': p_data.get('has_open_request', False),
-                'user_app_settings': p_data.get('user_app_settings', {}),
-                'last_sign_in': last_sign_in,
-                'feedback_positive': p_data.get('feedback_positive', []),
-                'feedback_negative': p_data.get('feedback_negative', []),
-                'average_rating': p_data.get('average_rating', 5.0),
-                'review_count': p_data.get('review_count', 0),
+        c_data_list = persona['competencies']
+        
+        for j, comp in enumerate(c_data_list):
+            comp_id = f"competence_{user_id}_{j+1}"
+            
+            # Remove competence_id from data - it's the document ID, not stored data
+            comp_data = {
+                'title': comp['title'],
+                'description': comp.get('description', ''),
+                'category': comp.get('category', ''),
+                'price_range': comp.get('price_range', ''),
+                'year_of_experience': comp.get('year_of_experience', 0),
+                'feedback_positive': comp.get('feedback_positive', []),
+                'feedback_negative': comp.get('feedback_negative', []),
             }
             
-            # Create user via firestore_service (validates against Pydantic schema)
-            success = await firestore_service.create_user(user_id, user_data)
-            if not success:
-                logger.error(f"Failed to create user {user_id}")
+            # Create competence via firestore_service manually (need to set specific ID)
+            # Since create_competence generates IDs, we'll write directly but through validation
+            competencies_ref = db.collection('users').document(user_id).collection('competencies')
+            
+            # Validate using Pydantic schema
+            from ai_assistant.firestore_schemas import CompetenceSchema
+            try:
+                validated = CompetenceSchema(**comp_data)
+                validated_dict = validated.model_dump(mode='python', exclude_none=False)
+                competencies_ref.document(comp_id).set(validated_dict)
+            except Exception as e:
+                logger.error(f"Failed to create competence {comp_id}: {e}")
                 continue
+    
+    logger.info("  ✓ Competencies subcollections created")
+    
+    # Add Availability Times Subcollection for Users
+    for i, persona in enumerate(test_personas):
+        persona_name = persona.get('name', f'Persona {i}')
+        user_id = persona['user'].get('id')
+        if not user_id:
+            logger.warning(f"Skipping availability times for {persona_name}: missing 'id' field")
+            continue
             
-            # Create favorites subcollection
-            favorites = p_data.get('favorites', [])
-            if favorites:
-                for fav_id in favorites:
-                    await firestore_service.add_favorite(user_id, fav_id)
-            
-            # Create outgoing service requests subcollection
-            outgoing = p_data.get('outgoing_service_requests', [])
-            if outgoing:
-                await firestore_service.add_outgoing_service_requests(user_id, outgoing)
-            
-            # Create incoming service requests subcollection
-            incoming = p_data.get('incoming_service_requests', [])
-            if incoming:
-                await firestore_service.add_incoming_service_requests(user_id, incoming)
-            
-        logger.info("  ✓ User documents created")
+        avail_times = persona.get('availability_times', [])
         
-        # Add Competencies Subcollection
-        for persona in test_personas:
-            user_id = persona['user']['user_id']
-            c_data_list = persona['competencies']
+        for i, avail in enumerate(avail_times):
+            avail_id = f"availability_time_{user_id}_{i+1}"
             
-            for i, comp in enumerate(c_data_list):
-                comp_id = f"competence_{user_id}_{i+1}"
-                
-                comp_data = {
-                    'competence_id': comp_id,
-                    'title': comp['title'],
-                    'description': comp.get('description', ''),
-                    'category': comp.get('category', ''),
-                    'price_range': comp.get('price_range', ''),
-                    'year_of_experience': comp.get('year_of_experience', 0),
-                    'feedback_positive': comp.get('feedback_positive', []),
-                    'feedback_negative': comp.get('feedback_negative', []),
-                }
-                
-                # Create competence via firestore_service manually (need to set specific ID)
-                # Since create_competence generates IDs, we'll write directly but through validation
-                competencies_ref = db.collection('users').document(user_id).collection('competencies')
-                
-                # Validate using Pydantic schema
-                from ai_assistant.firestore_schemas import CompetenceSchema
-                try:
-                    validated = CompetenceSchema(**comp_data)
-                    validated_dict = validated.model_dump(mode='python', exclude_none=False)
-                    competencies_ref.document(comp_id).set(validated_dict)
-                except Exception as e:
-                    logger.error(f"Failed to create competence {comp_id}: {e}")
-                    continue
-                
-        logger.info("  ✓ Competencies subcollections created")
-        
-        # Add Availability Times Subcollection for Users
-        for persona in test_personas:
-            user_id = persona['user']['user_id']
-            avail_times = persona.get('availability_times', [])
+            # Remove ID fields - they are document IDs, not stored data
+            avail_data = {
+                'monday_time_ranges': avail.get('monday_time_ranges', []),
+                'tuesday_time_ranges': avail.get('tuesday_time_ranges', []),
+                'wednesday_time_ranges': avail.get('wednesday_time_ranges', []),
+                'thursday_time_ranges': avail.get('thursday_time_ranges', []),
+                'friday_time_ranges': avail.get('friday_time_ranges', []),
+                'saturday_time_ranges': avail.get('saturday_time_ranges', []),
+                'sunday_time_ranges': avail.get('sunday_time_ranges', []),
+                'absence_days': avail.get('absence_days', []),
+            }
             
-            for avail in avail_times:
-                avail_id = avail.get('availability_time_id', f"availability_time_{user_id}_auto")
+            # Validate using Pydantic schema
+            from ai_assistant.firestore_schemas import AvailabilityTimeSchema
+            try:
+                validated = AvailabilityTimeSchema(**avail_data)
+                validated_dict = validated.model_dump(mode='python', exclude_none=False)
+                validated_dict['created_at'] = datetime.now(timezone.utc)
+                validated_dict['updated_at'] = datetime.now(timezone.utc)
                 
-                avail_data = {
-                    'availability_time_id': avail_id,
-                    'monday_time_ranges': avail.get('monday_time_ranges', []),
-                    'tuesday_time_ranges': avail.get('tuesday_time_ranges', []),
-                    'wednesday_time_ranges': avail.get('wednesday_time_ranges', []),
-                    'thursday_time_ranges': avail.get('thursday_time_ranges', []),
-                    'friday_time_ranges': avail.get('friday_time_ranges', []),
-                    'saturday_time_ranges': avail.get('saturday_time_ranges', []),
-                    'sunday_time_ranges': avail.get('sunday_time_ranges', []),
-                    'absence_days': avail.get('absence_days', []),
-                }
-                
-                # Validate using Pydantic schema
-                from ai_assistant.firestore_schemas import AvailabilityTimeSchema
-                try:
-                    validated = AvailabilityTimeSchema(**avail_data)
-                    validated_dict = validated.model_dump(mode='python', exclude_none=False)
-                    validated_dict['created_at'] = datetime.now(timezone.utc)
-                    validated_dict['updated_at'] = datetime.now(timezone.utc)
-                    
-                    avail_ref = db.collection('users').document(user_id).collection('availability_time').document(avail_id)
-                    avail_ref.set(validated_dict)
-                except Exception as e:
-                    logger.error(f"Failed to create availability time {avail_id}: {e}")
-                    continue
-                
-        logger.info("  ✓ User availability_time subcollections created")
-        
-        # Add Availability Times for specific competencies
-        from ai_assistant.seed_data import COMPETENCE_AVAILABILITY_TIMES
-        for comp_id, avail_times in COMPETENCE_AVAILABILITY_TIMES.items():
-            # Skip template entries with {uid} placeholder (for seeding service only)
-            if '{uid}' in comp_id:
+                avail_ref = db.collection('users').document(user_id).collection('availability_time').document(avail_id)
+                avail_ref.set(validated_dict)
+            except Exception as e:
+                logger.error(f"Failed to create availability time {avail_id}: {e}")
                 continue
-                
-            # Extract user_id from comp_id (format: competence_user_xxx_N)
-            user_id = '_'.join(comp_id.split('_')[1:-1])
+    
+    logger.info("  ✓ User availability_time subcollections created")
+    
+    # Add Availability Times for specific competencies
+    from ai_assistant.seed_data import COMPETENCE_AVAILABILITY_TIMES
+    for comp_id, avail_times in COMPETENCE_AVAILABILITY_TIMES.items():
+        # Skip template entries with {uid} placeholder (for seeding service only)
+        if '{uid}' in comp_id:
+            continue
             
-            for avail in avail_times:
-                avail_id = avail.get('availability_time_id', f"availability_time_{comp_id}_auto")
+        # Extract user_id from comp_id (format: competence_user_xxx_N)
+        user_id = '_'.join(comp_id.split('_')[1:-1])
+        
+        for j, avail in enumerate(avail_times):
+            avail_id = f"availability_time_{comp_id}_{j+1}"
+            
+            # Remove ID fields - they are document IDs, not stored data
+            avail_data = {
+                'monday_time_ranges': avail.get('monday_time_ranges', []),
+                'tuesday_time_ranges': avail.get('tuesday_time_ranges', []),
+                'wednesday_time_ranges': avail.get('wednesday_time_ranges', []),
+                'thursday_time_ranges': avail.get('thursday_time_ranges', []),
+                'friday_time_ranges': avail.get('friday_time_ranges', []),
+                'saturday_time_ranges': avail.get('saturday_time_ranges', []),
+                'sunday_time_ranges': avail.get('sunday_time_ranges', []),
+                'absence_days': avail.get('absence_days', []),
+            }
+            
+            # Validate using Pydantic schema
+            from ai_assistant.firestore_schemas import AvailabilityTimeSchema
+            try:
+                validated = AvailabilityTimeSchema(**avail_data)
+                validated_dict = validated.model_dump(mode='python', exclude_none=False)
+                validated_dict['created_at'] = datetime.now(timezone.utc)
+                validated_dict['updated_at'] = datetime.now(timezone.utc)
                 
-                avail_data = {
-                    'availability_time_id': avail_id,
-                    'monday_time_ranges': avail.get('monday_time_ranges', []),
-                    'tuesday_time_ranges': avail.get('tuesday_time_ranges', []),
-                    'wednesday_time_ranges': avail.get('wednesday_time_ranges', []),
-                    'thursday_time_ranges': avail.get('thursday_time_ranges', []),
-                    'friday_time_ranges': avail.get('friday_time_ranges', []),
-                    'saturday_time_ranges': avail.get('saturday_time_ranges', []),
-                    'sunday_time_ranges': avail.get('sunday_time_ranges', []),
-                    'absence_days': avail.get('absence_days', []),
-                }
-                
-                # Validate using Pydantic schema
-                from ai_assistant.firestore_schemas import AvailabilityTimeSchema
-                try:
-                    validated = AvailabilityTimeSchema(**avail_data)
-                    validated_dict = validated.model_dump(mode='python', exclude_none=False)
-                    validated_dict['created_at'] = datetime.now(timezone.utc)
-                    validated_dict['updated_at'] = datetime.now(timezone.utc)
-                    
-                    avail_ref = (db.collection('users').document(user_id)
-                               .collection('competencies').document(comp_id)
-                               .collection('availability_time').document(avail_id))
-                    avail_ref.set(validated_dict)
-                except Exception as e:
-                    logger.error(f"Failed to create competence availability time {avail_id}: {e}")
-                    continue
-                
-        logger.info("  ✓ Competence availability_time subcollections created")
+                avail_ref = (db.collection('users').document(user_id)
+                           .collection('competencies').document(comp_id)
+                           .collection('availability_time').document(avail_id))
+                avail_ref.set(validated_dict)
+            except Exception as e:
+                logger.error(f"Failed to create competence availability time {avail_id}: {e}")
+                continue
+    
+    logger.info("  ✓ Competence availability_time subcollections created")
 
     # 3. Create Service Requests
     requests = test_data.get('service_requests', [])
@@ -328,7 +347,6 @@ async def init_firestore(test_data):
         for req in requests:
             req_collection_name = 'service_requests'
             req_id = req.get('service_request_id', 'unknown_req')
-            req_ref = db.collection(req_collection_name).document(req_id)
             
             # Track the request for updating user open request arrays
             seeker_id = req.get('seeker_user_id')
@@ -347,7 +365,9 @@ async def init_firestore(test_data):
             # Create using validated Pydantic schema
             from ai_assistant.firestore_schemas import ServiceRequestSchema
             try:
-                validated = ServiceRequestSchema(**req)
+                # Remove service_request_id - it's the document ID, not stored data
+                req_data = {k: v for k, v in req.items() if k != 'service_request_id'}
+                validated = ServiceRequestSchema(**req_data)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
                 req_ref = db.collection('service_requests').document(req_id)
@@ -372,9 +392,10 @@ async def init_firestore(test_data):
     # 3b. Create Provider Candidates as subcollections using validated schema
     provider_candidates = test_data.get('provider_candidates', [])
     if provider_candidates:
-        for candidate in provider_candidates:
+        for i, candidate in enumerate(provider_candidates):
             req_id = candidate.get('service_request_id')
-            cand_id = candidate.get('provider_candidate_id', 'unknown_candidate')
+            # Generate candidate ID from index if not present
+            cand_id = f"provider_candidate_{req_id}_{i+1}" if req_id else f"provider_candidate_{i+1}"
             
             if not req_id:
                 continue
@@ -382,7 +403,9 @@ async def init_firestore(test_data):
             # Validate using Pydantic schema
             from ai_assistant.firestore_schemas import ProviderCandidateSchema
             try:
-                validated = ProviderCandidateSchema(**candidate)
+                # Remove provider_candidate_id - it's the document ID, not stored data
+                cand_data = {k: v for k, v in candidate.items() if k != 'provider_candidate_id'}
+                validated = ProviderCandidateSchema(**cand_data)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
                 cand_ref = db.collection('service_requests').document(req_id).collection('provider_candidates').document(cand_id)
@@ -412,7 +435,9 @@ async def init_firestore(test_data):
             
             # Validate using Pydantic schema
             try:
-                validated = ChatSchema(**chat)
+                # Remove chat_id - it's the document ID, not stored data
+                chat_data = {k: v for k, v in chat.items() if k != 'chat_id'}
+                validated = ChatSchema(**chat_data)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
                 # Chat is now in root chats collection
@@ -437,7 +462,9 @@ async def init_firestore(test_data):
                 
                 # Validate using Pydantic schema
                 try:
-                    validated = ChatMessageSchema(**msg)
+                    # Remove chat_message_id - it's the document ID, not stored data
+                    msg_data = {k: v for k, v in msg.items() if k != 'chat_message_id'}
+                    validated = ChatMessageSchema(**msg_data)
                     validated_dict = validated.model_dump(mode='python', exclude_none=False)
                     
                     # Messages are now subcollection under root chats
@@ -459,7 +486,9 @@ async def init_firestore(test_data):
             
             # Validate using Pydantic schema
             try:
-                validated = ReviewSchema(**rev)
+                # Remove review_id - it's the document ID, not stored data
+                rev_data = {k: v for k, v in rev.items() if k != 'review_id'}
+                validated = ReviewSchema(**rev_data)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
                 rev_ref = db.collection('reviews').document(rev_id)
@@ -468,27 +497,41 @@ async def init_firestore(test_data):
                 logger.error(f"Failed to create review {rev_id}: {e}")
                 continue
         logger.info(f"  ✓ {len(reviews)} Reviews created")
+    
+
 
 
 def load_weaviate_data(test_personas):
-    """Load test personas into Weaviate."""
+    """Load test personas into Weaviate.
+    
+    Args:
+        test_personas: List of persona dictionaries
+    """
     logger.info("Loading Weaviate data...")
     
-    for persona in test_personas:
-        logger.info(f"  Processing {persona['name']}")
+    for i, persona in enumerate(test_personas):
+        persona_name = persona.get('name', f'Persona {i}')
+        logger.info(f"  Processing {persona_name}")
         
-        # Inject competence_id to match Firestore logic
-        user_id = persona['user']['user_id']
+        # Get user_id from persona data
+        user_id = persona['user'].get('id')
+        if not user_id:
+            logger.warning(f"Skipping Weaviate ingestion for {persona_name}: missing 'id' field")
+            continue
+            
         competencies_data = persona['competencies']
         
         # We must iterate to inject IDs, replicating init_firestore logic:
         # comp_id = f"competence_{user_id}_{i+1}"
-        for i, comp in enumerate(competencies_data):
+        for j, comp in enumerate(competencies_data):
             # Check if updated in place or if we need copy - safe to update in place for script
-            comp['competence_id'] = f"competence_{user_id}_{i+1}"
-            
+            comp['competence_id'] = f"competence_{user_id}_{j+1}"
+        
+        # Add user_id to user_data for Weaviate ingestion
+        user_data_with_id = {**persona['user'], 'user_id': user_id}
+        
         result = HubSpokeIngestion.create_user_with_competencies(
-            user_data=persona['user'],
+            user_data=user_data_with_id,
             competencies_data=competencies_data,
             apply_sanitization=True,
             apply_enrichment=True
@@ -497,7 +540,7 @@ def load_weaviate_data(test_personas):
             logger.info(f"    ✓ User UUID: {result['user_uuid']}")
             logger.info(f"    ✓ Competencies: {len(result['competence_uuids'])}")
         else:
-            logger.error(f"    ✗ Failed to create {persona['name']}")
+            logger.error(f"    ✗ Failed to create {persona_name}")
 
 
 async def main():
@@ -556,19 +599,20 @@ async def main():
                 logger.info("-" * 30)
                 load_weaviate_data(test_personas)
             elif not args.load_test_data:
-                 # Create empty structure by passing empty dict
-                 await init_firestore({}) 
-                 logger.info("✓ Firestore cleaned (no data loaded)")
-
+                # Create empty structure by passing empty dict
+                await init_firestore({}) 
+                logger.info("✓ Firestore cleaned (no data loaded)")
+                
         logger.info("\n" + "=" * 80)
-        logger.info("✓ Initialization Complete")
+        logger.info("✓ Database Initialization Complete")
         logger.info("=" * 80)
-        
         return 0
         
     except Exception as e:
-        logger.error(f"\n✗ Initialization failed: {e}")
-        import traceback
+        logger.error("\n" + "=" * 80)
+        logger.error("✗ Database Initialization Failed")
+        logger.error("=" * 80)
+        logger.error(f"Error: {e}")
         traceback.print_exc()
         return 1
         

@@ -27,7 +27,6 @@ class TestUserSchema:
     def test_valid_user(self):
         """Test valid user data passes validation."""
         user_data = {
-            "user_id": "user_123",
             "name": "John Doe",
             "email": "john@example.com",
             "photo_url": "https://example.com/photo.jpg",
@@ -49,7 +48,6 @@ class TestUserSchema:
     def test_minimal_user(self):
         """Test minimal valid user data."""
         user_data = {
-            "user_id": "user_456",
             "name": "Jane Doe",
             "email": "jane@example.com"
         }
@@ -120,7 +118,6 @@ class TestCompetenceSchema:
     def test_valid_competence(self):
         """Test valid competence data passes validation."""
         competence_data = {
-            "competence_id": "competence_abc123",
             "title": "Python Programming",
             "description": "Expert in Python",
             "category": "Programming",
@@ -129,12 +126,10 @@ class TestCompetenceSchema:
         
         competence = CompetenceSchema(**competence_data)
         assert competence.title == "Python Programming"
-        assert competence.competence_id == "competence_abc123"
     
     def test_minimal_competence(self):
         """Test minimal valid competence data."""
         competence_data = {
-            "competence_id": "competence_xyz789",
             "title": "Web Design"
         }
         
@@ -143,24 +138,9 @@ class TestCompetenceSchema:
         assert competence.description == ""
         assert competence.category == ""
     
-    def test_invalid_competence_id_prefix(self):
-        """Test that competence_id without correct prefix fails."""
-        competence_data = {
-            "competence_id": "wrong_prefix_abc123",
-            "title": "Python Programming"
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            CompetenceSchema(**competence_data)
-        
-        errors = exc_info.value.errors()
-        assert any(error['loc'] == ('competence_id',) for error in errors)
-    
     def test_missing_title(self):
         """Test that missing title fails validation."""
-        competence_data = {
-            "competence_id": "competence_abc123"
-        }
+        competence_data = {}
         
         with pytest.raises(ValidationError) as exc_info:
             CompetenceSchema(**competence_data)
@@ -175,7 +155,6 @@ class TestServiceRequestSchema:
     def test_valid_service_request(self):
         """Test valid service request data passes validation."""
         request_data = {
-            "service_request_id": "service_request_abc123",
             "title": "Need help with plumbing",
             "seeker_user_id": "user_123",
             "selected_provider_user_id": "user_456",
@@ -185,13 +164,13 @@ class TestServiceRequestSchema:
         }
         
         request = ServiceRequestSchema(**request_data)
-        assert request.service_request_id == "service_request_abc123"
+        assert request.seeker_user_id == "user_123"
+        assert request.selected_provider_user_id == "user_456"
         assert request.status == "pending"
     
     def test_minimal_service_request(self):
         """Test minimal valid service request data."""
         request_data = {
-            "service_request_id": "service_request_xyz789",
             "title": "Need help with plumbing",
             "seeker_user_id": "user_123",
             "created_at": datetime.now(UTC),
@@ -203,24 +182,9 @@ class TestServiceRequestSchema:
         assert request.selected_provider_user_id == ""
         assert request.status == "pending"
     
-    def test_invalid_service_request_id_prefix(self):
-        """Test that service_request_id without correct prefix fails."""
-        request_data = {
-            "service_request_id": "wrong_abc123",
-            "seeker_user_id": "user_123",
-            "created_at": datetime.now(UTC)
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ServiceRequestSchema(**request_data)
-        
-        errors = exc_info.value.errors()
-        assert any(error['loc'] == ('service_request_id',) for error in errors)
-    
     def test_invalid_status(self):
         """Test that invalid status value fails validation."""
         request_data = {
-            "service_request_id": "service_request_abc123",
             "seeker_user_id": "user_123",
             "status": "invalid_status",
             "created_at": datetime.now(UTC)
@@ -239,7 +203,6 @@ class TestReviewSchema:
     def test_valid_review(self):
         """Test valid review data passes validation."""
         review_data = {
-            "review_id": "review_abc123",
             "service_request_id": "service_request_xyz",
             "user_id": "user_123",
             "reviewer_user_id": "user_456",
@@ -255,7 +218,6 @@ class TestReviewSchema:
     def test_minimal_review(self):
         """Test minimal valid review data."""
         review_data = {
-            "review_id": "review_xyz789",
             "service_request_id": "service_request_abc",
             "user_id": "user_123",
             "reviewer_user_id": "user_456",
@@ -286,7 +248,7 @@ class TestReviewSchema:
     def test_invalid_rating_too_high(self):
         """Test that rating above 5 fails validation."""
         review_data = {
-            "review_id": "review_abc123",
+
             "service_request_id": "service_request_xyz",
             "user_id": "user_123",
             "reviewer_user_id": "user_456",
@@ -299,26 +261,9 @@ class TestReviewSchema:
         errors = exc_info.value.errors()
         assert any(error['loc'] == ('rating_response_speed',) for error in errors)
     
-    def test_invalid_review_id_prefix(self):
-        """Test that review_id without correct prefix fails."""
-        review_data = {
-            "review_id": "wrong_abc123",
-            "service_request_id": "service_request_xyz",
-            "user_id": "user_123",
-            "reviewer_user_id": "user_456",
-            "rating_response_speed": 4.0
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ReviewSchema(**review_data)
-        
-        errors = exc_info.value.errors()
-        assert any(error['loc'] == ('review_id',) for error in errors)
-    
     def test_empty_user_id(self):
         """Test that empty user_id fails validation."""
         review_data = {
-            "review_id": "review_abc123",
             "service_request_id": "service_request_xyz",
             "user_id": "",
             "reviewer_user_id": "user_456",
@@ -338,7 +283,6 @@ class TestChatSchema:
     def test_valid_chat(self):
         """Test valid chat data passes validation."""
         chat_data = {
-            "chat_id": "chat_abc123",
             "provider_candidate_id": "provider_456",
             "service_request_id": "service_request_xyz",
             "seeker_user_id": "user_seeker_123",
@@ -347,7 +291,6 @@ class TestChatSchema:
         }
         
         chat = ChatSchema(**chat_data)
-        assert chat.chat_id == "chat_abc123"
         assert chat.title == "Project Discussion"
         assert chat.seeker_user_id == "user_seeker_123"
         assert chat.provider_user_id == "user_provider_456"
@@ -355,7 +298,6 @@ class TestChatSchema:
     def test_minimal_chat(self):
         """Test minimal valid chat data."""
         chat_data = {
-            "chat_id": "chat_xyz789",
             "provider_candidate_id": "provider_456",
             "service_request_id": "service_request_abc",
             "seeker_user_id": "user_seeker_123",
@@ -364,20 +306,6 @@ class TestChatSchema:
         
         chat = ChatSchema(**chat_data)
         assert chat.title == ""
-    
-    def test_invalid_chat_id_prefix(self):
-        """Test that chat_id without correct prefix fails."""
-        chat_data = {
-            "chat_id": "wrong_abc123",
-            "provider_candidate_id": "provider_456",
-            "service_request_id": "service_request_xyz"
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ChatSchema(**chat_data)
-        
-        errors = exc_info.value.errors()
-        assert any(error['loc'] == ('chat_id',) for error in errors)
 
 
 class TestChatMessageSchema:
@@ -386,7 +314,6 @@ class TestChatMessageSchema:
     def test_valid_chat_message(self):
         """Test valid chat message data passes validation."""
         message_data = {
-            "chat_message_id": "chat_message_abc123",
             "chat_id": "chat_xyz",
             "sender_user_id": "user_123",
             "receiver_user_id": "user_456",
@@ -397,26 +324,9 @@ class TestChatMessageSchema:
         assert message.message == "Hello, how are you?"
         assert message.sender_user_id == "user_123"
     
-    def test_invalid_chat_message_id_prefix(self):
-        """Test that chat_message_id without correct prefix fails."""
-        message_data = {
-            "chat_message_id": "wrong_abc123",
-            "chat_id": "chat_xyz",
-            "sender_user_id": "user_123",
-            "receiver_user_id": "user_456",
-            "message": "Hello!"
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ChatMessageSchema(**message_data)
-        
-        errors = exc_info.value.errors()
-        assert any(error['loc'] == ('chat_message_id',) for error in errors)
-    
     def test_empty_message(self):
         """Test that empty message fails validation."""
         message_data = {
-            "chat_message_id": "chat_message_abc123",
             "chat_id": "chat_xyz",
             "sender_user_id": "user_123",
             "receiver_user_id": "user_456",

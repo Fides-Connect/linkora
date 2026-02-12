@@ -66,7 +66,7 @@ class RequestDetailPage extends StatelessWidget {
                         Builder(
                           builder: (context) {
                             final viewModel = context.read<HomeTabViewModel>();
-                            final currentUserId = viewModel.user?.userId ?? '';
+                            final currentUserId = viewModel.user?.id ?? '';
                             final amount = request.getAmount(currentUserId);
                             return Text(
                               amount,
@@ -104,7 +104,7 @@ class RequestDetailPage extends StatelessWidget {
 
                       try {
                         // Get the other user's ID based on request type
-                        final currentUserId = viewModel.user?.userId ?? '';
+                        final currentUserId = viewModel.user?.id ?? '';
                         final requestType = request.getType(currentUserId);
 
                         String otherUserId;
@@ -198,7 +198,7 @@ class RequestDetailPage extends StatelessWidget {
                                 final viewModel = context
                                     .read<HomeTabViewModel>();
                                 final currentUserId =
-                                    viewModel.user?.userId ?? '';
+                                    viewModel.user?.id ?? '';
                                 final isIncoming =
                                     request.getType(currentUserId) ==
                                     RequestType.incoming;
@@ -221,7 +221,7 @@ class RequestDetailPage extends StatelessWidget {
                                 final viewModel = context
                                     .read<HomeTabViewModel>();
                                 final currentUserId =
-                                    viewModel.user?.userId ?? '';
+                                    viewModel.user?.id ?? '';
                                 final isIncoming =
                                     request.getType(currentUserId) ==
                                     RequestType.incoming;
@@ -317,7 +317,7 @@ class RequestDetailPage extends StatelessWidget {
                   Builder(
                     builder: (context) {
                       final viewModel = context.read<HomeTabViewModel>();
-                      final currentUserId = viewModel.user?.userId ?? '';
+                      final currentUserId = viewModel.user?.id ?? '';
                       final requestType = request.getType(currentUserId);
 
                       if (requestType == RequestType.incoming) {

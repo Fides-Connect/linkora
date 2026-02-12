@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 class Competence {
-  final String competenceId;
+  final String id;
   final String title;
   final String description;
   final String category;
@@ -13,7 +13,7 @@ class Competence {
   final DateTime? updatedAt;
 
   const Competence({
-    required this.competenceId,
+    required this.id,
     required this.title,
     this.description = '',
     this.category = '',
@@ -27,7 +27,7 @@ class Competence {
 
   factory Competence.fromJson(Map<String, dynamic> json) {
     return Competence(
-      competenceId: json['competence_id'] as String,
+      id: json['id'] as String,
       title: json['title'] as String,
       description: json['description'] as String? ?? '',
       category: json['category'] as String? ?? '',
@@ -48,7 +48,7 @@ class Competence {
 
   Map<String, dynamic> toJson() {
     return {
-      'competence_id': competenceId,
+      'id': id,
       'title': title,
       'description': description,
       'category': category,
@@ -65,7 +65,7 @@ class Competence {
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
     return other is Competence &&
-        other.competenceId == competenceId &&
+        other.id == id &&
         other.title == title &&
         other.description == description &&
         other.category == category &&
@@ -79,7 +79,7 @@ class Competence {
 
   @override
   int get hashCode => Object.hash(
-    competenceId,
+    id,
     title,
     description,
     category,

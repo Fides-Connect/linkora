@@ -174,7 +174,7 @@ class HomeTabPage extends StatelessWidget {
             Builder(
               builder: (context) {
                 final viewModel = context.read<HomeTabViewModel>();
-                final currentUserId = viewModel.user?.userId ?? '';
+                final currentUserId = viewModel.user?.id ?? '';
                 return Text(
                   request.getAmount(currentUserId),
                   style: const TextStyle(color: Colors.white, fontSize: 16),
@@ -315,7 +315,7 @@ class HomeTabPage extends StatelessWidget {
             Builder(
               builder: (context) {
                 final viewModel = context.read<HomeTabViewModel>();
-                final currentUserId = viewModel.user?.userId ?? '';
+                final currentUserId = viewModel.user?.id ?? '';
                 return Text(
                   request.getAmount(currentUserId),
                   style: const TextStyle(color: Colors.white, fontSize: 16),

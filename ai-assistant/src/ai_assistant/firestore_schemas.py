@@ -11,12 +11,11 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator, model_valida
 class UserSchema(BaseModel):
     """Schema for User documents in Firestore.
     
-    Note: user_id is the document ID and not included in the document data.
+    Note: User ID is used as the document ID (document name) and not stored in the document data.
     Competencies are stored in a subcollection, not as a field.
     """
     model_config = ConfigDict(extra='forbid')
     
-    user_id: str = Field(..., min_length=1)
     created_at: datetime = Field(default_factory=lambda: datetime.now(), init=False)
     updated_at: datetime = Field(default_factory=lambda: datetime.now(), init=False)
     name: str = Field(..., min_length=1, max_length=200)
@@ -78,11 +77,10 @@ class UserUpdateSchema(BaseModel):
 class CompetenceSchema(BaseModel):
     """Schema for Competence documents (subcollection under users).
     
-    Note: competence_id is auto-generated with prefix 'competence_'
+    Note: Competence ID is auto-generated with prefix 'competence_' and used as the document ID (document name).
     """
     model_config = ConfigDict(extra='forbid')
     
-    competence_id: str = Field(..., min_length=1)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     title: str = Field(..., min_length=1, max_length=200)
@@ -92,14 +90,6 @@ class CompetenceSchema(BaseModel):
     year_of_experience: int = Field(default=0, ge=0)
     feedback_positive: List[str] = Field(default_factory=list)
     feedback_negative: List[str] = Field(default_factory=list)
-    
-    @field_validator('competence_id')
-    @classmethod
-    def validate_competence_id(cls, v: str) -> str:
-        """Ensure competence_id has the correct prefix."""
-        if not v.startswith('competence_'):
-            raise ValueError('competence_id must start with "competence_"')
-        return v
     
     @model_validator(mode='before')
     @classmethod
@@ -131,11 +121,10 @@ class CompetenceUpdateSchema(BaseModel):
 class ServiceRequestSchema(BaseModel):
     """Schema for ServiceRequest documents in Firestore.
     
-    Note: service_request_id is auto-generated with prefix 'service_request_'
+    Note: Service request ID is auto-generated with prefix 'service_request_' and used as the document ID (document name).
     """
     model_config = ConfigDict(extra='forbid')
     
-    service_request_id: str = Field(..., min_length=1)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     seeker_user_id: str = Field(..., min_length=1)
@@ -150,14 +139,6 @@ class ServiceRequestSchema(BaseModel):
     end_date: Optional[datetime] = None
     category: Optional[str] = Field(None, max_length=100)
     location: Optional[str] = Field(None, max_length=200)
-    
-    @field_validator('service_request_id')
-    @classmethod
-    def validate_service_request_id(cls, v: str) -> str:
-        """Ensure service_request_id has the correct prefix."""
-        if not v.startswith('service_request_'):
-            raise ValueError('service_request_id must start with "service_request_"')
-        return v
     
     @field_validator('status')
     @classmethod
@@ -216,11 +197,10 @@ class ServiceRequestUpdateSchema(BaseModel):
 class ReviewSchema(BaseModel):
     """Schema for Review documents in Firestore.
     
-    Note: review_id is auto-generated with prefix 'review_'
+    Note: Review ID is auto-generated with prefix 'review_' and used as the document ID (document name).
     """
     model_config = ConfigDict(extra='forbid')
     
-    review_id: str = Field(..., min_length=1)
     service_request_id: str = Field(..., min_length=1)
     user_id: str = Field(..., min_length=1)  # Reviewee (user being reviewed)
     reviewer_user_id: str = Field(..., min_length=1)  # Reviewer (user writing the review)
@@ -233,14 +213,6 @@ class ReviewSchema(BaseModel):
     rating_response_speed: Optional[float] = Field(None, ge=1.0, le=5.0)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
-    @field_validator('review_id')
-    @classmethod
-    def validate_review_id(cls, v: str) -> str:
-        """Ensure review_id has the correct prefix."""
-        if not v.startswith('review_'):
-            raise ValueError('review_id must start with "review_"')
-        return v
     
     @field_validator('user_id', 'reviewer_user_id')
     @classmethod
@@ -282,12 +254,11 @@ class ReviewUpdateSchema(BaseModel):
 class ChatSchema(BaseModel):
     """Schema for Chat documents in root collection.
     
-    Note: chat_id is auto-generated with prefix 'chat_'
+    Note: Chat ID is auto-generated with prefix 'chat_' and used as the document ID (document name).
     Chats are now a root collection for better scalability and query performance.
     """
     model_config = ConfigDict(extra='forbid')
     
-    chat_id: str = Field(..., min_length=1)
     provider_candidate_id: str = Field(..., min_length=1)
     service_request_id: str = Field(..., min_length=1)
     seeker_user_id: str = Field(..., min_length=1)  # For direct user queries
@@ -295,14 +266,6 @@ class ChatSchema(BaseModel):
     title: str = Field(default="", max_length=200)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
-    @field_validator('chat_id')
-    @classmethod
-    def validate_chat_id(cls, v: str) -> str:
-        """Ensure chat_id has the correct prefix."""
-        if not v.startswith('chat_'):
-            raise ValueError('chat_id must start with "chat_"')
-        return v
     
     @model_validator(mode='before')
     @classmethod
@@ -331,25 +294,16 @@ class ChatUpdateSchema(BaseModel):
 class ChatMessageSchema(BaseModel):
     """Schema for ChatMessage documents (subcollection under chats).
     
-    Note: chat_message_id is auto-generated with prefix 'chat_message_'
+    Note: Chat message ID is auto-generated with prefix 'chat_message_' and used as the document ID (document name).
     """
     model_config = ConfigDict(extra='forbid')
     
-    chat_message_id: str = Field(..., min_length=1)
     chat_id: str = Field(..., min_length=1)
     sender_user_id: str = Field(..., min_length=1)
     receiver_user_id: str = Field(..., min_length=1)
     message: str = Field(..., min_length=1, max_length=5000)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
-    @field_validator('chat_message_id')
-    @classmethod
-    def validate_chat_message_id(cls, v: str) -> str:
-        """Ensure chat_message_id has the correct prefix."""
-        if not v.startswith('chat_message_'):
-            raise ValueError('chat_message_id must start with "chat_message_"')
-        return v
     
     @field_validator('sender_user_id', 'receiver_user_id')
     @classmethod
@@ -396,11 +350,10 @@ class ChatMessageUpdateSchema(BaseModel):
 class ProviderCandidateSchema(BaseModel):
     """Schema for ProviderCandidate documents (subcollection under service_requests).
     
-    Note: provider_candidate_id is auto-generated with prefix 'provider_candidate_'
+    Note: Provider candidate ID is auto-generated with prefix 'provider_candidate_' and used as the document ID (document name).
     """
     model_config = ConfigDict(extra='forbid')
     
-    provider_candidate_id: str = Field(..., min_length=1)
     service_request_id: str = Field(..., min_length=1)
     provider_candidate_user_id: str = Field(..., min_length=1)
     matching_score: float = Field(..., ge=0.0, le=100.0)
@@ -409,14 +362,6 @@ class ProviderCandidateSchema(BaseModel):
     status: str = Field(default="pending", max_length=50)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    
-    @field_validator('provider_candidate_id')
-    @classmethod
-    def validate_provider_candidate_id(cls, v: str) -> str:
-        """Ensure provider_candidate_id has the correct prefix."""
-        if not v.startswith('provider_candidate_'):
-            raise ValueError('provider_candidate_id must start with "provider_candidate_"')
-        return v
     
     @field_validator('status')
     @classmethod
@@ -476,11 +421,10 @@ class TimeRangeSchema(BaseModel):
 class AvailabilityTimeSchema(BaseModel):
     """Schema for AvailabilityTime documents (subcollection under users or competencies).
     
-    Note: availability_time_id is auto-generated with prefix 'availability_time_'
+    Note: Availability time ID is auto-generated with prefix 'availability_time_' and used as the document ID (document name).
     """
     model_config = ConfigDict(extra='forbid')
     
-    availability_time_id: str = Field(..., min_length=1)
     monday_time_ranges: List[dict] = Field(default_factory=list)
     tuesday_time_ranges: List[dict] = Field(default_factory=list)
     wednesday_time_ranges: List[dict] = Field(default_factory=list)
@@ -489,14 +433,6 @@ class AvailabilityTimeSchema(BaseModel):
     saturday_time_ranges: List[dict] = Field(default_factory=list)
     sunday_time_ranges: List[dict] = Field(default_factory=list)
     absence_days: List[str] = Field(default_factory=list)
-    
-    @field_validator('availability_time_id')
-    @classmethod
-    def validate_availability_time_id(cls, v: str) -> str:
-        """Ensure availability_time_id has the correct prefix."""
-        if not v.startswith('availability_time_'):
-            raise ValueError('availability_time_id must start with "availability_time_"')
-        return v
 
 
 class AvailabilityTimeUpdateSchema(BaseModel):

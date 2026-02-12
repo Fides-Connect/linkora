@@ -50,7 +50,6 @@ class TestFirestoreService:
             # Verify data was set
             mock_doc_ref.set.assert_called_once()
             call_args = mock_doc_ref.set.call_args[0][0]
-            assert call_args['service_request_id'] == 'service_request_123'
             assert call_args['title'] == 'Test Request'
             assert 'created_at' in call_args
             assert 'updated_at' in call_args
@@ -211,8 +210,8 @@ class TestFirestoreService:
             
             # Assert
             assert len(favorites) == 2
-            assert favorites[0]['user_id'] == 'fav1'
+            assert favorites[0]['id'] == 'fav1'
             assert favorites[0]['name'] == 'User fav1'
-            assert favorites[1]['user_id'] == 'fav2'
+            assert favorites[1]['id'] == 'fav2'
             mock_db_collection.return_value.document.assert_called_with(user_id)
             mock_db_collection.return_value.document.return_value.collection.assert_called_with('favorites')

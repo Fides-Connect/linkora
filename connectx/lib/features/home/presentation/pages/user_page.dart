@@ -211,7 +211,7 @@ class _UserPageState extends State<UserPage> {
                               size: 18,
                               color: Colors.white70,
                             ),
-                            onDeleted: () => _removeCompetence(competence.competenceId),
+                            onDeleted: () => _removeCompetence(competence.id),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(

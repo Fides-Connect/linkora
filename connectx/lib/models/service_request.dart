@@ -59,7 +59,7 @@ class ServiceRequest {
 
   factory ServiceRequest.fromJson(Map<String, dynamic> json) {
     return ServiceRequest(
-      serviceRequestId: json['service_request_id'] as String,
+      serviceRequestId: json['id'] as String,
       title: json['title'] as String,
       amountValue: (json['amount_value'] as num).toDouble(),
       currency: json['currency'] as String? ?? '€',
@@ -92,7 +92,7 @@ class ServiceRequest {
 
   Map<String, dynamic> toJson() {
     return {
-      'service_request_id': serviceRequestId,
+      'id': serviceRequestId,
       'title': title,
       'amount_value': amountValue,
       'currency': currency,

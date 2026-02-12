@@ -33,7 +33,7 @@ class HomeRepository {
   /// Wraps API call to `POST /api/v1/me/favorites` with user_id in body.
   /// Returns the updated list of favorites.
   Future<List<User>> addFavorite(User user) async {
-    await _apiService.post('/api/v1/me/favorites', body: {'user_id': user.userId}); 
+    await _apiService.post('/api/v1/me/favorites', body: {'user_id': user.id}); 
     return getFavorites();
   }
 
@@ -41,7 +41,7 @@ class HomeRepository {
   /// Wraps API call to `DELETE /api/v1/me/favorites/{user_id}`.
   /// Returns the updated list of favorites.
   Future<List<User>> removeFavorite(User user) async {
-    await _apiService.delete('/api/v1/me/favorites/${Uri.encodeComponent(user.userId)}');
+    await _apiService.delete('/api/v1/me/favorites/${Uri.encodeComponent(user.id)}');
     return getFavorites();
   }
 

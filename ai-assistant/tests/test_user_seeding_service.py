@@ -37,7 +37,7 @@ class TestUserSeedingService:
               patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_COMPETENCIES', [{"title": "Coding"}]), \
               patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_SERVICE_REQUESTS', [{"title": "Help", "seeker_user_id": "{uid}"}]), \
               patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_PROVIDER_CANDIDATES', [[{"provider_candidate_user_id": "p1"}]]), \
-              patch('ai_assistant.services.user_seeding_service.USER_A', {"user_id": "alice", "name": "Alice"}):
+              patch('ai_assistant.services.user_seeding_service.USER_A', {"id": "user_alice_001", "name": "Alice"}):
              yield
 
     @pytest.mark.asyncio
@@ -57,7 +57,6 @@ class TestUserSeedingService:
             mock_firestore.create_user.assert_any_call(user_id, ANY)
             call_args = mock_firestore.create_user.call_args_list[0][0]
             assert call_args[1]['intro'] == "Hello"
-            assert call_args[1]['user_id'] == user_id
             
             # Assert 2: Competencies created via service layer
             mock_firestore.create_competence.assert_called()
@@ -69,5 +68,5 @@ class TestUserSeedingService:
             mock_firestore.create_provider_candidate.assert_called()
             
             # Assert 5: Default friend added
-            mock_firestore.update_user.assert_any_call("alice", ANY)
-            mock_firestore.add_favorite.assert_called_with(user_id, "alice")
+            mock_firestore.update_user.assert_any_call("user_alice_001", ANY)
+            mock_firestore.add_favorite.assert_called_with(user_id, "user_alice_001")

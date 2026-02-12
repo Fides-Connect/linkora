@@ -167,7 +167,6 @@ class FirestoreService:
         try:
             # Generate prefixed service request ID
             service_request_id = self._generate_prefixed_id('service_request')
-            request_data['service_request_id'] = service_request_id
             
             # Add timestamps before validation (they will be validated as well)
             request_data['created_at'] = datetime.now(timezone.utc)
@@ -310,7 +309,6 @@ class FirestoreService:
         try:
             # Generate prefixed provider candidate ID
             provider_candidate_id = self._generate_prefixed_id('provider_candidate')
-            candidate_data['provider_candidate_id'] = provider_candidate_id
             candidate_data['service_request_id'] = service_request_id
             
             # Validate data against schema (timestamps excluded)
@@ -354,7 +352,7 @@ class FirestoreService:
             candidates = []
             for doc in docs:
                 data = doc.to_dict()
-                data['provider_candidate_id'] = doc.id
+                data['id'] = doc.id
                 candidates.append(data)
             return candidates
         except Exception as e:
@@ -385,7 +383,7 @@ class FirestoreService:
                   .get())
             if doc.exists:
                 data = doc.to_dict()
-                data['provider_candidate_id'] = doc.id
+                data['id'] = doc.id
                 return data
             return None
         except Exception as e:
@@ -500,7 +498,7 @@ class FirestoreService:
                 if user_data:
                     # Transform to match the User model expected by Flutter
                     favorite_users.append({
-                        'user_id': user_data.get('user_id', favorite_user_id),
+                        'id': favorite_user_id,
                         'name': user_data.get('name', ''),
                         'self_introduction': user_data.get('self_introduction', ''),
                         'competencies': user_data.get('competencies', []),
@@ -666,8 +664,8 @@ class FirestoreService:
             competencies = []
             for doc in docs:
                 comp_data = doc.to_dict()
-                # Include the document ID as competence_id
-                comp_data['competence_id'] = doc.id
+                # Include the document ID
+                comp_data['id'] = doc.id
                 competencies.append(comp_data)
             return competencies
         except Exception as e:
@@ -682,8 +680,7 @@ class FirestoreService:
             doc = self._get_collection('users').document(user_id).get()
             if doc.exists:
                 data = doc.to_dict()
-                # data['id'] = doc.id
-                data['user_id'] = doc.id
+                data['id'] = doc.id
                 
                 # Fetch competencies from subcollection
                 competencies = await self.get_competencies(user_id)
@@ -720,22 +717,19 @@ class FirestoreService:
             logger.error(f"Error updating {user_id}: {e}")
             return False
 
-    async def create_user(self, user_id: str, user_data: Dict[str, Any]) -> bool:
+    async def create_user(self, user_id: Optional[str] = None, user_data: Dict[str, Any] = None) -> Optional[str]:
         """Create a new user.
         
         Args:
-            user_id: The user's ID (typically Firebase UID)
+            user_id: The user's ID (typically Firebase UID). If None, auto-generates an ID.
             user_data: User data to create
             
         Returns:
-            True if created successfully, False otherwise
+            The user_id if created successfully, None otherwise
         """
         if not self.db:
-            return False
+            return None
         try:
-            # Add user_id to data for validation
-            user_data['user_id'] = user_id
-            
             # Validate data against schema (timestamps excluded)
             validated_data = self._validate_data(user_data, UserSchema)
             
@@ -743,15 +737,19 @@ class FirestoreService:
             validated_data['created_at'] = datetime.now(timezone.utc)
             validated_data['updated_at'] = datetime.now(timezone.utc)
             
-            # Remove user_id from document data (it's the document key)
-            validated_data.pop('user_id', None)
-            
             # Create the user document
-            self._get_collection('users').document(user_id).set(validated_data)
-            return True
+            if user_id:
+                # Use provided ID
+                self._get_collection('users').document(user_id).set(validated_data)
+                return user_id
+            else:
+                # Auto-generate ID using Firestore
+                doc_ref = self._get_collection('users').document()
+                doc_ref.set(validated_data)
+                return doc_ref.id
         except Exception as e:
-            logger.error(f"Error creating user {user_id}: {e}")
-            return False
+            logger.error(f"Error creating user: {e}")
+            return None
 
     async def delete_user(self, user_id: str) -> bool:
         """Delete a user and all their subcollections (competencies, favorites, service requests).
@@ -822,7 +820,6 @@ class FirestoreService:
             # Add document to competencies subcollection with prefixed ID
             competencies_ref = self._get_collection('users').document(user_id).collection('competencies')
             competence_data = {
-                'competence_id': competence_id,
                 'title': title,
                 'description': competence.get('description', ''),
                 'category': competence.get('category', ''),
@@ -839,7 +836,9 @@ class FirestoreService:
             # Use the generated competence_id as the document ID
             competencies_ref.document(competence_id).set(validated_data)
             
-            return validated_data
+            result = validated_data.copy()
+            result['id'] = competence_id
+            return result
         except Exception as e:
             logger.error(f"Error creating competence for {user_id}: {e}")
             return None
@@ -940,7 +939,6 @@ class FirestoreService:
         try:
             # Generate prefixed availability time ID
             availability_time_id = self._generate_prefixed_id('availability_time')
-            availability_data['availability_time_id'] = availability_time_id
             
             # Validate data against schema (timestamps excluded)
             validated_data = self._validate_data(availability_data, AvailabilityTimeSchema)
@@ -1006,7 +1004,7 @@ class FirestoreService:
             availability_times = []
             for doc in docs:
                 data = doc.to_dict()
-                data['availability_time_id'] = doc.id
+                data['id'] = doc.id
                 availability_times.append(data)
             return availability_times
         except Exception as e:
@@ -1052,7 +1050,7 @@ class FirestoreService:
             
             if doc.exists:
                 data = doc.to_dict()
-                data['availability_time_id'] = doc.id
+                data['id'] = doc.id
                 return data
             return None
         except Exception as e:
@@ -1176,7 +1174,6 @@ class FirestoreService:
         try:
             # Generate prefixed review ID
             review_id = self._generate_prefixed_id('review')
-            review_data['review_id'] = review_id
             
             # Validate data against schema (timestamps excluded)
             validated_data = self._validate_data(review_data, ReviewSchema)
@@ -1296,7 +1293,6 @@ class FirestoreService:
             
             # Generate prefixed chat ID
             chat_id = self._generate_prefixed_id('chat')
-            chat_data['chat_id'] = chat_id
             
             # Validate data against schema (timestamps excluded)
             validated_data = self._validate_data(chat_data, ChatSchema)
@@ -1328,7 +1324,7 @@ class FirestoreService:
             doc = self._get_collection('chats').document(chat_id).get()
             if doc.exists:
                 data = doc.to_dict()
-                data['chat_id'] = doc.id
+                data['id'] = doc.id
                 return data
             return None
         except Exception as e:
@@ -1352,7 +1348,7 @@ class FirestoreService:
             chats = []
             for doc in docs:
                 data = doc.to_dict()
-                data['chat_id'] = doc.id
+                data['id'] = doc.id
                 chats.append(data)
             return chats
         except Exception as e:
@@ -1383,13 +1379,13 @@ class FirestoreService:
             chats = {}
             for doc in seeker_docs:
                 data = doc.to_dict()
-                data['chat_id'] = doc.id
+                data['id'] = doc.id
                 chats[doc.id] = data
             
             for doc in provider_docs:
                 if doc.id not in chats:
                     data = doc.to_dict()
-                    data['chat_id'] = doc.id
+                    data['id'] = doc.id
                     chats[doc.id] = data
             
             return list(chats.values())
@@ -1473,7 +1469,6 @@ class FirestoreService:
         try:
             # Generate prefixed message ID
             message_id = self._generate_prefixed_id('chat_message')
-            message_data['chat_message_id'] = message_id
             message_data['chat_id'] = chat_id
             
             # Validate data against schema (timestamps excluded)

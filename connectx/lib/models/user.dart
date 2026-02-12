@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'competence.dart';
 
 class User {
-  final String userId;
+  final String id;
   final String name;
   final String selfIntroduction;
   final String location;
@@ -18,7 +18,7 @@ class User {
   final DateTime? updatedAt;
 
   const User({
-    required this.userId,
+    required this.id,
     required this.name,
     required this.selfIntroduction,
     this.location = '',
@@ -36,7 +36,7 @@ class User {
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      userId: json['user_id'] as String,
+      id: json['id'] as String,
       name: json['name'] as String,
       selfIntroduction: json['self_introduction'] as String? ?? '',
       location: json['location'] as String? ?? '',
@@ -57,7 +57,7 @@ class User {
 
   Map<String, dynamic> toJson() {
     return {
-      'user_id': userId,
+      'id': id,
       'name': name,
       'self_introduction': selfIntroduction,
       'location': location,
@@ -75,7 +75,7 @@ class User {
   }
 
   User copyWith({
-    String? userId,
+    String? id,
     String? name,
     String? selfIntroduction,
     String? location,
@@ -91,7 +91,7 @@ class User {
     DateTime? updatedAt,
   }) {
     return User(
-      userId: userId ?? this.userId,
+      id: id ?? this.id,
       name: name ?? this.name,
       selfIntroduction: selfIntroduction ?? this.selfIntroduction,
       location: location ?? this.location,
@@ -119,7 +119,7 @@ class User {
     if (identical(this, other)) return true;
 
     return other is User &&
-        other.userId == userId &&
+        other.id == id &&
         other.name == name &&
         other.selfIntroduction == selfIntroduction &&
         other.location == location &&
@@ -137,7 +137,7 @@ class User {
 
   @override
   int get hashCode => Object.hash(
-        userId,
+        id,
         name,
         selfIntroduction,
         location,
