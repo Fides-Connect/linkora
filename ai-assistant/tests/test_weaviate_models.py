@@ -268,7 +268,7 @@ class TestProviderModelWeaviate:
             "name": "John's Plumbing",
             "category": "plumbing",
             "skills": ["residential", "commercial"],
-            "rating": 4.5,
+            "rating_reliance": 4.5,
             "experience_years": 10,
             "price_range": "$$",
             "availability": "weekdays",

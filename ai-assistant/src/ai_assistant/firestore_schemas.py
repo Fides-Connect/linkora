@@ -241,11 +241,10 @@ class ReviewSchema(BaseModel):
     feedback_raw: str = Field(default="", max_length=5000)
     feedback_positive: List[str] = Field(default_factory=list)
     feedback_negative: List[str] = Field(default_factory=list)
-    comment: str = Field(default="", max_length=2000)
-    rating_relevance: Optional[float] = Field(None, ge=0.0, le=5.0)
-    rating_quality: Optional[float] = Field(None, ge=0.0, le=5.0)
-    rating_competence: Optional[float] = Field(None, ge=0.0, le=5.0)
-    rating_response_speed: Optional[float] = Field(None, ge=0.0, le=5.0)
+    rating_reliance: Optional[float] = Field(None, ge=1.0, le=5.0)
+    rating_quality: Optional[float] = Field(None, ge=1.0, le=5.0)
+    rating_competence: Optional[float] = Field(None, ge=1.0, le=5.0)
+    rating_response_speed: Optional[float] = Field(None, ge=1.0, le=5.0)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     
@@ -286,22 +285,13 @@ class ReviewUpdateSchema(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
     
-    service_request_id: Optional[str] = Field(None, min_length=1)
-    user_id: Optional[str] = Field(None, min_length=1)
-    reviewer_user_id: Optional[str] = Field(None, min_length=1)
-    rating: Optional[float] = Field(None, ge=1.0, le=5.0)
-    positive_feedback: Optional[List[str]] = None
-    negative_feedback: Optional[List[str]] = None
-    comment: Optional[str] = Field(None, max_length=2000)
-    
-    @field_validator('user_id', 'reviewer_user_id')
-    @classmethod
-    def validate_not_empty(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure user IDs are not empty."""
-        if v is not None and (not v or not v.strip()):
-            raise ValueError('User ID cannot be empty')
-        return v
-
+    feedback_raw: Optional[str] = Field(None, max_length=5000)
+    feedback_positive: Optional[List[str]] = None
+    feedback_negative: Optional[List[str]] = None
+    rating_reliance: Optional[float] = Field(None, ge=1.0, le=5.0)
+    rating_quality: Optional[float] = Field(None, ge=1.0, le=5.0)
+    rating_competence: Optional[float] = Field(None, ge=1.0, le=5.0)
+    rating_response_speed: Optional[float] = Field(None, ge=1.0, le=5.0)
 
 class ChatSchema(BaseModel):
     """Schema for Chat documents (subcollection under service_requests/provider_candidates).

@@ -54,10 +54,10 @@ async def create_review(request: web.Request) -> web.Response:
     Body: {
         "service_request_id": "service_request_xyz",
         "user_id": "user_abc",
-        "rating": 5,
-        "positive_feedback": ["Punctual", "Professional"],
-        "negative_feedback": [],
-        "comment": "Optional text comment"
+        "rating_response_speed": 5,
+        "feedback_positive": ["Punctual", "Professional"],
+        "feedback_negative": [],
+        "feedback_raw": "Optional raw feedback"
     }
     """
     try:
@@ -84,8 +84,8 @@ async def create_review(request: web.Request) -> web.Response:
             'user_id': body['user_id'],
             'reviewer_user_id': reviewer_user_id,  # Use authenticated user
             'rating': rating,
-            'positive_feedback': body.get('positive_feedback', []),
-            'negative_feedback': body.get('negative_feedback', []),
+            'feedback_positive': body.get('feedback_positive', []),
+            'feedback_negative': body.get('feedback_negative', []),
             'comment': body.get('comment', ''),
             'created_at': datetime.utcnow()
         }
@@ -136,9 +136,9 @@ async def update_review(request: web.Request) -> web.Response:
     """PATCH /api/v1/reviews/{review_id} - Update a review.
     
     Body: {
-        "rating": 4,
-        "positive_feedback": ["Updated"],
-        "comment": "Updated comment"
+        "rating_competence": 4,
+        "feedback_positive": ["Updated"],
+        "feedback_raw": "Updated raw feedback"
     }
     """
     try:

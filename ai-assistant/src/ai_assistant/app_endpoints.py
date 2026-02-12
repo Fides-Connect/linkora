@@ -779,8 +779,8 @@ async def create_review(request: web.Request) -> web.Response:
             'user_id': body['user_id'],
             'reviewer_user_id': reviewer_user_id,  # Use authenticated user
             'rating': rating,
-            'positive_feedback': body.get('positive_feedback', []),
-            'negative_feedback': body.get('negative_feedback', []),
+            'feedback_positive': body.get('feedback_positive', []),
+            'feedback_negative': body.get('feedback_negative', []),
             'comment': body.get('comment', ''),
             'created_at': datetime.utcnow()
         }
@@ -899,9 +899,9 @@ async def update_review(request: web.Request) -> web.Response:
     
     PATCH /reviews/{review_id}
     Body: {
-        "rating": 4,
-        "positive_feedback": ["Updated"],
-        "comment": "Updated comment"
+        "rating_quality": 4,
+        "feedback_positive": ["Updated"],
+        "feedback_raw": "Updated raw feedback",
     }
     """
     try:

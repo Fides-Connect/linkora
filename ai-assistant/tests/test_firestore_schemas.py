@@ -245,15 +245,14 @@ class TestReviewSchema:
             "service_request_id": "service_request_xyz",
             "user_id": "user_123",
             "reviewer_user_id": "user_456",
-            "rating": 4.5,
-            "positive_feedback": ["Punctual", "Professional"],
-            "negative_feedback": [],
-            "comment": "Great service!"
+            "feedback_positive": ["Punctual", "Professional"],
+            "feedback_negative": [],
+            "rating_quality": 4.5
         }
         
         review = ReviewSchema(**review_data)
-        assert review.rating == 4.5
-        assert len(review.positive_feedback) == 2
+        assert review.rating_quality == 4.5
+        assert len(review.feedback_positive) == 2
     
     def test_minimal_review(self):
         """Test minimal valid review data."""
@@ -262,13 +261,13 @@ class TestReviewSchema:
             "service_request_id": "service_request_abc",
             "user_id": "user_123",
             "reviewer_user_id": "user_456",
-            "rating": 3.0
+            "rating_reliance": 3.0
         }
         
         review = ReviewSchema(**review_data)
-        assert review.rating == 3.0
-        assert review.positive_feedback == []
-        assert review.comment == ""
+        assert review.rating_reliance == 3.0
+        assert review.feedback_positive == []
+        assert review.feedback_negative == []
     
     def test_invalid_rating_too_low(self):
         """Test that rating below 1 fails validation."""
@@ -277,14 +276,14 @@ class TestReviewSchema:
             "service_request_id": "service_request_xyz",
             "user_id": "user_123",
             "reviewer_user_id": "user_456",
-            "rating": 0.5
+            "rating_reliance": 0.5
         }
         
         with pytest.raises(ValidationError) as exc_info:
             ReviewSchema(**review_data)
         
         errors = exc_info.value.errors()
-        assert any(error['loc'] == ('rating',) for error in errors)
+        assert any(error['loc'] == ('rating_reliance',) for error in errors)
     
     def test_invalid_rating_too_high(self):
         """Test that rating above 5 fails validation."""
@@ -293,14 +292,14 @@ class TestReviewSchema:
             "service_request_id": "service_request_xyz",
             "user_id": "user_123",
             "reviewer_user_id": "user_456",
-            "rating": 5.5
+            "rating_response_speed": 5.5
         }
         
         with pytest.raises(ValidationError) as exc_info:
             ReviewSchema(**review_data)
         
         errors = exc_info.value.errors()
-        assert any(error['loc'] == ('rating',) for error in errors)
+        assert any(error['loc'] == ('rating_response_speed',) for error in errors)
     
     def test_invalid_review_id_prefix(self):
         """Test that review_id without correct prefix fails."""
@@ -309,7 +308,7 @@ class TestReviewSchema:
             "service_request_id": "service_request_xyz",
             "user_id": "user_123",
             "reviewer_user_id": "user_456",
-            "rating": 4.0
+            "rating_response_speed": 4.0
         }
         
         with pytest.raises(ValidationError) as exc_info:
@@ -325,7 +324,7 @@ class TestReviewSchema:
             "service_request_id": "service_request_xyz",
             "user_id": "",
             "reviewer_user_id": "user_456",
-            "rating": 4.0
+            "rating_competence": 4.0
         }
         
         with pytest.raises(ValidationError) as exc_info:
@@ -586,34 +585,34 @@ class TestReviewUpdateSchema:
     def test_rating_update(self):
         """Test rating update with validation."""
         update_data = {
-            "rating": 4.5
+            "rating_competence": 4.5
         }
         review_update = ReviewUpdateSchema(**update_data)
-        assert review_update.rating == 4.5
+        assert review_update.rating_competence == 4.5
     
     def test_invalid_rating(self):
         """Test that rating outside range fails."""
         update_data = {
-            "rating": 6.0
+            "rating_quality": 6.0
         }
         with pytest.raises(ValidationError) as exc_info:
             ReviewUpdateSchema(**update_data)
         errors = exc_info.value.errors()
-        assert any(error['loc'] == ('rating',) for error in errors)
+        assert any(error['loc'] == ('rating_quality',) for error in errors)
     
-    def test_comment_update(self):
-        """Test comment update."""
+    def test_feedback_raw_update(self):
+        """Test feedback_raw update."""
         update_data = {
-            "comment": "Updated review comment"
+            "feedback_raw": "Updated review feedback"
         }
         review_update = ReviewUpdateSchema(**update_data)
-        assert review_update.comment == "Updated review comment"
+        assert review_update.feedback_raw == "Updated review feedback"
     
     def test_no_id_field(self):
         """Test that review_id is not in update schema."""
         update_data = {
             "review_id": "review_123",
-            "rating": 4.0
+            "rating_competence": 4.0
         }
         with pytest.raises(ValidationError) as exc_info:
             ReviewUpdateSchema(**update_data)

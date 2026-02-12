@@ -660,7 +660,7 @@ REV_TEST_001 = {
     'user_id': "user_alice_001",
     'reviewer_user_id': "user_eva_005",
     'feedback_raw': "Alice did an excellent job! Very professional and the pot lights look amazing. She was punctual and cleaned up after herself.",
-    'rating_relevance': 5.0,
+    'rating_reliance': 5.0,
     'rating_quality': 5.0,
     'rating_competence': 5.0,
     'rating_response_speed': 4.5,

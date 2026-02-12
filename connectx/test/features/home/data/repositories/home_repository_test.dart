@@ -65,8 +65,8 @@ void main() {
           ],
           'average_rating': 5.0,
           'review_count': 10,
-          'positive_feedback': ['Good'],
-          'negative_feedback': []
+          'feedback_positive': ['Good'],
+          'feedback_negative': []
         }
       ];
       when(mockApiService.get('/api/v1/me/favorites')).thenAnswer((_) async => mockJsonList);
