@@ -97,10 +97,8 @@ class WebRTCService {
   void setMicrophoneMuted(bool muted) {
     if (_audioTrack != null) {
       _audioTrack!.enabled = !muted;
-      debugPrint('WebRTC: Microphone muted: $muted');
     } else {
-      debugPrint(
-          'WebRTC: Cannot set microphone muted to $muted, audio track is not initialized');
+      debugPrint('WebRTC: Cannot mute microphone - track not initialized');
     }
   }
 
@@ -244,8 +242,6 @@ class WebRTCService {
         
         await _renegotiateConnection();
       }
-      
-      debugPrint('WebRTC: Audio track recreated for device change');
     } catch (e) {
       debugPrint('WebRTC: Error recreating audio track: $e');
     } finally {

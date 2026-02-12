@@ -41,9 +41,8 @@ class AudioRoutingService {
       await _requestPermissions();
       await checkAndRouteAudio(forceUpdate: true);
       _startAudioDeviceMonitoring();
-    } on MissingPluginException catch (e) {
+    } on MissingPluginException {
       // In test environments, plugins may not be available - continue without permissions
-      debugPrint('AudioRouting: Plugin not available (test environment): $e');
       await checkAndRouteAudio(forceUpdate: true);
       _startAudioDeviceMonitoring();
     } catch (e) {
@@ -63,10 +62,9 @@ class AudioRoutingService {
         ];
         
         await permissions.request();
-      } on MissingPluginException catch (e) {
+      } on MissingPluginException {
         // In test environments, permission_handler plugin is not available
         // This is expected and not an error - tests use mocks
-        debugPrint('AudioRouting: Permission plugin not available (test environment): $e');
       }
     }
   }
@@ -128,9 +126,6 @@ class AudioRoutingService {
 
         if (isBluetooth) {
           bluetoothOutputDevice = device;
-          if (kDebugMode) {
-            debugPrint('AudioRouting: Found Bluetooth output device: ${device.label}');
-          }
           break;
         }
       }
@@ -149,22 +144,12 @@ class AudioRoutingService {
 
         if (isBluetooth) {
           bluetoothInputDevice = device;
-          if (kDebugMode) {
-            debugPrint('AudioRouting: Found Bluetooth input device: ${device.label}');
-          }
           break;
         }
       }
 
       final hasBluetoothSpeaker = bluetoothOutputDevice != null;
       final hasBluetoothMic = bluetoothInputDevice != null;
-      
-      if (kDebugMode) {
-        debugPrint('AudioRouting: Output devices found: ${outputDevices.map((d) => d.label).join(", ")}');
-        debugPrint('AudioRouting: Input devices found: ${inputDevices.map((d) => d.label).join(", ")}');
-        debugPrint('AudioRouting: Bluetooth speaker available: $hasBluetoothSpeaker');
-        debugPrint('AudioRouting: Bluetooth microphone available: $hasBluetoothMic');
-      }
 
       if (hasBluetoothSpeaker && hasBluetoothMic) {
         // Bluetooth devices found (both speaker and mic) - require BOTH speaker (output) and mic (input)
@@ -185,10 +170,9 @@ class AudioRoutingService {
             // Debounce: Cancel any pending notification
             _inputDeviceChangeDebounce?.cancel();
             _inputDeviceChangeDebounce = Timer(inputChangeDebounce, () {
-              debugPrint('AudioRouting: Input device changed - notifying listener');
               unawaited(
                 onInputDeviceChanged!().catchError((error) {
-                  debugPrint('AudioRouting: Error in onInputDeviceChanged callback: $error');
+                  debugPrint('AudioRouting: Error recreating track on input change: $error');
                 }),
               );
             });
@@ -211,10 +195,9 @@ class AudioRoutingService {
               // Debounce: Cancel any pending notification
               _inputDeviceChangeDebounce?.cancel();
               _inputDeviceChangeDebounce = Timer(inputChangeDebounce, () {
-                debugPrint('AudioRouting: Input device changed - notifying listener');
                 unawaited(
                   onInputDeviceChanged!().catchError((error) {
-                    debugPrint('AudioRouting: Error in onInputDeviceChanged callback: $error');
+                    debugPrint('AudioRouting: Error recreating track on input change: $error');
                   }),
                 );
               });
@@ -239,7 +222,6 @@ class AudioRoutingService {
       _isSpeakerOn = true;
       _isBluetoothSpeakerConnected = false;
       _isBluetoothMicrophoneConnected = false;
-      debugPrint('AudioRouting: Switched to loudspeaker');
       onAudioRoutingChanged?.call(AudioRouting.loudspeaker);
     } catch (e) {
       debugPrint('AudioRouting: Loudspeaker error: $e');
@@ -279,7 +261,6 @@ class AudioRoutingService {
       await _hardwareController.setSpeakerphoneOn(false);
       
       _isSpeakerOn = false;
-      debugPrint('AudioRouting: Switched to Bluetooth');
       onAudioRoutingChanged?.call(AudioRouting.bluetooth);
     } catch (e) {
       debugPrint('AudioRouting: Bluetooth setup error: $e');
@@ -299,7 +280,6 @@ class AudioRoutingService {
       _isSpeakerOn = false;
       _isBluetoothSpeakerConnected = false;
       _isBluetoothMicrophoneConnected = false;
-      debugPrint('AudioRouting: Switched to earpiece');
       onAudioRoutingChanged?.call(AudioRouting.earpiece);
     } catch (e) {
       debugPrint('AudioRouting: Error setting earpiece: $e');

@@ -100,13 +100,11 @@ class AudioProcessor:
     async def start(self):
         """Start processing audio."""
         self.running = True
-        logger.debug(f"📥 Creating _process_audio task for connection {self.connection_id}...")
         self.processing_task = asyncio.create_task(self._process_audio())
         self.stt_task = asyncio.create_task(self._continuous_stt())
-        logger.info(f"🔊 Continuous STT streaming enabled")
+        logger.info(f"Audio processor started for connection {self.connection_id}")
         
         # Play greeting message
-        logger.debug(f"👋 Starting greeting playback...")
         asyncio.create_task(self._play_greeting())
     
     async def replace_input_track(self, new_track: MediaStreamTrack):
@@ -119,7 +117,7 @@ class AudioProcessor:
                 try:
                     await self.processing_task
                 except asyncio.CancelledError:
-                    logger.debug("Previous processing task cancelled during input track replacement")
+                    pass
             
             self.input_track = new_track
             
@@ -138,7 +136,6 @@ class AudioProcessor:
     
     async def stop(self):
         """Stop processing audio."""
-        logger.debug(f"Stopping audio processor for connection {self.connection_id}")
         self.running = False
         
         # Signal end of audio stream
@@ -149,14 +146,14 @@ class AudioProcessor:
             try:
                 await self.stt_task
             except asyncio.CancelledError:
-                logger.debug("STT task cancelled successfully")
+                pass
         
         if self.processing_task:
             self.processing_task.cancel()
             try:
                 await self.processing_task
             except asyncio.CancelledError:
-                logger.debug("Audio processing task cancelled successfully")
+                pass
         
         # Save debug recording if enabled
         self.debug_recorder.save()
@@ -166,14 +163,12 @@ class AudioProcessor:
     async def _play_greeting(self):
         """Play the AI greeting message when connection starts."""
         try:
-            logger.info("Generating and playing greeting message...")
-            
             # Set speaking flag to prevent interruption during greeting
             self.is_ai_speaking = True
             
             # Generate greeting text and audio (pass user_id if available)
             greeting_text, audio_stream = await self.ai_assistant.get_greeting_audio(user_id=self.user_id)
-            logger.info(f"Playing greeting: '{greeting_text}'")
+            logger.info(f"Greeting: {greeting_text}")
             
             # Send greeting text to client via data channel
             self._send_chat_message(greeting_text, is_user=False, is_chunk=False)
@@ -185,7 +180,6 @@ class AudioProcessor:
             
             # Clear speaking flag after greeting completes
             self.is_ai_speaking = False
-            logger.info("Greeting playback complete")
             
         except Exception as e:
             logger.error(f"Error playing greeting: {e}", exc_info=True)
@@ -299,15 +293,11 @@ class AudioProcessor:
                 'tts_first_audio': None,
             }
             
-            # Stage 1: Get LLM stream
-            logger.info("Stage 1: Starting streaming LLM...")
+            # Get LLM stream
             llm_start = asyncio.get_event_loop().time()
             
             # Create LLM stream
             llm_stream = self.ai_assistant.generate_llm_response_stream(transcript)
-            
-            # Stage 2: Process through TTS manager (handles sentence parsing, TTS, and ordered playback)
-            logger.info("Stage 2: Processing LLM stream through TTS manager...")
             
             # Wrap LLM stream to track first token
             async def tracked_llm_stream():
@@ -384,7 +374,6 @@ class AudioProcessor:
                     empty_count += 1
                     # If queue and buffer are empty for 5 consecutive checks (100ms), we're done
                     if empty_count >= 5:
-                        logger.info("Audio playback completed - clearing speaking flag")
                         self.is_ai_speaking = False
                         break
                 else:
