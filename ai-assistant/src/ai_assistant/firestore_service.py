@@ -251,7 +251,7 @@ class FirestoreService:
             return False
 
     async def delete_service_request(self, request_id: str) -> bool:
-        """Delete a service request and all its subcollections (provider_candidates with chats and messages).
+        """Delete a service request and all its subcollections, plus related chats from root collection.
         
         Args:
             request_id: The service request ID to delete
@@ -264,30 +264,22 @@ class FirestoreService:
         try:
             service_request_ref = self._get_collection('service_requests').document(request_id)
             
-            # Delete all provider_candidates and their nested chats/messages
+            # Delete all chats related to this service request from root chats collection
+            chats_query = self._get_collection('chats').where('service_request_id', '==', request_id)
+            chats = chats_query.stream()
+            for chat in chats:
+                # Delete all messages in each chat
+                messages_ref = chat.reference.collection('messages')
+                messages = messages_ref.stream()
+                for message in messages:
+                    message.reference.delete()
+                # Delete the chat
+                chat.reference.delete()
+            
+            # Delete all provider_candidates subcollection
             providers_ref = service_request_ref.collection('provider_candidates')
             providers = providers_ref.stream()
-            
             for provider in providers:
-                provider_id = provider.id
-                
-                # Delete all chats and messages for this provider
-                chats_ref = providers_ref.document(provider_id).collection('chats')
-                chats = chats_ref.stream()
-                
-                for chat in chats:
-                    chat_id = chat.id
-                    
-                    # Delete all messages in this chat
-                    messages_ref = chats_ref.document(chat_id).collection('messages')
-                    messages = messages_ref.stream()
-                    for message in messages:
-                        message.reference.delete()
-                    
-                    # Delete the chat
-                    chat.reference.delete()
-                
-                # Delete the provider candidate
                 provider.reference.delete()
             
             # Delete the service request document
@@ -453,7 +445,7 @@ class FirestoreService:
         service_request_id: str,
         provider_candidate_id: str
     ) -> bool:
-        """Delete a provider candidate and all its subcollections (chats with messages).
+        """Delete a provider candidate and related chats from root collection.
         
         Args:
             service_request_id: The service request ID
@@ -470,19 +462,15 @@ class FirestoreService:
                             .collection('provider_candidates')
                             .document(provider_candidate_id))
             
-            # Delete all chats and their messages
-            chats_ref = candidate_ref.collection('chats')
-            chats = chats_ref.stream()
-            
+            # Delete all chats related to this provider candidate from root chats collection
+            chats_query = self._get_collection('chats').where('provider_candidate_id', '==', provider_candidate_id)
+            chats = chats_query.stream()
             for chat in chats:
-                chat_id = chat.id
-                
-                # Delete all messages in this chat
-                messages_ref = chats_ref.document(chat_id).collection('messages')
+                # Delete all messages in each chat
+                messages_ref = chat.reference.collection('messages')
                 messages = messages_ref.stream()
                 for message in messages:
                     message.reference.delete()
-                
                 # Delete the chat
                 chat.reference.delete()
             
@@ -496,108 +484,175 @@ class FirestoreService:
     # --- Favorites Operations ---
 
     async def get_favorites(self, user_id: str) -> List[Dict[str, Any]]:
-        """Fetch user's favorite users with full user data."""
+        """Fetch user's favorite users with full user data from favorites subcollection."""
         if not self.db:
             return []
         try:
-            doc = self._get_collection('users').document(user_id).get()
-            if doc.exists:
-                data = doc.to_dict()
-                favorite_ids = data.get('favorites') or []  # Handle None explicitly
-                
-                # Fetch full user data for each favorite user ID
-                favorite_users = []
-                for favorite_id in favorite_ids:
-                    user_data = await self.get_user(favorite_id)
-                    if user_data:
-                        # Transform to match the User model expected by Flutter
-                        favorite_users.append({
-                            'user_id': user_data.get('user_id', favorite_id),
-                            'name': user_data.get('name', ''),
-                            'self_introduction': user_data.get('self_introduction', ''),
-                            'competencies': user_data.get('competencies', []),
-                            'average_rating': user_data.get('average_rating', 0.0),
-                            'review_count': user_data.get('review_count', 0),
-                            'feedback_positive': user_data.get('feedback_positive', []),
-                            'feedback_negative': user_data.get('feedback_negative', [])
-                        })
-                return favorite_users
-            return []
+            # Query favorites subcollection
+            favorites_ref = self._get_collection('users').document(user_id).collection('favorites')
+            favorite_docs = favorites_ref.stream()
+            
+            # Fetch full user data for each favorite
+            favorite_users = []
+            for fav_doc in favorite_docs:
+                favorite_user_id = fav_doc.id
+                user_data = await self.get_user(favorite_user_id)
+                if user_data:
+                    # Transform to match the User model expected by Flutter
+                    favorite_users.append({
+                        'user_id': user_data.get('user_id', favorite_user_id),
+                        'name': user_data.get('name', ''),
+                        'self_introduction': user_data.get('self_introduction', ''),
+                        'competencies': user_data.get('competencies', []),
+                        'average_rating': user_data.get('average_rating', 0.0),
+                        'review_count': user_data.get('review_count', 0),
+                        'feedback_positive': user_data.get('feedback_positive', []),
+                        'feedback_negative': user_data.get('feedback_negative', [])
+                    })
+            return favorite_users
         except Exception as e:
             logger.error(f"Error fetching favorites for {user_id}: {e}")
             return []
 
     async def add_favorite(self, user_id: str, favorite_user_id: str) -> bool:
-        """Add a user to favorites."""
+        """Add a user to favorites subcollection."""
         if not self.db:
             return False
         try:
-            ref = self._get_collection('users').document(user_id)
-            ref.update({'favorites': firestore.ArrayUnion([favorite_user_id])})
+            # Create document in favorites subcollection with favorite_user_id as doc ID
+            ref = (self._get_collection('users')
+                  .document(user_id)
+                  .collection('favorites')
+                  .document(favorite_user_id))
+            ref.set({
+                'user_id': favorite_user_id,
+                'created_at': datetime.now(timezone.utc)
+            })
             return True
         except Exception as e:
             logger.error(f"Error adding favorite for {user_id}: {e}")
             return False
 
     async def remove_favorite(self, user_id: str, favorite_user_id: str) -> bool:
-        """Remove a user from favorites."""
+        """Remove a user from favorites subcollection."""
         if not self.db:
             return False
         try:
-            ref = self._get_collection('users').document(user_id)
-            ref.update({'favorites': firestore.ArrayRemove([favorite_user_id])})
+            ref = (self._get_collection('users')
+                  .document(user_id)
+                  .collection('favorites')
+                  .document(favorite_user_id))
+            ref.delete()
             return True
         except Exception as e:
             logger.error(f"Error removing favorite {favorite_user_id} for {user_id}: {e}")
             return False
 
     async def add_outgoing_service_requests(self, user_id: str, request_ids: List[str]) -> bool:
-        """Add service request IDs to user's outgoing requests."""
+        """Add service request IDs to user's outgoing requests subcollection."""
         if not self.db:
             return False
         try:
-            ref = self._get_collection('users').document(user_id)
-            ref.update({'outgoing_service_requests': firestore.ArrayUnion(request_ids)})
+            for request_id in request_ids:
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('outgoing_service_requests')
+                      .document(request_id))
+                ref.set({
+                    'service_request_id': request_id,
+                    'created_at': datetime.now(timezone.utc)
+                })
             return True
         except Exception as e:
             logger.error(f"Error adding outgoing requests for {user_id}: {e}")
             return False
 
     async def add_incoming_service_requests(self, user_id: str, request_ids: List[str]) -> bool:
-        """Add service request IDs to user's incoming requests."""
+        """Add service request IDs to user's incoming requests subcollection."""
         if not self.db:
             return False
         try:
-            ref = self._get_collection('users').document(user_id)
-            ref.update({'incoming_service_requests': firestore.ArrayUnion(request_ids)})
+            for request_id in request_ids:
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('incoming_service_requests')
+                      .document(request_id))
+                ref.set({
+                    'service_request_id': request_id,
+                    'created_at': datetime.now(timezone.utc)
+                })
             return True
         except Exception as e:
             logger.error(f"Error adding incoming requests for {user_id}: {e}")
             return False
 
     async def remove_outgoing_service_requests(self, user_id: str, request_ids: List[str]) -> bool:
-        """Remove service request IDs from user's outgoing requests."""
+        """Remove service request IDs from user's outgoing requests subcollection."""
         if not self.db:
             return False
         try:
-            ref = self._get_collection('users').document(user_id)
-            ref.update({'outgoing_service_requests': firestore.ArrayRemove(request_ids)})
+            for request_id in request_ids:
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('outgoing_service_requests')
+                      .document(request_id))
+                ref.delete()
             return True
         except Exception as e:
             logger.error(f"Error removing outgoing requests for {user_id}: {e}")
             return False
 
     async def remove_incoming_service_requests(self, user_id: str, request_ids: List[str]) -> bool:
-        """Remove service request IDs from user's incoming requests."""
+        """Remove service request IDs from user's incoming requests subcollection."""
         if not self.db:
             return False
         try:
-            ref = self._get_collection('users').document(user_id)
-            ref.update({'incoming_service_requests': firestore.ArrayRemove(request_ids)})
+            for request_id in request_ids:
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('incoming_service_requests')
+                      .document(request_id))
+                ref.delete()
             return True
         except Exception as e:
             logger.error(f"Error removing incoming requests for {user_id}: {e}")
             return False
+
+    async def get_outgoing_service_requests(self, user_id: str) -> List[str]:
+        """Get all outgoing service request IDs for a user.
+        
+        Returns:
+            List of service request IDs
+        """
+        if not self.db:
+            return []
+        try:
+            requests_ref = (self._get_collection('users')
+                           .document(user_id)
+                           .collection('outgoing_service_requests'))
+            docs = requests_ref.stream()
+            return [doc.id for doc in docs]
+        except Exception as e:
+            logger.error(f"Error getting outgoing requests for {user_id}: {e}")
+            return []
+    
+    async def get_incoming_service_requests(self, user_id: str) -> List[str]:
+        """Get all incoming service request IDs for a user.
+        
+        Returns:
+            List of service request IDs
+        """
+        if not self.db:
+            return []
+        try:
+            requests_ref = (self._get_collection('users')
+                           .document(user_id)
+                           .collection('incoming_service_requests'))
+            docs = requests_ref.stream()
+            return [doc.id for doc in docs]
+        except Exception as e:
+            logger.error(f"Error getting incoming requests for {user_id}: {e}")
+            return []
 
     # --- User Operations ---
 
@@ -699,7 +754,7 @@ class FirestoreService:
             return False
 
     async def delete_user(self, user_id: str) -> bool:
-        """Delete a user and all their subcollections (competencies).
+        """Delete a user and all their subcollections (competencies, favorites, service requests).
         
         Args:
             user_id: The user's ID to delete
@@ -712,11 +767,29 @@ class FirestoreService:
         try:
             user_ref = self._get_collection('users').document(user_id)
             
-            # Delete all competencies in subcollection first
+            # Delete all competencies in subcollection
             competencies_ref = user_ref.collection('competencies')
             competencies = competencies_ref.stream()
             for comp in competencies:
                 comp.reference.delete()
+            
+            # Delete all favorites in subcollection
+            favorites_ref = user_ref.collection('favorites')
+            favorites = favorites_ref.stream()
+            for fav in favorites:
+                fav.reference.delete()
+            
+            # Delete all outgoing service requests in subcollection
+            outgoing_ref = user_ref.collection('outgoing_service_requests')
+            outgoing = outgoing_ref.stream()
+            for req in outgoing:
+                req.reference.delete()
+            
+            # Delete all incoming service requests in subcollection
+            incoming_ref = user_ref.collection('incoming_service_requests')
+            incoming = incoming_ref.stream()
+            for req in incoming:
+                req.reference.delete()
             
             # Delete the user document
             user_ref.delete()
@@ -1201,12 +1274,12 @@ class FirestoreService:
 
     # --- Chat Operations ---
 
-    async def create_chat(self, provider_candidate_id: str, chat_data: Dict[str, Any]) -> Optional[str]:
-        """Create a new chat as subcollection under provider_candidate.
+    async def create_chat(self, chat_data: Dict[str, Any]) -> Optional[str]:
+        """Create a new chat in root chats collection.
         
         Args:
-            provider_candidate_id: The provider candidate ID
-            chat_data: Chat data (should include title, service_request_id, etc.)
+            chat_data: Chat data (should include service_request_id, provider_candidate_id,
+                      seeker_user_id, provider_user_id, and optional title)
             
         Returns:
             The generated chat_id or None if failed
@@ -1215,15 +1288,15 @@ class FirestoreService:
             return None
         try:
             # Validate required fields
-            service_request_id = chat_data.get('service_request_id')
-            if not service_request_id:
-                logger.error("service_request_id is required for chat creation")
-                return None
+            required_fields = ['service_request_id', 'provider_candidate_id', 'seeker_user_id', 'provider_user_id']
+            for field in required_fields:
+                if not chat_data.get(field):
+                    logger.error(f"{field} is required for chat creation")
+                    return None
             
             # Generate prefixed chat ID
             chat_id = self._generate_prefixed_id('chat')
             chat_data['chat_id'] = chat_id
-            chat_data['provider_candidate_id'] = provider_candidate_id
             
             # Validate data against schema (timestamps excluded)
             validated_data = self._validate_data(chat_data, ChatSchema)
@@ -1232,87 +1305,116 @@ class FirestoreService:
             validated_data['created_at'] = datetime.now(timezone.utc)
             validated_data['updated_at'] = datetime.now(timezone.utc)
             
-            # Create document in chats subcollection under provider_candidate
-            ref = (self._get_collection('service_requests')
-                   .document(service_request_id)
-                   .collection('provider_candidates')
-                   .document(provider_candidate_id)
-                   .collection('chats')
-                   .document(chat_id))
+            # Create document in root chats collection
+            ref = self._get_collection('chats').document(chat_id)
             ref.set(validated_data)
             return chat_id
         except Exception as e:
             logger.error(f"Error creating chat: {e}")
             return None
 
-    async def get_chat(self, provider_candidate_id: str, chat_id: str) -> Optional[Dict[str, Any]]:
-        """Get a chat by ID from provider_candidate subcollection.
+    async def get_chat(self, chat_id: str) -> Optional[Dict[str, Any]]:
+        """Get a chat by ID from root chats collection.
         
         Args:
-            provider_candidate_id: The provider candidate ID
             chat_id: The chat ID
+            
+        Returns:
+            Chat dictionary or None if not found
         """
         if not self.db:
             return None
         try:
-            # First get the provider_candidate to know the request_id
-            candidate_docs = self._get_collection('service_requests').stream()
-            for req_doc in candidate_docs:
-                candidate_ref = req_doc.reference.collection('provider_candidates').document(provider_candidate_id)
-                candidate_doc = candidate_ref.get()
-                if candidate_doc.exists:
-                    # Found the provider_candidate, now get the chat
-                    chat_ref = candidate_ref.collection('chats').document(chat_id)
-                    chat_doc = chat_ref.get()
-                    if chat_doc.exists:
-                        return chat_doc.to_dict()
+            doc = self._get_collection('chats').document(chat_id).get()
+            if doc.exists:
+                data = doc.to_dict()
+                data['chat_id'] = doc.id
+                return data
             return None
         except Exception as e:
             logger.error(f"Error getting chat {chat_id}: {e}")
             return None
 
     async def get_chats_by_request(self, service_request_id: str) -> List[Dict[str, Any]]:
-        """Get all chats for a service request by scanning all provider_candidates."""
+        """Get all chats for a service request.
+        
+        Args:
+            service_request_id: The service request ID
+            
+        Returns:
+            List of chat dictionaries
+        """
         if not self.db:
             return []
         try:
+            query = self._get_collection('chats').where('service_request_id', '==', service_request_id)
+            docs = query.stream()
             chats = []
-            # Get all provider_candidates for this request
-            candidates_ref = (self._get_collection('service_requests')
-                            .document(service_request_id)
-                            .collection('provider_candidates'))
-            candidates = candidates_ref.stream()
-            
-            # For each provider_candidate, get all their chats
-            for candidate_doc in candidates:
-                chats_ref = candidate_doc.reference.collection('chats')
-                chat_docs = chats_ref.stream()
-                for chat_doc in chat_docs:
-                    chats.append(chat_doc.to_dict())
-            
+            for doc in docs:
+                data = doc.to_dict()
+                data['chat_id'] = doc.id
+                chats.append(data)
             return chats
         except Exception as e:
             logger.error(f"Error getting chats for request {service_request_id}: {e}")
             return []
-
-    async def update_chat(self, provider_candidate_id: str, chat_id: str, service_request_id: str, update_data: Dict[str, Any]) -> bool:
-        """Update a chat in provider_candidate subcollection.
+    
+    async def get_chats_by_user(self, user_id: str) -> List[Dict[str, Any]]:
+        """Get all chats where user is either seeker or provider.
         
         Args:
-            provider_candidate_id: The provider candidate ID
+            user_id: The user ID
+            
+        Returns:
+            List of chat dictionaries
+        """
+        if not self.db:
+            return []
+        try:
+            # Query for chats where user is seeker
+            seeker_query = self._get_collection('chats').where('seeker_user_id', '==', user_id)
+            seeker_docs = seeker_query.stream()
+            
+            # Query for chats where user is provider
+            provider_query = self._get_collection('chats').where('provider_user_id', '==', user_id)
+            provider_docs = provider_query.stream()
+            
+            # Combine results and deduplicate
+            chats = {}
+            for doc in seeker_docs:
+                data = doc.to_dict()
+                data['chat_id'] = doc.id
+                chats[doc.id] = data
+            
+            for doc in provider_docs:
+                if doc.id not in chats:
+                    data = doc.to_dict()
+                    data['chat_id'] = doc.id
+                    chats[doc.id] = data
+            
+            return list(chats.values())
+        except Exception as e:
+            logger.error(f"Error getting chats for user {user_id}: {e}")
+            return []
+
+    async def update_chat(self, chat_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update a chat in root chats collection.
+        
+        Args:
             chat_id: The chat ID
-            service_request_id: The service request ID
             update_data: Data to update
+            
+        Returns:
+            True if updated successfully, False otherwise
         """
         if not self.db:
             return False
         try:
-            ref = (self._get_collection('service_requests')
-                   .document(service_request_id)
-                   .collection('provider_candidates')
-                   .document(provider_candidate_id)
-                   .collection('chats')
-                   .document(chat_id))
+            ref = self._get_collection('chats').document(chat_id)
+            
+            if not ref.get().exists:
+                logger.warning(f"Cannot update chat {chat_id}: does not exist")
+                return False
             
             # Validate update data against UpdateSchema
             validated_data = self._validate_data(update_data, ChatUpdateSchema, exclude_unset=True)
@@ -1327,23 +1429,19 @@ class FirestoreService:
             logger.error(f"Error updating chat {chat_id}: {e}")
             return False
 
-    async def delete_chat(self, provider_candidate_id: str, chat_id: str, service_request_id: str) -> bool:
-        """Delete a chat and all its messages from provider_candidate subcollection.
+    async def delete_chat(self, chat_id: str) -> bool:
+        """Delete a chat and all its messages from root chats collection.
         
         Args:
-            provider_candidate_id: The provider candidate ID
             chat_id: The chat ID
-            service_request_id: The service request ID
+            
+        Returns:
+            True if deleted successfully, False otherwise
         """
         if not self.db:
             return False
         try:
-            chat_ref = (self._get_collection('service_requests')
-                       .document(service_request_id)
-                       .collection('provider_candidates')
-                       .document(provider_candidate_id)
-                       .collection('chats')
-                       .document(chat_id))
+            chat_ref = self._get_collection('chats').document(chat_id)
             
             # Delete all messages in the subcollection first
             messages_ref = chat_ref.collection('messages')
@@ -1360,14 +1458,12 @@ class FirestoreService:
 
     # --- Chat Message Operations ---
 
-    async def create_chat_message(self, provider_candidate_id: str, chat_id: str, service_request_id: str, message_data: Dict[str, Any]) -> Optional[str]:
+    async def create_chat_message(self, chat_id: str, message_data: Dict[str, Any]) -> Optional[str]:
         """Create a new chat message in a chat's messages subcollection.
         
         Args:
-            provider_candidate_id: The provider candidate ID
             chat_id: The chat ID
-            service_request_id: The service request ID
-            message_data: Message data (should include sender_user_id, receiver_user_id, message, etc.)
+            message_data: Message data (should include sender_user_id, receiver_user_id, message)
             
         Returns:
             The generated chat_message_id or None if failed
@@ -1387,12 +1483,8 @@ class FirestoreService:
             validated_data['created_at'] = datetime.now(timezone.utc)
             validated_data['updated_at'] = datetime.now(timezone.utc)
             
-            # Create document in messages subcollection
-            ref = (self._get_collection('service_requests')
-                   .document(service_request_id)
-                   .collection('provider_candidates')
-                   .document(provider_candidate_id)
-                   .collection('chats')
+            # Create document in messages subcollection under chat
+            ref = (self._get_collection('chats')
                    .document(chat_id)
                    .collection('messages')
                    .document(message_id))
@@ -1402,49 +1494,43 @@ class FirestoreService:
             logger.error(f"Error creating chat message in {chat_id}: {e}")
             return None
 
-    async def get_chat_messages(self, provider_candidate_id: str, chat_id: str, service_request_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+    async def get_chat_messages(self, chat_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get all messages for a chat, ordered by time.
         
         Args:
-            provider_candidate_id: The provider candidate ID
             chat_id: The chat ID
-            service_request_id: The service request ID
             limit: Maximum number of messages to return
+            
+        Returns:
+            List of message dictionaries
         """
         if not self.db:
             return []
         try:
-            messages_ref = (self._get_collection('service_requests')
-                           .document(service_request_id)
-                           .collection('provider_candidates')
-                           .document(provider_candidate_id)
-                           .collection('chats')
+            messages_ref = (self._get_collection('chats')
                            .document(chat_id)
                            .collection('messages'))
-            query = messages_ref.limit(limit)
+            query = messages_ref.order_by('created_at').limit(limit)
             docs = query.stream()
             return [doc.to_dict() for doc in docs]
         except Exception as e:
             logger.error(f"Error getting messages for chat {chat_id}: {e}")
             return []
 
-    async def get_chat_message(self, provider_candidate_id: str, chat_id: str, service_request_id: str, message_id: str) -> Optional[Dict[str, Any]]:
+    async def get_chat_message(self, chat_id: str, message_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific chat message.
         
         Args:
-            provider_candidate_id: The provider candidate ID
             chat_id: The chat ID
-            service_request_id: The service request ID
             message_id: The message ID
+            
+        Returns:
+            Message dictionary or None if not found
         """
         if not self.db:
             return None
         try:
-            doc = (self._get_collection('service_requests')
-                  .document(service_request_id)
-                  .collection('provider_candidates')
-                  .document(provider_candidate_id)
-                  .collection('chats')
+            doc = (self._get_collection('chats')
                   .document(chat_id)
                   .collection('messages')
                   .document(message_id)
@@ -1456,24 +1542,21 @@ class FirestoreService:
             logger.error(f"Error getting message {message_id} from chat {chat_id}: {e}")
             return None
 
-    async def update_chat_message(self, provider_candidate_id: str, chat_id: str, service_request_id: str, message_id: str, update_data: Dict[str, Any]) -> bool:
+    async def update_chat_message(self, chat_id: str, message_id: str, update_data: Dict[str, Any]) -> bool:
         """Update a chat message.
         
         Args:
-            provider_candidate_id: The provider candidate ID
             chat_id: The chat ID
-            service_request_id: The service request ID
             message_id: The message ID
             update_data: Data to update
+            
+        Returns:
+            True if updated successfully, False otherwise
         """
         if not self.db:
             return False
         try:
-            ref = (self._get_collection('service_requests')
-                   .document(service_request_id)
-                   .collection('provider_candidates')
-                   .document(provider_candidate_id)
-                   .collection('chats')
+            ref = (self._get_collection('chats')
                    .document(chat_id)
                    .collection('messages')
                    .document(message_id))
@@ -1491,23 +1574,20 @@ class FirestoreService:
             logger.error(f"Error updating message {message_id} in chat {chat_id}: {e}")
             return False
 
-    async def delete_chat_message(self, provider_candidate_id: str, chat_id: str, service_request_id: str, message_id: str) -> bool:
+    async def delete_chat_message(self, chat_id: str, message_id: str) -> bool:
         """Delete a chat message.
         
         Args:
-            provider_candidate_id: The provider candidate ID
             chat_id: The chat ID
-            service_request_id: The service request ID
             message_id: The message ID
+            
+        Returns:
+            True if deleted successfully, False otherwise
         """
         if not self.db:
             return False
         try:
-            (self._get_collection('service_requests')
-             .document(service_request_id)
-             .collection('provider_candidates')
-             .document(provider_candidate_id)
-             .collection('chats')
+            (self._get_collection('chats')
              .document(chat_id)
              .collection('messages')
              .document(message_id)

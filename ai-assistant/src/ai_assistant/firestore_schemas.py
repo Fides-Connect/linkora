@@ -27,11 +27,8 @@ class UserSchema(BaseModel):
     is_service_provider: bool = Field(default=False)
     fcm_token: str = Field(default="")
     has_open_request: bool = Field(default=False)
-    favorites: List[str] = Field(default_factory=list)
     last_sign_in: Optional[datetime] = None
     user_app_settings: dict = Field(default_factory=dict)
-    incoming_service_requests: List[str] = Field(default_factory=list)
-    outgoing_service_requests: List[str] = Field(default_factory=list)
     feedback_positive: List[str] = Field(default_factory=list)
     feedback_negative: List[str] = Field(default_factory=list)
     average_rating: float = Field(default=0.0, ge=0.0, le=5.0)
@@ -62,11 +59,8 @@ class UserUpdateSchema(BaseModel):
     is_service_provider: Optional[bool] = None
     fcm_token: Optional[str] = None
     has_open_request: Optional[bool] = None
-    favorites: Optional[List[str]] = None
     last_sign_in: Optional[datetime] = None
     user_app_settings: Optional[dict] = None
-    incoming_service_requests: Optional[List[str]] = None
-    outgoing_service_requests: Optional[List[str]] = None
     feedback_positive: Optional[List[str]] = None
     feedback_negative: Optional[List[str]] = None
     average_rating: Optional[float] = Field(None, ge=0.0, le=5.0)
@@ -286,15 +280,18 @@ class ReviewUpdateSchema(BaseModel):
     rating_response_speed: Optional[float] = Field(None, ge=1.0, le=5.0)
 
 class ChatSchema(BaseModel):
-    """Schema for Chat documents (subcollection under service_requests/provider_candidates).
+    """Schema for Chat documents in root collection.
     
     Note: chat_id is auto-generated with prefix 'chat_'
+    Chats are now a root collection for better scalability and query performance.
     """
     model_config = ConfigDict(extra='forbid')
     
     chat_id: str = Field(..., min_length=1)
     provider_candidate_id: str = Field(..., min_length=1)
     service_request_id: str = Field(..., min_length=1)
+    seeker_user_id: str = Field(..., min_length=1)  # For direct user queries
+    provider_user_id: str = Field(..., min_length=1)  # For direct user queries
     title: str = Field(default="", max_length=200)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -323,7 +320,7 @@ class ChatSchema(BaseModel):
 class ChatUpdateSchema(BaseModel):
     """Schema for updating Chat documents.
     
-    All fields are optional. ID fields (chat_id, provider_candidate_id, service_request_id) are excluded.
+    All fields are optional. ID fields (chat_id, provider_candidate_id, service_request_id, user_ids) are excluded.
     Validation rules still apply when fields are provided.
     """
     model_config = ConfigDict(extra='forbid')

@@ -130,62 +130,80 @@ class TestFirestoreService:
 
     @pytest.mark.asyncio
     async def test_add_favorite(self, firestore, mock_db_collection):
-        """Test adding a favorite."""
+        """Test adding a favorite to subcollection."""
         # Arrange
         user_id = "user1"
         fav_id = "user2"
         
+        mock_favorites_collection = Mock()
         mock_doc_ref = Mock()
-        mock_db_collection.return_value.document.return_value = mock_doc_ref
+        mock_db_collection.return_value.document.return_value.collection.return_value = mock_favorites_collection
+        mock_favorites_collection.document.return_value = mock_doc_ref
         
-        # Mock ArrayUnion (it's imported inside the service usually, or we mock the lib)
-        # In the service: firestore.ArrayUnion
-        # We need to patch firebase_admin.firestore.ArrayUnion
-        with patch('firebase_admin.firestore.ArrayUnion') as mock_array_union:
-            # Act
-            success = await firestore.add_favorite(user_id, fav_id)
-            
-            # Assert
-            assert success is True
-            mock_doc_ref.update.assert_called_once()
-            mock_array_union.assert_called_with([fav_id])
+        # Act
+        success = await firestore.add_favorite(user_id, fav_id)
+        
+        # Assert
+        assert success is True
+        mock_db_collection.return_value.document.assert_called_with(user_id)
+        mock_db_collection.return_value.document.return_value.collection.assert_called_with('favorites')
+        mock_favorites_collection.document.assert_called_with(fav_id)
+        mock_doc_ref.set.assert_called_once()
+        # Verify the set call includes user_id and created_at
+        call_args = mock_doc_ref.set.call_args[0][0]
+        assert call_args['user_id'] == fav_id
+        assert 'created_at' in call_args
 
     @pytest.mark.asyncio
     async def test_remove_favorite(self, firestore, mock_db_collection):
-        """Test removing a favorite."""
+        """Test removing a favorite from subcollection."""
         # Arrange
         user_id = "user1"
         fav_id = "user2"
         
+        mock_favorites_collection = Mock()
         mock_doc_ref = Mock()
-        mock_db_collection.return_value.document.return_value = mock_doc_ref
+        mock_db_collection.return_value.document.return_value.collection.return_value = mock_favorites_collection
+        mock_favorites_collection.document.return_value = mock_doc_ref
         
-        with patch('firebase_admin.firestore.ArrayRemove') as mock_array_remove:
-            # Act
-            success = await firestore.remove_favorite(user_id, fav_id)
-            
-            # Assert
-            assert success is True
-            mock_doc_ref.update.assert_called_once()
-            mock_array_remove.assert_called_with([fav_id])
+        # Act
+        success = await firestore.remove_favorite(user_id, fav_id)
+        
+        # Assert
+        assert success is True
+        mock_db_collection.return_value.document.assert_called_with(user_id)
+        mock_db_collection.return_value.document.return_value.collection.assert_called_with('favorites')
+        mock_favorites_collection.document.assert_called_with(fav_id)
+        mock_doc_ref.delete.assert_called_once()
     
     @pytest.mark.asyncio
     async def test_get_favorites(self, firestore, mock_db_collection):
-        """Test getting favorites with full user details."""
+        """Test getting favorites from subcollection with full user details."""
         # Arrange
         user_id = "user1"
-        mock_user_doc = Mock()
-        mock_user_doc.exists = True
-        mock_user_doc.to_dict.return_value = {"favorites": ["fav1", "fav2"]}
         
-        mock_db_collection.return_value.document.return_value.get.return_value = mock_user_doc
+        # Mock favorites subcollection
+        mock_favorites_collection = Mock()
+        mock_db_collection.return_value.document.return_value.collection.return_value = mock_favorites_collection
+        
+        # Mock favorite documents
+        mock_fav_doc1 = Mock()
+        mock_fav_doc1.id = "fav1"
+        mock_fav_doc2 = Mock()
+        mock_fav_doc2.id = "fav2"
+        mock_favorites_collection.stream.return_value = [mock_fav_doc1, mock_fav_doc2]
         
         # Mock get_user to return details for favorites
         with patch.object(firestore, 'get_user') as mock_get_user:
             mock_get_user.side_effect = lambda uid: {
                 "user_id": uid,
                 "name": f"User {uid}",
-                "competencies": []
+                "self_introduction": f"Intro for {uid}",
+                "competencies": [],
+                "average_rating": 4.5,
+                "review_count": 10,
+                "feedback_positive": [],
+                "feedback_negative": []
             } if uid in ["fav1", "fav2"] else None
             
             # Act
@@ -196,3 +214,5 @@ class TestFirestoreService:
             assert favorites[0]['user_id'] == 'fav1'
             assert favorites[0]['name'] == 'User fav1'
             assert favorites[1]['user_id'] == 'fav2'
+            mock_db_collection.return_value.document.assert_called_with(user_id)
+            mock_db_collection.return_value.document.return_value.collection.assert_called_with('favorites')

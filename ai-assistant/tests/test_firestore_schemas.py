@@ -34,7 +34,6 @@ class TestUserSchema:
             "fcm_token": "fcm_token_123",
             "is_service_provider": True,
             "self_introduction": "Hello!",
-            "favorites": ["user_123", "user_456"],
             "average_rating": 4.5,
             "review_count": 10,
             "feedback_positive": ["Punctual", "Professional"],
@@ -62,7 +61,6 @@ class TestUserSchema:
         assert user.is_service_provider is False
         assert user.average_rating == 0.0
         assert user.review_count == 0
-        assert user.favorites == []
     
     def test_invalid_email(self):
         """Test that invalid email format fails validation."""
@@ -343,19 +341,25 @@ class TestChatSchema:
             "chat_id": "chat_abc123",
             "provider_candidate_id": "provider_456",
             "service_request_id": "service_request_xyz",
+            "seeker_user_id": "user_seeker_123",
+            "provider_user_id": "user_provider_456",
             "title": "Project Discussion"
         }
         
         chat = ChatSchema(**chat_data)
         assert chat.chat_id == "chat_abc123"
         assert chat.title == "Project Discussion"
+        assert chat.seeker_user_id == "user_seeker_123"
+        assert chat.provider_user_id == "user_provider_456"
     
     def test_minimal_chat(self):
         """Test minimal valid chat data."""
         chat_data = {
             "chat_id": "chat_xyz789",
             "provider_candidate_id": "provider_456",
-            "service_request_id": "service_request_abc"
+            "service_request_id": "service_request_abc",
+            "seeker_user_id": "user_seeker_123",
+            "provider_user_id": "user_provider_456"
         }
         
         chat = ChatSchema(**chat_data)

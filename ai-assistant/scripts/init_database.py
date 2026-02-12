@@ -162,7 +162,7 @@ async def init_firestore(test_data):
             elif not isinstance(last_sign_in, datetime):
                 last_sign_in = datetime.now(timezone.utc)
             
-            # Transform user data to match User schema
+            # Transform user data to match User schema (arrays moved to subcollections)
             user_data = {
                 'name': p_data['name'],
                 'email': p_data['email'],
@@ -172,10 +172,7 @@ async def init_firestore(test_data):
                 'is_service_provider': p_data.get('is_service_provider', False),
                 'fcm_token': p_data.get('fcm_token', ''),
                 'has_open_request': p_data.get('has_open_request', False),
-                'favorites': p_data.get('favorites', []),
                 'user_app_settings': p_data.get('user_app_settings', {}),
-                'incoming_service_requests': p_data.get('incoming_service_requests', []),
-                'outgoing_service_requests': p_data.get('outgoing_service_requests', []),
                 'last_sign_in': last_sign_in,
                 'feedback_positive': p_data.get('feedback_positive', []),
                 'feedback_negative': p_data.get('feedback_negative', []),
@@ -188,6 +185,22 @@ async def init_firestore(test_data):
             if not success:
                 logger.error(f"Failed to create user {user_id}")
                 continue
+            
+            # Create favorites subcollection
+            favorites = p_data.get('favorites', [])
+            if favorites:
+                for fav_id in favorites:
+                    await firestore_service.add_favorite(user_id, fav_id)
+            
+            # Create outgoing service requests subcollection
+            outgoing = p_data.get('outgoing_service_requests', [])
+            if outgoing:
+                await firestore_service.add_outgoing_service_requests(user_id, outgoing)
+            
+            # Create incoming service requests subcollection
+            incoming = p_data.get('incoming_service_requests', [])
+            if incoming:
+                await firestore_service.add_incoming_service_requests(user_id, incoming)
             
         logger.info("  ✓ User documents created")
         
@@ -379,7 +392,7 @@ async def init_firestore(test_data):
                 continue
         logger.info(f"  ✓ {len(provider_candidates)} Provider Candidates created")
     
-    # 4. Create Chat Sessions and Messages using validated schemas
+    # 4. Create Chat Sessions and Messages in root chats collection
     chats = test_data.get('chats', [])
     messages = test_data.get('chat_messages', [])
     
@@ -389,10 +402,12 @@ async def init_firestore(test_data):
             chat_id = chat.get('chat_id', 'unknown_chat')
             req_id = chat.get('service_request_id')
             cand_id = chat.get('provider_candidate_id')
+            seeker_uid = chat.get('seeker_user_id')
+            provider_uid = chat.get('provider_user_id')
             
-            # Skip chats without proper hierarchy (general inquiries)
-            if not req_id or not cand_id:
-                logger.warning(f"Skipping chat {chat_id}: missing service_request_id or provider_candidate_id")
+            # Skip chats without proper references
+            if not req_id or not cand_id or not seeker_uid or not provider_uid:
+                logger.warning(f"Skipping chat {chat_id}: missing required fields")
                 continue
             
             # Validate using Pydantic schema
@@ -400,10 +415,8 @@ async def init_firestore(test_data):
                 validated = ChatSchema(**chat)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
-                # Chat is a subcollection under provider_candidate
-                chat_ref = (db.collection('service_requests').document(req_id)
-                           .collection('provider_candidates').document(cand_id)
-                           .collection('chats').document(chat_id))
+                # Chat is now in root chats collection
+                chat_ref = db.collection('chats').document(chat_id)
                 chat_ref.set(validated_dict)
             except Exception as e:
                 logger.error(f"Failed to create chat {chat_id}: {e}")
@@ -411,7 +424,7 @@ async def init_firestore(test_data):
                 
         logger.info(f"  ✓ {len(chats)} Chat Sessions created")
         
-        # Add messages to subcollections
+        # Add messages to subcollections under chats
         if messages:
             from ai_assistant.firestore_schemas import ChatMessageSchema
             count = 0
@@ -420,19 +433,6 @@ async def init_firestore(test_data):
                 if not chat_id:
                     continue
                 
-                # Find the chat to get its request_id and provider_candidate_id
-                chat_data = next((c for c in chats if c.get('chat_id') == chat_id), None)
-                if not chat_data:
-                    logger.warning(f"No chat found for message in chat {chat_id}")
-                    continue
-                    
-                req_id = chat_data.get('service_request_id')
-                cand_id = chat_data.get('provider_candidate_id')
-                
-                if not req_id or not cand_id:
-                    logger.warning(f"Skipping message in chat {chat_id}: missing hierarchy info")
-                    continue
-                    
                 msg_id = msg.get('chat_message_id', f'msg_{count}')
                 
                 # Validate using Pydantic schema
@@ -440,10 +440,8 @@ async def init_firestore(test_data):
                     validated = ChatMessageSchema(**msg)
                     validated_dict = validated.model_dump(mode='python', exclude_none=False)
                     
-                    # Subcollection 'messages' under 'chats' document
-                    msg_ref = (db.collection('service_requests').document(req_id)
-                              .collection('provider_candidates').document(cand_id)
-                              .collection('chats').document(chat_id)
+                    # Messages are now subcollection under root chats
+                    msg_ref = (db.collection('chats').document(chat_id)
                               .collection('messages').document(msg_id))
                     msg_ref.set(validated_dict)
                     count += 1

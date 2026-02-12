@@ -631,6 +631,8 @@ CHAT_TEST_001 = {
     'chat_id': "chat_test_001",
     'service_request_id': "service_request_test_001",
     'provider_candidate_id': "provider_candidate_test_001_alice",
+    'seeker_user_id': "user_eva_005",
+    'provider_user_id': "user_alice_001",
     'title': "Pot Light Inquiry",
     # Chat Messages will be stored in subcollection
     # Note: created_at and updated_at will be set dynamically in init script
@@ -695,6 +697,8 @@ CHAT_TEST_002_PRO = {
     'chat_id': "chat_test_002",
     'service_request_id': "service_request_test_001",
     'provider_candidate_id': "provider_candidate_test_001_alice",
+    'seeker_user_id': "user_eva_005",
+    'provider_user_id': "user_alice_001",
     'title': "Availability Update",
     # Note: created_at and updated_at will be set dynamically in init script
 }
