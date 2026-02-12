@@ -1,12 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:connectx/services/audio_routing_service.dart';
 import '../mocks/mock_audio_hardware_controller.dart';
-
-// Test timing constants for faster test execution
-const testDeviceCheckInterval = Duration(milliseconds: 50);
-const testInputChangeDebounce = Duration(milliseconds: 10);
-// Wait duration accounts for device check interval + debounce + processing overhead
-const testWaitDuration = Duration(milliseconds: 70);
+import '../helpers/test_constants.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
