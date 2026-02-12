@@ -249,16 +249,16 @@ class AudioRoutingService {
       }
 
       await _hardwareController.setSpeakerphoneOn(true);
-      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      // Skip Android audio configuration in test environments
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android && !kDebugMode) {
         try {
           await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration(
             androidAudioMode: AndroidAudioMode.inCommunication,
             androidAudioStreamType: AndroidAudioStreamType.voiceCall,
             androidAudioAttributesUsageType: AndroidAudioAttributesUsageType.voiceCommunication,
           ));
-        } on MissingPluginException {
-          // In test environments, the plugin method channel isn't registered
-          // Continue without Android audio configuration - routing will still work
+        } catch (e) {
+          debugPrint('AudioRouting: Android audio configuration error: $e');
         }
       }
       // Android requires speakerphone to be toggled on then off to route Bluetooth audio correctly

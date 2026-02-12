@@ -37,8 +37,9 @@ class MockAudioHardwareController implements AudioHardwareController {
     } else {
       _audioDevices = [];
     }
-    // Trigger device change callback
-    _onDeviceChange?.call(null);
+    // Don't trigger device change callback in tests - let the test control when routing happens
+    // This prevents race conditions between the callback and explicit test calls
+    // _onDeviceChange?.call(null);
   }
 
   @override
