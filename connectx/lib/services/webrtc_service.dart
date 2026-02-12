@@ -208,6 +208,8 @@ class WebRTCService {
   }
 
   /// Recreate audio track when input device changes (e.g., Bluetooth connects mid-stream)
+  /// 
+  /// Strategy: Keep old track running until new track is ready to minimize audio gap
   Future<void> _recreateAudioTrack() async {
     if (_peerConnection == null || _localStream == null || _isRecreatingTrack) {
       return;
@@ -217,27 +219,32 @@ class WebRTCService {
       _isRecreatingTrack = true;
       final wasMuted = isMicrophoneMuted;
       
-      // Remove old audio track from peer connection
-      if (_audioTrack != null) {
+      // Save references to old stream/track for later disposal
+      final oldStream = _localStream;
+      final oldTrack = _audioTrack;
+      
+      // Create new stream FIRST, before stopping the old one
+      // This minimizes the gap where no audio is being captured
+      _localStream = null;
+      _audioTrack = null;
+      await _createLocalStream(startMuted: wasMuted);
+      
+      // Now that new track is ready, remove old track from peer connection
+      if (oldTrack != null) {
         final senders = await _peerConnection!.getSenders();
         for (final sender in senders) {
-          if (sender.track?.id == _audioTrack!.id) {
+          if (sender.track?.id == oldTrack.id) {
             await _peerConnection!.removeTrack(sender);
             break;
           }
         }
-        // Don't stop/dispose the track directly - let the stream disposal handle it
-        _audioTrack = null;
       }
       
-      // Dispose the stream and all its tracks in one operation to avoid double-stop
-      if (_localStream != null) {
-        _localStream!.getTracks().forEach((track) => track.stop());
-        await _localStream!.dispose();
-        _localStream = null;
+      // Dispose old stream and its tracks after new stream is ready
+      if (oldStream != null) {
+        oldStream.getTracks().forEach((track) => track.stop());
+        await oldStream.dispose();
       }
-      
-      await _createLocalStream(startMuted: wasMuted);
       
       if (_audioTrack != null && _localStream != null && _peerConnection != null) {
         await _peerConnection!.addTrack(_audioTrack!, _localStream!);

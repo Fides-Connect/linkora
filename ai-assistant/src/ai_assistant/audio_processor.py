@@ -128,12 +128,8 @@ class AudioProcessor:
                 except asyncio.CancelledError:
                     pass  # Expected when cancelling the task
             
-            # Clear audio queue to remove stale data
-            while not self.audio_queue.empty():
-                try:
-                    self.audio_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
+            # Don't clear the queue - let STT drain buffered audio naturally
+            # This prevents audio loss during device transitions
             
             # Update to new track
             self.input_track = new_track
