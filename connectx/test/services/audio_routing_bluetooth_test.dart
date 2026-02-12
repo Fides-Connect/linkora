@@ -1,4 +1,3 @@
-import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:connectx/services/audio_routing_service.dart';
 import '../mocks/mock_audio_hardware_controller.dart';
@@ -13,7 +12,11 @@ void main() {
 
     setUp(() {
       mockController = MockAudioHardwareController();
-      service = AudioRoutingService(hardwareController: mockController);
+      service = AudioRoutingService(
+        hardwareController: mockController,
+        deviceCheckInterval: Duration(milliseconds: 50),
+        inputChangeDebounce: Duration(milliseconds: 10),
+      );
     });
 
     tearDown(() {
@@ -25,70 +28,58 @@ void main() {
       expect(service.isBluetoothSpeakerConnected, false);
       expect(service.isBluetoothMicrophoneConnected, false);
 
-      fakeAsync((async) {
-        mockController.setBluetoothConnected(true);
-        async.elapse(Duration(milliseconds: 600));
+      mockController.setBluetoothConnected(true);
+      await Future.delayed(Duration(milliseconds: 50));
 
-        expect(service.isBluetoothSpeakerConnected, true);
-        expect(service.isBluetoothMicrophoneConnected, true);
-      });
+      expect(service.isBluetoothSpeakerConnected, true);
+      expect(service.isBluetoothMicrophoneConnected, true);
     });
 
     test('reports any Bluetooth device connected via isBluetoothConnected', () async {
       await service.initialize();
       expect(service.isBluetoothConnected, false);
 
-      fakeAsync((async) {
-        mockController.setBluetoothConnected(true);
-        async.elapse(Duration(milliseconds: 600));
+      mockController.setBluetoothConnected(true);
+      await Future.delayed(Duration(milliseconds: 50));
 
-        expect(service.isBluetoothConnected, true);
-        expect(service.isBluetoothSpeakerConnected, true);
-        expect(service.isBluetoothMicrophoneConnected, true);
-      });
+      expect(service.isBluetoothConnected, true);
+      expect(service.isBluetoothSpeakerConnected, true);
+      expect(service.isBluetoothMicrophoneConnected, true);
     });
 
     test('routes to Bluetooth when both speaker and mic are available', () async {
       await service.initialize();
       expect(service.getCurrentRouting(), AudioRouting.loudspeaker);
 
-      fakeAsync((async) {
-        mockController.setBluetoothConnected(true);
-        async.elapse(Duration(milliseconds: 600));
+      mockController.setBluetoothConnected(true);
+      await Future.delayed(Duration(milliseconds: 50));
 
-        expect(service.getCurrentRouting(), AudioRouting.bluetooth);
-        expect(mockController.selectedAudioOutputId, 'bluetooth-2');
-        expect(mockController.selectedAudioInputId, 'bluetooth-1');
-      });
+      expect(service.getCurrentRouting(), AudioRouting.bluetooth);
+      expect(mockController.selectedAudioOutputId, 'bluetooth-2');
+      expect(mockController.selectedAudioInputId, 'bluetooth-1');
     });
 
     test('falls back to loudspeaker when Bluetooth disconnects', () async {
       await service.initialize();
 
-      fakeAsync((async) {
-        mockController.setBluetoothConnected(true);
-        async.elapse(Duration(milliseconds: 600));
-        expect(service.getCurrentRouting(), AudioRouting.bluetooth);
+      mockController.setBluetoothConnected(true);
+      await Future.delayed(Duration(milliseconds: 50));
+      expect(service.getCurrentRouting(), AudioRouting.bluetooth);
 
-        mockController.setBluetoothConnected(false);
-        async.elapse(Duration(milliseconds: 600));
+      mockController.setBluetoothConnected(false);
+      await Future.delayed(Duration(milliseconds: 50));
 
-        expect(service.getCurrentRouting(), AudioRouting.loudspeaker);
-        expect(service.isBluetoothSpeakerConnected, false);
-        expect(service.isBluetoothMicrophoneConnected, false);
-        expect(mockController.speakerphoneOn, true);
-      });
+      expect(service.getCurrentRouting(), AudioRouting.loudspeaker);
+      expect(service.isBluetoothSpeakerConnected, false);
+      expect(service.isBluetoothMicrophoneConnected, false);
+      expect(mockController.speakerphoneOn, true);
     });
 
     test('resets Bluetooth flags when switching to loudspeaker', () async {
       await service.initialize();
 
-      fakeAsync((async) {
-        mockController.setBluetoothConnected(true);
-        async.elapse(Duration(milliseconds: 600));
-
-        // Note: setLoudspeaker is async, so we need to await it outside fakeAsync
-      });
+      mockController.setBluetoothConnected(true);
+      await Future.delayed(Duration(milliseconds: 50));
 
       await service.setLoudspeaker();
 
@@ -100,10 +91,8 @@ void main() {
     test('resets Bluetooth flags when switching to earpiece', () async {
       await service.initialize();
 
-      fakeAsync((async) {
-        mockController.setBluetoothConnected(true);
-        async.elapse(Duration(milliseconds: 600));
-      });
+      mockController.setBluetoothConnected(true);
+      await Future.delayed(Duration(milliseconds: 50));
 
       await service.setEarpiece();
 
@@ -131,7 +120,11 @@ void main() {
 
     setUp(() {
       mockController = MockAudioHardwareController();
-      service = AudioRoutingService(hardwareController: mockController);
+      service = AudioRoutingService(
+        hardwareController: mockController,
+        deviceCheckInterval: Duration(milliseconds: 50),
+        inputChangeDebounce: Duration(milliseconds: 10),
+      );
     });
 
     tearDown(() {
@@ -141,14 +134,12 @@ void main() {
     test('priority 1: Bluetooth earphone when available', () async {
       await service.initialize();
       
-      fakeAsync((async) {
-        mockController.setBluetoothConnected(true);
-        async.elapse(Duration(milliseconds: 600));
+      mockController.setBluetoothConnected(true);
+      await Future.delayed(Duration(milliseconds: 50));
 
-        expect(service.getCurrentRouting(), AudioRouting.bluetooth);
-        expect(service.isBluetoothSpeakerConnected, true);
-        expect(service.isBluetoothMicrophoneConnected, true);
-      });
+      expect(service.getCurrentRouting(), AudioRouting.bluetooth);
+      expect(service.isBluetoothSpeakerConnected, true);
+      expect(service.isBluetoothMicrophoneConnected, true);
     });
 
     test('priority 2: Loudspeaker when no Bluetooth', () async {
