@@ -4,8 +4,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:connectx/services/webrtc_service.dart';
+import 'package:connectx/services/audio_routing_service.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../helpers/test_helpers.mocks.dart';
+import '../mocks/mock_audio_hardware_controller.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +22,7 @@ void main() {
   late MockMediaStream mockLocalStream;
   late MockMediaStreamTrack mockAudioTrack;
   late MockRTCDataChannel mockDataChannel;
+  late MockAudioHardwareController mockAudioHardwareController;
 
   late StreamController<dynamic> streamController;
 
@@ -34,6 +37,7 @@ void main() {
     mockLocalStream = MockMediaStream();
     mockAudioTrack = MockMediaStreamTrack();
     mockDataChannel = MockRTCDataChannel();
+    mockAudioHardwareController = MockAudioHardwareController();
 
     // Setup WebSocket mock
     when(mockWebSocketChannel.sink).thenReturn(mockWebSocketSink);
@@ -88,6 +92,9 @@ void main() {
     webRTCService = WebRTCService(
       webRTCWrapper: mockWebRTCWrapper,
       webSocketFactory: (uri) => mockWebSocketChannel,
+      audioRoutingServiceFactory: () => AudioRoutingService(
+        hardwareController: mockAudioHardwareController,
+      ),
       firebaseAuthWrapper: mockFirebaseAuthWrapper,
       serverUrl: 'localhost:8000',
     );
@@ -190,6 +197,45 @@ void main() {
                cand.sdpMid == 'audio' && 
                cand.sdpMLineIndex == 0;
       })))).called(1);
+    });
+
+    test('microphone muted state starts as true', () {
+      // Assert
+      expect(webRTCService.isMicrophoneMuted, true);
+    });
+
+    test('setMicrophoneMuted updates audio track enabled state', () async {
+      // Arrange
+      when(mockAudioTrack.enabled).thenReturn(false); // Initially muted
+      when(mockAudioTrack.enabled = any).thenReturn(null);
+      await webRTCService.connect();
+      
+      // Verify initial setup (track is created with startMuted: true)
+      verify(mockAudioTrack.enabled = false).called(1);
+      clearInteractions(mockAudioTrack); // Clear for actual test
+      
+      // Initially should be muted
+      expect(webRTCService.isMicrophoneMuted, true);
+      
+      // Act - unmute
+      webRTCService.setMicrophoneMuted(false);
+      
+      // Assert
+      verify(mockAudioTrack.enabled = true).called(1);
+      
+      // Act - mute again
+      webRTCService.setMicrophoneMuted(true);
+      
+      // Assert
+      verify(mockAudioTrack.enabled = false).called(1);
+    });
+
+    test('audioRouting is accessible after connection', () async {
+      // Act
+      await webRTCService.connect();
+      
+      // Assert - audioRouting should be initialized (on non-web)
+      expect(webRTCService.audioRouting, isNotNull);
     });
   });
 }

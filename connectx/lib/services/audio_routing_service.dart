@@ -1,0 +1,302 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'audio_hardware_controller.dart';
+
+/// Service to manage audio routing for WebRTC calls
+/// Handles switching between loudspeaker and Bluetooth headsets
+class AudioRoutingService {
+  bool _isSpeakerOn = true;
+  bool _isBluetoothSpeakerConnected = false;
+  bool _isBluetoothMicrophoneConnected = false;
+  Timer? _deviceCheckTimer;
+  Timer? _inputDeviceChangeDebounce;
+  final AudioHardwareController _hardwareController;
+
+  /// Callback when audio routing changes
+  Function(AudioRouting)? onAudioRoutingChanged;
+  
+  /// Callback when input device changes and may require track recreation
+  /// This is important for mid-stream device switching (e.g., Bluetooth connects during call)
+  Function()? onInputDeviceChanged;
+
+  AudioRoutingService({
+    AudioHardwareController? hardwareController,
+  }) : _hardwareController = hardwareController ?? FlutterWebRTCAudioController();
+
+  /// Initialize audio routing with auto-detection
+  Future<void> initialize() async {
+    if (kIsWeb) return;
+
+    try {
+      await _requestPermissions();
+      await checkAndRouteAudio(forceUpdate: true);
+      _startAudioDeviceMonitoring();
+    } catch (e) {
+      debugPrint('AudioRouting: Initialization error: $e');
+      rethrow;
+    }
+  }
+
+  /// Request necessary permissions for audio routing
+  Future<void> _requestPermissions() async {
+    if (Platform.isAndroid) {
+      final permissions = [
+        Permission.microphone,
+        Permission.bluetoothConnect,
+        Permission.bluetoothScan,
+      ];
+      
+      await permissions.request();
+    }
+  }
+
+  /// Start monitoring audio device changes
+  void _startAudioDeviceMonitoring() {
+    _hardwareController.onDeviceChange = (dynamic event) {
+      checkAndRouteAudio();
+    };
+
+    _deviceCheckTimer = Timer.periodic(Duration(seconds: 3), (timer) {
+      checkAndRouteAudio();
+    });
+  }
+
+  /// Check available audio devices and route audio immediately
+  /// Can be called manually at any time to re-evaluate routing
+  /// 
+  /// Priority:
+  /// 1. Bluetooth Headset Speaker (output) + Bluetooth Microphone (input)
+  /// 2. Loudspeaker (output) + Phone Microphone (input) - Default
+  /// 3. Earpiece (Manual only)
+  Future<void> checkAndRouteAudio({bool forceUpdate = false}) async {
+    try {
+      // Check available audio output devices
+      var outputDevices = await _hardwareController.enumerateDevices('audiooutput');
+      var inputDevices = await _hardwareController.enumerateDevices('audioinput');
+      
+      if (outputDevices.isEmpty) {
+        // Fallback in case platform reports outputs differently
+        outputDevices = await _hardwareController.enumerateDevices('audioinput');
+      }
+      
+      // Look for Bluetooth devices or headsets in both input and output
+      MediaDeviceInfo? bluetoothOutputDevice;
+      MediaDeviceInfo? bluetoothInputDevice;
+      
+      // Check output devices for Bluetooth speaker
+      for (final device in outputDevices) {
+        final label = device.label.toLowerCase();
+        final id = device.deviceId.toLowerCase();
+
+        final isBluetooth = label.contains('bluetooth') ||
+            label.contains('headset') ||
+            label.contains('airpods') ||
+            label.contains('earbuds') ||
+            label.contains('bt') ||
+            id.contains('bluetooth');
+
+        if (isBluetooth) {
+          bluetoothOutputDevice = device;
+          debugPrint('AudioRouting: Found Bluetooth output device: ${device.label}');
+          break;
+        }
+      }
+      
+      // Check input devices for Bluetooth microphone
+      for (final device in inputDevices) {
+        final label = device.label.toLowerCase();
+        final id = device.deviceId.toLowerCase();
+
+        final isBluetooth = label.contains('bluetooth') ||
+            label.contains('headset') ||
+            label.contains('airpods') ||
+            label.contains('earbuds') ||
+            label.contains('bt') ||
+            id.contains('bluetooth');
+
+        if (isBluetooth) {
+          bluetoothInputDevice = device;
+          debugPrint('AudioRouting: Found Bluetooth input device: ${device.label}');
+          break;
+        }
+      }
+
+      final hasBluetoothSpeaker = bluetoothOutputDevice != null;
+      final hasBluetoothMic = bluetoothInputDevice != null;
+      
+      debugPrint('AudioRouting: Output devices found: ${outputDevices.map((d) => "${d.label} (${d.deviceId})").join(", ")}');
+      debugPrint('AudioRouting: Input devices found: ${inputDevices.map((d) => "${d.label} (${d.deviceId})").join(", ")}');
+      debugPrint('AudioRouting: Bluetooth speaker available: $hasBluetoothSpeaker');
+      debugPrint('AudioRouting: Bluetooth microphone available: $hasBluetoothMic');
+
+      if (hasBluetoothSpeaker || hasBluetoothMic) {
+        // Bluetooth device(s) found
+        // Check if input device status changed
+        final inputDeviceChanged = hasBluetoothMic != _isBluetoothMicrophoneConnected;
+        
+        // Switch if we are not already connected OR if we are forcing an update
+        if (!_isBluetoothSpeakerConnected || !_isBluetoothMicrophoneConnected || forceUpdate) {
+          await _setBluetoothAudio(
+            outputDeviceId: bluetoothOutputDevice?.deviceId,
+            inputDeviceId: bluetoothInputDevice?.deviceId,
+          );
+          
+          // Notify if input device changed (may need to recreate audio track)
+          if (inputDeviceChanged && onInputDeviceChanged != null) {
+            // Debounce: Cancel any pending notification
+            _inputDeviceChangeDebounce?.cancel();
+            _inputDeviceChangeDebounce = Timer(Duration(milliseconds: 300), () {
+              debugPrint('AudioRouting: Input device changed - notifying listener');
+              onInputDeviceChanged!();
+            });
+          }
+        }
+      } else {
+        // No Bluetooth device - Default to Loudspeaker + Phone Mic
+        // Check if input device status changed
+        final inputDeviceChanged = _isBluetoothMicrophoneConnected;
+        
+        // Only switch if we were previously on Bluetooth OR if forcing update
+        if (_isBluetoothSpeakerConnected || _isBluetoothMicrophoneConnected || forceUpdate) {
+          // If we were on Bluetooth and it disconnected, fall back to Loudspeaker
+          // Or if this is initialization (forceUpdate), default to Loudspeaker
+          try {
+            await _setLoudspeaker();
+            
+            // Notify if input device changed (may need to recreate audio track)
+            if (inputDeviceChanged && onInputDeviceChanged != null) {
+              // Debounce: Cancel any pending notification
+              _inputDeviceChangeDebounce?.cancel();
+              _inputDeviceChangeDebounce = Timer(Duration(milliseconds: 300), () {
+                debugPrint('AudioRouting: Input device changed - notifying listener');
+                onInputDeviceChanged!();
+              });
+            }
+          } catch (_) {
+            // If loudspeaker routing fails, fall back to earpiece
+            await setEarpiece();
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('AudioRouting: Error handling audio device change: $e');
+    }
+  }
+
+  /// Set audio routing to loudspeaker (output) and phone microphone (input)
+  Future<void> _setLoudspeaker() async {
+    try {
+      await _hardwareController.setSpeakerphoneOn(true);
+      _isSpeakerOn = true;
+      _isBluetoothSpeakerConnected = false;
+      _isBluetoothMicrophoneConnected = false;
+      debugPrint('AudioRouting: Switched to loudspeaker');
+      onAudioRoutingChanged?.call(AudioRouting.loudspeaker);
+    } catch (e) {
+      debugPrint('AudioRouting: Loudspeaker error: $e');
+      rethrow;
+    }
+  }
+
+  /// Set audio routing to Bluetooth speaker (output) and/or Bluetooth microphone (input)
+  Future<void> _setBluetoothAudio({
+    String? outputDeviceId,
+    String? inputDeviceId,
+  }) async {
+    try {
+      if (outputDeviceId != null) {
+        await _hardwareController.selectAudioOutput(outputDeviceId);
+        _isBluetoothSpeakerConnected = true;
+      } else {
+        _isBluetoothSpeakerConnected = false;
+      }
+      
+      if (inputDeviceId != null) {
+        await _hardwareController.selectAudioInput(inputDeviceId);
+        _isBluetoothMicrophoneConnected = true;
+      } else {
+        _isBluetoothMicrophoneConnected = false;
+      }
+
+      await _hardwareController.setSpeakerphoneOn(true);
+      if (Platform.isAndroid) {
+         await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration(
+            androidAudioMode: AndroidAudioMode.inCommunication,
+            androidAudioStreamType: AndroidAudioStreamType.voiceCall,
+            androidAudioAttributesUsageType: AndroidAudioAttributesUsageType.voiceCommunication,
+         ));
+      }
+      await Future.delayed(Duration(milliseconds: 500));
+      await _hardwareController.setSpeakerphoneOn(false);
+      
+      _isSpeakerOn = false;
+      debugPrint('AudioRouting: Switched to Bluetooth');
+      onAudioRoutingChanged?.call(AudioRouting.bluetooth);
+    } catch (e) {
+      debugPrint('AudioRouting: Bluetooth setup error: $e');
+      rethrow;
+    }
+  }
+
+  /// Manually set audio routing to loudspeaker
+  Future<void> setLoudspeaker() async {
+    await _setLoudspeaker();
+  }
+
+  /// Manually set audio routing to earpiece (for phone call style)
+  Future<void> setEarpiece() async {
+    try {
+      await _hardwareController.setSpeakerphoneOn(false);
+      _isSpeakerOn = false;
+      _isBluetoothSpeakerConnected = false;
+      _isBluetoothMicrophoneConnected = false;
+      debugPrint('AudioRouting: Switched to earpiece');
+      onAudioRoutingChanged?.call(AudioRouting.earpiece);
+    } catch (e) {
+      debugPrint('AudioRouting: Error setting earpiece: $e');
+      rethrow;
+    }
+  }
+
+  /// Get current audio routing state
+  AudioRouting getCurrentRouting() {
+    if (_isBluetoothSpeakerConnected || _isBluetoothMicrophoneConnected) {
+      return AudioRouting.bluetooth;
+    } else if (_isSpeakerOn) {
+      return AudioRouting.loudspeaker;
+    } else {
+      return AudioRouting.earpiece;
+    }
+  }
+
+  /// Check if Bluetooth speaker is currently connected
+  bool get isBluetoothSpeakerConnected => _isBluetoothSpeakerConnected;
+  
+  /// Check if Bluetooth microphone is currently connected
+  bool get isBluetoothMicrophoneConnected => _isBluetoothMicrophoneConnected;
+  
+  /// Check if any Bluetooth audio device is connected
+  bool get isBluetoothConnected => _isBluetoothSpeakerConnected || _isBluetoothMicrophoneConnected;
+
+  /// Check if loudspeaker is currently active
+  bool get isSpeakerOn => _isSpeakerOn;
+
+  /// Dispose and clean up resources
+  void dispose() {
+    _deviceCheckTimer?.cancel();
+    _deviceCheckTimer = null;
+    _inputDeviceChangeDebounce?.cancel();
+    _inputDeviceChangeDebounce = null;
+    _hardwareController.onDeviceChange = null;
+  }
+}
+
+/// Audio routing options
+enum AudioRouting {
+  loudspeaker,
+  earpiece,
+  bluetooth,
+}
