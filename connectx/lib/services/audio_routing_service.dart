@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -42,7 +41,7 @@ class AudioRoutingService {
 
   /// Request necessary permissions for audio routing
   Future<void> _requestPermissions() async {
-    if (Platform.isAndroid) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       final permissions = [
         Permission.microphone,
         Permission.bluetoothConnect,
@@ -100,7 +99,9 @@ class AudioRoutingService {
 
         if (isBluetooth) {
           bluetoothOutputDevice = device;
-          debugPrint('AudioRouting: Found Bluetooth output device: ${device.label}');
+          if (kDebugMode) {
+            debugPrint('AudioRouting: Found Bluetooth output device: ${device.label}');
+          }
           break;
         }
       }
@@ -119,7 +120,9 @@ class AudioRoutingService {
 
         if (isBluetooth) {
           bluetoothInputDevice = device;
-          debugPrint('AudioRouting: Found Bluetooth input device: ${device.label}');
+          if (kDebugMode) {
+            debugPrint('AudioRouting: Found Bluetooth input device: ${device.label}');
+          }
           break;
         }
       }
@@ -127,10 +130,12 @@ class AudioRoutingService {
       final hasBluetoothSpeaker = bluetoothOutputDevice != null;
       final hasBluetoothMic = bluetoothInputDevice != null;
       
-      debugPrint('AudioRouting: Output devices found: ${outputDevices.map((d) => "${d.label} (${d.deviceId})").join(", ")}');
-      debugPrint('AudioRouting: Input devices found: ${inputDevices.map((d) => "${d.label} (${d.deviceId})").join(", ")}');
-      debugPrint('AudioRouting: Bluetooth speaker available: $hasBluetoothSpeaker');
-      debugPrint('AudioRouting: Bluetooth microphone available: $hasBluetoothMic');
+      if (kDebugMode) {
+        debugPrint('AudioRouting: Output devices found: ${outputDevices.map((d) => d.label).join(", ")}');
+        debugPrint('AudioRouting: Input devices found: ${inputDevices.map((d) => d.label).join(", ")}');
+        debugPrint('AudioRouting: Bluetooth speaker available: $hasBluetoothSpeaker');
+        debugPrint('AudioRouting: Bluetooth microphone available: $hasBluetoothMic');
+      }
 
       if (hasBluetoothSpeaker || hasBluetoothMic) {
         // Bluetooth device(s) found
@@ -222,7 +227,7 @@ class AudioRoutingService {
       }
 
       await _hardwareController.setSpeakerphoneOn(true);
-      if (Platform.isAndroid) {
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
          await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration(
             androidAudioMode: AndroidAudioMode.inCommunication,
             androidAudioStreamType: AndroidAudioStreamType.voiceCall,

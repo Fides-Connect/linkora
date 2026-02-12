@@ -204,7 +204,7 @@ class WebRTCService {
 
   /// Recreate audio track when input device changes (e.g., Bluetooth connects mid-stream)
   Future<void> _recreateAudioTrack() async {
-    if (_peerConnection == null || _localStream == null || isMicrophoneMuted || _isRecreatingTrack) {
+    if (_peerConnection == null || _localStream == null || _isRecreatingTrack) {
       return;
     }
 
@@ -235,6 +235,12 @@ class WebRTCService {
       
       if (_audioTrack != null && _peerConnection != null) {
         await _peerConnection!.addTrack(_audioTrack!, _localStream!);
+        
+        // Restore muted state if track was previously muted
+        if (wasMuted) {
+          _audioTrack!.enabled = false;
+        }
+        
         await _renegotiateConnection();
       }
       
