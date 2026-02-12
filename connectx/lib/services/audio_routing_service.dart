@@ -19,6 +19,7 @@ class AudioRoutingService {
   // Configurable durations for testing
   final Duration deviceCheckInterval;
   final Duration inputChangeDebounce;
+  final Duration bluetoothSetupDelay;
 
   /// Callback when audio routing changes
   Function(AudioRouting)? onAudioRoutingChanged;
@@ -31,6 +32,7 @@ class AudioRoutingService {
     AudioHardwareController? hardwareController,
     this.deviceCheckInterval = const Duration(seconds: 3),
     this.inputChangeDebounce = const Duration(milliseconds: 300),
+    this.bluetoothSetupDelay = const Duration(milliseconds: 500),
   }) : _hardwareController = hardwareController ?? FlutterWebRTCAudioController();
 
   /// Initialize audio routing with auto-detection
@@ -235,18 +237,14 @@ class AudioRoutingService {
     String? inputDeviceId,
   }) async {
     try {
+      // Select output device if provided
       if (outputDeviceId != null) {
         await _hardwareController.selectAudioOutput(outputDeviceId);
-        _isBluetoothSpeakerConnected = true;
-      } else {
-        _isBluetoothSpeakerConnected = false;
       }
       
+      // Select input device if provided
       if (inputDeviceId != null) {
         await _hardwareController.selectAudioInput(inputDeviceId);
-        _isBluetoothMicrophoneConnected = true;
-      } else {
-        _isBluetoothMicrophoneConnected = false;
       }
 
       await _hardwareController.setSpeakerphoneOn(true);
@@ -257,13 +255,26 @@ class AudioRoutingService {
             androidAudioAttributesUsageType: AndroidAudioAttributesUsageType.voiceCommunication,
          ));
       }
-      await Future.delayed(Duration(milliseconds: 500));
+      // Android requires speakerphone to be toggled on then off to route Bluetooth audio correctly
+      // This delay allows the audio system to stabilize before disabling speakerphone
+      await Future.delayed(bluetoothSetupDelay);
       await _hardwareController.setSpeakerphoneOn(false);
       
+      // Only update state flags after all operations complete successfully
+      _isBluetoothSpeakerConnected = outputDeviceId != null;
+      _isBluetoothMicrophoneConnected = inputDeviceId != null;
       _isSpeakerOn = false;
       onAudioRoutingChanged?.call(AudioRouting.bluetooth);
     } catch (e) {
       debugPrint('AudioRouting: Bluetooth setup error: $e');
+      // Routing failed - clear Bluetooth state and fall back to loudspeaker
+      _isBluetoothSpeakerConnected = false;
+      _isBluetoothMicrophoneConnected = false;
+      try {
+        await _setLoudspeaker();
+      } catch (fallbackError) {
+        debugPrint('AudioRouting: Fallback to loudspeaker failed: $fallbackError');
+      }
       rethrow;
     }
   }

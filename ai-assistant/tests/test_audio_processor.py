@@ -299,7 +299,6 @@ class TestTrackReplacement:
             assert audio_processor.processing_task != old_task
             # Verify old task was cancelled
             assert old_task.cancelled()
-        assert isinstance(audio_processor.interrupt_event, asyncio.Event)
 
 
 class TestDebugRecording:

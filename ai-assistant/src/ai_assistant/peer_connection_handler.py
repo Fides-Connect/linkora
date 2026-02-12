@@ -28,6 +28,7 @@ class PeerConnectionHandler:
         self.relay = MediaRelay()
         self.audio_processor = None
         self.track_ready = asyncio.Event()
+        self.track_update_ready = asyncio.Event()
         
         logger.info(f"PeerConnectionHandler created for connection {connection_id} with language: {language}")
         
@@ -58,7 +59,9 @@ class PeerConnectionHandler:
             if track.kind == "audio":
                 if self.audio_processor is not None:
                     logger.info("Track replacement detected (renegotiation)")
+                    self.track_update_ready.clear()
                     await self.audio_processor.replace_input_track(track)
+                    self.track_update_ready.set()
                 else:
                     self.audio_processor = AudioProcessor(
                         connection_id=self.connection_id,
@@ -98,7 +101,8 @@ class PeerConnectionHandler:
             await self.pc.setRemoteDescription(offer)
             
             if is_renegotiation:
-                await asyncio.sleep(0.2)
+                # Wait for track update to complete instead of fixed delay
+                await asyncio.wait_for(self.track_update_ready.wait(), timeout=5.0)
             else:
                 await asyncio.wait_for(self.track_ready.wait(), timeout=5.0)
 

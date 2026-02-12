@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 /// Abstract interface for audio hardware control
@@ -63,6 +64,9 @@ class FlutterWebRTCAudioController implements AudioHardwareController {
       // Preserve previous behavior: do not throw if input selection is
       // not supported or fails. Callers can still rely on automatic
       // platform routing (e.g., when Bluetooth connects).
+      if (kDebugMode) {
+        debugPrint('AudioHardwareController: Failed to select input device $deviceId: $e');
+      }
     }
   }
   
