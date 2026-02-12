@@ -159,7 +159,9 @@ class AudioRoutingService {
       }
 
       if (hasBluetoothSpeaker && hasBluetoothMic) {
-        // Bluetooth device(s) found - require BOTH speaker and mic
+        // Bluetooth device(s) found - require BOTH speaker (output) and mic (input)
+        // to ensure full-duplex Bluetooth audio communication. Having only one prevents
+        // proper bidirectional audio (e.g., only Bluetooth mic would route output to loudspeaker).
         // Check if input device status changed
         final inputDeviceChanged = hasBluetoothMic != _isBluetoothMicrophoneConnected;
         
