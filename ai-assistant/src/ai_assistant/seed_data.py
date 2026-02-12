@@ -159,7 +159,7 @@ USER_TEMPLATE_COMPETENCIES = [
 
 USER_TEMPLATE_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "avail_template_001",
+        "availability_time_id": "availability_time_template_001",
         "user_id": "{uid}",
         "monday_time_ranges": [
             {"start_time": "08:00", "end_time": "12:00"},
@@ -218,7 +218,7 @@ USER_A_COMPETENCIES = [
 
 USER_A_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "avail_alice_001",
+        "availability_time_id": "availability_time_alice_001",
         "user_id": "user_alice_001",
         "monday_time_ranges": [{"start_time": "08:00", "end_time": "17:00"}],
         "tuesday_time_ranges": [
@@ -276,7 +276,7 @@ USER_B_COMPETENCIES = [
 
 USER_B_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "avail_bob_001",
+        "availability_time_id": "availability_time_bob_001",
         "user_id": "user_bob_002",
         "monday_time_ranges": [{"start_time": "00:00", "end_time": "23:59"}],
         "tuesday_time_ranges": [{"start_time": "00:00", "end_time": "23:59"}],
@@ -328,7 +328,7 @@ USER_C_COMPETENCIES = [
 
 USER_C_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "avail_charlie_001",
+        "availability_time_id": "availability_time_charlie_001",
         "user_id": "user_charlie_003",
         "monday_time_ranges": [],
         "tuesday_time_ranges": [],
@@ -380,7 +380,7 @@ USER_D_COMPETENCIES = [
 
 USER_D_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "avail_david_001",
+        "availability_time_id": "availability_time_david_001",
         "user_id": "user_david_004",
         "monday_time_ranges": [
             {"start_time": "09:00", "end_time": "12:00"},
@@ -482,7 +482,7 @@ USER_E_COMPETENCIES = [
 
 USER_E_AVAILABILITY_TIMES = [
     {
-        "availability_time_id": "avail_eva_001",
+        "availability_time_id": "availability_time_eva_001",
         "user_id": "user_eva_005",
         "monday_time_ranges": [{"start_time": "07:00", "end_time": "19:00"}],
         "tuesday_time_ranges": [{"start_time": "07:00", "end_time": "19:00"}],
@@ -507,9 +507,9 @@ USER_E_AVAILABILITY_TIMES = [
 
 # Competence-specific availability times (includes template for new users and test personas)
 COMPETENCE_AVAILABILITY_TIMES = {
-    "{uid}_comp_1": [  # Software Development (Template competence - only for new seed users)
+    "competence_{uid}_1": [  # Software Development (Template competence - only for new seed users)
         {
-            "availability_time_id": "avail_comp_template_001",
+            "availability_time_id": "availability_time_comp_template_001",
             "monday_time_ranges": [
                 {"start_time": "10:00", "end_time": "12:00"},
                 {"start_time": "14:00", "end_time": "18:00"}
@@ -523,9 +523,9 @@ COMPETENCE_AVAILABILITY_TIMES = {
             "absence_days": ["2026-03-15", "2026-03-16"],
         }
     ],
-    "user_eva_005_comp_2": [  # Garden Design
+    "competence_user_eva_005_2": [  # Garden Design
         {
-            "availability_time_id": "avail_comp_garden_design_001",
+            "availability_time_id": "availability_time_comp_garden_design_001",
             "monday_time_ranges": [{"start_time": "08:00", "end_time": "16:00"}],
             "tuesday_time_ranges": [
                 {"start_time": "08:00", "end_time": "12:00"},
@@ -542,9 +542,9 @@ COMPETENCE_AVAILABILITY_TIMES = {
             "absence_days": ["2026-05-20", "2026-05-21"],
         }
     ],
-    "user_alice_001_comp_1": [  # Installing Pot Lights
+    "competence_user_alice_001_1": [  # Installing Pot Lights
         {
-            "availability_time_id": "avail_comp_pot_lights_001",
+            "availability_time_id": "availability_time_comp_pot_lights_001",
             "monday_time_ranges": [{"start_time": "09:00", "end_time": "17:00"}],
             "tuesday_time_ranges": [{"start_time": "09:00", "end_time": "17:00"}],
             "wednesday_time_ranges": [
@@ -574,7 +574,7 @@ TEST_PERSONAS = [
 
 # Scenario 1: User E (Enthusiast/Seeker) asks User A (Pro) for Pot Lights
 REQ_TEST_001 = {
-    'service_request_id': "req_test_001",
+    'service_request_id': "service_request_test_001",
     'seeker_user_id': "user_eva_005",
     'selected_provider_user_id': "user_alice_001",
     'title': "Pot Light Installation",
@@ -593,8 +593,8 @@ REQ_TEST_001 = {
 # --- Test Provider Candidates ---
 
 PROV_CAND_TEST_001_ALICE = {
-    'provider_candidate_id': "cand_test_001_alice",
-    'service_request_id': "req_test_001",
+    'provider_candidate_id': "provider_candidate_test_001_alice",
+    'service_request_id': "service_request_test_001",
     'provider_candidate_user_id': "user_alice_001",
     'matching_score': 95.0,
     'matching_score_reasons': ["Expert in electrical work", "High rating", "Available in timeframe"],
@@ -604,8 +604,8 @@ PROV_CAND_TEST_001_ALICE = {
 }
 
 PROV_CAND_TEST_001_DAVID = {
-    'provider_candidate_id': "cand_test_001_david",
-    'service_request_id': "req_test_001",
+    'provider_candidate_id': "provider_candidate_test_001_david",
+    'service_request_id': "service_request_test_001",
     'provider_candidate_user_id': "user_david_004",
     'matching_score': 78.0,
     'matching_score_reasons': ["General technical skills", "Good availability"],
@@ -615,8 +615,8 @@ PROV_CAND_TEST_001_DAVID = {
 }
 
 PROV_CAND_TEST_002_CHARLIE = {
-    'provider_candidate_id': "cand_test_002_charlie",
-    'service_request_id': "req_test_002",
+    'provider_candidate_id': "provider_candidate_test_002_charlie",
+    'service_request_id': "service_request_test_002",
     'provider_candidate_user_id': "user_charlie_003",
     'matching_score': 88.0,
     'matching_score_reasons': ["Expert electrician", "Has done panel upgrades before"],
@@ -629,15 +629,15 @@ PROV_CAND_TEST_002_CHARLIE = {
 
 CHAT_TEST_001 = {
     'chat_id': "chat_test_001",
-    'service_request_id': "req_test_001",
-    'provider_candidate_id': "cand_test_001_alice",
+    'service_request_id': "service_request_test_001",
+    'provider_candidate_id': "provider_candidate_test_001_alice",
     'title': "Pot Light Inquiry",
     # Chat Messages will be stored in subcollection
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
 CHAT_MSG_TEST_001_1 = {
-    'chat_message_id': "msg_test_001_1",
+    'chat_message_id': "chat_message_test_001_1",
     'chat_id': "chat_test_001",
     'sender_user_id': "user_eva_005",
     'receiver_user_id': "AI_ASSISTANT",
@@ -646,7 +646,7 @@ CHAT_MSG_TEST_001_1 = {
 }
 
 CHAT_MSG_TEST_001_2 = {
-    'chat_message_id': "msg_test_001_2",
+    'chat_message_id': "chat_message_test_001_2",
     'chat_id': "chat_test_001",
     'sender_user_id': "AI_ASSISTANT",
     'receiver_user_id': "user_eva_005",
@@ -655,8 +655,8 @@ CHAT_MSG_TEST_001_2 = {
 }
 
 REV_TEST_001 = {
-    'review_id': "rev_test_001",
-    'service_request_id': "req_past_000",
+    'review_id': "review_test_001",
+    'service_request_id': "service_request_past_000",
     'user_id': "user_alice_001",
     'reviewer_user_id': "user_eva_005",
     'feedback_raw': "Alice did an excellent job! Very professional and the pot lights look amazing. She was punctual and cleaned up after herself.",
@@ -674,14 +674,14 @@ REV_TEST_001 = {
 
 # Scenario 2: User C (Ghost) has an old inactive request
 REQ_TEST_002_GHOST = {
-    'service_request_id': "req_test_002",
+    'service_request_id': "service_request_test_002",
     'seeker_user_id': "user_bob_002",
     'selected_provider_user_id': "user_charlie_003",
     'title': "Panel Upgrade",
     'amount_value': 1200.0,
     'currency': "EUR",
     'description': "Safety upgrade for the old fuse box.",
-    'competencies': ["Expert Electrician"],
+    'requested_competencies': ["Expert Electrician"],
     'status': 'expired', # Custom status for test
     'start_date': "2025-01-10T08:00:00Z",
     'end_date': "2025-01-12T17:00:00Z",
@@ -690,17 +690,17 @@ REQ_TEST_002_GHOST = {
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
-# Scenario 3: Ongoing chat between User A and AI for req_test_001
+# Scenario 3: Ongoing chat between User A and AI for service_request_test_001
 CHAT_TEST_002_PRO = {
     'chat_id': "chat_test_002",
-    'service_request_id': "req_test_001",
-    'provider_candidate_id': "cand_test_001_alice",
+    'service_request_id': "service_request_test_001",
+    'provider_candidate_id': "provider_candidate_test_001_alice",
     'title': "Availability Update",
     # Note: created_at and updated_at will be set dynamically in init script
 }
 
 CHAT_MSG_TEST_002_1 = {
-    'chat_message_id': "msg_test_002_1",
+    'chat_message_id': "chat_message_test_002_1",
     'chat_id': "chat_test_002",
     'sender_user_id': "user_alice_001",
     'receiver_user_id': "AI_ASSISTANT",

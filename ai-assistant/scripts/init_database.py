@@ -197,11 +197,10 @@ async def init_firestore(test_data):
             c_data_list = persona['competencies']
             
             for i, comp in enumerate(c_data_list):
-                comp_id = f"{user_id}_comp_{i+1}"
+                comp_id = f"competence_{user_id}_{i+1}"
                 
                 comp_data = {
                     'competence_id': comp_id,
-                    'user_id': user_id,
                     'title': comp['title'],
                     'description': comp.get('description', ''),
                     'category': comp.get('category', ''),
@@ -220,8 +219,6 @@ async def init_firestore(test_data):
                 try:
                     validated = CompetenceSchema(**comp_data)
                     validated_dict = validated.model_dump(mode='python', exclude_none=False)
-                    validated_dict['created_at'] = datetime.now(timezone.utc)
-                    validated_dict['updated_at'] = datetime.now(timezone.utc)
                     competencies_ref.document(comp_id).set(validated_dict)
                 except Exception as e:
                     logger.error(f"Failed to create competence {comp_id}: {e}")
@@ -235,7 +232,7 @@ async def init_firestore(test_data):
             avail_times = persona.get('availability_times', [])
             
             for avail in avail_times:
-                avail_id = avail.get('availability_time_id', f"avail_{user_id}_auto")
+                avail_id = avail.get('availability_time_id', f"availability_time_{user_id}_auto")
                 
                 avail_data = {
                     'availability_time_id': avail_id,
@@ -272,11 +269,11 @@ async def init_firestore(test_data):
             if '{uid}' in comp_id:
                 continue
                 
-            # Extract user_id from comp_id (format: user_xxx_comp_N)
-            user_id = '_'.join(comp_id.split('_')[:-2])
+            # Extract user_id from comp_id (format: competence_user_xxx_N)
+            user_id = '_'.join(comp_id.split('_')[1:-1])
             
             for avail in avail_times:
-                avail_id = avail.get('availability_time_id', f"avail_{comp_id}_auto")
+                avail_id = avail.get('availability_time_id', f"availability_time_{comp_id}_auto")
                 
                 avail_data = {
                     'availability_time_id': avail_id,
@@ -337,12 +334,6 @@ async def init_firestore(test_data):
             # Create using validated Pydantic schema
             from ai_assistant.firestore_schemas import ServiceRequestSchema
             try:
-                # Add timestamps if missing
-                if 'created_at' not in req:
-                    req['created_at'] = datetime.now(timezone.utc)
-                if 'updated_at' not in req:
-                    req['updated_at'] = datetime.now(timezone.utc)
-                
                 validated = ServiceRequestSchema(**req)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
@@ -378,12 +369,6 @@ async def init_firestore(test_data):
             # Validate using Pydantic schema
             from ai_assistant.firestore_schemas import ProviderCandidateSchema
             try:
-                # Add timestamps if missing
-                if 'created_at' not in candidate:
-                    candidate['created_at'] = datetime.now(timezone.utc)
-                if 'updated_at' not in candidate:
-                    candidate['updated_at'] = datetime.now(timezone.utc)
-                
                 validated = ProviderCandidateSchema(**candidate)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
@@ -412,12 +397,6 @@ async def init_firestore(test_data):
             
             # Validate using Pydantic schema
             try:
-                # Add dynamic timestamps if missing
-                if 'created_at' not in chat:
-                    chat['created_at'] = datetime.now(timezone.utc)
-                if 'updated_at' not in chat:
-                    chat['updated_at'] = datetime.now(timezone.utc)
-                
                 validated = ChatSchema(**chat)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
@@ -458,12 +437,6 @@ async def init_firestore(test_data):
                 
                 # Validate using Pydantic schema
                 try:
-                    # Add dynamic timestamps if missing
-                    if 'created_at' not in msg:
-                        msg['created_at'] = datetime.now(timezone.utc)
-                    if 'updated_at' not in msg:
-                        msg['updated_at'] = datetime.now(timezone.utc)
-                    
                     validated = ChatMessageSchema(**msg)
                     validated_dict = validated.model_dump(mode='python', exclude_none=False)
                     
@@ -488,12 +461,6 @@ async def init_firestore(test_data):
             
             # Validate using Pydantic schema
             try:
-                # Add dynamic timestamps if missing
-                if 'created_at' not in rev:
-                    rev['created_at'] = datetime.now(timezone.utc)
-                if 'updated_at' not in rev:
-                    rev['updated_at'] = datetime.now(timezone.utc)
-                
                 validated = ReviewSchema(**rev)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
@@ -517,10 +484,10 @@ def load_weaviate_data(test_personas):
         competencies_data = persona['competencies']
         
         # We must iterate to inject IDs, replicating init_firestore logic:
-        # comp_id = f"{user_id}_comp_{i+1}"
+        # comp_id = f"competence_{user_id}_{i+1}"
         for i, comp in enumerate(competencies_data):
             # Check if updated in place or if we need copy - safe to update in place for script
-            comp['competence_id'] = f"{user_id}_comp_{i+1}"
+            comp['competence_id'] = f"competence_{user_id}_{i+1}"
             
         result = HubSpokeIngestion.create_user_with_competencies(
             user_data=persona['user'],

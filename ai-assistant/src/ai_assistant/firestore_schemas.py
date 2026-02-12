@@ -5,7 +5,7 @@ Timestamps (created_at, updated_at) are auto-injected and not part of validation
 """
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
 
 class UserSchema(BaseModel):
@@ -89,10 +89,15 @@ class CompetenceSchema(BaseModel):
     model_config = ConfigDict(extra='forbid')
     
     competence_id: str = Field(..., min_length=1)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     title: str = Field(..., min_length=1, max_length=200)
     description: str = Field(default="", max_length=1000)
     category: str = Field(default="", max_length=100)
     price_range: str = Field(default="", max_length=100)
+    year_of_experience: int = Field(default=0, ge=0)
+    feedback_positive: List[str] = Field(default_factory=list)
+    feedback_negative: List[str] = Field(default_factory=list)
     
     @field_validator('competence_id')
     @classmethod
@@ -101,6 +106,18 @@ class CompetenceSchema(BaseModel):
         if not v.startswith('competence_'):
             raise ValueError('competence_id must start with "competence_"')
         return v
+    
+    @model_validator(mode='before')
+    @classmethod
+    def set_timestamps(cls, data):
+        """Set default timestamps if not provided."""
+        now = datetime.now()
+        if isinstance(data, dict):
+            if data.get('created_at') is None:
+                data['created_at'] = now
+            if data.get('updated_at') is None:
+                data['updated_at'] = now
+        return data
 
 
 class CompetenceUpdateSchema(BaseModel):
@@ -125,8 +142,8 @@ class ServiceRequestSchema(BaseModel):
     model_config = ConfigDict(extra='forbid')
     
     service_request_id: str = Field(..., min_length=1)
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     seeker_user_id: str = Field(..., min_length=1)
     selected_provider_user_id: str = Field(default="")
     title: str = Field(..., min_length=1, max_length=200)
@@ -135,7 +152,7 @@ class ServiceRequestSchema(BaseModel):
     description: str = Field(default="", max_length=1000)
     requested_competencies: List[str] = Field(default_factory=list)
     status: str = Field(default="pending", max_length=50)
-    start_data: Optional[datetime] = None
+    start_date: Optional[datetime] = None  # Fixed typo from start_data
     end_date: Optional[datetime] = None
     category: Optional[str] = Field(None, max_length=100)
     location: Optional[str] = Field(None, max_length=200)
@@ -152,10 +169,22 @@ class ServiceRequestSchema(BaseModel):
     @classmethod
     def validate_status(cls, v: str) -> str:
         """Validate status values."""
-        valid_statuses = ['pending', 'active', 'completed', 'cancelled']
+        valid_statuses = ['pending', 'active', 'completed', 'cancelled', 'expired']
         if v and v not in valid_statuses:
             raise ValueError(f'status must be one of {valid_statuses}')
         return v
+    
+    @model_validator(mode='before')
+    @classmethod
+    def set_timestamps(cls, data):
+        """Set default timestamps if not provided."""
+        now = datetime.now()
+        if isinstance(data, dict):
+            if data.get('created_at') is None:
+                data['created_at'] = now
+            if data.get('updated_at') is None:
+                data['updated_at'] = now
+        return data
 
 
 class ServiceRequestUpdateSchema(BaseModel):
@@ -191,7 +220,8 @@ class ServiceRequestUpdateSchema(BaseModel):
                 'rejected',
                 'active',
                 'completed',
-                'cancelled']
+                'cancelled',
+                'expired']
             if v not in valid_statuses:
                 raise ValueError(f'status must be one of {valid_statuses}')
         return v
@@ -208,10 +238,16 @@ class ReviewSchema(BaseModel):
     service_request_id: str = Field(..., min_length=1)
     user_id: str = Field(..., min_length=1)  # Reviewee (user being reviewed)
     reviewer_user_id: str = Field(..., min_length=1)  # Reviewer (user writing the review)
-    rating: float = Field(..., ge=1.0, le=5.0)
-    positive_feedback: List[str] = Field(default_factory=list)
-    negative_feedback: List[str] = Field(default_factory=list)
+    feedback_raw: str = Field(default="", max_length=5000)
+    feedback_positive: List[str] = Field(default_factory=list)
+    feedback_negative: List[str] = Field(default_factory=list)
     comment: str = Field(default="", max_length=2000)
+    rating_relevance: Optional[float] = Field(None, ge=0.0, le=5.0)
+    rating_quality: Optional[float] = Field(None, ge=0.0, le=5.0)
+    rating_competence: Optional[float] = Field(None, ge=0.0, le=5.0)
+    rating_response_speed: Optional[float] = Field(None, ge=0.0, le=5.0)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     
     @field_validator('review_id')
     @classmethod
@@ -228,6 +264,18 @@ class ReviewSchema(BaseModel):
         if not v or not v.strip():
             raise ValueError('User ID cannot be empty')
         return v
+    
+    @model_validator(mode='before')
+    @classmethod
+    def set_timestamps(cls, data):
+        """Set default timestamps if not provided."""
+        now = datetime.now()
+        if isinstance(data, dict):
+            if data.get('created_at') is None:
+                data['created_at'] = now
+            if data.get('updated_at') is None:
+                data['updated_at'] = now
+        return data
 
 
 class ReviewUpdateSchema(BaseModel):
@@ -266,6 +314,8 @@ class ChatSchema(BaseModel):
     provider_candidate_id: str = Field(..., min_length=1)
     service_request_id: str = Field(..., min_length=1)
     title: str = Field(default="", max_length=200)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     
     @field_validator('chat_id')
     @classmethod
@@ -274,6 +324,18 @@ class ChatSchema(BaseModel):
         if not v.startswith('chat_'):
             raise ValueError('chat_id must start with "chat_"')
         return v
+    
+    @model_validator(mode='before')
+    @classmethod
+    def set_timestamps(cls, data):
+        """Set default timestamps if not provided."""
+        now = datetime.now()
+        if isinstance(data, dict):
+            if data.get('created_at') is None:
+                data['created_at'] = now
+            if data.get('updated_at') is None:
+                data['updated_at'] = now
+        return data
 
 
 class ChatUpdateSchema(BaseModel):
@@ -299,6 +361,8 @@ class ChatMessageSchema(BaseModel):
     sender_user_id: str = Field(..., min_length=1)
     receiver_user_id: str = Field(..., min_length=1)
     message: str = Field(..., min_length=1, max_length=5000)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     
     @field_validator('chat_message_id')
     @classmethod
@@ -315,6 +379,18 @@ class ChatMessageSchema(BaseModel):
         if not v or not v.strip():
             raise ValueError('User ID cannot be empty')
         return v
+    
+    @model_validator(mode='before')
+    @classmethod
+    def set_timestamps(cls, data):
+        """Set default timestamps if not provided."""
+        now = datetime.now()
+        if isinstance(data, dict):
+            if data.get('created_at') is None:
+                data['created_at'] = now
+            if data.get('updated_at') is None:
+                data['updated_at'] = now
+        return data
 
 
 class ChatMessageUpdateSchema(BaseModel):
@@ -352,13 +428,15 @@ class ProviderCandidateSchema(BaseModel):
     matching_score_reasons: List[str] = Field(default_factory=list)
     introduction: str = Field(default="", max_length=2000)
     status: str = Field(default="pending", max_length=50)
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     
     @field_validator('provider_candidate_id')
     @classmethod
     def validate_provider_candidate_id(cls, v: str) -> str:
         """Ensure provider_candidate_id has the correct prefix."""
-        if not v.startswith('provider_candidate_') and not v.startswith('cand_'):
-            raise ValueError('provider_candidate_id must start with "provider_candidate_" or "cand_"')
+        if not v.startswith('provider_candidate_'):
+            raise ValueError('provider_candidate_id must start with "provider_candidate_"')
         return v
     
     @field_validator('status')
@@ -369,6 +447,18 @@ class ProviderCandidateSchema(BaseModel):
         if v and v not in valid_statuses:
             raise ValueError(f'status must be one of {valid_statuses}')
         return v
+    
+    @model_validator(mode='before')
+    @classmethod
+    def set_timestamps(cls, data):
+        """Set default timestamps if not provided."""
+        now = datetime.now()
+        if isinstance(data, dict):
+            if data.get('created_at') is None:
+                data['created_at'] = now
+            if data.get('updated_at') is None:
+                data['updated_at'] = now
+        return data
 
 
 class ProviderCandidateUpdateSchema(BaseModel):
@@ -425,8 +515,8 @@ class AvailabilityTimeSchema(BaseModel):
     @classmethod
     def validate_availability_time_id(cls, v: str) -> str:
         """Ensure availability_time_id has the correct prefix."""
-        if not v.startswith('availability_time_') and not v.startswith('avail_'):
-            raise ValueError('availability_time_id must start with "availability_time_" or "avail_"')
+        if not v.startswith('availability_time_'):
+            raise ValueError('availability_time_id must start with "availability_time_"')
         return v
 
 
