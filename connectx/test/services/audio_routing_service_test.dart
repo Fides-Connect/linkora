@@ -2,6 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:connectx/services/audio_routing_service.dart';
 import '../mocks/mock_audio_hardware_controller.dart';
 
+// Test timing constants for faster test execution
+const testDeviceCheckInterval = testDeviceCheckInterval;
+const testInputChangeDebounce = testInputChangeDebounce;
+// Wait duration accounts for device check interval + debounce + processing overhead
+const testWaitDuration = testWaitDuration;
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -54,8 +60,8 @@ void main() {
       mockController = MockAudioHardwareController();
       service = AudioRoutingService(
         hardwareController: mockController,
-        deviceCheckInterval: Duration(milliseconds: 50),
-        inputChangeDebounce: Duration(milliseconds: 10),
+        deviceCheckInterval: testDeviceCheckInterval,
+        inputChangeDebounce: testInputChangeDebounce,
       );
     });
 
@@ -71,7 +77,7 @@ void main() {
       mockController.setBluetoothConnected(true);
       
       // Wait for the device check to complete and debounce timer to fire
-      await Future.delayed(Duration(milliseconds: 70));
+      await Future.delayed(testWaitDuration);
 
       expect(service.isBluetoothConnected, true);
     });
@@ -83,7 +89,7 @@ void main() {
       mockController.setBluetoothConnected(true);
       
       // Wait for the device check to complete and debounce timer to fire
-      await Future.delayed(Duration(milliseconds: 70));
+      await Future.delayed(testWaitDuration);
 
       expect(mockController.selectedAudioOutputId, 'bluetooth-2');
     });
@@ -96,7 +102,7 @@ void main() {
       mockController.setBluetoothConnected(true);
       
       // Wait for the device check to complete
-      await Future.delayed(Duration(milliseconds: 70));
+      await Future.delayed(testWaitDuration);
 
       expect(service.getCurrentRouting(), AudioRouting.bluetooth);
     });
@@ -109,7 +115,7 @@ void main() {
       mockController.setBluetoothConnected(true);
       
       // Wait for the device check to complete
-      await Future.delayed(Duration(milliseconds: 70));
+      await Future.delayed(testWaitDuration);
 
       expect(mockController.speakerphoneOn, false);
     });
@@ -156,8 +162,8 @@ void main() {
       mockController = MockAudioHardwareController();
       service = AudioRoutingService(
         hardwareController: mockController,
-        deviceCheckInterval: Duration(milliseconds: 50),
-        inputChangeDebounce: Duration(milliseconds: 10),
+        deviceCheckInterval: testDeviceCheckInterval,
+        inputChangeDebounce: testInputChangeDebounce,
       );
     });
 
@@ -181,11 +187,11 @@ void main() {
       expect(service.isBluetoothConnected, false);
 
       mockController.setBluetoothConnected(true);
-      await Future.delayed(Duration(milliseconds: 70));
+      await Future.delayed(testWaitDuration);
       expect(service.isBluetoothConnected, true);
 
       mockController.setBluetoothConnected(false);
-      await Future.delayed(Duration(milliseconds: 70));
+      await Future.delayed(testWaitDuration);
       expect(service.isBluetoothConnected, false);
     });
 
@@ -200,7 +206,7 @@ void main() {
       expect(service.getCurrentRouting(), AudioRouting.loudspeaker);
 
       mockController.setBluetoothConnected(true);
-      await Future.delayed(Duration(milliseconds: 70));
+      await Future.delayed(testWaitDuration);
       expect(service.getCurrentRouting(), AudioRouting.bluetooth);
     });
   });
