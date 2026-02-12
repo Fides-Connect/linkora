@@ -10,19 +10,26 @@ class AudioRoutingService {
   bool _isSpeakerOn = true;
   bool _isBluetoothSpeakerConnected = false;
   bool _isBluetoothMicrophoneConnected = false;
+  bool _isCheckingDevices = false;
   Timer? _deviceCheckTimer;
   Timer? _inputDeviceChangeDebounce;
   final AudioHardwareController _hardwareController;
+  
+  // Configurable durations for testing
+  final Duration deviceCheckInterval;
+  final Duration inputChangeDebounce;
 
   /// Callback when audio routing changes
   Function(AudioRouting)? onAudioRoutingChanged;
   
   /// Callback when input device changes and may require track recreation
   /// This is important for mid-stream device switching (e.g., Bluetooth connects during call)
-  Function()? onInputDeviceChanged;
+  Future<void> Function()? onInputDeviceChanged;
 
   AudioRoutingService({
     AudioHardwareController? hardwareController,
+    this.deviceCheckInterval = const Duration(seconds: 3),
+    this.inputChangeDebounce = const Duration(milliseconds: 300),
   }) : _hardwareController = hardwareController ?? FlutterWebRTCAudioController();
 
   /// Initialize audio routing with auto-detection
@@ -55,11 +62,19 @@ class AudioRoutingService {
   /// Start monitoring audio device changes
   void _startAudioDeviceMonitoring() {
     _hardwareController.onDeviceChange = (dynamic event) {
-      checkAndRouteAudio();
+      unawaited(
+        checkAndRouteAudio().catchError((error) {
+          debugPrint('AudioRouting: Error in device change handler: $error');
+        }),
+      );
     };
 
-    _deviceCheckTimer = Timer.periodic(Duration(seconds: 3), (timer) {
-      checkAndRouteAudio();
+    _deviceCheckTimer = Timer.periodic(deviceCheckInterval, (timer) {
+      unawaited(
+        checkAndRouteAudio().catchError((error) {
+          debugPrint('AudioRouting: Error in periodic check: $error');
+        }),
+      );
     });
   }
 
@@ -71,6 +86,12 @@ class AudioRoutingService {
   /// 2. Loudspeaker (output) + Phone Microphone (input) - Default
   /// 3. Earpiece (Manual only)
   Future<void> checkAndRouteAudio({bool forceUpdate = false}) async {
+    // Prevent overlapping executions
+    if (_isCheckingDevices) {
+      return;
+    }
+    
+    _isCheckingDevices = true;
     try {
       // Check available audio output devices
       var outputDevices = await _hardwareController.enumerateDevices('audiooutput');
@@ -137,8 +158,8 @@ class AudioRoutingService {
         debugPrint('AudioRouting: Bluetooth microphone available: $hasBluetoothMic');
       }
 
-      if (hasBluetoothSpeaker || hasBluetoothMic) {
-        // Bluetooth device(s) found
+      if (hasBluetoothSpeaker && hasBluetoothMic) {
+        // Bluetooth device(s) found - require BOTH speaker and mic
         // Check if input device status changed
         final inputDeviceChanged = hasBluetoothMic != _isBluetoothMicrophoneConnected;
         
@@ -153,9 +174,13 @@ class AudioRoutingService {
           if (inputDeviceChanged && onInputDeviceChanged != null) {
             // Debounce: Cancel any pending notification
             _inputDeviceChangeDebounce?.cancel();
-            _inputDeviceChangeDebounce = Timer(Duration(milliseconds: 300), () {
+            _inputDeviceChangeDebounce = Timer(inputChangeDebounce, () {
               debugPrint('AudioRouting: Input device changed - notifying listener');
-              onInputDeviceChanged!();
+              unawaited(
+                onInputDeviceChanged!().catchError((error) {
+                  debugPrint('AudioRouting: Error in onInputDeviceChanged callback: $error');
+                }),
+              );
             });
           }
         }
@@ -175,9 +200,13 @@ class AudioRoutingService {
             if (inputDeviceChanged && onInputDeviceChanged != null) {
               // Debounce: Cancel any pending notification
               _inputDeviceChangeDebounce?.cancel();
-              _inputDeviceChangeDebounce = Timer(Duration(milliseconds: 300), () {
+              _inputDeviceChangeDebounce = Timer(inputChangeDebounce, () {
                 debugPrint('AudioRouting: Input device changed - notifying listener');
-                onInputDeviceChanged!();
+                unawaited(
+                  onInputDeviceChanged!().catchError((error) {
+                    debugPrint('AudioRouting: Error in onInputDeviceChanged callback: $error');
+                  }),
+                );
               });
             }
           } catch (_) {
@@ -188,6 +217,8 @@ class AudioRoutingService {
       }
     } catch (e) {
       debugPrint('AudioRouting: Error handling audio device change: $e');
+    } finally {
+      _isCheckingDevices = false;
     }
   }
 

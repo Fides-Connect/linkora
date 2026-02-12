@@ -223,17 +223,19 @@ class WebRTCService {
         }
         _audioTrack!.stop();
         await _audioTrack!.dispose();
+        _audioTrack = null;
       }
       
       if (_localStream != null) {
         _localStream!.getTracks().forEach((track) => track.stop());
         await _localStream!.dispose();
+        _localStream = null;
       }
       
       await Future.delayed(Duration(milliseconds: 200));
       await _createLocalStream(startMuted: wasMuted);
       
-      if (_audioTrack != null && _peerConnection != null) {
+      if (_audioTrack != null && _localStream != null && _peerConnection != null) {
         await _peerConnection!.addTrack(_audioTrack!, _localStream!);
         
         // Restore muted state if track was previously muted

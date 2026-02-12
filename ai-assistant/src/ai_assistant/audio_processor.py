@@ -120,7 +120,6 @@ class AudioProcessor:
                     await self.processing_task
                 except asyncio.CancelledError:
                     logger.debug("Previous processing task cancelled during input track replacement")
-                    pass
             
             self.input_track = new_track
             
