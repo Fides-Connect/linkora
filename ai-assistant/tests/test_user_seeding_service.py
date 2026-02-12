@@ -48,8 +48,13 @@ class TestUserSeedingService:
         name = "New Name"
         email = "new@example.com"
         
-        # Mock Weaviate UUID lookup to avoid syncing
-        with patch.object(seeding_service, '_get_weaviate_user_uuid', return_value=None):
+        # Mock HubSpokeIngestion to avoid actual Weaviate calls
+        with patch('ai_assistant.services.user_seeding_service.HubSpokeIngestion.create_user_with_competencies') as mock_hub_spoke:
+            mock_hub_spoke.return_value = {
+                "user_uuid": "test_uuid",
+                "competence_uuids": ["comp_uuid_1"]
+            }
+            
             # Act
             await seeding_service.seed_new_user(user_id, name, email)
             
@@ -61,12 +66,15 @@ class TestUserSeedingService:
             # Assert 2: Competencies created via service layer
             mock_firestore.create_competence.assert_called()
             
-            # Assert 3: Service Requests created via service layer
+            # Assert 3: HubSpokeIngestion called for Weaviate sync
+            mock_hub_spoke.assert_called_once()
+            
+            # Assert 4: Service Requests created via service layer
             mock_firestore.create_service_request.assert_called()
             
-            # Assert 4: Provider candidates created via service layer
+            # Assert 5: Provider candidates created via service layer
             mock_firestore.create_provider_candidate.assert_called()
             
-            # Assert 5: Default friend added
+            # Assert 6: Default friend added
             mock_firestore.update_user.assert_any_call("user_alice_001", ANY)
             mock_firestore.add_favorite.assert_called_with(user_id, "user_alice_001")

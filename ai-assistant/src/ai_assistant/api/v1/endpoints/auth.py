@@ -13,6 +13,9 @@ from ai_assistant.firestore_service import FirestoreService
 from ai_assistant.weaviate_models import UserModelWeaviate
 from ai_assistant.services.user_seeding_service import UserSeedingService
 from ai_assistant.common_endpoints import _sessions
+from ai_assistant.hub_spoke_ingestion import HubSpokeIngestion
+from ai_assistant.hub_spoke_schema import get_user_collection
+from weaviate.classes.query import Filter
 
 logger = logging.getLogger(__name__)
 firestore_service = FirestoreService()
@@ -99,9 +102,7 @@ async def user_sync(request: web.Request) -> web.Response:
         
         existing_firestore_user = await firestore_service.get_user(user_id)
         if existing_firestore_user:
-            # Remove user_id from update data (it's the document key)
-            update_data = {k: v for k, v in user_data.items() if k != "user_id"}
-            if not await firestore_service.update_user(user_id, update_data):
+            if not await firestore_service.update_user(user_id, user_data):
                 return web.json_response({
                     "error": "Failed to update Firestore user"
                 }, status=500)
@@ -112,7 +113,6 @@ async def user_sync(request: web.Request) -> web.Response:
                         "error": "Failed to update Weaviate user"
                     }, status=500)
             else:
-                user_data["created_at"] = datetime.now(UTC)
                 if not UserModelWeaviate.create_user(user_data):
                     return web.json_response({
                         "error": "Failed to self-heal/create Weaviate user"
@@ -141,12 +141,6 @@ async def user_sync(request: web.Request) -> web.Response:
                 logger.error(f"Failed to seed data for new user {user_id}: {e}")
                 return web.json_response({
                     "error": f"Failed to seed user: {str(e)}"
-                }, status=500)
-            
-            user_data["created_at"] = datetime.now(UTC)
-            if not UserModelWeaviate.create_user(user_data):
-                return web.json_response({
-                    "error": "Failed to create Weaviate user"
                 }, status=500)
             
             logger.info(f"Created new user: {user_id}")

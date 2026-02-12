@@ -16,8 +16,6 @@ from ..seed_data import (
 
 # Weaviate imports
 from ..hub_spoke_ingestion import HubSpokeIngestion
-from ..hub_spoke_schema import get_user_collection
-from weaviate.classes.query import Filter
 
 logger = logging.getLogger(__name__)
 
@@ -26,20 +24,6 @@ class UserSeedingService:
 
     def __init__(self, firestore_service: FirestoreService):
         self.firestore_service = firestore_service
-
-    def _get_weaviate_user_uuid(self, user_id: str) -> Optional[str]:
-        """Helper to get Weaviate UUID for a user."""
-        try:
-            coll = get_user_collection()
-            res = coll.query.fetch_objects(
-                filters=Filter.by_property("user_id").equal(user_id),
-                limit=1
-            )
-            if res.objects:
-                return str(res.objects[0].uuid)
-        except Exception as e:
-            logger.error(f"Failed to fetch Weaviate UUID for {user_id}: {e}")
-        return None
 
     async def seed_new_user(self, user_id: str, name: str, email: str, photo_url: str = ""):
         """Seed initial data for a new user if not already present."""
@@ -60,9 +44,6 @@ class UserSeedingService:
         # Add user document in Firestore with the provided user_id and template data
         await self.firestore_service.create_user(user_id, user)
         
-        # Get Weaviate UUID for syncing competencies
-        weaviate_uuid = self._get_weaviate_user_uuid(user_id)
-        
         # 1b. Add User Availability Times Subcollection
         for avail_time in USER_TEMPLATE_AVAILABILITY_TIMES:
             avail_doc = {
@@ -79,7 +60,8 @@ class UserSeedingService:
             if availability_time_id:
                 logger.info(f"Created availability time {availability_time_id} for user {user_id}")
         
-        # 1c. Add Competencies Subcollection
+        # 1c. Add Competencies Subcollection in Firestore and collect data for Weaviate
+        competencies_for_weaviate = []
         for comp in USER_TEMPLATE_COMPETENCIES:
             comp_doc = {
                 'title': comp.get('title', ''),
@@ -93,21 +75,17 @@ class UserSeedingService:
             comp_result = await self.firestore_service.create_competence(user_id, comp_doc)
             if not comp_result:
                 continue
-            competence_id = comp_result.get('id')
+            competence_id = comp_result.get('competence_id')
             
-            # Sync to Weaviate
-            if weaviate_uuid:
-                try:
-                    comp_data_weaviate = {
-                        "competence_id": competence_id,
-                        "title": comp_doc['title'],
-                        "description": comp_doc['description'],
-                        "category": comp_doc['category'],
-                        "price_range": comp_doc['price_range']
-                    }
-                    HubSpokeIngestion.create_competence(comp_data_weaviate, weaviate_uuid)
-                except Exception as e:
-                    logger.error(f"Failed to sync seeded competence {competence_id} to Weaviate: {e}")
+            # Collect competency data for Weaviate sync
+            comp_data_weaviate = {
+                "competence_id": competence_id,
+                "title": comp_doc['title'],
+                "description": comp_doc['description'],
+                "category": comp_doc['category'],
+                "price_range": comp_doc['price_range']
+            }
+            competencies_for_weaviate.append(comp_data_weaviate)
             
             # 1d. Add Competence Availability Times if available
             comp_key = f"competence_{{uid}}_{USER_TEMPLATE_COMPETENCIES.index(comp) + 1}"
@@ -128,6 +106,23 @@ class UserSeedingService:
                     )
                     if comp_avail_id:
                         logger.info(f"Created competence availability time {comp_avail_id} for competence {competence_id}")
+        
+        # 1e. Sync user and competencies to Weaviate using HubSpokeIngestion
+        try:
+            # HubSpokeIngestion.create_user expects 'id', not 'user_id'
+            user_data_for_weaviate = {**user, 'id': user_id, 'created_at': datetime.now(timezone.utc)}
+            result = HubSpokeIngestion.create_user_with_competencies(
+                user_data=user_data_for_weaviate,
+                competencies_data=competencies_for_weaviate,
+                apply_sanitization=True,
+                apply_enrichment=True
+            )
+            if result:
+                logger.info(f"✓ Synced user {user_id} to Weaviate with {len(result['competence_uuids'])} competencies")
+            else:
+                logger.error(f"Failed to sync user {user_id} to Weaviate")
+        except Exception as e:
+            logger.error(f"Failed to sync user {user_id} to Weaviate: {e}")
         
         # 2. Create Sample Requests
         service_requests = USER_TEMPLATE_SERVICE_REQUESTS

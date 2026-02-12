@@ -837,7 +837,7 @@ class FirestoreService:
             competencies_ref.document(competence_id).set(validated_data)
             
             result = validated_data.copy()
-            result['id'] = competence_id
+            result['competence_id'] = competence_id
             return result
         except Exception as e:
             logger.error(f"Error creating competence for {user_id}: {e}")

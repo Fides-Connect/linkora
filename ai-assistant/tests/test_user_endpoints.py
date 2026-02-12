@@ -25,14 +25,12 @@ class TestUserSyncEndpoint:
         
         # Mock dependencies in ai_assistant.api.v1.endpoints.auth
         with patch('ai_assistant.api.v1.endpoints.auth.firestore_service') as mock_firestore, \
-             patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate, \
              patch('ai_assistant.api.v1.endpoints.auth.seeding_service') as mock_seeding:
             
             # Setup behavior
             mock_firestore.get_user = AsyncMock(return_value=None)  # User does not exist in Firestore
             mock_firestore.update_user = AsyncMock(return_value=True)
             mock_seeding.seed_new_user = AsyncMock(return_value=True)
-            mock_weaviate.create_user.return_value = "new_uuid"
             
             # Act
             response = await user_sync(request)
@@ -42,7 +40,7 @@ class TestUserSyncEndpoint:
             mock_firestore.get_user.assert_called_once_with("test_user_123")
             mock_seeding.seed_new_user.assert_called_once()
             mock_firestore.update_user.assert_called_once()
-            mock_weaviate.create_user.assert_called_once()
+            # Note: Weaviate sync now happens inside seeding_service, not directly in user_sync
     
     @pytest.mark.asyncio
     async def test_user_sync_updates_existing_user(self):
