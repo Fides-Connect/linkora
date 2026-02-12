@@ -7,6 +7,7 @@ import 'package:connectx/services/webrtc_service.dart';
 import 'package:connectx/services/audio_routing_service.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../helpers/test_helpers.mocks.dart';
+import '../helpers/test_constants.dart';
 import '../mocks/mock_audio_hardware_controller.dart';
 
 void main() {
@@ -94,10 +95,21 @@ void main() {
       webSocketFactory: (uri) => mockWebSocketChannel,
       audioRoutingServiceFactory: () => AudioRoutingService(
         hardwareController: mockAudioHardwareController,
+        // Use short intervals for unit tests to avoid leaking timers
+        deviceCheckInterval: testDeviceCheckInterval,
+        inputChangeDebounce: testInputChangeDebounce,
       ),
       firebaseAuthWrapper: mockFirebaseAuthWrapper,
       serverUrl: 'localhost:8000',
     );
+  });
+
+  tearDown(() async {
+    // Clean up resources to prevent timer leaks across tests
+    await webRTCService.disconnect();
+    if (!streamController.isClosed) {
+      await streamController.close();
+    }
   });
 
   group('WebRTCService', () {

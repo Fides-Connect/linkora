@@ -212,7 +212,7 @@ class WebRTCService {
       _isRecreatingTrack = true;
       final wasMuted = isMicrophoneMuted;
       
-      // Remove old audio track
+      // Remove old audio track from peer connection
       if (_audioTrack != null) {
         final senders = await _peerConnection!.getSenders();
         for (final sender in senders) {
@@ -221,18 +221,17 @@ class WebRTCService {
             break;
           }
         }
-        _audioTrack!.stop();
-        await _audioTrack!.dispose();
+        // Don't stop/dispose the track directly - let the stream disposal handle it
         _audioTrack = null;
       }
       
+      // Dispose the stream and all its tracks in one operation to avoid double-stop
       if (_localStream != null) {
         _localStream!.getTracks().forEach((track) => track.stop());
         await _localStream!.dispose();
         _localStream = null;
       }
       
-      await Future.delayed(Duration(milliseconds: 200));
       await _createLocalStream(startMuted: wasMuted);
       
       if (_audioTrack != null && _localStream != null && _peerConnection != null) {
@@ -266,7 +265,6 @@ class WebRTCService {
 
       await _peerConnection!.setLocalDescription(offer);
       _sendSignalingMessage({'type': 'offer', 'sdp': offer.sdp});
-      await Future.delayed(Duration(milliseconds: 500));
     } catch (e) {
       debugPrint('WebRTC: Renegotiation error: $e');
     }

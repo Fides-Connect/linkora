@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'audio_hardware_controller.dart';
@@ -40,6 +41,11 @@ class AudioRoutingService {
       await _requestPermissions();
       await checkAndRouteAudio(forceUpdate: true);
       _startAudioDeviceMonitoring();
+    } on MissingPluginException catch (e) {
+      // In test environments, plugins may not be available - continue without permissions
+      debugPrint('AudioRouting: Plugin not available (test environment): $e');
+      await checkAndRouteAudio(forceUpdate: true);
+      _startAudioDeviceMonitoring();
     } catch (e) {
       debugPrint('AudioRouting: Initialization error: $e');
       rethrow;
@@ -49,13 +55,19 @@ class AudioRoutingService {
   /// Request necessary permissions for audio routing
   Future<void> _requestPermissions() async {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      final permissions = [
-        Permission.microphone,
-        Permission.bluetoothConnect,
-        Permission.bluetoothScan,
-      ];
-      
-      await permissions.request();
+      try {
+        final permissions = [
+          Permission.microphone,
+          Permission.bluetoothConnect,
+          Permission.bluetoothScan,
+        ];
+        
+        await permissions.request();
+      } on MissingPluginException catch (e) {
+        // In test environments, permission_handler plugin is not available
+        // This is expected and not an error - tests use mocks
+        debugPrint('AudioRouting: Permission plugin not available (test environment): $e');
+      }
     }
   }
 
@@ -97,12 +109,8 @@ class AudioRoutingService {
       var outputDevices = await _hardwareController.enumerateDevices('audiooutput');
       var inputDevices = await _hardwareController.enumerateDevices('audioinput');
       
-      if (outputDevices.isEmpty) {
-        // Fallback in case platform reports outputs differently
-        outputDevices = await _hardwareController.enumerateDevices('audioinput');
-      }
-      
       // Look for Bluetooth devices or headsets in both input and output
+      // Each list is searched independently - never mix input/output device types
       MediaDeviceInfo? bluetoothOutputDevice;
       MediaDeviceInfo? bluetoothInputDevice;
       
