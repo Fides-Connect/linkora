@@ -29,7 +29,7 @@ void main() {
       expect(service.isBluetoothMicrophoneConnected, false);
 
       mockController.setBluetoothConnected(true);
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(Duration(milliseconds: 70));
 
       expect(service.isBluetoothSpeakerConnected, true);
       expect(service.isBluetoothMicrophoneConnected, true);
@@ -40,7 +40,7 @@ void main() {
       expect(service.isBluetoothConnected, false);
 
       mockController.setBluetoothConnected(true);
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(Duration(milliseconds: 70));
 
       expect(service.isBluetoothConnected, true);
       expect(service.isBluetoothSpeakerConnected, true);
@@ -52,7 +52,7 @@ void main() {
       expect(service.getCurrentRouting(), AudioRouting.loudspeaker);
 
       mockController.setBluetoothConnected(true);
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(Duration(milliseconds: 70));
 
       expect(service.getCurrentRouting(), AudioRouting.bluetooth);
       expect(mockController.selectedAudioOutputId, 'bluetooth-2');
@@ -63,11 +63,11 @@ void main() {
       await service.initialize();
 
       mockController.setBluetoothConnected(true);
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(Duration(milliseconds: 70));
       expect(service.getCurrentRouting(), AudioRouting.bluetooth);
 
       mockController.setBluetoothConnected(false);
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(Duration(milliseconds: 70));
 
       expect(service.getCurrentRouting(), AudioRouting.loudspeaker);
       expect(service.isBluetoothSpeakerConnected, false);
@@ -79,7 +79,7 @@ void main() {
       await service.initialize();
 
       mockController.setBluetoothConnected(true);
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(Duration(milliseconds: 70));
 
       await service.setLoudspeaker();
 
@@ -92,7 +92,7 @@ void main() {
       await service.initialize();
 
       mockController.setBluetoothConnected(true);
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(Duration(milliseconds: 70));
 
       await service.setEarpiece();
 
@@ -135,7 +135,7 @@ void main() {
       await service.initialize();
       
       mockController.setBluetoothConnected(true);
-      await Future.delayed(Duration(milliseconds: 50));
+      await Future.delayed(Duration(milliseconds: 70));
 
       expect(service.getCurrentRouting(), AudioRouting.bluetooth);
       expect(service.isBluetoothSpeakerConnected, true);
