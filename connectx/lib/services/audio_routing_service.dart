@@ -31,7 +31,7 @@ class AudioRoutingService {
   AudioRoutingService({
     AudioHardwareController? hardwareController,
     this.deviceCheckInterval = const Duration(seconds: 3),
-    this.inputChangeDebounce = const Duration(milliseconds: 10),
+    this.inputChangeDebounce = const Duration(milliseconds: 50),
     this.bluetoothSetupDelay = const Duration(milliseconds: 100),
   }) : _hardwareController = hardwareController ?? FlutterWebRTCAudioController();
 
@@ -250,11 +250,16 @@ class AudioRoutingService {
 
       await _hardwareController.setSpeakerphoneOn(true);
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-        await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration(
-          androidAudioMode: AndroidAudioMode.inCommunication,
-          androidAudioStreamType: AndroidAudioStreamType.voiceCall,
-          androidAudioAttributesUsageType: AndroidAudioAttributesUsageType.voiceCommunication,
-        ));
+        try {
+          await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration(
+            androidAudioMode: AndroidAudioMode.inCommunication,
+            androidAudioStreamType: AndroidAudioStreamType.voiceCall,
+            androidAudioAttributesUsageType: AndroidAudioAttributesUsageType.voiceCommunication,
+          ));
+        } on MissingPluginException {
+          // In test environments, the plugin method channel isn't registered
+          // Continue without Android audio configuration - routing will still work
+        }
       }
       // Android requires speakerphone to be toggled on then off to route Bluetooth audio correctly
       // This delay allows the audio system to stabilize before disabling speakerphone

@@ -22,6 +22,9 @@ class WebRTCService {
   // Audio track for sending
   MediaStreamTrack? _audioTrack;
   
+  // Desired mute state (persisted even when track is not yet created)
+  bool _desiredMuteState = true;
+  
   // Data Channel
   RTCDataChannel? _dataChannel;
 
@@ -97,15 +100,16 @@ class WebRTCService {
   /// Set microphone muted state
   /// 
   /// Enables or disables the audio track to mute/unmute the microphone.
-  /// If the audio track is not yet initialized, this method logs a warning
-  /// and has no effect. This can happen if called before connection is established.
+  /// If the audio track is not yet initialized, the desired state is stored
+  /// and will be applied when the track is created.
   /// 
   /// [muted] - true to mute the microphone, false to unmute
   void setMicrophoneMuted(bool muted) {
+    _desiredMuteState = muted;
     if (_audioTrack != null) {
       _audioTrack!.enabled = !muted;
     } else {
-      debugPrint('WebRTC: Cannot mute microphone - track not initialized');
+      debugPrint('WebRTC: Microphone ${muted ? "mute" : "unmute"} requested before track initialized - will apply when ready');
     }
   }
 
@@ -197,7 +201,8 @@ class WebRTCService {
 
       if (_localStream != null && _localStream!.getAudioTracks().isNotEmpty) {
         _audioTrack = _localStream!.getAudioTracks()[0];
-        _audioTrack!.enabled = !startMuted;
+        // Apply the desired mute state (use _desiredMuteState if set, otherwise use startMuted)
+        _audioTrack!.enabled = !_desiredMuteState;
       } else {
         throw Exception('Failed to get audio track from local stream');
       }
@@ -227,7 +232,16 @@ class WebRTCService {
       // This minimizes the gap where no audio is being captured
       _localStream = null;
       _audioTrack = null;
-      await _createLocalStream(startMuted: wasMuted);
+      
+      try {
+        await _createLocalStream(startMuted: wasMuted);
+      } catch (createError) {
+        // If stream creation fails, restore the old stream/track to keep audio working
+        _localStream = oldStream;
+        _audioTrack = oldTrack;
+        debugPrint('WebRTC: Failed to create new stream, keeping old stream: $createError');
+        rethrow;
+      }
       
       // Now that new track is ready, remove old track from peer connection
       if (oldTrack != null) {

@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:connectx/services/audio_routing_service.dart';
 
-final dynamic _skipOnAndroid = !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+final Object? _skipOnAndroid = !kIsWeb && defaultTargetPlatform == TargetPlatform.android
     ? 'AudioRoutingService.initialize() requests runtime permissions on Android; '
       'these integration tests are skipped on Android to avoid permission dialogs '
       'that can hang or fail CI runs.'

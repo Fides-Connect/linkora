@@ -60,7 +60,7 @@ class PeerConnectionHandler:
             if track.kind == "audio":
                 if self.audio_processor is not None:
                     logger.info("Track replacement detected (renegotiation)")
-                    self.track_update_ready.clear()
+                    # Event was already cleared in handle_offer before setRemoteDescription
                     await self.audio_processor.replace_input_track(track)
                     self.track_update_ready.set()
                 else:
@@ -99,10 +99,15 @@ class PeerConnectionHandler:
             is_renegotiation = len(self.pc.getSenders()) > 0
             logger.info(f"Handling {'renegotiation' if is_renegotiation else 'initial'} offer")
             
+            # For renegotiation, clear the event before setRemoteDescription
+            # This ensures we wait for the track replacement to complete
+            if is_renegotiation:
+                self.track_update_ready.clear()
+            
             await self.pc.setRemoteDescription(offer)
             
             if is_renegotiation:
-                # Wait for track update to complete instead of fixed delay
+                # Wait for track update to complete (will be set by on_track handler)
                 await asyncio.wait_for(self.track_update_ready.wait(), timeout=5.0)
             else:
                 await asyncio.wait_for(self.track_ready.wait(), timeout=5.0)
