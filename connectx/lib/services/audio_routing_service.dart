@@ -31,7 +31,7 @@ class AudioRoutingService {
   AudioRoutingService({
     AudioHardwareController? hardwareController,
     this.deviceCheckInterval = const Duration(seconds: 3),
-    this.inputChangeDebounce = const Duration(milliseconds: 300),
+    this.inputChangeDebounce = const Duration(milliseconds: 10),
     this.bluetoothSetupDelay = const Duration(milliseconds: 500),
   }) : _hardwareController = hardwareController ?? FlutterWebRTCAudioController();
 
