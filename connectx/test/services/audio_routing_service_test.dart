@@ -130,7 +130,7 @@ void main() {
       service = AudioRoutingService(hardwareController: mockController);
     });
 
-    tearDown() {
+    tearDown(() {
       service.dispose();
     });
 
