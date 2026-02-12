@@ -162,7 +162,7 @@ async def init_firestore(test_data):
             elif not isinstance(last_sign_in, datetime):
                 last_sign_in = datetime.now(timezone.utc)
             
-            # Transform user data to match User schema (arrays moved to subcollections)
+            # Transform user data to match User schema
             user_data = {
                 'name': p_data['name'],
                 'email': p_data['email'],

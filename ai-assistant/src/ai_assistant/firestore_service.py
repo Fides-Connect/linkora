@@ -833,8 +833,8 @@ class FirestoreService:
             validated_data = self._validate_data(competence_data, CompetenceSchema)
             
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.utcnow()
-            validated_data['updated_at'] = datetime.utcnow()
+            validated_data['created_at'] = datetime.now()
+            validated_data['updated_at'] = datetime.now()
             
             # Use the generated competence_id as the document ID
             competencies_ref.document(competence_id).set(validated_data)
