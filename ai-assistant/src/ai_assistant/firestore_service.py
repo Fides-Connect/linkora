@@ -156,7 +156,7 @@ class FirestoreService:
             logger.error(f"Error fetching requests for user {user_id}: {e}")
             return []
 
-    async def add_service_request(self, request_data: Dict[str, Any]) -> str:
+    async def create_service_request(self, request_data: Dict[str, Any]) -> str:
         """Create a new service request."""
         if not self.db:
             return ""
@@ -413,7 +413,7 @@ class FirestoreService:
             logger.error(f"Error updating {user_id}: {e}")
             return False
 
-    async def add_user(self, user_id: str, user_data: Dict[str, Any]) -> bool:
+    async def create_user(self, user_id: str, user_data: Dict[str, Any]) -> bool:
         """Create a new user.
         
         Args:
@@ -473,8 +473,8 @@ class FirestoreService:
             logger.error(f"Error deleting user {user_id}: {e}")
             return False
 
-    async def add_competence(self, user_id: str, competence: dict) -> Optional[Dict[str, Any]]:
-        """Add a competence to user's competencies subcollection.
+    async def create_competence(self, user_id: str, competence: dict) -> Optional[Dict[str, Any]]:
+        """Create a competence for user's competencies subcollection.
         
         Args:
             user_id: The user's ID
@@ -516,7 +516,7 @@ class FirestoreService:
             
             return validated_data
         except Exception as e:
-            logger.error(f"Error adding competence for {user_id}: {e}")
+            logger.error(f"Error creating competence for {user_id}: {e}")
             return None
 
     async def remove_competence(self, user_id: str, competence_id: str) -> bool:

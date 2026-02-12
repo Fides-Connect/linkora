@@ -270,24 +270,6 @@ python scripts/init_hub_spoke_schema.py --load-test-data
 - `--load-test-data`: Load sample providers (default: true)
 - `--skip-test-data`: Skip loading test data
 
-### Add Service Providers
-
-```python
-from ai_assistant.weaviate_models import ServiceProvider
-
-provider = ServiceProvider(
-    name="Berlin Plumbing",
-    description="Professional plumbing services in Berlin",
-    category="Plumbing",
-    phone="+49 30 1234567",
-    email="info@berlinplumbing.de",
-    city="Berlin"
-)
-
-# Save to Weaviate
-provider_id = data_provider.add_service_provider(provider)
-```
-
 ### Query Providers
 
 ```python

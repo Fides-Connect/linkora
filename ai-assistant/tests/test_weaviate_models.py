@@ -33,11 +33,11 @@ class TestUserModelWeaviate:
             "last_sign_in": datetime.now(UTC)
         }
 
-    def test_add_user_success(self, sample_user_data):
-        """Test adding a new user successfully."""
+    def test_create_user_success(self, sample_user_data):
+        """Test creating a new user successfully."""
         self.mock_collection.data.insert.return_value = "uuid_123"
 
-        result = UserModelWeaviate.add_user(sample_user_data)
+        result = UserModelWeaviate.create_user(sample_user_data)
 
         assert result == "uuid_123"
         self.mock_collection.data.insert.assert_called_once()
@@ -47,11 +47,11 @@ class TestUserModelWeaviate:
         assert call_args['email'] == "test@example.com"
         assert 'last_sign_in' in call_args
 
-    def test_add_user_failure(self, sample_user_data):
-        """Test adding user with exception."""
+    def test_create_user_failure(self, sample_user_data):
+        """Test creating user with exception."""
         self.mock_collection.data.insert.side_effect = Exception("Database error")
 
-        result = UserModelWeaviate.add_user(sample_user_data)
+        result = UserModelWeaviate.create_user(sample_user_data)
 
         assert result is None
 

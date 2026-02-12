@@ -118,9 +118,9 @@ class HubSpokeIngestion:
     """
     
     @staticmethod
-    def add_user(user_data: Dict[str, Any]) -> Optional[str]:
+    def create_user(user_data: Dict[str, Any]) -> Optional[str]:
         """
-        Adds a User (Hub).
+        Creates a User (Hub).
         
         Args:
             user_data: Dict with keys: name, email, fcm_token, 
@@ -240,7 +240,7 @@ class HubSpokeIngestion:
             return None
     
     @staticmethod
-    def add_user_with_competencies(
+    def create_user_with_competencies(
         user_data: Dict[str, Any],
         competencies_data: List[Dict[str, Any]],
         apply_sanitization: bool = True,
@@ -262,7 +262,7 @@ class HubSpokeIngestion:
         """
         try:
             # Create user
-            user_uuid = HubSpokeIngestion.add_user(user_data)
+            user_uuid = HubSpokeIngestion.create_user(user_data)
             if not user_uuid:
                 return None
             
@@ -291,7 +291,7 @@ class HubSpokeIngestion:
             return None
     
     @staticmethod
-    def add_competencies_by_user_id(
+    def create_competencies_by_user_id(
         user_id: str,
         competencies: str | List[str],
         category: str = "",
@@ -299,10 +299,10 @@ class HubSpokeIngestion:
         apply_enrichment: bool = True
     ) -> Dict[str, Any]:
         """
-        Add new competencies to an existing user by user_id.
+        Create new competencies for an existing user by user_id.
         
         Args:
-            user_id: The user_id to add competencies to
+            user_id: The user_id to create competencies for
             competencies: Single string or list of strings describing competencies
             category: Category for the competencies (optional)
             apply_sanitization: Whether to sanitize descriptions
@@ -353,9 +353,9 @@ class HubSpokeIngestion:
                 
                 if comp_uuid:
                     added_uuids.append(comp_uuid)
-                    logger.info(f"Added competence: {comp_uuid}")
+                    logger.info(f"Created competence: {comp_uuid}")
             
-            logger.info(f"Added {len(added_uuids)} competencies to user {user_id}")
+            logger.info(f"Created {len(added_uuids)} competencies for user {user_id}")
             return {
                 "success": True,
                 "added_uuids": added_uuids,
@@ -363,7 +363,7 @@ class HubSpokeIngestion:
             }
             
         except Exception as e:
-            logger.error(f"Error adding competencies: {e}")
+            logger.error(f"Error creating competencies: {e}")
             return {"success": False, "error": str(e), "added_uuids": []}
     
     @staticmethod

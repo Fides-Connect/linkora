@@ -38,7 +38,7 @@ async def create_service_request(request: web.Request) -> web.Response:
         # Enforce seeker_user_id to be the authenticated user
         body['seeker_user_id'] = user_id
         
-        service_request_id = await firestore_service.add_service_request(body)
+        service_request_id = await firestore_service.create_service_request(body)
         if service_request_id:
             return web.json_response({
                 "service_request_id": service_request_id,

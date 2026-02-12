@@ -55,12 +55,12 @@ class UserSeedingService:
         user['user_id'] = user_id
         user['name'] = name
         user['email'] = email
-        # Don't set created_at here - add_user handles timestamps
+        # Don't set created_at here - create_user handles timestamps
         if photo_url:
             user['photo_url'] = photo_url
         
         # Add user document in Firestore with the provided user_id and template data
-        await self.firestore_service.add_user(user_id, user)
+        await self.firestore_service.create_user(user_id, user)
         
         # Get Weaviate UUID for syncing competencies
         weaviate_uuid = self._get_weaviate_user_uuid(user_id)

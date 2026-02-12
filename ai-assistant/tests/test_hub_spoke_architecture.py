@@ -79,7 +79,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         cls.personas_map = {}
         for persona in TEST_PERSONAS:
             logger.info(f"Loading {persona['name']}")
-            result = HubSpokeIngestion.add_user_with_competencies(
+            result = HubSpokeIngestion.create_user_with_competencies(
                 user_data=persona['user'],
                 competencies_data=persona['competencies'],
                 apply_sanitization=True,
@@ -543,12 +543,12 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         
         logger.info("✓ Delete competencies by user_id working correctly")
     
-    def test_add_competencies_by_user_id(self):
+    def test_create_competencies_by_user_id(self):
         """
-        Test adding new competencies to an existing user by user_id.
+        Test creating new competencies to an existing user by user_id.
         """
         logger.info("\n" + "=" * 80)
-        logger.info("TEST: Add Competencies by User ID")
+        logger.info("TEST: Create Competencies by User ID")
         logger.info("=" * 80)
         
         # Get User C's data
@@ -575,7 +575,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         # Add a single competence
         new_competence = "Expert in Kitchen Remodeling"
         logger.info(f"\nAdding single competence: '{new_competence}'")
-        result = HubSpokeIngestion.add_competencies_by_user_id(
+        result = HubSpokeIngestion.create_competencies_by_user_id(
             user_id=user_id,
             competencies=new_competence,
             category="Renovation"
@@ -595,7 +595,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
             "Tile Work Specialist"
         ]
         logger.info(f"\nAdding multiple competencies: {new_competencies_list}")
-        result = HubSpokeIngestion.add_competencies_by_user_id(
+        result = HubSpokeIngestion.create_competencies_by_user_id(
             user_id=user_id,
             competencies=new_competencies_list,
             category="Flooring"

@@ -21,12 +21,12 @@ def register_v1_routes(app: web.Application):
     app.router.add_post('/api/v1/me/favorites', me.add_my_favorite)
     app.router.add_delete('/api/v1/me/favorites/{user_id}', me.remove_my_favorite)
     app.router.add_get('/api/v1/me/competencies', me.get_my_competencies)
-    app.router.add_post('/api/v1/me/competencies', me.add_my_competence)
+    app.router.add_post('/api/v1/me/competencies', me.create_my_competence)
     app.router.add_patch('/api/v1/me/competencies/{competence_id}', me.update_my_competence)
     app.router.add_delete('/api/v1/me/competencies/{competence_id}', me.remove_my_competence)
     
     # User management endpoints
-    app.router.add_post('/api/v1/users', users.add_user)
+    app.router.add_post('/api/v1/users', users.create_user)
     app.router.add_get('/api/v1/users/{user_id}', users.get_user)
     app.router.add_delete('/api/v1/users/{user_id}', users.delete_user)
     

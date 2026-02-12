@@ -149,8 +149,8 @@ async def get_my_competencies(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
-async def add_my_competence(request: web.Request) -> web.Response:
-    """POST /api/v1/me/competencies - Add competence to current user."""
+async def create_my_competence(request: web.Request) -> web.Response:
+    """POST /api/v1/me/competencies - Create competence for current user."""
     try:
         user_id = await get_current_user_id(request)
         body = await request.json()
@@ -161,7 +161,7 @@ async def add_my_competence(request: web.Request) -> web.Response:
                 "error": "Missing or invalid competence object. Must include 'title' field."
             }, status=400)
         
-        created_competence = await firestore_service.add_competence(user_id, competence)
+        created_competence = await firestore_service.create_competence(user_id, competence)
         if created_competence:
             # Sync to Weaviate
             try:
@@ -188,7 +188,7 @@ async def add_my_competence(request: web.Request) -> web.Response:
         else:
             return web.json_response({"error": "Failed to add competence"}, status=500)
     except ValidationError as e:
-        logger.warning(f"Validation error in add_my_competence: {e}")
+        logger.warning(f"Validation error in create_my_competence: {e}")
         return web.json_response({
             "error": "Validation failed",
             "details": e.errors()
@@ -196,7 +196,7 @@ async def add_my_competence(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in add_my_competence: {e}")
+        logger.error(f"Error in create_my_competence: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 

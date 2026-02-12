@@ -17,7 +17,7 @@ class UserModelWeaviate:
     """User data model and operations for Weaviate."""
     
     @staticmethod
-    def add_user(user_data: Dict[str, Any]) -> Optional[str]:
+    def create_user(user_data: Dict[str, Any]) -> Optional[str]:
         """Create a new user (User)."""
         try:
             collection = get_users_collection()

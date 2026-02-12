@@ -39,7 +39,7 @@ class TestFirestoreService:
         # Mock _generate_prefixed_id to return a predictable ID
         with patch.object(firestore, '_generate_prefixed_id', return_value='service_request_123'):
             # Act
-            req_id = await firestore.add_service_request(request_data)
+            req_id = await firestore.create_service_request(request_data)
 
             # Assert
             assert req_id == 'service_request_123'

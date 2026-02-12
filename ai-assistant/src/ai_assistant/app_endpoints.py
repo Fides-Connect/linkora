@@ -59,7 +59,7 @@ async def get_service_requests(request: web.Request) -> web.Response:
         logger.error(f"Error in get_service_requests: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-async def add_service_request(request: web.Request) -> web.Response:
+async def create_service_request(request: web.Request) -> web.Response:
     """POST /service_requests"""
     try:
         user_id = await get_current_user_id(request)
@@ -68,13 +68,13 @@ async def add_service_request(request: web.Request) -> web.Response:
         # Enforce seeker_user_id to be the authenticated user
         body['seeker_user_id'] = user_id
         
-        service_request_id = await firestore_service.add_service_request(body)
+        service_request_id = await firestore_service.create_service_request(body)
         if service_request_id:
             return web.json_response({"service_request_id": service_request_id, "status": "created"}, status=201)
         else:
             return web.json_response({"error": "Failed to create service request"}, status=500)
     except ValidationError as e:
-        logger.warning(f"Validation error in add_service_request: {e}")
+        logger.warning(f"Validation error in create_service_request: {e}")
         return web.json_response({
             "error": "Validation failed",
             "details": e.errors()
@@ -292,7 +292,7 @@ async def update_user(request: web.Request) -> web.Response:
         logger.error(f"Error in update_user: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-async def add_user(request: web.Request) -> web.Response:
+async def create_user(request: web.Request) -> web.Response:
     """POST /users - Create a new user."""
     try:
         body = await request.json()
@@ -301,13 +301,13 @@ async def add_user(request: web.Request) -> web.Response:
         if not user_id:
             return web.json_response({"error": "Missing user_id"}, status=400)
         
-        success = await firestore_service.add_user(user_id, body)
+        success = await firestore_service.create_user(user_id, body)
         if success:
             # Sync to Weaviate
             try:
                 body['user_id'] = user_id
                 body['created_at'] = datetime.now(UTC)
-                UserModelWeaviate.add_user(body)
+                UserModelWeaviate.create_user(body)
             except Exception as e:
                 logger.error(f"Failed to sync user {user_id} to Weaviate: {e}")
             
@@ -323,7 +323,7 @@ async def add_user(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in add_user: {e}")
+        logger.error(f"Error in create_user: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 async def delete_user(request: web.Request) -> web.Response:
@@ -356,7 +356,7 @@ async def delete_user(request: web.Request) -> web.Response:
         logger.error(f"Error in delete_user: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
-async def add_competence(request: web.Request) -> web.Response:
+async def create_competence(request: web.Request) -> web.Response:
     """POST /user/competencies"""
     try:
         user_id = await get_current_user_id(request)
@@ -366,7 +366,7 @@ async def add_competence(request: web.Request) -> web.Response:
         if not competence or not isinstance(competence, dict) or 'title' not in competence:
             return web.json_response({"error": "Missing or invalid competence object. Must include 'title' field."}, status=400)
             
-        created_competence = await firestore_service.add_competence(user_id, competence)
+        created_competence = await firestore_service.create_competence(user_id, competence)
         if created_competence:
             # Sync to Weaviate
             try:
@@ -383,7 +383,7 @@ async def add_competence(request: web.Request) -> web.Response:
                         user_uuid=user_uuid
                     )
             except Exception as e:
-                logger.error(f"Failed to sync new competence to Weaviate: {e}")
+                logger.error(f"Failed to sync created competence to Weaviate: {e}")
 
             # Fetch and return the updated user object
             user = await firestore_service.get_user(user_id)
@@ -393,9 +393,9 @@ async def add_competence(request: web.Request) -> web.Response:
                 return web.json_response(user)
             return web.json_response({"error": "Failed to fetch updated user"}, status=500)
         else:
-             return web.json_response({"error": "Failed to add competence"}, status=500)
+             return web.json_response({"error": "Failed to create competence"}, status=500)
     except ValidationError as e:
-        logger.warning(f"Validation error in add_competence: {e}")
+        logger.warning(f"Validation error in create_competence: {e}")
         return web.json_response({
             "error": "Validation failed",
             "details": e.errors()
@@ -403,7 +403,7 @@ async def add_competence(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in add_competence: {e}")
+        logger.error(f"Error in create_competence: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 async def remove_competence(request: web.Request) -> web.Response:
@@ -501,20 +501,8 @@ async def get_other_user(request: web.Request) -> web.Response:
 
 # --- Review Endpoints ---
 
-async def add_review(request: web.Request) -> web.Response:
-    """Create a new review.
-    
-    POST /reviews
-    Body: {
-        "service_request_id": "service_request_xyz",
-        "user_id": "user_abc",
-        "reviewer_user_id": "user_def",
-        "rating": 5,
-        "positive_feedback": ["Punctual", "Professional"],
-        "negative_feedback": [],
-        "comment": "Optional text comment"
-    }
-    """
+async def create_review(request: web.Request) -> web.Response:
+    """POST /reviews"""
     try:
         reviewer_user_id = await get_current_user_id(request)
         body = await request.json()
@@ -552,7 +540,7 @@ async def add_review(request: web.Request) -> web.Response:
             "status": "created"
         }, status=201)
     except ValidationError as e:
-        logger.warning(f"Validation error in add_review: {e}")
+        logger.warning(f"Validation error in create_review: {e}")
         return web.json_response({
             "error": "Validation failed",
             "details": e.errors()
@@ -1099,7 +1087,7 @@ async def user_sync(request: web.Request) -> web.Response:
                     return web.json_response({"error": "Failed to update Weaviate user"}, status=500)
             else:
                 user_data["created_at"] = datetime.now(UTC)
-                if not UserModelWeaviate.add_user(user_data):
+                if not UserModelWeaviate.create_user(user_data):
                     return web.json_response({"error": "Failed to self-heal/create Weaviate user"}, status=500)
             logger.info(f"Updated user: {user_id}")
             status = "updated"
@@ -1116,7 +1104,7 @@ async def user_sync(request: web.Request) -> web.Response:
             if not await firestore_service.update_user(user_id, user_data):
                 return web.json_response({"error": "Failed to create/update Firestore user"}, status=500)
             user_data["created_at"] = datetime.now(UTC)
-            if not UserModelWeaviate.add_user(user_data):
+            if not UserModelWeaviate.create_user(user_data):
                 return web.json_response({"error": "Failed to create Weaviate user"}, status=500)
             logger.info(f"Created new user: {user_id}")
             status = "created"

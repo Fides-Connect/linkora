@@ -18,8 +18,8 @@ class TestCompetenceManagement(unittest.TestCase):
     
     @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
     @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
-    def test_add_competencies_single_string(self, mock_comp_collection, mock_user_collection):
-        """Test adding a single competence as a string."""
+    def test_create_competencies_single_string(self, mock_comp_collection, mock_user_collection):
+        """Test creating a single competence as a string."""
         # Mock user query result
         mock_user_obj = Mock()
         mock_user_obj.uuid = "user-uuid-123"
@@ -31,7 +31,7 @@ class TestCompetenceManagement(unittest.TestCase):
         
         # Mock create_competence to return UUID
         with patch.object(HubSpokeIngestion, 'create_competence', return_value='comp-uuid-1'):
-            result = HubSpokeIngestion.add_competencies_by_user_id(
+            result = HubSpokeIngestion.create_competencies_by_user_id(
                 user_id="user123",
                 competencies="Expert in Plumbing",
                 category="Plumbing"
@@ -43,8 +43,8 @@ class TestCompetenceManagement(unittest.TestCase):
     
     @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
     @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
-    def test_add_competencies_list(self, mock_comp_collection, mock_user_collection):
-        """Test adding multiple competencies as a list."""
+    def test_create_competencies_list(self, mock_comp_collection, mock_user_collection):
+        """Test creating multiple competencies as a list."""
         # Mock user query result
         mock_user_obj = Mock()
         mock_user_obj.uuid = "user-uuid-123"
@@ -56,7 +56,7 @@ class TestCompetenceManagement(unittest.TestCase):
         
         # Mock create_competence to return different UUIDs
         with patch.object(HubSpokeIngestion, 'create_competence', side_effect=['comp-uuid-1', 'comp-uuid-2']):
-            result = HubSpokeIngestion.add_competencies_by_user_id(
+            result = HubSpokeIngestion.create_competencies_by_user_id(
                 user_id="user123",
                 competencies=["Expert in Plumbing", "Bathroom Renovation Specialist"],
                 category="Plumbing"
@@ -68,15 +68,15 @@ class TestCompetenceManagement(unittest.TestCase):
     
     @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
     @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
-    def test_add_competencies_user_not_found(self, mock_comp_collection, mock_user_collection):
-        """Test adding competencies when user doesn't exist."""
+    def test_create_competencies_user_not_found(self, mock_comp_collection, mock_user_collection):
+        """Test creating competencies when user doesn't exist."""
         # Mock empty query result
         mock_query_result = Mock()
         mock_query_result.objects = []
         
         mock_user_collection.return_value.query.fetch_objects.return_value = mock_query_result
         
-        result = HubSpokeIngestion.add_competencies_by_user_id(
+        result = HubSpokeIngestion.create_competencies_by_user_id(
             user_id="nonexistent",
             competencies="Some competence"
         )

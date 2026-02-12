@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 firestore_service = FirestoreService()
 
 
-async def add_user(request: web.Request) -> web.Response:
-    """POST /api/v1/users - Adds a new user."""
+async def create_user(request: web.Request) -> web.Response:
+    """POST /api/v1/users - Creates a new user."""
     try:
         body = await request.json()
         user_id = body.get("user_id")
@@ -24,13 +24,13 @@ async def add_user(request: web.Request) -> web.Response:
         if not user_id:
             return web.json_response({"error": "Missing user_id"}, status=400)
         
-        success = await firestore_service.add_user(user_id, body)
+        success = await firestore_service.create_user(user_id, body)
         if success:
             # Sync to Weaviate
             try:
                 body['user_id'] = user_id
                 body['created_at'] = datetime.now(UTC)
-                UserModelWeaviate.add_user(body)
+                UserModelWeaviate.create_user(body)
             except Exception as e:
                 logger.error(f"Failed to sync user {user_id} to Weaviate: {e}")
             
@@ -39,9 +39,9 @@ async def add_user(request: web.Request) -> web.Response:
                 "user_id": user_id
             }, status=201)
         else:
-            return web.json_response({"error": "Failed to add user"}, status=500)
+            return web.json_response({"error": "Failed to create user"}, status=500)
     except ValidationError as e:
-        logger.warning(f"Validation error in add_user: {e}")
+        logger.warning(f"Validation error in create_user: {e}")
         return web.json_response({
             "error": "Validation failed",
             "details": e.errors()
@@ -49,7 +49,7 @@ async def add_user(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in add_user: {e}")
+        logger.error(f"Error in create_user: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 
