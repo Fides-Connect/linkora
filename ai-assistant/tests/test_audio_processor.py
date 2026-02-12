@@ -249,8 +249,8 @@ class TestTrackReplacement:
             assert old_task.cancelled()
     
     @pytest.mark.asyncio
-    async def test_replace_input_track_clears_audio_queue(self, audio_processor):
-        """Test that audio queue is cleared during track replacement."""
+    async def test_replace_input_track_preserves_audio_queue(self, audio_processor):
+        """Test that audio queue is preserved during track replacement to avoid audio loss."""
         # Mock _process_audio to prevent it from actually running
         with patch.object(audio_processor, '_process_audio', new=AsyncMock()):
             # Setup processor
@@ -265,13 +265,13 @@ class TestTrackReplacement:
             # Create new mock track
             new_track = Mock()
             new_track.kind = "audio"
-            new_track.id = "new-track-clear"
+            new_track.id = "new-track-preserve"
             
             # Replace track
             await audio_processor.replace_input_track(new_track)
             
-            # Verify queue was cleared
-            assert audio_processor.audio_queue.qsize() == 0
+            # Verify queue was NOT cleared - audio is preserved during transition
+            assert audio_processor.audio_queue.qsize() == 2
     
     @pytest.mark.asyncio
     async def test_replace_input_track_restarts_processing(self, audio_processor):
