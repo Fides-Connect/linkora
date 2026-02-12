@@ -320,18 +320,16 @@ async def update_my_competence(request: web.Request) -> web.Response:
         body = await request.json()
         
         # Check if competence exists
-        competencies_ref = firestore_service._get_collection('users').document(user_id).collection('competencies')
-        comp_doc = competencies_ref.document(competence_id).get()
-        if not comp_doc.exists:
+        competence_data = await firestore_service.get_competence(user_id, competence_id)
+        if not competence_data:
             return web.json_response({"error": "Competence not found"}, status=404)
         
         success = await firestore_service.update_competence(user_id, competence_id, body)
         if success:
             # Sync to Weaviate
             try:
-                comp_doc = competencies_ref.document(competence_id).get()
-                if comp_doc.exists:
-                    competence_data = comp_doc.to_dict()
+                competence_data = await firestore_service.get_competence(user_id, competence_id)
+                if competence_data:
                     HubSpokeIngestion.update_competence(competence_data)
             except Exception as e:
                 logger.error(f"Failed to sync competence {competence_id} update to Weaviate: {e}")

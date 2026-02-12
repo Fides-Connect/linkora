@@ -204,9 +204,13 @@ class FirestoreService:
         if not self.db:
             return False
         try:
+            # Validate status value using the update schema
+            update_data = {'status': status}
+            validated_data = self._validate_data(update_data, ServiceRequestUpdateSchema, exclude_unset=True)
+            
             ref = self._get_collection('service_requests').document(request_id)
             ref.update({
-                'status': status,
+                'status': validated_data['status'],
                 'updated_at': datetime.now(timezone.utc)
             })
             return True
@@ -817,6 +821,28 @@ class FirestoreService:
         except Exception as e:
             logger.error(f"Error updating competence {competence_id} for {user_id}: {e}")
             return False
+
+    async def get_competence(self, user_id: str, competence_id: str) -> Optional[Dict[str, Any]]:
+        """Get a single competence by ID.
+        
+        Args:
+            user_id: The user's ID
+            competence_id: The competence document ID
+            
+        Returns:
+            The competence data as a dictionary, or None if not found
+        """
+        if not self.db:
+            return None
+        try:
+            competence_ref = self._get_collection('users').document(user_id).collection('competencies').document(competence_id)
+            doc = competence_ref.get()
+            if doc.exists:
+                return doc.to_dict()
+            return None
+        except Exception as e:
+            logger.error(f"Error getting competence {competence_id} for {user_id}: {e}")
+            return None
 
     # --- Availability Time Operations ---
 
