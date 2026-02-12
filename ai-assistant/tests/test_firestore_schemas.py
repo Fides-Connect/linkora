@@ -397,16 +397,22 @@ class TestUserUpdateSchema:
         errors = exc_info.value.errors()
         assert any(error['loc'] == ('average_rating',) for error in errors)
     
-    def test_no_user_id_field(self):
-        """Test that user_id is not in update schema."""
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
         update_data = {
-            "user_id": "user_123",  # This should be rejected
-            "name": "John"
+            "id": "user_123",  # Should be ignored
+            "user_id": "user_456",  # Should be ignored
+            "name": "John",
+            "email": "john@example.com",
+            "unknown_field": "ignored"  # Should be ignored
         }
-        with pytest.raises(ValidationError) as exc_info:
-            UserUpdateSchema(**update_data)
-        errors = exc_info.value.errors()
-        assert any(error['type'] == 'extra_forbidden' for error in errors)
+        user_update = UserUpdateSchema(**update_data)
+        result = user_update.model_dump(exclude_unset=True)
+        # Only name and email should be in the result
+        assert result == {"name": "John", "email": "john@example.com"}
+        assert "id" not in result
+        assert "user_id" not in result
+        assert "unknown_field" not in result
 
 
 class TestCompetenceUpdateSchema:
@@ -436,16 +442,21 @@ class TestCompetenceUpdateSchema:
         errors = exc_info.value.errors()
         assert any(error['loc'] == ('title',) for error in errors)
     
-    def test_no_id_field(self):
-        """Test that competence_id is not in update schema."""
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
         update_data = {
-            "competence_id": "competence_123",
-            "title": "Test"
+            "id": "competence_123",  # Should be ignored
+            "competence_id": "competence_456",  # Should be ignored
+            "title": "Test",
+            "unknown_field": "ignored"  # Should be ignored
         }
-        with pytest.raises(ValidationError) as exc_info:
-            CompetenceUpdateSchema(**update_data)
-        errors = exc_info.value.errors()
-        assert any(error['type'] == 'extra_forbidden' for error in errors)
+        competence_update = CompetenceUpdateSchema(**update_data)
+        result = competence_update.model_dump(exclude_unset=True)
+        # Only title should be in the result
+        assert result == {"title": "Test"}
+        assert "id" not in result
+        assert "competence_id" not in result
+        assert "unknown_field" not in result
 
 
 class TestServiceRequestUpdateSchema:
@@ -475,16 +486,21 @@ class TestServiceRequestUpdateSchema:
         errors = exc_info.value.errors()
         assert any(error['loc'] == ('status',) for error in errors)
     
-    def test_no_id_field(self):
-        """Test that service_request_id is not in update schema."""
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
         update_data = {
-            "service_request_id": "service_request_123",
-            "status": "pending"
+            "id": "service_request_123",  # Should be ignored
+            "service_request_id": "service_request_456",  # Should be ignored
+            "status": "pending",
+            "unknown_field": "ignored"  # Should be ignored
         }
-        with pytest.raises(ValidationError) as exc_info:
-            ServiceRequestUpdateSchema(**update_data)
-        errors = exc_info.value.errors()
-        assert any(error['type'] == 'extra_forbidden' for error in errors)
+        request_update = ServiceRequestUpdateSchema(**update_data)
+        result = request_update.model_dump(exclude_unset=True)
+        # Only status should be in the result
+        assert result == {"status": "pending"}
+        assert "id" not in result
+        assert "service_request_id" not in result
+        assert "unknown_field" not in result
 
 
 class TestReviewUpdateSchema:
@@ -522,16 +538,21 @@ class TestReviewUpdateSchema:
         review_update = ReviewUpdateSchema(**update_data)
         assert review_update.feedback_raw == "Updated review feedback"
     
-    def test_no_id_field(self):
-        """Test that review_id is not in update schema."""
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
         update_data = {
-            "review_id": "review_123",
-            "rating_competence": 4.0
+            "id": "review_123",  # Should be ignored
+            "review_id": "review_456",  # Should be ignored
+            "rating_competence": 4.0,
+            "unknown_field": "ignored"  # Should be ignored
         }
-        with pytest.raises(ValidationError) as exc_info:
-            ReviewUpdateSchema(**update_data)
-        errors = exc_info.value.errors()
-        assert any(error['type'] == 'extra_forbidden' for error in errors)
+        review_update = ReviewUpdateSchema(**update_data)
+        result = review_update.model_dump(exclude_unset=True)
+        # Only rating_competence should be in the result
+        assert result == {"rating_competence": 4.0}
+        assert "id" not in result
+        assert "review_id" not in result
+        assert "unknown_field" not in result
 
 
 class TestChatUpdateSchema:
@@ -551,16 +572,21 @@ class TestChatUpdateSchema:
         chat_update = ChatUpdateSchema(**update_data)
         assert chat_update.title == "Updated Chat Title"
     
-    def test_no_id_fields(self):
-        """Test that ID fields are not in update schema."""
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
         update_data = {
-            "chat_id": "chat_123",
-            "title": "Test"
+            "id": "chat_123",  # Should be ignored
+            "chat_id": "chat_456",  # Should be ignored
+            "title": "Test",
+            "unknown_field": "ignored"  # Should be ignored
         }
-        with pytest.raises(ValidationError) as exc_info:
-            ChatUpdateSchema(**update_data)
-        errors = exc_info.value.errors()
-        assert any(error['type'] == 'extra_forbidden' for error in errors)
+        chat_update = ChatUpdateSchema(**update_data)
+        result = chat_update.model_dump(exclude_unset=True)
+        # Only title should be in the result
+        assert result == {"title": "Test"}
+        assert "id" not in result
+        assert "chat_id" not in result
+        assert "unknown_field" not in result
 
 
 class TestChatMessageUpdateSchema:
@@ -590,13 +616,18 @@ class TestChatMessageUpdateSchema:
         errors = exc_info.value.errors()
         assert any(error['loc'] == ('message',) for error in errors)
     
-    def test_no_id_fields(self):
-        """Test that ID fields are not in update schema."""
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
         update_data = {
-            "chat_message_id": "chat_message_123",
-            "message": "Test"
+            "id": "chat_message_123",  # Should be ignored
+            "chat_message_id": "chat_message_456",  # Should be ignored
+            "message": "Test",
+            "unknown_field": "ignored"  # Should be ignored
         }
-        with pytest.raises(ValidationError) as exc_info:
-            ChatMessageUpdateSchema(**update_data)
-        errors = exc_info.value.errors()
-        assert any(error['type'] == 'extra_forbidden' for error in errors)
+        message_update = ChatMessageUpdateSchema(**update_data)
+        result = message_update.model_dump(exclude_unset=True)
+        # Only message should be in the result
+        assert result == {"message": "Test"}
+        assert "id" not in result
+        assert "chat_message_id" not in result
+        assert "unknown_field" not in result

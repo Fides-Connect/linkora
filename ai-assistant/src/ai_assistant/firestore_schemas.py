@@ -46,9 +46,10 @@ class UserUpdateSchema(BaseModel):
     """Schema for updating User documents in Firestore.
     
     All fields are optional. ID fields are excluded (user_id is the document key).
+    Extra fields (including 'id') are ignored automatically.
     Validation rules still apply when fields are provided.
     """
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='ignore')
     
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     email: Optional[str] = Field(None, min_length=1, max_length=200)
@@ -108,9 +109,10 @@ class CompetenceUpdateSchema(BaseModel):
     """Schema for updating Competence documents.
     
     All fields are optional. ID field (competence_id) is excluded.
+    Extra fields (including 'id') are ignored automatically.
     Validation rules still apply when fields are provided.
     """
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='ignore')
     
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=1000)
@@ -166,9 +168,10 @@ class ServiceRequestUpdateSchema(BaseModel):
     """Schema for updating ServiceRequest documents.
     
     All fields are optional. ID field (service_request_id) is excluded.
+    Extra fields (including 'id') are ignored automatically.
     Validation rules still apply when fields are provided.
     """
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='ignore')
     
     updated_at: Optional[datetime] = None
     selected_provider_user_id: Optional[str] = None
@@ -239,9 +242,10 @@ class ReviewUpdateSchema(BaseModel):
     """Schema for updating Review documents.
     
     All fields are optional. ID field (review_id) is excluded.
+    Extra fields (including 'id') are ignored automatically.
     Validation rules still apply when fields are provided.
     """
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='ignore')
     
     feedback_raw: Optional[str] = Field(None, max_length=5000)
     feedback_positive: Optional[List[str]] = None
@@ -284,9 +288,10 @@ class ChatUpdateSchema(BaseModel):
     """Schema for updating Chat documents.
     
     All fields are optional. ID fields (chat_id, provider_candidate_id, service_request_id, user_ids) are excluded.
+    Extra fields (including 'id') are ignored automatically.
     Validation rules still apply when fields are provided.
     """
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='ignore')
     
     title: Optional[str] = Field(None, max_length=200)
 
@@ -330,9 +335,10 @@ class ChatMessageUpdateSchema(BaseModel):
     """Schema for updating ChatMessage documents.
     
     All fields are optional. ID fields (chat_message_id, chat_id) are excluded.
+    Extra fields (including 'id') are ignored automatically.
     Validation rules still apply when fields are provided.
     """
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='ignore')
     
     sender_user_id: Optional[str] = Field(None, min_length=1)
     receiver_user_id: Optional[str] = Field(None, min_length=1)
@@ -389,9 +395,10 @@ class ProviderCandidateUpdateSchema(BaseModel):
     """Schema for updating ProviderCandidate documents.
     
     All fields are optional. ID fields are excluded.
+    Extra fields (including 'id') are ignored automatically.
     Validation rules still apply when fields are provided.
     """
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='ignore')
     
     provider_candidate_user_id: Optional[str] = Field(None, min_length=1)
     matching_score: Optional[float] = Field(None, ge=0.0, le=100.0)
@@ -439,9 +446,10 @@ class AvailabilityTimeUpdateSchema(BaseModel):
     """Schema for updating AvailabilityTime documents.
     
     All fields are optional. ID field is excluded.
+    Extra fields (including 'id') are ignored automatically.
     Validation rules still apply when fields are provided.
     """
-    model_config = ConfigDict(extra='forbid')
+    model_config = ConfigDict(extra='ignore')
     
     monday_time_ranges: Optional[List[dict]] = None
     tuesday_time_ranges: Optional[List[dict]] = None

@@ -236,7 +236,7 @@ class FirestoreService:
                 logger.warning(f"Cannot update service request {request_id}: service request does not exist")
                 return False
             
-            # Validate update data against UpdateSchema
+            # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(update_data, ServiceRequestUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
@@ -421,7 +421,7 @@ class FirestoreService:
                 )
                 return False
             
-            # Validate update data against UpdateSchema
+            # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(
                 update_data,
                 ProviderCandidateUpdateSchema,
@@ -704,7 +704,7 @@ class FirestoreService:
                 logger.warning(f"Cannot update user {user_id}: user does not exist")
                 return False
             
-            # Validate update data against UpdateSchema
+            # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(user_data, UserUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
@@ -881,7 +881,7 @@ class FirestoreService:
                 logger.warning(f"Cannot update competence {competence_id} for user {user_id}: competence does not exist")
                 return False
             
-            # Validate update data against UpdateSchema
+            # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(update_data, CompetenceUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
@@ -1100,7 +1100,7 @@ class FirestoreService:
                 )
                 return False
             
-            # Validate update data against UpdateSchema
+            # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(
                 update_data,
                 AvailabilityTimeUpdateSchema,
@@ -1244,7 +1244,7 @@ class FirestoreService:
         if not self.db:
             return False
         try:
-            # Validate update data against UpdateSchema
+            # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(update_data, ReviewUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
@@ -1412,7 +1412,7 @@ class FirestoreService:
                 logger.warning(f"Cannot update chat {chat_id}: does not exist")
                 return False
             
-            # Validate update data against UpdateSchema
+            # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(update_data, ChatUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
@@ -1556,7 +1556,7 @@ class FirestoreService:
                    .collection('messages')
                    .document(message_id))
             
-            # Validate update data against UpdateSchema
+            # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(update_data, ChatMessageUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation

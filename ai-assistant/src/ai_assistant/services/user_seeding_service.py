@@ -214,8 +214,8 @@ class UserSeedingService:
         # Ensure Alice exists first
         user_a_id = USER_A.get("id", "user_alice_001")
         try:
-            alice_user_data = {k:v for k,v in USER_A.items() if k != "id"}
-            await self.firestore_service.update_user(user_a_id, alice_user_data)
+            # No need to filter out 'id' - update_user handles it internally
+            await self.firestore_service.update_user(user_a_id, USER_A)
             
             # Add to user's favorites
             # Pass only the user_id, not the full dict
