@@ -23,6 +23,7 @@ import os
 import sys
 import argparse
 import logging
+import asyncio
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
@@ -51,6 +52,7 @@ from ai_assistant.hub_spoke_schema import (
     HubSpokeConnection
 )
 from ai_assistant.hub_spoke_ingestion import HubSpokeIngestion
+from ai_assistant.firestore_service import FirestoreService
 
 # Configure logging
 logging.basicConfig(
@@ -75,9 +77,11 @@ if not firebase_admin._apps:
 
 try:
     db = firestore.client()
+    firestore_service = FirestoreService()
 except Exception as e:
     logger.error(f"Failed to create Firestore client: {e}")
     db = None
+    firestore_service = None
 
 
 def get_test_data():
@@ -116,9 +120,9 @@ def clean_firestore_collection(coll_ref, batch_size=50):
         if deleted >= batch_size:
             clean_firestore_collection(coll_ref, batch_size)
 
-def init_firestore(test_data):
+async def init_firestore(test_data):
     """Initialize Firestore with schema and test data."""
-    if not db:
+    if not db or not firestore_service:
         logger.error("Firestore client is not active. Skipping Firestore initialization.")
         return
 
@@ -136,16 +140,13 @@ def init_firestore(test_data):
     if not test_personas:
         logger.warning("  No test personas provided. Firestore users/competencies skipped.")
     else:
-        # 2. Populate Users & Competencies
+        # 2. Populate Users & Competencies using firestore_service
         logger.info("  Populating Users and Competencies...")
-        
-        batch = db.batch()
         
         for persona in test_personas:
             p_data = persona['user']
             
             user_id = p_data['user_id']
-            user_ref = db.collection('users').document(user_id)
             
             # Convert last_sign_in from relative (days) to absolute datetime if needed
             last_sign_in = p_data.get('last_sign_in', 0)
@@ -162,8 +163,7 @@ def init_firestore(test_data):
                 last_sign_in = datetime.now(timezone.utc)
             
             # Transform user data to match User schema
-            user_doc = {
-                'user_id': user_id,
+            user_data = {
                 'name': p_data['name'],
                 'email': p_data['email'],
                 'photo_url': p_data.get('photo_url', ''),
@@ -181,26 +181,25 @@ def init_firestore(test_data):
                 'feedback_negative': p_data.get('feedback_negative', []),
                 'average_rating': p_data.get('average_rating', 5.0),
                 'review_count': p_data.get('review_count', 0),
-                'created_at': datetime.now(timezone.utc),
-                'updated_at': datetime.now(timezone.utc),
             }
             
-            batch.set(user_ref, user_doc)
+            # Create user via firestore_service (validates against Pydantic schema)
+            success = await firestore_service.create_user(user_id, user_data)
+            if not success:
+                logger.error(f"Failed to create user {user_id}")
+                continue
             
-        batch.commit()
         logger.info("  ✓ User documents created")
         
-        # Add Competencies Subcollection (Separate loop to avoid large batches)
+        # Add Competencies Subcollection
         for persona in test_personas:
             user_id = persona['user']['user_id']
             c_data_list = persona['competencies']
             
             for i, comp in enumerate(c_data_list):
                 comp_id = f"{user_id}_comp_{i+1}"
-                # Subcollection 'competencies' under 'users'
-                comp_ref = db.collection('users').document(user_id).collection('competencies').document(comp_id)
                 
-                comp_doc = {
+                comp_data = {
                     'competence_id': comp_id,
                     'user_id': user_id,
                     'title': comp['title'],
@@ -210,10 +209,23 @@ def init_firestore(test_data):
                     'year_of_experience': comp.get('year_of_experience', 0),
                     'feedback_positive': comp.get('feedback_positive', []),
                     'feedback_negative': comp.get('feedback_negative', []),
-                    'created_at': datetime.now(timezone.utc),
-                    'updated_at': datetime.now(timezone.utc),
                 }
-                comp_ref.set(comp_doc)
+                
+                # Create competence via firestore_service manually (need to set specific ID)
+                # Since create_competence generates IDs, we'll write directly but through validation
+                competencies_ref = db.collection('users').document(user_id).collection('competencies')
+                
+                # Validate using Pydantic schema
+                from ai_assistant.firestore_schemas import CompetenceSchema
+                try:
+                    validated = CompetenceSchema(**comp_data)
+                    validated_dict = validated.model_dump(mode='python', exclude_none=False)
+                    validated_dict['created_at'] = datetime.now(timezone.utc)
+                    validated_dict['updated_at'] = datetime.now(timezone.utc)
+                    competencies_ref.document(comp_id).set(validated_dict)
+                except Exception as e:
+                    logger.error(f"Failed to create competence {comp_id}: {e}")
+                    continue
                 
         logger.info("  ✓ Competencies subcollections created")
         
@@ -224,11 +236,9 @@ def init_firestore(test_data):
             
             for avail in avail_times:
                 avail_id = avail.get('availability_time_id', f"avail_{user_id}_auto")
-                avail_ref = db.collection('users').document(user_id).collection('availability_time').document(avail_id)
                 
-                avail_doc = {
+                avail_data = {
                     'availability_time_id': avail_id,
-                    'user_id': user_id,
                     'monday_time_ranges': avail.get('monday_time_ranges', []),
                     'tuesday_time_ranges': avail.get('tuesday_time_ranges', []),
                     'wednesday_time_ranges': avail.get('wednesday_time_ranges', []),
@@ -237,10 +247,21 @@ def init_firestore(test_data):
                     'saturday_time_ranges': avail.get('saturday_time_ranges', []),
                     'sunday_time_ranges': avail.get('sunday_time_ranges', []),
                     'absence_days': avail.get('absence_days', []),
-                    'created_at': datetime.now(timezone.utc),
-                    'updated_at': datetime.now(timezone.utc),
                 }
-                avail_ref.set(avail_doc)
+                
+                # Validate using Pydantic schema
+                from ai_assistant.firestore_schemas import AvailabilityTimeSchema
+                try:
+                    validated = AvailabilityTimeSchema(**avail_data)
+                    validated_dict = validated.model_dump(mode='python', exclude_none=False)
+                    validated_dict['created_at'] = datetime.now(timezone.utc)
+                    validated_dict['updated_at'] = datetime.now(timezone.utc)
+                    
+                    avail_ref = db.collection('users').document(user_id).collection('availability_time').document(avail_id)
+                    avail_ref.set(validated_dict)
+                except Exception as e:
+                    logger.error(f"Failed to create availability time {avail_id}: {e}")
+                    continue
                 
         logger.info("  ✓ User availability_time subcollections created")
         
@@ -256,11 +277,8 @@ def init_firestore(test_data):
             
             for avail in avail_times:
                 avail_id = avail.get('availability_time_id', f"avail_{comp_id}_auto")
-                avail_ref = (db.collection('users').document(user_id)
-                           .collection('competencies').document(comp_id)
-                           .collection('availability_time').document(avail_id))
                 
-                avail_doc = {
+                avail_data = {
                     'availability_time_id': avail_id,
                     'monday_time_ranges': avail.get('monday_time_ranges', []),
                     'tuesday_time_ranges': avail.get('tuesday_time_ranges', []),
@@ -270,10 +288,23 @@ def init_firestore(test_data):
                     'saturday_time_ranges': avail.get('saturday_time_ranges', []),
                     'sunday_time_ranges': avail.get('sunday_time_ranges', []),
                     'absence_days': avail.get('absence_days', []),
-                    'created_at': datetime.now(timezone.utc),
-                    'updated_at': datetime.now(timezone.utc),
                 }
-                avail_ref.set(avail_doc)
+                
+                # Validate using Pydantic schema
+                from ai_assistant.firestore_schemas import AvailabilityTimeSchema
+                try:
+                    validated = AvailabilityTimeSchema(**avail_data)
+                    validated_dict = validated.model_dump(mode='python', exclude_none=False)
+                    validated_dict['created_at'] = datetime.now(timezone.utc)
+                    validated_dict['updated_at'] = datetime.now(timezone.utc)
+                    
+                    avail_ref = (db.collection('users').document(user_id)
+                               .collection('competencies').document(comp_id)
+                               .collection('availability_time').document(avail_id))
+                    avail_ref.set(validated_dict)
+                except Exception as e:
+                    logger.error(f"Failed to create competence availability time {avail_id}: {e}")
+                    continue
                 
         logger.info("  ✓ Competence availability_time subcollections created")
 
@@ -303,13 +334,24 @@ def init_firestore(test_data):
                     user_incoming_requests[provider_id] = []
                 user_incoming_requests[provider_id].append(req_id)
             
-            # Add dynamic timestamps if missing
-            if 'created_at' not in req:
-                req['created_at'] = datetime.now(timezone.utc)
-            if 'updated_at' not in req:
-                req['updated_at'] = datetime.now(timezone.utc)
+            # Create using validated Pydantic schema
+            from ai_assistant.firestore_schemas import ServiceRequestSchema
+            try:
+                # Add timestamps if missing
+                if 'created_at' not in req:
+                    req['created_at'] = datetime.now(timezone.utc)
+                if 'updated_at' not in req:
+                    req['updated_at'] = datetime.now(timezone.utc)
                 
-            req_ref.set(req)
+                validated = ServiceRequestSchema(**req)
+                validated_dict = validated.model_dump(mode='python', exclude_none=False)
+                
+                req_ref = db.collection('service_requests').document(req_id)
+                req_ref.set(validated_dict)
+            except Exception as e:
+                logger.error(f"Failed to create service request {req_id}: {e}")
+                continue
+                
         logger.info(f"  ✓ {len(requests)} Service Requests created")
     
     # 3c. Update user documents with open incoming/outgoing service request arrays
@@ -323,7 +365,7 @@ def init_firestore(test_data):
         user_ref.set({'open_incoming_service_requests': incoming_req_ids}, merge=True)
         logger.info(f"  ✓ Updated user {user_id} with {len(incoming_req_ids)} incoming requests")
     
-    # 3b. Create Provider Candidates as subcollections
+    # 3b. Create Provider Candidates as subcollections using validated schema
     provider_candidates = test_data.get('provider_candidates', [])
     if provider_candidates:
         for candidate in provider_candidates:
@@ -332,23 +374,32 @@ def init_firestore(test_data):
             
             if not req_id:
                 continue
-                
-            cand_ref = db.collection('service_requests').document(req_id).collection('provider_candidates').document(cand_id)
             
-            # Add dynamic timestamps if missing
-            if 'created_at' not in candidate:
-                candidate['created_at'] = datetime.now(timezone.utc)
-            if 'updated_at' not in candidate:
-                candidate['updated_at'] = datetime.now(timezone.utc)
+            # Validate using Pydantic schema
+            from ai_assistant.firestore_schemas import ProviderCandidateSchema
+            try:
+                # Add timestamps if missing
+                if 'created_at' not in candidate:
+                    candidate['created_at'] = datetime.now(timezone.utc)
+                if 'updated_at' not in candidate:
+                    candidate['updated_at'] = datetime.now(timezone.utc)
                 
-            cand_ref.set(candidate)
+                validated = ProviderCandidateSchema(**candidate)
+                validated_dict = validated.model_dump(mode='python', exclude_none=False)
+                
+                cand_ref = db.collection('service_requests').document(req_id).collection('provider_candidates').document(cand_id)
+                cand_ref.set(validated_dict)
+            except Exception as e:
+                logger.error(f"Failed to create provider candidate {cand_id}: {e}")
+                continue
         logger.info(f"  ✓ {len(provider_candidates)} Provider Candidates created")
     
-    # 4. Create Chat Sessions and Messages as subcollections under provider_candidates
+    # 4. Create Chat Sessions and Messages using validated schemas
     chats = test_data.get('chats', [])
     messages = test_data.get('chat_messages', [])
     
     if chats:
+        from ai_assistant.firestore_schemas import ChatSchema
         for chat in chats:
             chat_id = chat.get('chat_id', 'unknown_chat')
             req_id = chat.get('service_request_id')
@@ -359,22 +410,31 @@ def init_firestore(test_data):
                 logger.warning(f"Skipping chat {chat_id}: missing service_request_id or provider_candidate_id")
                 continue
             
-            # Chat is a subcollection under provider_candidate
-            chat_ref = (db.collection('service_requests').document(req_id)
-                       .collection('provider_candidates').document(cand_id)
-                       .collection('chats').document(chat_id))
-            
-            # Add dynamic timestamps if missing
-            if 'created_at' not in chat:
-                chat['created_at'] = datetime.now(timezone.utc)
-            if 'updated_at' not in chat:
-                chat['updated_at'] = datetime.now(timezone.utc)
+            # Validate using Pydantic schema
+            try:
+                # Add dynamic timestamps if missing
+                if 'created_at' not in chat:
+                    chat['created_at'] = datetime.now(timezone.utc)
+                if 'updated_at' not in chat:
+                    chat['updated_at'] = datetime.now(timezone.utc)
                 
-            chat_ref.set(chat)
+                validated = ChatSchema(**chat)
+                validated_dict = validated.model_dump(mode='python', exclude_none=False)
+                
+                # Chat is a subcollection under provider_candidate
+                chat_ref = (db.collection('service_requests').document(req_id)
+                           .collection('provider_candidates').document(cand_id)
+                           .collection('chats').document(chat_id))
+                chat_ref.set(validated_dict)
+            except Exception as e:
+                logger.error(f"Failed to create chat {chat_id}: {e}")
+                continue
+                
         logger.info(f"  ✓ {len(chats)} Chat Sessions created")
         
         # Add messages to subcollections
         if messages:
+            from ai_assistant.firestore_schemas import ChatMessageSchema
             count = 0
             for msg in messages:
                 chat_id = msg.get('chat_id')
@@ -395,36 +455,53 @@ def init_firestore(test_data):
                     continue
                     
                 msg_id = msg.get('chat_message_id', f'msg_{count}')
-                # Subcollection 'messages' under 'chats' document
-                msg_ref = (db.collection('service_requests').document(req_id)
-                          .collection('provider_candidates').document(cand_id)
-                          .collection('chats').document(chat_id)
-                          .collection('messages').document(msg_id))
                 
-                # Add dynamic timestamps if missing
-                if 'created_at' not in msg:
-                    msg['created_at'] = datetime.now(timezone.utc)
-                if 'updated_at' not in msg:
-                    msg['updated_at'] = datetime.now(timezone.utc)
-                
-                msg_ref.set(msg)
-                count += 1
+                # Validate using Pydantic schema
+                try:
+                    # Add dynamic timestamps if missing
+                    if 'created_at' not in msg:
+                        msg['created_at'] = datetime.now(timezone.utc)
+                    if 'updated_at' not in msg:
+                        msg['updated_at'] = datetime.now(timezone.utc)
+                    
+                    validated = ChatMessageSchema(**msg)
+                    validated_dict = validated.model_dump(mode='python', exclude_none=False)
+                    
+                    # Subcollection 'messages' under 'chats' document
+                    msg_ref = (db.collection('service_requests').document(req_id)
+                              .collection('provider_candidates').document(cand_id)
+                              .collection('chats').document(chat_id)
+                              .collection('messages').document(msg_id))
+                    msg_ref.set(validated_dict)
+                    count += 1
+                except Exception as e:
+                    logger.error(f"Failed to create message {msg_id}: {e}")
+                    continue
             logger.info(f"  ✓ {count} Chat Messages created")
     
-    # 5. Create Reviews
+    # 5. Create Reviews using validated schema
     reviews = test_data.get('reviews', [])
     if reviews:
+        from ai_assistant.firestore_schemas import ReviewSchema
         for rev in reviews:
             rev_id = rev.get('review_id', 'unknown_rev')
-            rev_ref = db.collection('reviews').document(rev_id)
             
-            # Add dynamic timestamps if missing
-            if 'created_at' not in rev:
-                rev['created_at'] = datetime.now(timezone.utc)
-            if 'updated_at' not in rev:
-                rev['updated_at'] = datetime.now(timezone.utc)
-            
-            rev_ref.set(rev)
+            # Validate using Pydantic schema
+            try:
+                # Add dynamic timestamps if missing
+                if 'created_at' not in rev:
+                    rev['created_at'] = datetime.now(timezone.utc)
+                if 'updated_at' not in rev:
+                    rev['updated_at'] = datetime.now(timezone.utc)
+                
+                validated = ReviewSchema(**rev)
+                validated_dict = validated.model_dump(mode='python', exclude_none=False)
+                
+                rev_ref = db.collection('reviews').document(rev_id)
+                rev_ref.set(validated_dict)
+            except Exception as e:
+                logger.error(f"Failed to create review {rev_id}: {e}")
+                continue
         logger.info(f"  ✓ {len(reviews)} Reviews created")
 
 
@@ -458,7 +535,7 @@ def load_weaviate_data(test_personas):
             logger.error(f"    ✗ Failed to create {persona['name']}")
 
 
-def main():
+async def main():
     parser = argparse.ArgumentParser(
         description='Initialize Fides Database (Firestore + Weaviate)'
     )
@@ -507,7 +584,7 @@ def main():
         else:
             # Clean and Populate
             if args.load_test_data and test_personas:
-                init_firestore(test_data)
+                await init_firestore(test_data)
                 
                 # Load Weaviate Data as well if requested
                 logger.info("\n[Phase 3] Loading Vector Data (Weaviate)")
@@ -515,7 +592,7 @@ def main():
                 load_weaviate_data(test_personas)
             elif not args.load_test_data:
                  # Create empty structure by passing empty dict
-                 init_firestore({}) 
+                 await init_firestore({}) 
                  logger.info("✓ Firestore cleaned (no data loaded)")
 
         logger.info("\n" + "=" * 80)
@@ -536,4 +613,4 @@ def main():
 
 
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(asyncio.run(main()))

@@ -16,7 +16,11 @@ from .firestore_schemas import (
     ChatSchema,
     ChatUpdateSchema,
     ChatMessageSchema,
-    ChatMessageUpdateSchema
+    ChatMessageUpdateSchema,
+    ProviderCandidateSchema,
+    ProviderCandidateUpdateSchema,
+    AvailabilityTimeSchema,
+    AvailabilityTimeUpdateSchema
 )
 
 logger = logging.getLogger(__name__)
@@ -287,6 +291,202 @@ class FirestoreService:
             return True
         except Exception as e:
             logger.error(f"Error deleting service request {request_id}: {e}")
+            return False
+
+    # --- Provider Candidate Operations ---
+
+    async def create_provider_candidate(
+        self,
+        service_request_id: str,
+        candidate_data: Dict[str, Any]
+    ) -> Optional[str]:
+        """Create a new provider candidate for a service request.
+        
+        Args:
+            service_request_id: The service request ID
+            candidate_data: Provider candidate data
+            
+        Returns:
+            The generated provider_candidate_id or None if failed
+        """
+        if not self.db:
+            return None
+        try:
+            # Generate prefixed provider candidate ID
+            provider_candidate_id = self._generate_prefixed_id('provider_candidate')
+            candidate_data['provider_candidate_id'] = provider_candidate_id
+            candidate_data['service_request_id'] = service_request_id
+            
+            # Validate data against schema (timestamps excluded)
+            validated_data = self._validate_data(candidate_data, ProviderCandidateSchema)
+            
+            # Add timestamps after validation
+            validated_data['created_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Create document as subcollection under service_request
+            ref = (self._get_collection('service_requests')
+                  .document(service_request_id)
+                  .collection('provider_candidates')
+                  .document(provider_candidate_id))
+            ref.set(validated_data)
+            return provider_candidate_id
+        except Exception as e:
+            logger.error(f"Error creating provider candidate for request {service_request_id}: {e}")
+            return None
+
+    async def get_provider_candidates(
+        self,
+        service_request_id: str
+    ) -> List[Dict[str, Any]]:
+        """Fetch all provider candidates for a service request.
+        
+        Args:
+            service_request_id: The service request ID
+            
+        Returns:
+            List of provider candidate dictionaries
+        """
+        if not self.db:
+            return []
+        try:
+            candidates_ref = (self._get_collection('service_requests')
+                             .document(service_request_id)
+                             .collection('provider_candidates'))
+            docs = candidates_ref.stream()
+            
+            candidates = []
+            for doc in docs:
+                data = doc.to_dict()
+                data['provider_candidate_id'] = doc.id
+                candidates.append(data)
+            return candidates
+        except Exception as e:
+            logger.error(f"Error fetching provider candidates for request {service_request_id}: {e}")
+            return []
+
+    async def get_provider_candidate(
+        self,
+        service_request_id: str,
+        provider_candidate_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch a single provider candidate.
+        
+        Args:
+            service_request_id: The service request ID
+            provider_candidate_id: The provider candidate ID
+            
+        Returns:
+            Provider candidate dictionary or None if not found
+        """
+        if not self.db:
+            return None
+        try:
+            doc = (self._get_collection('service_requests')
+                  .document(service_request_id)
+                  .collection('provider_candidates')
+                  .document(provider_candidate_id)
+                  .get())
+            if doc.exists:
+                data = doc.to_dict()
+                data['provider_candidate_id'] = doc.id
+                return data
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching provider candidate {provider_candidate_id}: {e}")
+            return None
+
+    async def update_provider_candidate(
+        self,
+        service_request_id: str,
+        provider_candidate_id: str,
+        update_data: Dict[str, Any]
+    ) -> bool:
+        """Update a provider candidate.
+        
+        Args:
+            service_request_id: The service request ID
+            provider_candidate_id: The provider candidate ID
+            update_data: Data to update
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        if not self.db:
+            return False
+        try:
+            # Check if provider candidate exists
+            ref = (self._get_collection('service_requests')
+                  .document(service_request_id)
+                  .collection('provider_candidates')
+                  .document(provider_candidate_id))
+            
+            if not ref.get().exists:
+                logger.warning(
+                    f"Cannot update provider candidate {provider_candidate_id}: does not exist"
+                )
+                return False
+            
+            # Validate update data against UpdateSchema
+            validated_data = self._validate_data(
+                update_data,
+                ProviderCandidateUpdateSchema,
+                exclude_unset=True
+            )
+            
+            # Add updated_at timestamp after validation
+            validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Update document
+            ref.update(validated_data)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating provider candidate {provider_candidate_id}: {e}")
+            return False
+
+    async def delete_provider_candidate(
+        self,
+        service_request_id: str,
+        provider_candidate_id: str
+    ) -> bool:
+        """Delete a provider candidate and all its subcollections (chats with messages).
+        
+        Args:
+            service_request_id: The service request ID
+            provider_candidate_id: The provider candidate ID
+            
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        if not self.db:
+            return False
+        try:
+            candidate_ref = (self._get_collection('service_requests')
+                            .document(service_request_id)
+                            .collection('provider_candidates')
+                            .document(provider_candidate_id))
+            
+            # Delete all chats and their messages
+            chats_ref = candidate_ref.collection('chats')
+            chats = chats_ref.stream()
+            
+            for chat in chats:
+                chat_id = chat.id
+                
+                # Delete all messages in this chat
+                messages_ref = chats_ref.document(chat_id).collection('messages')
+                messages = messages_ref.stream()
+                for message in messages:
+                    message.reference.delete()
+                
+                # Delete the chat
+                chat.reference.delete()
+            
+            # Delete the provider candidate
+            candidate_ref.delete()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting provider candidate {provider_candidate_id}: {e}")
             return False
 
     # --- Favorites Operations ---
@@ -568,6 +768,249 @@ class FirestoreService:
             return True
         except Exception as e:
             logger.error(f"Error updating competence {competence_id} for {user_id}: {e}")
+            return False
+
+    # --- Availability Time Operations ---
+
+    async def create_availability_time(
+        self,
+        user_id: str,
+        availability_data: Dict[str, Any],
+        competence_id: Optional[str] = None
+    ) -> Optional[str]:
+        """Create an availability time for a user or competence.
+        
+        Args:
+            user_id: The user's ID
+            availability_data: Availability time data
+            competence_id: Optional competence ID if this is for a competence subcollection
+            
+        Returns:
+            The generated availability_time_id or None if failed
+        """
+        if not self.db:
+            return None
+        try:
+            # Generate prefixed availability time ID
+            availability_time_id = self._generate_prefixed_id('availability_time')
+            availability_data['availability_time_id'] = availability_time_id
+            
+            # Validate data against schema (timestamps excluded)
+            validated_data = self._validate_data(availability_data, AvailabilityTimeSchema)
+            
+            # Add timestamps after validation
+            validated_data['created_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Determine the collection reference
+            if competence_id:
+                # Subcollection under competence
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('competencies')
+                      .document(competence_id)
+                      .collection('availability_time')
+                      .document(availability_time_id))
+            else:
+                # Subcollection under user
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('availability_time')
+                      .document(availability_time_id))
+            
+            ref.set(validated_data)
+            return availability_time_id
+        except Exception as e:
+            logger.error(f"Error creating availability time: {e}")
+            return None
+
+    async def get_availability_times(
+        self,
+        user_id: str,
+        competence_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Fetch all availability times for a user or competence.
+        
+        Args:
+            user_id: The user's ID
+            competence_id: Optional competence ID
+            
+        Returns:
+            List of availability time dictionaries
+        """
+        if not self.db:
+            return []
+        try:
+            # Determine the collection reference
+            if competence_id:
+                # Subcollection under competence
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('competencies')
+                      .document(competence_id)
+                      .collection('availability_time'))
+            else:
+                # Subcollection under user
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('availability_time'))
+            
+            docs = ref.stream()
+            availability_times = []
+            for doc in docs:
+                data = doc.to_dict()
+                data['availability_time_id'] = doc.id
+                availability_times.append(data)
+            return availability_times
+        except Exception as e:
+            logger.error(f"Error fetching availability times: {e}")
+            return []
+
+    async def get_availability_time(
+        self,
+        user_id: str,
+        availability_time_id: str,
+        competence_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch a single availability time.
+        
+        Args:
+            user_id: The user's ID
+            availability_time_id: The availability time ID
+            competence_id: Optional competence ID
+            
+        Returns:
+            Availability time dictionary or None if not found
+        """
+        if not self.db:
+            return None
+        try:
+            # Determine the collection reference
+            if competence_id:
+                # Subcollection under competence
+                doc = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('competencies')
+                      .document(competence_id)
+                      .collection('availability_time')
+                      .document(availability_time_id)
+                      .get())
+            else:
+                # Subcollection under user
+                doc = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('availability_time')
+                      .document(availability_time_id)
+                      .get())
+            
+            if doc.exists:
+                data = doc.to_dict()
+                data['availability_time_id'] = doc.id
+                return data
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching availability time {availability_time_id}: {e}")
+            return None
+
+    async def update_availability_time(
+        self,
+        user_id: str,
+        availability_time_id: str,
+        update_data: Dict[str, Any],
+        competence_id: Optional[str] = None
+    ) -> bool:
+        """Update an availability time.
+        
+        Args:
+            user_id: The user's ID
+            availability_time_id: The availability time ID
+            update_data: Data to update
+            competence_id: Optional competence ID
+            
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        if not self.db:
+            return False
+        try:
+            # Determine the collection reference
+            if competence_id:
+                # Subcollection under competence
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('competencies')
+                      .document(competence_id)
+                      .collection('availability_time')
+                      .document(availability_time_id))
+            else:
+                # Subcollection under user
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('availability_time')
+                      .document(availability_time_id))
+            
+            if not ref.get().exists:
+                logger.warning(
+                    f"Cannot update availability time {availability_time_id}: does not exist"
+                )
+                return False
+            
+            # Validate update data against UpdateSchema
+            validated_data = self._validate_data(
+                update_data,
+                AvailabilityTimeUpdateSchema,
+                exclude_unset=True
+            )
+            
+            # Add updated_at timestamp after validation
+            validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Update document
+            ref.update(validated_data)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating availability time {availability_time_id}: {e}")
+            return False
+
+    async def delete_availability_time(
+        self,
+        user_id: str,
+        availability_time_id: str,
+        competence_id: Optional[str] = None
+    ) -> bool:
+        """Delete an availability time.
+        
+        Args:
+            user_id: The user's ID
+            availability_time_id: The availability time ID
+            competence_id: Optional competence ID
+            
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        if not self.db:
+            return False
+        try:
+            # Determine the collection reference
+            if competence_id:
+                # Subcollection under competence
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('competencies')
+                      .document(competence_id)
+                      .collection('availability_time')
+                      .document(availability_time_id))
+            else:
+                # Subcollection under user
+                ref = (self._get_collection('users')
+                      .document(user_id)
+                      .collection('availability_time')
+                      .document(availability_time_id))
+            
+            ref.delete()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting availability time {availability_time_id}: {e}")
             return False
 
     # --- Review Operations ---

@@ -183,6 +183,135 @@ async def delete_service_request(request: web.Request) -> web.Response:
         logger.error(f"Error in delete_service_request: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
+# --- Provider Candidate Endpoints ---
+
+async def get_provider_candidates(request: web.Request) -> web.Response:
+    """GET /service_requests/{service_request_id}/provider_candidates - Get all provider candidates."""
+    try:
+        user_id = await get_current_user_id(request)
+        service_request_id = request.match_info['service_request_id']
+        
+        # Verify user has access to this service request
+        service_request = await firestore_service.get_service_request(service_request_id)
+        if not service_request:
+            return web.json_response({"error": "Service request not found"}, status=404)
+        
+        candidates = await firestore_service.get_provider_candidates(service_request_id)
+        candidates = serialize_datetime(candidates)
+        return web.json_response(candidates)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_provider_candidates: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def get_provider_candidate(request: web.Request) -> web.Response:
+    """GET /service_requests/{service_request_id}/provider_candidates/{provider_candidate_id}"""
+    try:
+        user_id = await get_current_user_id(request)
+        service_request_id = request.match_info['service_request_id']
+        provider_candidate_id = request.match_info['provider_candidate_id']
+        
+        candidate = await firestore_service.get_provider_candidate(
+            service_request_id,
+            provider_candidate_id
+        )
+        if not candidate:
+            return web.json_response({"error": "Provider candidate not found"}, status=404)
+        
+        candidate = serialize_datetime(candidate)
+        return web.json_response(candidate)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_provider_candidate: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def create_provider_candidate(request: web.Request) -> web.Response:
+    """POST /service_requests/{service_request_id}/provider_candidates - Create a provider candidate."""
+    try:
+        user_id = await get_current_user_id(request)
+        service_request_id = request.match_info['service_request_id']
+        body = await request.json()
+        
+        # Verify service request exists
+        service_request = await firestore_service.get_service_request(service_request_id)
+        if not service_request:
+            return web.json_response({"error": "Service request not found"}, status=404)
+        
+        provider_candidate_id = await firestore_service.create_provider_candidate(
+            service_request_id,
+            body
+        )
+        if provider_candidate_id:
+            return web.json_response({
+                "provider_candidate_id": provider_candidate_id,
+                "status": "created"
+            }, status=201)
+        else:
+            return web.json_response({"error": "Failed to create provider candidate"}, status=500)
+    except ValidationError as e:
+        logger.warning(f"Validation error in create_provider_candidate: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in create_provider_candidate: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def update_provider_candidate(request: web.Request) -> web.Response:
+    """PUT /service_requests/{service_request_id}/provider_candidates/{provider_candidate_id}"""
+    try:
+        user_id = await get_current_user_id(request)
+        service_request_id = request.match_info['service_request_id']
+        provider_candidate_id = request.match_info['provider_candidate_id']
+        body = await request.json()
+        
+        success = await firestore_service.update_provider_candidate(
+            service_request_id,
+            provider_candidate_id,
+            body
+        )
+        if success:
+            return web.json_response({"status": "updated"})
+        else:
+            return web.json_response({"error": "Failed to update provider candidate"}, status=500)
+    except ValidationError as e:
+        logger.warning(f"Validation error in update_provider_candidate: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in update_provider_candidate: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def delete_provider_candidate(request: web.Request) -> web.Response:
+    """DELETE /service_requests/{service_request_id}/provider_candidates/{provider_candidate_id}"""
+    try:
+        user_id = await get_current_user_id(request)
+        service_request_id = request.match_info['service_request_id']
+        provider_candidate_id = request.match_info['provider_candidate_id']
+        
+        success = await firestore_service.delete_provider_candidate(
+            service_request_id,
+            provider_candidate_id
+        )
+        if success:
+            return web.json_response({"status": "deleted"})
+        else:
+            return web.json_response({"error": "Failed to delete provider candidate"}, status=500)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in delete_provider_candidate: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
 async def get_favorites(request: web.Request) -> web.Response:
     """GET /favorites"""
     try:
@@ -476,6 +605,132 @@ async def update_competence(request: web.Request) -> web.Response:
         raise
     except Exception as e:
         logger.error(f"Error in update_competence: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+# --- Availability Time Endpoints ---
+
+async def get_availability_times(request: web.Request) -> web.Response:
+    """GET /user/availability_time or /user/competencies/{competence_id}/availability_time"""
+    try:
+        user_id = await get_current_user_id(request)
+        competence_id = request.match_info.get('competence_id')
+        
+        availability_times = await firestore_service.get_availability_times(user_id, competence_id)
+        availability_times = serialize_datetime(availability_times)
+        return web.json_response(availability_times)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_availability_times: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def get_availability_time(request: web.Request) -> web.Response:
+    """GET /user/availability_time/{availability_time_id} or
+    GET /user/competencies/{competence_id}/availability_time/{availability_time_id}"""
+    try:
+        user_id = await get_current_user_id(request)
+        availability_time_id = request.match_info['availability_time_id']
+        competence_id = request.match_info.get('competence_id')
+        
+        availability_time = await firestore_service.get_availability_time(
+            user_id,
+            availability_time_id,
+            competence_id
+        )
+        if not availability_time:
+            return web.json_response({"error": "Availability time not found"}, status=404)
+        
+        availability_time = serialize_datetime(availability_time)
+        return web.json_response(availability_time)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in get_availability_time: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def create_availability_time(request: web.Request) -> web.Response:
+    """POST /user/availability_time or /user/competencies/{competence_id}/availability_time"""
+    try:
+        user_id = await get_current_user_id(request)
+        body = await request.json()
+        competence_id = request.match_info.get('competence_id')
+        
+        availability_time_id = await firestore_service.create_availability_time(
+            user_id,
+            body,
+            competence_id
+        )
+        if availability_time_id:
+            return web.json_response({
+                "availability_time_id": availability_time_id,
+                "status": "created"
+            }, status=201)
+        else:
+            return web.json_response({"error": "Failed to create availability time"}, status=500)
+    except ValidationError as e:
+        logger.warning(f"Validation error in create_availability_time: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in create_availability_time: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def update_availability_time(request: web.Request) -> web.Response:
+    """PUT /user/availability_time/{availability_time_id} or
+    PUT /user/competencies/{competence_id}/availability_time/{availability_time_id}"""
+    try:
+        user_id = await get_current_user_id(request)
+        availability_time_id = request.match_info['availability_time_id']
+        body = await request.json()
+        competence_id = request.match_info.get('competence_id')
+        
+        success = await firestore_service.update_availability_time(
+            user_id,
+            availability_time_id,
+            body,
+            competence_id
+        )
+        if success:
+            return web.json_response({"status": "updated"})
+        else:
+            return web.json_response({"error": "Failed to update availability time"}, status=500)
+    except ValidationError as e:
+        logger.warning(f"Validation error in update_availability_time: {e}")
+        return web.json_response({
+            "error": "Validation failed",
+            "details": e.errors()
+        }, status=400)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in update_availability_time: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+async def delete_availability_time(request: web.Request) -> web.Response:
+    """DELETE /user/availability_time/{availability_time_id} or
+    DELETE /user/competencies/{competence_id}/availability_time/{availability_time_id}"""
+    try:
+        user_id = await get_current_user_id(request)
+        availability_time_id = request.match_info['availability_time_id']
+        competence_id = request.match_info.get('competence_id')
+        
+        success = await firestore_service.delete_availability_time(
+            user_id,
+            availability_time_id,
+            competence_id
+        )
+        if success:
+            return web.json_response({"status": "deleted"})
+        else:
+            return web.json_response({"error": "Failed to delete availability time"}, status=500)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in delete_availability_time: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 async def get_other_user(request: web.Request) -> web.Response:

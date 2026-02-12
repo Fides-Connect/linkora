@@ -336,3 +336,113 @@ class ChatMessageUpdateSchema(BaseModel):
         if v is not None and (not v or not v.strip()):
             raise ValueError('User ID cannot be empty')
         return v
+
+
+class ProviderCandidateSchema(BaseModel):
+    """Schema for ProviderCandidate documents (subcollection under service_requests).
+    
+    Note: provider_candidate_id is auto-generated with prefix 'provider_candidate_'
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    provider_candidate_id: str = Field(..., min_length=1)
+    service_request_id: str = Field(..., min_length=1)
+    provider_candidate_user_id: str = Field(..., min_length=1)
+    matching_score: float = Field(..., ge=0.0, le=100.0)
+    matching_score_reasons: List[str] = Field(default_factory=list)
+    introduction: str = Field(default="", max_length=2000)
+    status: str = Field(default="pending", max_length=50)
+    
+    @field_validator('provider_candidate_id')
+    @classmethod
+    def validate_provider_candidate_id(cls, v: str) -> str:
+        """Ensure provider_candidate_id has the correct prefix."""
+        if not v.startswith('provider_candidate_') and not v.startswith('cand_'):
+            raise ValueError('provider_candidate_id must start with "provider_candidate_" or "cand_"')
+        return v
+    
+    @field_validator('status')
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        """Validate status values."""
+        valid_statuses = ['pending', 'contacted', 'accepted', 'declined', 'rejected']
+        if v and v not in valid_statuses:
+            raise ValueError(f'status must be one of {valid_statuses}')
+        return v
+
+
+class ProviderCandidateUpdateSchema(BaseModel):
+    """Schema for updating ProviderCandidate documents.
+    
+    All fields are optional. ID fields are excluded.
+    Validation rules still apply when fields are provided.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    provider_candidate_user_id: Optional[str] = Field(None, min_length=1)
+    matching_score: Optional[float] = Field(None, ge=0.0, le=100.0)
+    matching_score_reasons: Optional[List[str]] = None
+    introduction: Optional[str] = Field(None, max_length=2000)
+    status: Optional[str] = Field(None, max_length=50)
+    
+    @field_validator('status')
+    @classmethod
+    def validate_status(cls, v: Optional[str]) -> Optional[str]:
+        """Validate status values."""
+        if v is not None:
+            valid_statuses = ['pending', 'contacted', 'accepted', 'declined', 'rejected']
+            if v not in valid_statuses:
+                raise ValueError(f'status must be one of {valid_statuses}')
+        return v
+
+
+class TimeRangeSchema(BaseModel):
+    """Schema for time ranges within availability times."""
+    model_config = ConfigDict(extra='forbid')
+    
+    start_time: str = Field(..., pattern=r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$')
+    end_time: str = Field(..., pattern=r'^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$')
+
+
+class AvailabilityTimeSchema(BaseModel):
+    """Schema for AvailabilityTime documents (subcollection under users or competencies).
+    
+    Note: availability_time_id is auto-generated with prefix 'availability_time_'
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    availability_time_id: str = Field(..., min_length=1)
+    monday_time_ranges: List[dict] = Field(default_factory=list)
+    tuesday_time_ranges: List[dict] = Field(default_factory=list)
+    wednesday_time_ranges: List[dict] = Field(default_factory=list)
+    thursday_time_ranges: List[dict] = Field(default_factory=list)
+    friday_time_ranges: List[dict] = Field(default_factory=list)
+    saturday_time_ranges: List[dict] = Field(default_factory=list)
+    sunday_time_ranges: List[dict] = Field(default_factory=list)
+    absence_days: List[str] = Field(default_factory=list)
+    
+    @field_validator('availability_time_id')
+    @classmethod
+    def validate_availability_time_id(cls, v: str) -> str:
+        """Ensure availability_time_id has the correct prefix."""
+        if not v.startswith('availability_time_') and not v.startswith('avail_'):
+            raise ValueError('availability_time_id must start with "availability_time_" or "avail_"')
+        return v
+
+
+class AvailabilityTimeUpdateSchema(BaseModel):
+    """Schema for updating AvailabilityTime documents.
+    
+    All fields are optional. ID field is excluded.
+    Validation rules still apply when fields are provided.
+    """
+    model_config = ConfigDict(extra='forbid')
+    
+    monday_time_ranges: Optional[List[dict]] = None
+    tuesday_time_ranges: Optional[List[dict]] = None
+    wednesday_time_ranges: Optional[List[dict]] = None
+    thursday_time_ranges: Optional[List[dict]] = None
+    friday_time_ranges: Optional[List[dict]] = None
+    saturday_time_ranges: Optional[List[dict]] = None
+    sunday_time_ranges: Optional[List[dict]] = None
+    absence_days: Optional[List[str]] = None
