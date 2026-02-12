@@ -94,6 +94,13 @@ class WebRTCService {
     return true;
   }
   
+  /// Set microphone muted state
+  /// 
+  /// Enables or disables the audio track to mute/unmute the microphone.
+  /// If the audio track is not yet initialized, this method logs a warning
+  /// and has no effect. This can happen if called before connection is established.
+  /// 
+  /// [muted] - true to mute the microphone, false to unmute
   void setMicrophoneMuted(bool muted) {
     if (_audioTrack != null) {
       _audioTrack!.enabled = !muted;

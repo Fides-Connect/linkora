@@ -90,6 +90,23 @@ class AudioRoutingService {
     });
   }
 
+  /// Notify callback about input device change with debouncing
+  void _notifyInputDeviceChanged() {
+    if (onInputDeviceChanged == null) return;
+    
+    // Cancel any pending notification
+    _inputDeviceChangeDebounce?.cancel();
+    
+    // Schedule debounced notification
+    _inputDeviceChangeDebounce = Timer(inputChangeDebounce, () {
+      unawaited(
+        onInputDeviceChanged!().catchError((error) {
+          debugPrint('AudioRouting: Error recreating track on input change: $error');
+        }),
+      );
+    });
+  }
+
   /// Check available audio devices and route audio immediately
   /// Can be called manually at any time to re-evaluate routing
   /// 
@@ -168,16 +185,8 @@ class AudioRoutingService {
           );
           
           // Notify if input device changed (may need to recreate audio track)
-          if (inputDeviceChanged && onInputDeviceChanged != null) {
-            // Debounce: Cancel any pending notification
-            _inputDeviceChangeDebounce?.cancel();
-            _inputDeviceChangeDebounce = Timer(inputChangeDebounce, () {
-              unawaited(
-                onInputDeviceChanged!().catchError((error) {
-                  debugPrint('AudioRouting: Error recreating track on input change: $error');
-                }),
-              );
-            });
+          if (inputDeviceChanged) {
+            _notifyInputDeviceChanged();
           }
         }
       } else {
@@ -193,16 +202,8 @@ class AudioRoutingService {
             await _setLoudspeaker();
             
             // Notify if input device changed (may need to recreate audio track)
-            if (inputDeviceChanged && onInputDeviceChanged != null) {
-              // Debounce: Cancel any pending notification
-              _inputDeviceChangeDebounce?.cancel();
-              _inputDeviceChangeDebounce = Timer(inputChangeDebounce, () {
-                unawaited(
-                  onInputDeviceChanged!().catchError((error) {
-                    debugPrint('AudioRouting: Error recreating track on input change: $error');
-                  }),
-                );
-              });
+            if (inputDeviceChanged) {
+              _notifyInputDeviceChanged();
             }
           } catch (_) {
             // If loudspeaker routing fails, fall back to earpiece
@@ -249,11 +250,11 @@ class AudioRoutingService {
 
       await _hardwareController.setSpeakerphoneOn(true);
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-         await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration(
-            androidAudioMode: AndroidAudioMode.inCommunication,
-            androidAudioStreamType: AndroidAudioStreamType.voiceCall,
-            androidAudioAttributesUsageType: AndroidAudioAttributesUsageType.voiceCommunication,
-         ));
+        await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration(
+          androidAudioMode: AndroidAudioMode.inCommunication,
+          androidAudioStreamType: AndroidAudioStreamType.voiceCall,
+          androidAudioAttributesUsageType: AndroidAudioAttributesUsageType.voiceCommunication,
+        ));
       }
       // Android requires speakerphone to be toggled on then off to route Bluetooth audio correctly
       // This delay allows the audio system to stabilize before disabling speakerphone

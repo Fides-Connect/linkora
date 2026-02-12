@@ -29,6 +29,7 @@ class PeerConnectionHandler:
         self.audio_processor = None
         self.track_ready = asyncio.Event()
         self.track_update_ready = asyncio.Event()
+        self.track_update_ready.set()  # Initially set - no update pending
         
         logger.info(f"PeerConnectionHandler created for connection {connection_id} with language: {language}")
         

@@ -112,23 +112,36 @@ class AudioProcessor:
         logger.info(f"Replacing input track: {self.input_track.id if self.input_track else 'None'} -> {new_track.id}")
         
         try:
+            # Cancel existing processing task
             if self.processing_task and not self.processing_task.done():
                 self.processing_task.cancel()
                 try:
                     await self.processing_task
                 except asyncio.CancelledError:
-                    pass
+                    pass  # Expected when cancelling the task
             
-            self.input_track = new_track
+            # Cancel existing STT task to ensure clean state
+            if self.stt_task and not self.stt_task.done():
+                self.stt_task.cancel()
+                try:
+                    await self.stt_task
+                except asyncio.CancelledError:
+                    pass  # Expected when cancelling the task
             
+            # Clear audio queue to remove stale data
             while not self.audio_queue.empty():
                 try:
                     self.audio_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
             
+            # Update to new track
+            self.input_track = new_track
+            
+            # Restart both tasks if processor is still running
             if self.running:
                 self.processing_task = asyncio.create_task(self._process_audio())
+                self.stt_task = asyncio.create_task(self._continuous_stt())
                 logger.info("Audio processing restarted with new input track")
             
         except Exception as e:
@@ -146,14 +159,14 @@ class AudioProcessor:
             try:
                 await self.stt_task
             except asyncio.CancelledError:
-                pass
+                pass  # Expected when cancelling the task
         
         if self.processing_task:
             self.processing_task.cancel()
             try:
                 await self.processing_task
             except asyncio.CancelledError:
-                pass
+                pass  # Expected when cancelling the task
         
         # Save debug recording if enabled
         self.debug_recorder.save()

@@ -169,7 +169,7 @@ void main() {
       expect(service.isSpeakerOn, true);
     });
 
-    test('is BluetoothConnected property accurately reflects Bluetooth status', () async {
+    test('isBluetoothConnected property accurately reflects Bluetooth status', () async {
       await service.initialize();
       expect(service.isBluetoothConnected, false);
 

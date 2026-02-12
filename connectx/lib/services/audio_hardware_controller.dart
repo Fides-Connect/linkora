@@ -39,10 +39,19 @@ class FlutterWebRTCAudioController implements AudioHardwareController {
   
   @override
   Future<void> selectAudioInput(String deviceId) async {
-    // Input device selection is handled at the getUserMedia level in WebRTC.
-    // Here we make a best-effort attempt to obtain a stream from the requested
-    // input device so callers can rely on this method to actually try to route
-    // audio to the specified microphone.
+    // WebRTC input device selection is handled at getUserMedia level - there's no direct
+    // API to switch input devices on an existing stream. This method creates a temporary
+    // stream to verify the device can be accessed and signal intent to the platform.
+    // 
+    // Tradeoffs:
+    // - May trigger permission prompts on first call (mitigated by prior mic permissions)
+    // - Creates/disposes a stream (acceptable - only called during device changes, not frequently)
+    // - Platform audio routing may happen automatically when device connects (this validates it)
+    //
+    // This approach is necessary because:
+    // 1. No browser API exists to select input device without creating a stream
+    // 2. The actual input switch happens at stream creation time (WebRTCService recreates stream)
+    // 3. This validates the device is accessible before the full stream recreation
     try {
       final mediaConstraints = {
         'audio': <String, dynamic>{
