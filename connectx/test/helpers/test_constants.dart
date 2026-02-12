@@ -7,7 +7,10 @@
 const testDeviceCheckInterval = Duration(milliseconds: 50);
 const testInputChangeDebounce = Duration(milliseconds: 10);
 
-// Wait duration accounts for device check interval + debounce + processing overhead
-// Calculation: 50ms (device check) + 10ms (debounce) + 10ms (processing/async overhead) = 70ms
-// This ensures async operations complete before assertions run
+// Wait duration for tests to ensure async operations complete before assertions
+// This is a conservative estimate that accounts for:
+// - Device check callback triggering (up to 50ms)
+// - Debounce timer firing (10ms)  
+// - Async operation processing overhead (10ms buffer)
+// Total: 70ms (worst-case assumption that operations run sequentially)
 const testWaitDuration = Duration(milliseconds: 70);

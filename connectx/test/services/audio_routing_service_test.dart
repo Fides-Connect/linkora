@@ -122,7 +122,11 @@ void main() {
 
     setUp(() {
       mockController = MockAudioHardwareController();
-      service = AudioRoutingService(hardwareController: mockController);
+      service = AudioRoutingService(
+        hardwareController: mockController,
+        deviceCheckInterval: testDeviceCheckInterval,
+        inputChangeDebounce: testInputChangeDebounce,
+      );
     });
 
     tearDown(() {
