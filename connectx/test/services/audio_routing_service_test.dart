@@ -12,7 +12,10 @@ void main() {
 
     setUp(() {
       mockController = MockAudioHardwareController();
-      service = AudioRoutingService(hardwareController: mockController);
+      service = AudioRoutingService(
+        hardwareController: mockController,
+        bluetoothSetupDelay: testBluetoothSetupDelay,
+      );
     });
 
     tearDown(() {
@@ -57,6 +60,7 @@ void main() {
         hardwareController: mockController,
         deviceCheckInterval: testDeviceCheckInterval,
         inputChangeDebounce: testInputChangeDebounce,
+        bluetoothSetupDelay: testBluetoothSetupDelay,
       );
     });
 
@@ -114,6 +118,7 @@ void main() {
         hardwareController: mockController,
         deviceCheckInterval: testDeviceCheckInterval,
         inputChangeDebounce: testInputChangeDebounce,
+        bluetoothSetupDelay: testBluetoothSetupDelay,
       );
     });
 
@@ -151,6 +156,7 @@ void main() {
         hardwareController: mockController,
         deviceCheckInterval: testDeviceCheckInterval,
         inputChangeDebounce: testInputChangeDebounce,
+        bluetoothSetupDelay: testBluetoothSetupDelay,
       );
     });
 

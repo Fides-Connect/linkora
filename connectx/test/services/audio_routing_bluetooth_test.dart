@@ -17,6 +17,7 @@ void main() {
         hardwareController: mockController,
         deviceCheckInterval: testDeviceCheckInterval,
         inputChangeDebounce: testInputChangeDebounce,
+        bluetoothSetupDelay: testBluetoothSetupDelay,
       );
     });
 
@@ -125,6 +126,7 @@ void main() {
         hardwareController: mockController,
         deviceCheckInterval: testDeviceCheckInterval,
         inputChangeDebounce: testInputChangeDebounce,
+        bluetoothSetupDelay: testBluetoothSetupDelay,
       );
     });
 
