@@ -170,7 +170,7 @@ async def get_chats(request: web.Request) -> web.Response:
 async def create_chat(request: web.Request) -> web.Response:
     """POST /api/v1/service-requests/{id}/chats - Create a new chat."""
     try:
-        current_user_id = await get_current_user_id(request)
+        await get_current_user_id(request)
         service_request_id = request.match_info['id']
         body = await request.json()
         
