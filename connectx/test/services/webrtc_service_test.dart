@@ -44,7 +44,9 @@ void main() {
     when(mockWebSocketChannel.sink).thenReturn(mockWebSocketSink);
     when(mockWebSocketChannel.stream).thenAnswer((_) => streamController.stream);
     when(mockWebSocketSink.close()).thenAnswer((_) async {
-      await streamController.close();
+      if (!streamController.isClosed) {
+        await streamController.close();
+      }
     });
 
     // Setup User mock
@@ -106,10 +108,8 @@ void main() {
 
   tearDown(() async {
     // Clean up resources to prevent timer leaks across tests
+    // The disconnect() call will trigger streamController.close() via the mock
     await webRTCService.disconnect();
-    if (!streamController.isClosed) {
-      await streamController.close();
-    }
   });
 
   group('WebRTCService', () {
@@ -211,10 +211,10 @@ void main() {
       })))).called(1);
     });
 
-    test('microphone muted state starts as true', () {
-      // Assert
+    test('microphone muted state starts as true', () async {
+      // Assert - Test the initial state without connecting
       expect(webRTCService.isMicrophoneMuted, true);
-    });
+    }, timeout: Timeout(Duration(seconds: 5)));
 
     test('setMicrophoneMuted updates audio track enabled state', () async {
       // Arrange
