@@ -73,6 +73,7 @@ async def main():
     
     # Log configuration
     logger.info("Configuration:")
+    logger.info(f"  Firestore Database: {os.getenv('FIRESTORE_DATABASE_NAME', '(default)')}")
     logger.info(f"  Language DE: {os.getenv('LANGUAGE_CODE_DE', 'de-DE')}")
     logger.info(f"  Voice DE: {os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat')}")
     logger.info(f"  Language EN: {os.getenv('LANGUAGE_CODE_EN', 'en-US')}")

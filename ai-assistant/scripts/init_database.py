@@ -77,8 +77,11 @@ if not firebase_admin._apps:
         firebase_admin.initialize_app()
 
 try:
-    db = firestore.client()
+    # Use the database specified in FIRESTORE_DATABASE_NAME env var, or default
+    database_id = os.getenv('FIRESTORE_DATABASE_NAME', '(default)')
+    db = firestore.client(database_id=database_id)
     firestore_service = FirestoreService()
+    logger.info(f"Firestore client initialized with database: {database_id}")
 except Exception as e:
     logger.error(f"Failed to create Firestore client: {e}")
     db = None

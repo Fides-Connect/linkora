@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 from firebase_admin import firestore
@@ -38,7 +39,10 @@ class FirestoreService:
             try:
                 # Initialization should have happened in main.py
                 # This call will work if the default app is initialized.
-                self._db = firestore.client()
+                # Use the database specified in FIRESTORE_DATABASE_NAME env var, or default
+                database_id = os.getenv('FIRESTORE_DATABASE_NAME', '(default)')
+                self._db = firestore.client(database_id=database_id)
+                logger.info(f"Firestore client initialized with database: {database_id}")
             except Exception as e:
                 # If app is not initialized yet (e.g. during imports), log it but don't crash
                 # It will retry on next access
