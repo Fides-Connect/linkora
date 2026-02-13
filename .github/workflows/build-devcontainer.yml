@@ -36,11 +36,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lowercase repository name
+        id: repo_name
+        run: |
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "name=$(echo '${{ github.event.repository.name }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/devcontainer
+          images: ghcr.io/${{ steps.repo_name.outputs.owner }}/${{ steps.repo_name.outputs.name }}/devcontainer
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -56,8 +62,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: ${{ github.event.inputs.force_rebuild != 'true' && 'type=registry,ref=ghcr.io/${{ github.repository }}/devcontainer:buildcache' || '' }}
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}/devcontainer:buildcache,mode=max
+          cache-from: ${{ github.event.inputs.force_rebuild != 'true' && format('type=registry,ref=ghcr.io/{0}/{1}/devcontainer:buildcache', steps.repo_name.outputs.owner, steps.repo_name.outputs.name) || '' }}
+          cache-to: type=registry,ref=ghcr.io/${{ steps.repo_name.outputs.owner }}/${{ steps.repo_name.outputs.name }}/devcontainer:buildcache,mode=max
           no-cache: ${{ github.event.inputs.force_rebuild == 'true' }}
           
       - name: Build Summary
