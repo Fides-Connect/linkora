@@ -263,7 +263,7 @@ WEAVIATE_URL=http://localhost:8090
 
 ```bash
 cd ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 ```
 
 **Options:**
@@ -327,7 +327,7 @@ docker-compose up -d
 
 # Reinitialize
 cd ../ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 ```
 
 ## 🔍 Search Capabilities
@@ -509,7 +509,7 @@ curl http://localhost:8090/v1/schema
 
 # 3. Reinitialize if needed
 cd ../ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 
 # 4. Test search directly
 python scripts/test_search_providers.py
@@ -537,7 +537,7 @@ docker-compose up -d
 
 # If data is truly lost, restore from backup
 # or reinitialize:
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 ```
 
 ### Slow Search Performance

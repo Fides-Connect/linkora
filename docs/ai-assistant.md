@@ -99,15 +99,26 @@ ai-assistant/
 │   ├── peer_connection_handler.py # WebRTC management
 │   ├── signaling_server.py        # WebSocket signaling
 │   ├── app_endpoints.py           # REST API endpoints for App
-│   ├── user_endpoints.py          # User management endpoints
+│   ├── common_endpoints.py        # Shared API endpoints
 │   ├── data_provider.py           # Data access abstraction
 │   ├── firestore_service.py       # Firestore (Ground Truth) service
+│   ├── firestore_schemas.py       # Pydantic schemas for Firestore documents
+│   ├── seed_data.py               # Template data for user seeding
 │   ├── hub_spoke_schema.py        # Weaviate Hub & Spoke definition
 │   ├── hub_spoke_ingestion.py     # Data sync pipeline (Firestore -> Weaviate)
 │   ├── hub_spoke_search.py        # Advanced search logic
 │   ├── weaviate_config.py         # Weaviate connection config
 │   ├── weaviate_models.py         # Weaviate data models
-│   ├── common_endpoints.py        # Shared API endpoints
+│   ├── api/                       # REST API (v1 routes)
+│   │   ├── deps.py                # Dependency injection and auth
+│   │   └── v1/
+│   │       ├── router.py          # API v1 router
+│   │       └── endpoints/         # API endpoint modules
+│   │           ├── auth.py        # Authentication endpoints
+│   │           ├── me.py          # Current user profile endpoints
+│   │           ├── users.py       # User management endpoints
+│   │           ├── service_requests.py  # Service request endpoints
+│   │           └── reviews.py     # Review endpoints
 │   └── services/
 │       ├── admin_service.py           # Admin interface
 │       ├── conversation_service.py    # Multi-stage conversations
@@ -118,6 +129,7 @@ ai-assistant/
 │       ├── text_to_speech_service.py  # Google TTS integration
 │       ├── tts_playback_manager.py    # TTS playback synchronization
 │       ├── notification_service.py    # Event notifications
+│       ├── user_seeding_service.py    # User onboarding and seeding
 │       └── transcript_processor.py    # Transcript handling
 │
 ├── scripts/
@@ -253,6 +265,12 @@ GEMINI_API_KEY=your_gemini_api_key_here
 # Authentication (for ConnectX integration)
 GOOGLE_OAUTH_CLIENT_ID=your-oauth-client-id.apps.googleusercontent.com
 
+# Firestore Database Configuration
+# Specify which Firestore database to use (e.g., "development", "production")
+# This database must be created in your Firestore instance beforehand
+# If not set, defaults to "(default)" database
+FIRESTORE_DATABASE_NAME=development
+
 # Weaviate Configuration
 # Local Weaviate (self-hosted)
 WEAVIATE_URL=http://localhost:8090
@@ -387,7 +405,7 @@ docker-compose up -d
 
 # Terminal 2: Initialize database
 cd ../ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 
 # Terminal 3: Start AI-Assistant
 docker-compose up ai-assistant
