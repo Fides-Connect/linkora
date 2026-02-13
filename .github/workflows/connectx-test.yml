@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - 'connectx/**'
+      - '.devcontainer/**'
       - '.github/workflows/connectx-test.yml'
   pull_request:
     paths:
       - 'connectx/**'
+      - '.devcontainer/**'
       - '.github/workflows/connectx-test.yml'
   workflow_dispatch:
     inputs:
@@ -28,21 +30,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Check if devcontainer needs rebuild
-        id: devcontainer_check
-        run: |
-          # Check if Dockerfile or key dependency files changed
-          git fetch origin ${{ github.base_ref || 'main' }} --depth=1 || true
-          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref || 'main' }}...HEAD 2>/dev/null || echo "all")
-          
-          if echo "$CHANGED_FILES" | grep -qE '\.devcontainer/|connectx/pubspec\.yaml|connectx/android/build\.gradle'; then
-            echo "rebuild=true" >> $GITHUB_OUTPUT
-            echo "Devcontainer needs rebuild"
-          else
-            echo "rebuild=false" >> $GITHUB_OUTPUT
-            echo "Devcontainer can use cache"
-          fi
-        
       - name: Lowercase repository name
         id: repo_name
         run: |
@@ -101,6 +88,9 @@ jobs:
       - name: Build and Test in Dev Container
         uses: devcontainers/ci@v0.3
         with:
+          # For PRs: Builds container inline from PR branch with cache from main as fallback
+          # For main: Uses cached image and pushes updates
+          # devcontainers/ci automatically builds from checked-out branch context
           cacheFrom: ${{ github.event.inputs.force_rebuild != 'true' && format('ghcr.io/{0}/{1}/devcontainer-cache', steps.repo_name.outputs.owner, steps.repo_name.outputs.name) || '' }}
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' ? 'always' : 'never' }}
           imageName: ghcr.io/${{ steps.repo_name.outputs.owner }}/${{ steps.repo_name.outputs.name }}/devcontainer-cache

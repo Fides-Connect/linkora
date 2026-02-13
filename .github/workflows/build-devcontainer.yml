@@ -1,11 +1,16 @@
 name: Build and Cache DevContainer
 
+# This workflow automatically rebuilds the devcontainer when .devcontainer/ files change.
+# The cached image is used by other workflows to speed up CI builds.
+# Manual rebuild: Use workflow_dispatch with "Force rebuild without cache" option.
+
 on:
   push:
     branches: [main]
     paths:
       - '.devcontainer/**'
   pull_request:
+    branches: [main]
     paths:
       - '.devcontainer/**'
   workflow_dispatch:
