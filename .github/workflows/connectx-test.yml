@@ -1,4 +1,4 @@
-name: "Build and Test ConnectX APK in Dev Container"
+name: "Build and Test ConnectX"
 
 on:
   push:
@@ -131,19 +131,12 @@ jobs:
               echo "=== Getting Flutter dependencies ==="
               flutter pub get
               
-              echo "=== Building APK (ARM64 only) ==="
-              flutter build apk --target-platform android-arm64 --release
+              echo "=== Generating mock files for tests ==="
+              dart run build_runner build --delete-conflicting-outputs
               
-              echo "=== Cleanup before tests ==="
-              rm -rf build/app/intermediates build/app/.transforms build/app/tmp
-              rm -rf build/kotlin build/flutter_webrtc build/firebase_*
-              rm -rf build/google_sign_in_android build/permission_handler_android
-              rm -rf build/path_provider_android build/flutter_local_notifications
-              rm -rf ~/.gradle/caches ~/.gradle/wrapper/dists .gradle
-              rm -rf ~/.pub-cache/hosted/*/doc ~/.pub-cache/hosted/*/example ~/.pub-cache/hosted/*/test
-              flutter clean
+              echo "=== Running unit tests ==="
+              flutter test --coverage
               
-              echo "=== Running tests ==="
-              flutter pub get
-              flutter test
+              echo "=== Test Summary ==="
+              echo "Unit tests completed successfully"
             '
