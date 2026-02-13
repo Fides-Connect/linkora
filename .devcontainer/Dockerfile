@@ -7,7 +7,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV FLUTTER_ROOT="/opt/flutter"
 ENV ANDROID_HOME="/usr/lib/android-sdk"
 ENV ANDROID_SDK_ROOT="/usr/lib/android-sdk"
-ENV PATH="$FLUTTER_ROOT/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
+ENV JAVA_HOME="/usr/lib/jvm/java-21-openjdk-amd64"
+ENV PATH="$JAVA_HOME/bin:$FLUTTER_ROOT/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"
 ENV CHROME_EXECUTABLE="/usr/bin/chromium-browser"
 ENV PUB_CACHE="/home/vscode/.pub-cache"
 
@@ -29,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     xz-utils \
     zip \
-    openjdk-17-jdk-headless \
+    openjdk-21-jdk-headless \
     clang \
     cmake \
     ninja-build \
@@ -51,9 +52,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /usr/share/man/* \
     && rm -rf /var/cache/apt/*
 
-# Create directories
-RUN mkdir -p $FLUTTER_ROOT $ANDROID_HOME
-RUN chown -R vscode:vscode $FLUTTER_ROOT $ANDROID_HOME
+# Set JAVA_HOME explicitly for Java 21
+ENV JAVA_HOME="/usr/lib/jvm/java-21-openjdk-amd64"
+ENV PATH="$JAVA_HOME/bin:$PATH"
+
+# Create directories with proper ownership
+RUN mkdir -p $FLUTTER_ROOT $ANDROID_HOME \
+    && chown -R vscode:vscode $FLUTTER_ROOT $ANDROID_HOME
 
 # Switch to vscode user
 USER vscode
@@ -66,6 +71,9 @@ RUN git clone https://github.com/flutter/flutter.git -b stable --depth 1 $FLUTTE
     && cd $FLUTTER_ROOT \
     && git gc --aggressive --prune=all
 
+# Switch back to root for Android SDK installation (needs write access to /usr/lib)
+USER root
+
 # Download and install Android SDK (minimal)
 RUN mkdir -p $ANDROID_HOME/cmdline-tools \
     && cd $ANDROID_HOME \
@@ -74,38 +82,43 @@ RUN mkdir -p $ANDROID_HOME/cmdline-tools \
     && mv cmdline-tools latest \
     && mkdir cmdline-tools \
     && mv latest cmdline-tools/ \
-    && rm sdk-tools.zip
+    && rm sdk-tools.zip \
+    && chown -R vscode:vscode $ANDROID_HOME
+
+# Switch to vscode for SDK manager (it needs to write to user's .android folder)
+USER vscode
 
 # Accept licenses and install minimal Android SDK components
+# Only install CMake which was shown in error log - NDK will be downloaded by Flutter if needed
 RUN yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true \
     && $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
         "platform-tools" \
         "build-tools;34.0.0" \
         "platforms;android-34" \
         "cmdline-tools;latest" \
-    && rm -rf $ANDROID_HOME/emulator \
+        "cmake;3.22.1"
+
+# Clean up Android SDK unnecessary files
+USER root
+RUN rm -rf $ANDROID_HOME/emulator \
     && rm -rf $ANDROID_HOME/system-images \
-    && rm -rf $ANDROID_HOME/.temp
+    && rm -rf $ANDROID_HOME/.temp \
+    && chown -R vscode:vscode $ANDROID_HOME
+
+USER vscode
 
 # Pre-download only essential Dart dependencies
 RUN $FLUTTER_ROOT/bin/flutter precache --android --no-ios --no-web --no-linux --no-macos --no-windows --no-fuchsia \
-    && rm -rf $FLUTTER_ROOT/.pub-cache/hosted/pub.dartlang.org/*/test \
-    && rm -rf $FLUTTER_ROOT/.pub-cache/hosted/pub.dartlang.org/*/example
+    && rm -rf $FLUTTER_ROOT/.pub-cache/hosted/*/test || true \
+    && rm -rf $FLUTTER_ROOT/.pub-cache/hosted/*/example || true
 
 # Create workspace directory
 RUN mkdir -p /home/vscode/workspace
 WORKDIR /home/vscode/workspace
 
-# Set proper permissions
-USER root
-RUN chown -R vscode:vscode /home/vscode \
-    && chmod -R 755 /home/vscode
-
-# Switch back to vscode user
-USER vscode
-
 # Final environment setup
-RUN echo 'export PATH="$FLUTTER_ROOT/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"' >> ~/.bashrc \
+RUN echo 'export JAVA_HOME="/usr/lib/jvm/java-21-openjdk-amd64"' >> ~/.bashrc \
+    && echo 'export PATH="$JAVA_HOME/bin:$FLUTTER_ROOT/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH"' >> ~/.bashrc \
     && echo 'export ANDROID_HOME="$ANDROID_HOME"' >> ~/.bashrc \
     && echo 'export ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT"' >> ~/.bashrc \
     && echo 'export CHROME_EXECUTABLE="/usr/bin/chromium-browser"' >> ~/.bashrc
