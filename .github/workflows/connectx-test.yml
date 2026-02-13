@@ -1,4 +1,4 @@
-name: Build & Test ConnectX APK in Dev Container
+name: "Build and Test ConnectX APK in Dev Container"
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - '.devcontainer/**'
       - '.github/workflows/connectx-test.yml'
   pull_request:
+    branches: [main]
     paths:
       - 'connectx/**'
       - '.devcontainer/**'
