@@ -267,8 +267,8 @@ async def init_firestore(test_data):
             
         avail_times = persona.get('availability_times', [])
         
-        for i, avail in enumerate(avail_times):
-            avail_id = f"availability_time_{user_id}_{i+1}"
+        for j, avail in enumerate(avail_times):
+            avail_id = f"availability_time_{user_id}_{j+1}"
             
             # Remove ID fields - they are document IDs, not stored data
             avail_data = {
