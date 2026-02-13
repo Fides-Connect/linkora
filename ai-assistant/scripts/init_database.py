@@ -149,10 +149,10 @@ async def init_firestore(test_data):
     for i, persona in enumerate(test_personas):
         p_data = persona['user']
         persona_name = persona.get('name', f'Persona {i}')
-        user_id = p_data.get('id')
+        user_id = p_data.get('user_id')
         
         if not user_id:
-            logger.error(f"Skipping {persona_name}: missing 'id' field in persona data")
+            logger.error(f"Skipping {persona_name}: missing 'user_id' field in persona data")
             continue
         
         # Convert last_sign_in from relative (days) to absolute datetime if needed
@@ -216,9 +216,9 @@ async def init_firestore(test_data):
     # Add Competencies Subcollection
     for i, persona in enumerate(test_personas):
         persona_name = persona.get('name', f'Persona {i}')
-        user_id = persona['user'].get('id')
+        user_id = persona['user'].get('user_id')
         if not user_id:
-            logger.warning(f"Skipping competencies for {persona_name}: missing 'id' field")
+            logger.warning(f"Skipping competencies for {persona_name}: missing 'user_id' field")
             continue
             
         c_data_list = persona['competencies']
@@ -256,9 +256,9 @@ async def init_firestore(test_data):
     # Add Availability Times Subcollection for Users
     for i, persona in enumerate(test_personas):
         persona_name = persona.get('name', f'Persona {i}')
-        user_id = persona['user'].get('id')
+        user_id = persona['user'].get('user_id')
         if not user_id:
-            logger.warning(f"Skipping availability times for {persona_name}: missing 'id' field")
+            logger.warning(f"Skipping availability times for {persona_name}: missing 'user_id' field")
             continue
             
         avail_times = persona.get('availability_times', [])
@@ -514,9 +514,9 @@ def load_weaviate_data(test_personas):
         logger.info(f"  Processing {persona_name}")
         
         # Get user_id from persona data
-        user_id = persona['user'].get('id')
+        user_id = persona['user'].get('user_id')
         if not user_id:
-            logger.warning(f"Skipping Weaviate ingestion for {persona_name}: missing 'id' field")
+            logger.warning(f"Skipping Weaviate ingestion for {persona_name}: missing 'user_id' field")
             continue
             
         competencies_data = persona['competencies']
@@ -527,11 +527,11 @@ def load_weaviate_data(test_personas):
             # Check if updated in place or if we need copy - safe to update in place for script
             comp['competence_id'] = f"competence_{user_id}_{j+1}"
         
-        # Add user_id to user_data for Weaviate ingestion
-        user_data_with_id = {**persona['user'], 'user_id': user_id}
+        # HubSpokeIngestion expects 'user_id' field
+        user_data_for_weaviate = {**persona['user'], 'user_id': user_id}
         
         result = HubSpokeIngestion.create_user_with_competencies(
-            user_data=user_data_with_id,
+            user_data=user_data_for_weaviate,
             competencies_data=competencies_data,
             apply_sanitization=True,
             apply_enrichment=True

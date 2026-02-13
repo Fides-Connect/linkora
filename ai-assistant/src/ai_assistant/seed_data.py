@@ -176,7 +176,7 @@ USER_TEMPLATE_AVAILABILITY_TIMES = [
 # Test Persona: User A - The Pro
 # Active user with specific electrical skill
 USER_A = {
-    "id": "user_alice_001",
+    "user_id": "user_alice_001",
     "name": "Alice Professional",
     "email": "alice@example.com",
     "photo_url": "https://example.com/photos/alice.jpg",
@@ -229,7 +229,7 @@ USER_A_AVAILABILITY_TIMES = [
 # Test Persona: User B - The Spammer
 # Description stuffed with keywords to test spam filtering
 USER_B = {
-    "id": "user_bob_002",
+    "user_id": "user_bob_002",
     "name": "Bob Spammer",
     "email": "bob@example.com",
     "photo_url": "https://example.com/photos/bob.jpg",
@@ -276,7 +276,7 @@ USER_B_AVAILABILITY_TIMES = [
 # Test Persona: User C - The Ghost
 # Perfect match but inactive for 365 days
 USER_C = {
-    "id": "user_charlie_003",
+    "user_id": "user_charlie_003",
     "name": "Charlie Ghost",
     "email": "charlie@example.com",
     "photo_url": "https://example.com/photos/charlie.jpg",
@@ -323,7 +323,7 @@ USER_C_AVAILABILITY_TIMES = [
 # Test Persona: User D - The Generalist
 # Broad electrical work
 USER_D = {
-    "id": "user_david_004",
+    "user_id": "user_david_004",
     "name": "David Generalist",
     "email": "david@example.com",
     "photo_url": "https://example.com/photos/david.jpg",
@@ -379,7 +379,7 @@ USER_D_AVAILABILITY_TIMES = [
 # Test Persona: User E - The Enthusiast
 # Multiple gardening skills to test result grouping
 USER_E = {
-    "id": "user_eva_005",
+    "user_id": "user_eva_005",
     "name": "Eva Enthusiast",
     "email": "eva@example.com",
     "photo_url": "https://example.com/photos/eva.jpg",

@@ -140,15 +140,15 @@ class FirestoreService:
             query1 = requests_ref.where(filter=FieldFilter("seeker_user_id", "==", user_id)).stream()
             for doc in query1:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                data['service_request_id'] = doc.id
                 requests.append(data)
             
             query2 = requests_ref.where(filter=FieldFilter("selected_provider_user_id", "==", user_id)).stream()
             for doc in query2:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                data['service_request_id'] = doc.id
                 # Avoid duplicates
-                if not any(r['id'] == data['id'] for r in requests):
+                if not any(r['service_request_id'] == data['service_request_id'] for r in requests):
                     requests.append(data)
             
             # Enrich requests with user names and initials
@@ -191,7 +191,7 @@ class FirestoreService:
             doc = self._get_collection('service_requests').document(request_id).get()
             if doc.exists:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                data['service_request_id'] = doc.id
                 return await self._enrich_service_request(data)
             return None
         except Exception as e:
@@ -352,7 +352,7 @@ class FirestoreService:
             candidates = []
             for doc in docs:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                data['candidate_id'] = doc.id
                 candidates.append(data)
             return candidates
         except Exception as e:
@@ -383,7 +383,7 @@ class FirestoreService:
                   .get())
             if doc.exists:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                data['candidate_id'] = doc.id
                 return data
             return None
         except Exception as e:
@@ -498,7 +498,7 @@ class FirestoreService:
                 if user_data:
                     # Transform to match the User model expected by Flutter
                     favorite_users.append({
-                        'id': favorite_user_id,
+                        'user_id': favorite_user_id,
                         'name': user_data.get('name', ''),
                         'self_introduction': user_data.get('self_introduction', ''),
                         'competencies': user_data.get('competencies', []),
@@ -665,7 +665,7 @@ class FirestoreService:
             for doc in docs:
                 comp_data = doc.to_dict()
                 # Include the document ID
-                comp_data['id'] = doc.id
+                comp_data['competence_id'] = doc.id
                 competencies.append(comp_data)
             return competencies
         except Exception as e:
@@ -680,7 +680,7 @@ class FirestoreService:
             doc = self._get_collection('users').document(user_id).get()
             if doc.exists:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                data['user_id'] = doc.id
                 
                 # Fetch competencies from subcollection
                 competencies = await self.get_competencies(user_id)
@@ -1004,7 +1004,7 @@ class FirestoreService:
             availability_times = []
             for doc in docs:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                data['availability_time_id'] = doc.id
                 availability_times.append(data)
             return availability_times
         except Exception as e:
@@ -1050,7 +1050,7 @@ class FirestoreService:
             
             if doc.exists:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                data['availability_time_id'] = doc.id
                 return data
             return None
         except Exception as e:
@@ -1324,7 +1324,7 @@ class FirestoreService:
             doc = self._get_collection('chats').document(chat_id).get()
             if doc.exists:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                data['chat_id'] = doc.id
                 return data
             return None
         except Exception as e:
@@ -1348,7 +1348,7 @@ class FirestoreService:
             chats = []
             for doc in docs:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                data['chat_id'] = doc.id
                 chats.append(data)
             return chats
         except Exception as e:
@@ -1379,13 +1379,13 @@ class FirestoreService:
             chats = {}
             for doc in seeker_docs:
                 data = doc.to_dict()
-                data['id'] = doc.id
+                data['chat_id'] = doc.id
                 chats[doc.id] = data
             
             for doc in provider_docs:
                 if doc.id not in chats:
                     data = doc.to_dict()
-                    data['id'] = doc.id
+                    data['chat_id'] = doc.id
                     chats[doc.id] = data
             
             return list(chats.values())

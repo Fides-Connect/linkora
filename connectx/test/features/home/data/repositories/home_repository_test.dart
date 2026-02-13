@@ -19,7 +19,7 @@ void main() {
       // Arrange
       final mockJsonList = [
         {
-          'id': 'req_1',
+          'service_request_id': 'req_1',
           'title': 'Test Request',
           'amount_value': 100.0,
           'currency': '€',
@@ -56,12 +56,12 @@ void main() {
        // Arrange
       final mockJsonList = [
         {
-          'id': 'user_1',
+          'user_id': 'user_1',
           'name': 'Supporter 1',
           'introduction': 'Intro',
           'competencies': [
-            {'id': 'comp1', 'title': 'A', 'description': '', 'category': '', 'price_range': ''},
-            {'id': 'comp2', 'title': 'B', 'description': '', 'category': '', 'price_range': ''}
+            {'competence_id': 'comp1', 'title': 'A', 'description': '', 'category': '', 'price_range': ''},
+            {'competence_id': 'comp2', 'title': 'B', 'description': '', 'category': '', 'price_range': ''}
           ],
           'average_rating': 5.0,
           'review_count': 10,

@@ -27,7 +27,7 @@ class Competence {
 
   factory Competence.fromJson(Map<String, dynamic> json) {
     return Competence(
-      id: json['id'] as String,
+      id: json['competence_id'] as String,
       title: json['title'] as String,
       description: json['description'] as String? ?? '',
       category: json['category'] as String? ?? '',
@@ -48,7 +48,7 @@ class Competence {
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
+      'competence_id': id,
       'title': title,
       'description': description,
       'category': category,

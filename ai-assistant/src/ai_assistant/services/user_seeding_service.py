@@ -109,8 +109,8 @@ class UserSeedingService:
         
         # 1e. Sync user and competencies to Weaviate using HubSpokeIngestion
         try:
-            # HubSpokeIngestion.create_user expects 'id', not 'user_id'
-            user_data_for_weaviate = {**user, 'id': user_id, 'created_at': datetime.now(timezone.utc)}
+            # HubSpokeIngestion.create_user expects 'user_id' field
+            user_data_for_weaviate = {**user, 'user_id': user_id, 'created_at': datetime.now(timezone.utc)}
             result = HubSpokeIngestion.create_user_with_competencies(
                 user_data=user_data_for_weaviate,
                 competencies_data=competencies_for_weaviate,

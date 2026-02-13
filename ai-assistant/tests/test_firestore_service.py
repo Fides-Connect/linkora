@@ -96,8 +96,8 @@ class TestFirestoreService:
 
             # Assert
             assert len(requests) == 2
-            assert requests[0]['id'] == 'req1'
-            assert requests[1]['id'] == 'req2'
+            assert requests[0]['service_request_id'] == 'req1'
+            assert requests[1]['service_request_id'] == 'req2'
             
             # Verify user hydration
             assert requests[0]['seeker_user_name'] == 'Test User'
@@ -210,8 +210,8 @@ class TestFirestoreService:
             
             # Assert
             assert len(favorites) == 2
-            assert favorites[0]['id'] == 'fav1'
+            assert favorites[0]['user_id'] == 'fav1'
             assert favorites[0]['name'] == 'User fav1'
-            assert favorites[1]['id'] == 'fav2'
+            assert favorites[1]['user_id'] == 'fav2'
             mock_db_collection.return_value.document.assert_called_with(user_id)
             mock_db_collection.return_value.document.return_value.collection.assert_called_with('favorites')
