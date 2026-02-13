@@ -18,6 +18,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         
+      - name: Setup Node.js (required for devcontainers/ci)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
       - name: Setup Firebase config for CI
         env:
           GOOGLE_SERVICES_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
