@@ -37,7 +37,8 @@ class TestFirestoreService:
         mock_db_collection.return_value.document.return_value = mock_doc_ref
         
         # Mock _generate_prefixed_id to return a predictable ID
-        with patch.object(firestore, '_generate_prefixed_id', return_value='service_request_123'):
+        with patch.object(firestore, '_generate_prefixed_id', return_value='service_request_123'), \
+             patch.object(firestore, 'add_outgoing_service_requests', return_value=True) as mock_add_outgoing:
             # Act
             result = await firestore.create_service_request(request_data)
 
@@ -58,6 +59,9 @@ class TestFirestoreService:
             assert call_args['title'] == 'Test Request'
             assert 'created_at' in call_args
             assert 'updated_at' in call_args
+            
+            # Verify outgoing service request was added
+            mock_add_outgoing.assert_called_once_with('user123', ['service_request_123'])
 
     @pytest.mark.asyncio
     async def test_get_service_requests(self, firestore, mock_db_collection):
@@ -229,5 +233,328 @@ class TestFirestoreService:
             assert favorites[0]['user_id'] == 'fav1'
             assert favorites[0]['name'] == 'User fav1'
             assert favorites[1]['user_id'] == 'fav2'
-            mock_db_collection.return_value.document.assert_called_with(user_id)
-            mock_db_collection.return_value.document.return_value.collection.assert_called_with('favorites')
+    
+    @pytest.mark.asyncio
+    async def test_update_service_request_with_provider_change(self, firestore, mock_db_collection):
+        """Test updating service request with provider change updates incoming lists."""
+        # Arrange
+        request_id = "req123"
+        old_provider = "provider1"
+        new_provider = "provider2"
+        
+        # Mock document reference
+        mock_doc_ref = Mock()
+        mock_db_collection.return_value.document.return_value = mock_doc_ref
+        
+        # Mock existing document with old provider
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = {
+            'service_request_id': request_id,
+            'title': 'Test Request',
+            'seeker_user_id': 'seeker1',
+            'selected_provider_user_id': old_provider,
+            'status': 'pending'
+        }
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        update_data = {
+            'selected_provider_user_id': new_provider
+        }
+        
+        # Mock methods
+        with patch.object(firestore, 'remove_incoming_service_requests', return_value=True) as mock_remove, \
+             patch.object(firestore, 'add_incoming_service_requests', return_value=True) as mock_add, \
+             patch.object(firestore, 'get_service_request', return_value={'service_request_id': request_id}):
+            
+            # Act
+            result = await firestore.update_service_request(request_id, update_data)
+            
+            # Assert
+            assert result is not None
+            mock_remove.assert_called_once_with(old_provider, [request_id])
+            mock_add.assert_called_once_with(new_provider, [request_id])
+            mock_doc_ref.update.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_delete_service_request_removes_from_lists(self, firestore, mock_db_collection):
+        """Test deleting service request removes it from user lists."""
+        # Arrange
+        request_id = "req123"
+        seeker_id = "seeker1"
+        provider_id = "provider1"
+        
+        # Mock service request document
+        mock_doc_ref = Mock()
+        mock_db_collection.return_value.document.return_value = mock_doc_ref
+        
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = {
+            'service_request_id': request_id,
+            'seeker_user_id': seeker_id,
+            'selected_provider_user_id': provider_id
+        }
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Mock chats query
+        mock_chats_query = Mock()
+        mock_chats_query.stream.return_value = []
+        mock_db_collection.return_value.where.return_value = mock_chats_query
+        
+        # Mock provider_candidates subcollection
+        mock_providers_collection = Mock()
+        mock_providers_collection.stream.return_value = []
+        mock_doc_ref.collection.return_value = mock_providers_collection
+        
+        with patch.object(firestore, 'remove_outgoing_service_requests', return_value=True) as mock_remove_outgoing, \
+             patch.object(firestore, 'remove_incoming_service_requests', return_value=True) as mock_remove_incoming:
+            
+            # Act
+            success = await firestore.delete_service_request(request_id)
+            
+            # Assert
+            assert success is True
+            mock_remove_outgoing.assert_called_once_with(seeker_id, [request_id])
+            mock_remove_incoming.assert_called_once_with(provider_id, [request_id])
+            mock_doc_ref.delete.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_create_service_request_with_provider(self, firestore, mock_db_collection):
+        """Test creating service request with provider adds to both lists."""
+        # Arrange
+        request_data = {
+            "title": "Test Request",
+            "seeker_user_id": "user123",
+            "selected_provider_user_id": "provider456"
+        }
+        
+        # Mock document reference
+        mock_doc_ref = Mock()
+        mock_db_collection.return_value.document.return_value = mock_doc_ref
+        
+        with patch.object(firestore, '_generate_prefixed_id', return_value='service_request_123'), \
+             patch.object(firestore, 'add_outgoing_service_requests', return_value=True) as mock_add_outgoing, \
+             patch.object(firestore, 'add_incoming_service_requests', return_value=True) as mock_add_incoming:
+            
+            # Act
+            result = await firestore.create_service_request(request_data)
+            
+            # Assert
+            assert result is not None
+            mock_add_outgoing.assert_called_once_with('user123', ['service_request_123'])
+            mock_add_incoming.assert_called_once_with('provider456', ['service_request_123'])
+    
+    @pytest.mark.asyncio
+    async def test_create_provider_candidate_adds_to_incoming(self, firestore, mock_db_collection):
+        """Test creating provider candidate adds service request to provider's incoming list."""
+        # Arrange
+        service_request_id = "req123"
+        candidate_data = {
+            "provider_candidate_user_id": "provider1",
+            "matching_score": 85.0
+        }
+        
+        # Mock document reference
+        mock_doc_ref = Mock()
+        mock_db_collection.return_value.document.return_value.collection.return_value.document.return_value = mock_doc_ref
+        
+        with patch.object(firestore, '_generate_prefixed_id', return_value='provider_candidate_123'), \
+             patch.object(firestore, 'add_incoming_service_requests', return_value=True) as mock_add_incoming:
+            
+            # Act
+            result = await firestore.create_provider_candidate(service_request_id, candidate_data)
+            
+            # Assert
+            assert result is not None
+            mock_add_incoming.assert_called_once_with('provider1', ['req123'])
+    
+    @pytest.mark.asyncio
+    async def test_update_provider_candidate_with_user_change(self, firestore, mock_db_collection):
+        """Test updating provider candidate with user change updates incoming lists."""
+        # Arrange
+        service_request_id = "req123"
+        provider_candidate_id = "candidate456"
+        old_provider = "provider1"
+        new_provider = "provider2"
+        
+        # Mock document reference
+        mock_doc_ref = Mock()
+        mock_db_collection.return_value.document.return_value.collection.return_value.document.return_value = mock_doc_ref
+        
+        # Mock existing document with old provider
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = {
+            'provider_candidate_id': provider_candidate_id,
+            'service_request_id': service_request_id,
+            'provider_candidate_user_id': old_provider,
+            'matching_score': 80.0
+        }
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        update_data = {
+            'provider_candidate_user_id': new_provider
+        }
+        
+        # Mock methods
+        with patch.object(firestore, 'get_service_request') as mock_get_request, \
+             patch.object(firestore, 'remove_incoming_service_requests', return_value=True) as mock_remove, \
+             patch.object(firestore, 'add_incoming_service_requests', return_value=True) as mock_add, \
+             patch.object(firestore, 'get_provider_candidate', return_value={'candidate_id': provider_candidate_id}):
+            
+            # Service request has no selected provider yet
+            mock_get_request.return_value = {
+                'service_request_id': service_request_id,
+                'seeker_user_id': 'seeker1',
+                'selected_provider_user_id': ''
+            }
+            
+            # Act
+            result = await firestore.update_provider_candidate(service_request_id, provider_candidate_id, update_data)
+            
+            # Assert
+            assert result is not None
+            mock_remove.assert_called_once_with(old_provider, [service_request_id])
+            mock_add.assert_called_once_with(new_provider, [service_request_id])
+    
+    @pytest.mark.asyncio
+    async def test_update_provider_candidate_does_not_remove_selected_provider(self, firestore, mock_db_collection):
+        """Test updating provider candidate doesn't remove from incoming if they're the selected provider."""
+        # Arrange
+        service_request_id = "req123"
+        provider_candidate_id = "candidate456"
+        old_provider = "provider1"
+        new_provider = "provider2"
+        
+        # Mock document reference
+        mock_doc_ref = Mock()
+        mock_db_collection.return_value.document.return_value.collection.return_value.document.return_value = mock_doc_ref
+        
+        # Mock existing document with old provider
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = {
+            'provider_candidate_id': provider_candidate_id,
+            'service_request_id': service_request_id,
+            'provider_candidate_user_id': old_provider,
+            'matching_score': 80.0
+        }
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        update_data = {
+            'provider_candidate_user_id': new_provider
+        }
+        
+        # Mock methods
+        with patch.object(firestore, 'get_service_request') as mock_get_request, \
+             patch.object(firestore, 'remove_incoming_service_requests', return_value=True) as mock_remove, \
+             patch.object(firestore, 'add_incoming_service_requests', return_value=True) as mock_add, \
+             patch.object(firestore, 'get_provider_candidate', return_value={'candidate_id': provider_candidate_id}):
+            
+            # Old provider is the selected provider
+            mock_get_request.return_value = {
+                'service_request_id': service_request_id,
+                'seeker_user_id': 'seeker1',
+                'selected_provider_user_id': old_provider
+            }
+            
+            # Act
+            result = await firestore.update_provider_candidate(service_request_id, provider_candidate_id, update_data)
+            
+            # Assert
+            assert result is not None
+            # Should NOT remove from old provider's incoming since they're selected
+            mock_remove.assert_not_called()
+            # Should add to new provider's incoming
+            mock_add.assert_called_once_with(new_provider, [service_request_id])
+    
+    @pytest.mark.asyncio
+    async def test_delete_provider_candidate_removes_from_incoming(self, firestore, mock_db_collection):
+        """Test deleting provider candidate removes service request from provider's incoming list."""
+        # Arrange
+        service_request_id = "req123"
+        provider_candidate_id = "candidate456"
+        provider_user_id = "provider1"
+        
+        # Mock document reference
+        mock_doc_ref = Mock()
+        mock_db_collection.return_value.document.return_value.collection.return_value.document.return_value = mock_doc_ref
+        
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = {
+            'provider_candidate_id': provider_candidate_id,
+            'service_request_id': service_request_id,
+            'provider_candidate_user_id': provider_user_id
+        }
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Mock chats query
+        mock_chats_query = Mock()
+        mock_chats_query.stream.return_value = []
+        mock_db_collection.return_value.where.return_value = mock_chats_query
+        
+        with patch.object(firestore, 'get_service_request') as mock_get_request, \
+             patch.object(firestore, 'remove_incoming_service_requests', return_value=True) as mock_remove:
+            
+            # Provider is not selected
+            mock_get_request.return_value = {
+                'service_request_id': service_request_id,
+                'seeker_user_id': 'seeker1',
+                'selected_provider_user_id': ''
+            }
+            
+            # Act
+            success = await firestore.delete_provider_candidate(service_request_id, provider_candidate_id)
+            
+            # Assert
+            assert success is True
+            mock_remove.assert_called_once_with(provider_user_id, [service_request_id])
+            mock_doc_ref.delete.assert_called_once()
+    
+    @pytest.mark.asyncio
+    async def test_delete_provider_candidate_keeps_selected_provider_in_incoming(self, firestore, mock_db_collection):
+        """Test deleting provider candidate doesn't remove from incoming if they're the selected provider."""
+        # Arrange
+        service_request_id = "req123"
+        provider_candidate_id = "candidate456"
+        provider_user_id = "provider1"
+        
+        # Mock document reference
+        mock_doc_ref = Mock()
+        mock_db_collection.return_value.document.return_value.collection.return_value.document.return_value = mock_doc_ref
+        
+        mock_doc_snapshot = Mock()
+        mock_doc_snapshot.exists = True
+        mock_doc_snapshot.to_dict.return_value = {
+            'provider_candidate_id': provider_candidate_id,
+            'service_request_id': service_request_id,
+            'provider_candidate_user_id': provider_user_id
+        }
+        mock_doc_ref.get.return_value = mock_doc_snapshot
+        
+        # Mock chats query
+        mock_chats_query = Mock()
+        mock_chats_query.stream.return_value = []
+        mock_db_collection.return_value.where.return_value = mock_chats_query
+        
+        with patch.object(firestore, 'get_service_request') as mock_get_request, \
+             patch.object(firestore, 'remove_incoming_service_requests', return_value=True) as mock_remove:
+            
+            # Provider is selected
+            mock_get_request.return_value = {
+                'service_request_id': service_request_id,
+                'seeker_user_id': 'seeker1',
+                'selected_provider_user_id': provider_user_id
+            }
+            
+            # Act
+            success = await firestore.delete_provider_candidate(service_request_id, provider_candidate_id)
+            
+            # Assert
+            assert success is True
+            # Should NOT remove since they're the selected provider
+            mock_remove.assert_not_called()
+            mock_doc_ref.delete.assert_called_once()
+

@@ -183,6 +183,16 @@ class FirestoreService:
             ref = self._get_collection('service_requests').document(service_request_id)
             ref.set(validated_data)
             
+            # Add to seeker's outgoing service requests
+            seeker_user_id = validated_data.get('seeker_user_id')
+            if seeker_user_id:
+                await self.add_outgoing_service_requests(seeker_user_id, [service_request_id])
+            
+            # Add to provider's incoming service requests if provider is selected
+            selected_provider_user_id = validated_data.get('selected_provider_user_id')
+            if selected_provider_user_id:
+                await self.add_incoming_service_requests(selected_provider_user_id, [service_request_id])
+            
             # Return full object
             result = validated_data.copy()
             result['service_request_id'] = service_request_id
@@ -244,17 +254,32 @@ class FirestoreService:
         if not self.db:
             return None
         try:
-            # Check if service request exists
+            # Check if service request exists and get current data
             ref = self._get_collection('service_requests').document(request_id)
-            if not ref.get().exists:
+            doc = ref.get()
+            if not doc.exists:
                 logger.warning(f"Cannot update service request {request_id}: service request does not exist")
                 return None
+            
+            current_data = doc.to_dict()
+            old_provider_id = current_data.get('selected_provider_user_id', '')
             
             # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(update_data, ServiceRequestUpdateSchema, exclude_unset=True)
             
             # Add updated_at timestamp after validation
             validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Check if selected_provider_user_id is being updated
+            new_provider_id = validated_data.get('selected_provider_user_id')
+            if new_provider_id is not None and new_provider_id != old_provider_id:
+                # Remove from old provider's incoming list (if any)
+                if old_provider_id:
+                    await self.remove_incoming_service_requests(old_provider_id, [request_id])
+                
+                # Add to new provider's incoming list (if any)
+                if new_provider_id:
+                    await self.add_incoming_service_requests(new_provider_id, [request_id])
             
             # Update the document
             ref.update(validated_data)
@@ -278,6 +303,21 @@ class FirestoreService:
             return False
         try:
             service_request_ref = self._get_collection('service_requests').document(request_id)
+            
+            # Get the service request data to know which users to update
+            doc = service_request_ref.get()
+            if doc.exists:
+                request_data = doc.to_dict()
+                seeker_user_id = request_data.get('seeker_user_id')
+                selected_provider_user_id = request_data.get('selected_provider_user_id')
+                
+                # Remove from seeker's outgoing list
+                if seeker_user_id:
+                    await self.remove_outgoing_service_requests(seeker_user_id, [request_id])
+                
+                # Remove from provider's incoming list
+                if selected_provider_user_id:
+                    await self.remove_incoming_service_requests(selected_provider_user_id, [request_id])
             
             # Delete all chats related to this service request from root chats collection
             chats_query = self._get_collection('chats').where('service_request_id', '==', request_id)
@@ -340,6 +380,11 @@ class FirestoreService:
                   .collection('provider_candidates')
                   .document(provider_candidate_id))
             ref.set(validated_data)
+            
+            # Add service request to provider candidate's incoming list
+            provider_user_id = validated_data.get('provider_candidate_user_id')
+            if provider_user_id:
+                await self.add_incoming_service_requests(provider_user_id, [service_request_id])
             
             # Return full object
             result = validated_data.copy()
@@ -429,17 +474,21 @@ class FirestoreService:
         if not self.db:
             return None
         try:
-            # Check if provider candidate exists
+            # Check if provider candidate exists and get current data
             ref = (self._get_collection('service_requests')
                   .document(service_request_id)
                   .collection('provider_candidates')
                   .document(provider_candidate_id))
             
-            if not ref.get().exists:
+            doc = ref.get()
+            if not doc.exists:
                 logger.warning(
                     f"Cannot update provider candidate {provider_candidate_id}: does not exist"
                 )
                 return None
+            
+            current_data = doc.to_dict()
+            old_provider_user_id = current_data.get('provider_candidate_user_id')
             
             # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(
@@ -450,6 +499,19 @@ class FirestoreService:
             
             # Add updated_at timestamp after validation
             validated_data['updated_at'] = datetime.now(timezone.utc)
+            
+            # Check if provider_candidate_user_id is being updated
+            new_provider_user_id = validated_data.get('provider_candidate_user_id')
+            if new_provider_user_id is not None and new_provider_user_id != old_provider_user_id:
+                # Remove from old provider's incoming list (if not the selected provider)
+                if old_provider_user_id:
+                    service_request = await self.get_service_request(service_request_id)
+                    if service_request and service_request.get('selected_provider_user_id') != old_provider_user_id:
+                        await self.remove_incoming_service_requests(old_provider_user_id, [service_request_id])
+                
+                # Add to new provider's incoming list
+                if new_provider_user_id:
+                    await self.add_incoming_service_requests(new_provider_user_id, [service_request_id])
             
             # Update document
             ref.update(validated_data)
@@ -479,6 +541,18 @@ class FirestoreService:
                             .document(service_request_id)
                             .collection('provider_candidates')
                             .document(provider_candidate_id))
+            
+            # Get the provider candidate data to know which user to update
+            doc = candidate_ref.get()
+            if doc.exists:
+                candidate_data = doc.to_dict()
+                provider_user_id = candidate_data.get('provider_candidate_user_id')
+                
+                # Remove from provider's incoming list only if they're not the selected provider
+                if provider_user_id:
+                    service_request = await self.get_service_request(service_request_id)
+                    if service_request and service_request.get('selected_provider_user_id') != provider_user_id:
+                        await self.remove_incoming_service_requests(provider_user_id, [service_request_id])
             
             # Delete all chats related to this provider candidate from root chats collection
             chats_query = self._get_collection('chats').where('provider_candidate_id', '==', provider_candidate_id)

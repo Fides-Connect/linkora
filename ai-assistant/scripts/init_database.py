@@ -366,7 +366,7 @@ async def init_firestore(test_data):
             try:
                 # Remove service_request_id - it's the document ID, not stored data
                 req_data = {k: v for k, v in service_request.items() if k != 'service_request_id'}
-                validated = ServiceRequestSchema(**service_request)
+                validated = ServiceRequestSchema(**req_data)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
                 req_ref = db.collection('service_requests').document(service_request_id)
