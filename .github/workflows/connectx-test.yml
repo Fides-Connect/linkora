@@ -10,13 +10,38 @@ on:
     paths:
       - 'connectx/**'
       - '.github/workflows/connectx-test.yml'
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild devcontainer without cache'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      
+      - name: Check if devcontainer needs rebuild
+        id: devcontainer_check
+        run: |
+          # Check if Dockerfile or key dependency files changed
+          git fetch origin ${{ github.base_ref || 'main' }} --depth=1 || true
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref || 'main' }}...HEAD 2>/dev/null || echo "all")
+          
+          if echo "$CHANGED_FILES" | grep -qE '\.devcontainer/|connectx/pubspec\.yaml|connectx/android/build\.gradle'; then
+            echo "rebuild=true" >> $GITHUB_OUTPUT
+            echo "Devcontainer needs rebuild"
+          else
+            echo "rebuild=false" >> $GITHUB_OUTPUT
+            echo "Devcontainer can use cache"
+          fi
         
       - name: Setup Node.js (required for devcontainers/ci)
         uses: actions/setup-node@v4
@@ -63,6 +88,9 @@ jobs:
       - name: Build and Test in Dev Container
         uses: devcontainers/ci@v0.3
         with:
+          cacheFrom: ${{ github.event.inputs.force_rebuild != 'true' && 'ghcr.io/${{ github.repository }}/devcontainer-cache' || '' }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' ? 'always' : 'never' }}
+          imageName: ghcr.io/${{ github.repository }}/devcontainer-cache
           runCmd: |
             set -e
             cd ./connectx
@@ -106,5 +134,6 @@ jobs:
             df -h
             
             echo "=== Running tests ==="
-            # Run tests without rebuilding
-            flutter test --no-pub
+            # Re-get dependencies after flutter clean
+            flutter pub get
+            flutter test
