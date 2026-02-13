@@ -21,17 +21,17 @@ class UserSchema(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     email: str = Field(..., min_length=1, max_length=200)
     photo_url: str = Field(default="")
-    location: str = Field(default="", max_length=200)
     self_introduction: str = Field(default="", max_length=1000)
     is_service_provider: bool = Field(default=False)
     fcm_token: str = Field(default="")
-    has_open_request: bool = Field(default=False)
     last_sign_in: Optional[datetime] = None
-    user_app_settings: dict = Field(default_factory=dict)
-    feedback_positive: List[str] = Field(default_factory=list)
-    feedback_negative: List[str] = Field(default_factory=list)
     average_rating: float = Field(default=0.0, ge=0.0, le=5.0)
     review_count: int = Field(default=0, ge=0)
+    has_open_request: Optional[bool] = None
+    feedback_positive: List[str] = Field(default_factory=list)
+    feedback_negative: List[str] = Field(default_factory=list)
+    location: str = Field(default="", max_length=200)
+    user_app_settings: dict = Field(default_factory=dict)
     
     @field_validator('email')
     @classmethod
@@ -51,20 +51,21 @@ class UserUpdateSchema(BaseModel):
     """
     model_config = ConfigDict(extra='ignore')
     
+    updated_at: Optional[datetime] = None
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     email: Optional[str] = Field(None, min_length=1, max_length=200)
     photo_url: Optional[str] = Field(None, max_length=500)
-    location: Optional[str] = Field(None, max_length=200)
     self_introduction: Optional[str] = Field(None, max_length=1000)
     is_service_provider: Optional[bool] = None
     fcm_token: Optional[str] = None
-    has_open_request: Optional[bool] = None
     last_sign_in: Optional[datetime] = None
-    user_app_settings: Optional[dict] = None
-    feedback_positive: Optional[List[str]] = None
-    feedback_negative: Optional[List[str]] = None
     average_rating: Optional[float] = Field(None, ge=0.0, le=5.0)
     review_count: Optional[int] = Field(None, ge=0)
+    has_open_request: Optional[bool] = None
+    feedback_positive: Optional[List[str]] = None
+    feedback_negative: Optional[List[str]] = None
+    location: Optional[str] = Field(None, max_length=200)
+    user_app_settings: Optional[dict] = None
     
     @field_validator('email')
     @classmethod
@@ -114,10 +115,14 @@ class CompetenceUpdateSchema(BaseModel):
     """
     model_config = ConfigDict(extra='ignore')
     
+    updated_at: Optional[datetime] = None
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=1000)
     category: Optional[str] = Field(None, max_length=100)
     price_range: Optional[str] = Field(None, max_length=100)
+    year_of_experience: Optional[int] = Field(None, ge=0)
+    feedback_positive: Optional[List[str]] = None
+    feedback_negative: Optional[List[str]] = None
 
 
 class ServiceRequestSchema(BaseModel):
@@ -181,7 +186,7 @@ class ServiceRequestUpdateSchema(BaseModel):
     description: Optional[str] = Field(None, max_length=1000)
     requested_competencies: Optional[List[str]] = None
     status: Optional[str] = Field(None, max_length=50)
-    start_data: Optional[datetime] = None
+    start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     category: Optional[str] = Field(None, max_length=100)
     location: Optional[str] = Field(None, max_length=200)
@@ -204,6 +209,8 @@ class ReviewSchema(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
     
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     service_request_id: str = Field(..., min_length=1)
     user_id: str = Field(..., min_length=1)  # Reviewee (user being reviewed)
     reviewer_user_id: str = Field(..., min_length=1)  # Reviewer (user writing the review)
@@ -214,8 +221,6 @@ class ReviewSchema(BaseModel):
     rating_quality: Optional[float] = Field(None, ge=1.0, le=5.0)
     rating_competence: Optional[float] = Field(None, ge=1.0, le=5.0)
     rating_response_speed: Optional[float] = Field(None, ge=1.0, le=5.0)
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
     
     @field_validator('user_id', 'reviewer_user_id')
     @classmethod
@@ -247,6 +252,7 @@ class ReviewUpdateSchema(BaseModel):
     """
     model_config = ConfigDict(extra='ignore')
     
+    updated_at: Optional[datetime] = None
     feedback_raw: Optional[str] = Field(None, max_length=5000)
     feedback_positive: Optional[List[str]] = None
     feedback_negative: Optional[List[str]] = None
@@ -263,13 +269,13 @@ class ChatSchema(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
     
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     provider_candidate_id: str = Field(..., min_length=1)
+    title: str = Field(default="", max_length=200)
     service_request_id: str = Field(..., min_length=1)
     seeker_user_id: str = Field(..., min_length=1)  # For direct user queries
     provider_user_id: str = Field(..., min_length=1)  # For direct user queries
-    title: str = Field(default="", max_length=200)
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
     
     @model_validator(mode='before')
     @classmethod
@@ -293,6 +299,7 @@ class ChatUpdateSchema(BaseModel):
     """
     model_config = ConfigDict(extra='ignore')
     
+    updated_at: Optional[datetime] = None
     title: Optional[str] = Field(None, max_length=200)
 
 
@@ -303,13 +310,13 @@ class ChatMessageSchema(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
     
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     chat_id: str = Field(..., min_length=1)
     sender_user_id: str = Field(..., min_length=1)
     receiver_user_id: str = Field(..., min_length=1)
     message: str = Field(..., min_length=1, max_length=5000)
-    timestamp: Optional[datetime] = Field(None, description="When the message was sent by the user")
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    timestamp: Optional[datetime] = Field(None)
     
     @field_validator('sender_user_id', 'receiver_user_id')
     @classmethod
@@ -341,10 +348,11 @@ class ChatMessageUpdateSchema(BaseModel):
     """
     model_config = ConfigDict(extra='ignore')
     
+    updated_at: Optional[datetime] = None
     sender_user_id: Optional[str] = Field(None, min_length=1)
     receiver_user_id: Optional[str] = Field(None, min_length=1)
     message: Optional[str] = Field(None, min_length=1, max_length=5000)
-    timestamp: Optional[datetime] = Field(None, description="When the message was sent by the user")
+    timestamp: Optional[datetime] = Field(None)
     
     @field_validator('sender_user_id', 'receiver_user_id')
     @classmethod
@@ -362,14 +370,14 @@ class ProviderCandidateSchema(BaseModel):
     """
     model_config = ConfigDict(extra='forbid')
     
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    introduction: str = Field(default="", max_length=2000)
     service_request_id: str = Field(..., min_length=1)
     provider_candidate_user_id: str = Field(..., min_length=1)
     matching_score: float = Field(..., ge=0.0, le=100.0)
     matching_score_reasons: List[str] = Field(default_factory=list)
-    introduction: str = Field(default="", max_length=2000)
     status: str = Field(default="pending", max_length=50)
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
     
     @field_validator('status')
     @classmethod
@@ -402,6 +410,7 @@ class ProviderCandidateUpdateSchema(BaseModel):
     """
     model_config = ConfigDict(extra='ignore')
     
+    updated_at: Optional[datetime] = None
     provider_candidate_user_id: Optional[str] = Field(None, min_length=1)
     matching_score: Optional[float] = Field(None, ge=0.0, le=100.0)
     matching_score_reasons: Optional[List[str]] = None
