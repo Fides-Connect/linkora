@@ -28,35 +28,78 @@ jobs:
           
       - name: Free Disk Space Before Build
         run: |
-          # Remove unnecessary tools to free space
+          # Remove unnecessary tools and files to free space
+          echo "=== Disk space before cleanup ==="
+          df -h
+          
+          # Remove unnecessary system tools
           sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android/sdk/ndk-bundle
+          sudo rm -rf /usr/local/lib/android
           sudo rm -rf /opt/ghc
           sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/graalvm
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/local/share/powershell
+          sudo rm -rf /usr/local/share/chromium
+          sudo rm -rf /usr/local/lib/node_modules
+          
+          # Clean apt cache
+          sudo apt-get clean
+          sudo apt-get autoremove -y
+          sudo rm -rf /var/lib/apt/lists/*
+          
+          # Clean Docker if present
+          docker system prune -af || true
+          
+          echo "=== Disk space after cleanup ==="
           df -h
           
       - name: Build and Test in Dev Container
         uses: devcontainers/ci@v0.3
         with:
           runCmd: |
+            set -e
             cd ./connectx
             cp ./template.env .env
             
-            # Run build_runner
-            dart run build_runner build --delete-conflicting-outputs
+            echo "=== Getting Flutter dependencies ==="
+            flutter pub get
             
-            # Clean up after build_runner
-            flutter clean
-            rm -rf build/.dart_tool
+            echo "=== Building APK (ARM64 only to save space) ==="
+            # Build only ARM64 for testing (most common) to save space
+            flutter build apk --target-platform android-arm64 --release
             
-            # Build APK with split-per-abi to reduce size
-            flutter build apk --split-per-abi
-            
-            # Clean up build artifacts before tests
-            rm -rf build/app/outputs
+            echo "=== Aggressive cleanup before tests ==="
+            # Remove all build outputs except the APK we just built
             rm -rf build/app/intermediates
+            rm -rf build/app/.transforms
+            rm -rf build/app/tmp
+            rm -rf build/kotlin
+            rm -rf build/flutter_webrtc
+            rm -rf build/firebase_*
+            rm -rf build/google_sign_in_android
+            rm -rf build/permission_handler_android
+            rm -rf build/path_provider_android
+            rm -rf build/flutter_local_notifications
+            
+            # Clean Gradle caches
             rm -rf ~/.gradle/caches
+            rm -rf ~/.gradle/wrapper/dists
+            rm -rf .gradle
+            
+            # Clean Flutter caches
+            rm -rf ~/.pub-cache/hosted/*/doc
+            rm -rf ~/.pub-cache/hosted/*/example
+            rm -rf ~/.pub-cache/hosted/*/test
+            
+            # Clean Flutter build cache
             flutter clean
             
-            # Run tests
-            flutter test
+            # Show disk space
+            echo "=== Disk space before tests ==="
+            df -h
+            
+            echo "=== Running tests ==="
+            # Run tests without rebuilding
+            flutter test --no-pub
