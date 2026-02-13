@@ -1283,6 +1283,17 @@ class FirestoreService:
         if not self.db:
             return None
         try:
+            # Validate that the service request exists and is completed
+            service_request_id = review_data.get('service_request_id')
+            if service_request_id:
+                service_request = await self.get_service_request(service_request_id)
+                if not service_request:
+                    logger.error(f"Cannot create review: service request {service_request_id} not found")
+                    return None
+                if service_request.get('status') != 'completed':
+                    logger.error(f"Cannot create review: service request {service_request_id} is not completed (status: {service_request.get('status')})")
+                    return None
+            
             # Generate prefixed review ID
             review_id = self._generate_prefixed_id('review')
             
@@ -1290,8 +1301,8 @@ class FirestoreService:
             validated_data = self._validate_data(review_data, ReviewSchema)
             
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.utcnow()
-            validated_data['updated_at'] = datetime.utcnow()
+            validated_data['created_at'] = datetime.now()
+            validated_data['updated_at'] = datetime.now()
             
             # Create document with the prefixed ID
             ref = self._get_collection('reviews').document(review_id)
@@ -1594,6 +1605,28 @@ class FirestoreService:
         if not self.db:
             return None
         try:
+            # Fetch chat to validate participants
+            chat = await self.get_chat(chat_id)
+            if not chat:
+                logger.error(f"Chat {chat_id} not found")
+                return None
+            
+            # Validate that sender and receiver are the chat participants
+            seeker_id = chat.get('seeker_user_id')
+            provider_id = chat.get('provider_user_id')
+            sender_id = message_data.get('sender_user_id')
+            receiver_id = message_data.get('receiver_user_id')
+            
+            valid_participants = {seeker_id, provider_id}
+            if sender_id not in valid_participants or receiver_id not in valid_participants:
+                logger.error(f"Invalid participants: sender={sender_id}, receiver={receiver_id}. "
+                           f"Must be one of {valid_participants}")
+                return None
+            
+            if sender_id == receiver_id:
+                logger.error(f"Sender and receiver cannot be the same: {sender_id}")
+                return None
+            
             # Generate prefixed message ID
             message_id = self._generate_prefixed_id('chat_message')
             message_data['chat_id'] = chat_id
@@ -1682,6 +1715,37 @@ class FirestoreService:
         if not self.db:
             return None
         try:
+            # If updating sender or receiver, validate they are chat participants
+            if 'sender_user_id' in update_data or 'receiver_user_id' in update_data:
+                chat = await self.get_chat(chat_id)
+                if not chat:
+                    logger.error(f"Chat {chat_id} not found")
+                    return None
+                
+                # Get current message to merge with updates
+                current_message = await self.get_chat_message(chat_id, message_id)
+                if not current_message:
+                    logger.error(f"Message {message_id} not found in chat {chat_id}")
+                    return None
+                
+                # Determine final sender and receiver after update
+                sender_id = update_data.get('sender_user_id', current_message.get('sender_user_id'))
+                receiver_id = update_data.get('receiver_user_id', current_message.get('receiver_user_id'))
+                
+                # Validate participants
+                seeker_id = chat.get('seeker_user_id')
+                provider_id = chat.get('provider_user_id')
+                valid_participants = {seeker_id, provider_id}
+                
+                if sender_id not in valid_participants or receiver_id not in valid_participants:
+                    logger.error(f"Invalid participants: sender={sender_id}, receiver={receiver_id}. "
+                               f"Must be one of {valid_participants}")
+                    return None
+                
+                if sender_id == receiver_id:
+                    logger.error(f"Sender and receiver cannot be the same: {sender_id}")
+                    return None
+            
             ref = (self._get_collection('chats')
                    .document(chat_id)
                    .collection('messages')

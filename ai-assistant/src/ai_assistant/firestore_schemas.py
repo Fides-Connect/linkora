@@ -307,6 +307,7 @@ class ChatMessageSchema(BaseModel):
     sender_user_id: str = Field(..., min_length=1)
     receiver_user_id: str = Field(..., min_length=1)
     message: str = Field(..., min_length=1, max_length=5000)
+    timestamp: Optional[datetime] = Field(None, description="When the message was sent by the user")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     
@@ -343,6 +344,7 @@ class ChatMessageUpdateSchema(BaseModel):
     sender_user_id: Optional[str] = Field(None, min_length=1)
     receiver_user_id: Optional[str] = Field(None, min_length=1)
     message: Optional[str] = Field(None, min_length=1, max_length=5000)
+    timestamp: Optional[datetime] = Field(None, description="When the message was sent by the user")
     
     @field_validator('sender_user_id', 'receiver_user_id')
     @classmethod

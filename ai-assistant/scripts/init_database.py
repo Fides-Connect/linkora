@@ -91,11 +91,12 @@ def get_test_data():
         from ai_assistant import seed_data
         return {
             'personas': seed_data.TEST_PERSONAS,
-            'service_requests': getattr(seed_data, 'TEST_SERVICE_REQUESTS', []),
-            'provider_candidates': getattr(seed_data, 'TEST_PROVIDER_CANDIDATES', []),
-            'chats': getattr(seed_data, 'TEST_CHATS', []),
-            'chat_messages': getattr(seed_data, 'TEST_CHAT_MESSAGES', []),
-            'reviews': getattr(seed_data, 'TEST_REVIEWS', [])
+            # Service requests, provider candidates, chats, and reviews removed
+            'service_requests': [],
+            'provider_candidates': [],
+            'chats': [],
+            'chat_messages': [],
+            'reviews': []
         }
     except ImportError as e:
         logger.error(f"Could not import test data from ai_assistant.seed_data: {e}")
@@ -131,7 +132,7 @@ async def init_firestore(test_data):
     logger.info("Initializing Firestore...")
     
     # Collections to clean based on Diagram
-    collections = ['users', 'service_requests', 'reviews', 'chat_sessions', 'chats']
+    collections = ['users', 'service_requests', 'reviews', 'chats']
     
     # 1. Cleanup
     for coll_name in collections:
@@ -337,165 +338,7 @@ async def init_firestore(test_data):
     
     logger.info("  ✓ Competence availability_time subcollections created")
 
-    # 3. Create Service Requests
-    service_requests = test_data.get('service_requests', [])
-    # Track which requests belong to which users for updating their open request arrays
-    user_outgoing_requests = {}  # seeker_user_id -> [request_ids]
-    user_incoming_requests = {}  # provider_user_id -> [request_ids]
-    
-    if service_requests:
-        for service_request in service_requests:
-            service_request_id = service_request.get('service_request_id', 'unknown_req')
-            
-            # Track the request for updating user open request arrays
-            seeker_id = service_request.get('seeker_user_id')
-            provider_id = service_request.get('selected_provider_user_id')
-            
-            if seeker_id:
-                if seeker_id not in user_outgoing_requests:
-                    user_outgoing_requests[seeker_id] = []
-                user_outgoing_requests[seeker_id].append(service_request_id)
-            
-            if provider_id:
-                if provider_id not in user_incoming_requests:
-                    user_incoming_requests[provider_id] = []
-                user_incoming_requests[provider_id].append(service_request_id)
-            
-            # Create using validated Pydantic schema
-            from ai_assistant.firestore_schemas import ServiceRequestSchema
-            try:
-                # Remove service_request_id - it's the document ID, not stored data
-                req_data = {k: v for k, v in service_request.items() if k != 'service_request_id'}
-                validated = ServiceRequestSchema(**req_data)
-                validated_dict = validated.model_dump(mode='python', exclude_none=False)
-                
-                req_ref = db.collection('service_requests').document(service_request_id)
-                req_ref.set(validated_dict)
-            except Exception as e:
-                logger.error(f"Failed to create service request {service_request_id}: {e}")
-                continue
-                
-        logger.info(f"  ✓ {len(service_requests)} Service Requests created")
-    
-    # 3c. Update user documents with incoming/outgoing service request arrays
-    for user_id, outgoing_req_ids in user_outgoing_requests.items():
-        user_ref = db.collection('users').document(user_id)
-        user_ref.set({'outgoing_service_requests': outgoing_req_ids}, merge=True)
-        logger.info(f"  ✓ Updated user {user_id} with {len(outgoing_req_ids)} outgoing requests")
-    
-    for user_id, incoming_req_ids in user_incoming_requests.items():
-        user_ref = db.collection('users').document(user_id)
-        user_ref.set({'incoming_service_requests': incoming_req_ids}, merge=True)
-        logger.info(f"  ✓ Updated user {user_id} with {len(incoming_req_ids)} incoming requests")
-    
-    # 3b. Create Provider Candidates as subcollections using validated schema
-    provider_candidates = test_data.get('provider_candidates', [])
-    if provider_candidates:
-        for i, candidate in enumerate(provider_candidates):
-            service_request_id = candidate.get('service_request_id')
-            # Generate candidate ID from index if not present
-            cand_id = f"provider_candidate_{service_request_id}_{i+1}" if service_request_id else f"provider_candidate_{i+1}"
-            
-            if not service_request_id:
-                continue
-            
-            # Validate using Pydantic schema
-            from ai_assistant.firestore_schemas import ProviderCandidateSchema
-            try:
-                # Remove provider_candidate_id - it's the document ID, not stored data
-                cand_data = {k: v for k, v in candidate.items() if k != 'provider_candidate_id'}
-                validated = ProviderCandidateSchema(**cand_data)
-                validated_dict = validated.model_dump(mode='python', exclude_none=False)
-                
-                cand_ref = db.collection('service_requests').document(service_request_id).collection('provider_candidates').document(cand_id)
-                cand_ref.set(validated_dict)
-            except Exception as e:
-                logger.error(f"Failed to create provider candidate {cand_id}: {e}")
-                continue
-        logger.info(f"  ✓ {len(provider_candidates)} Provider Candidates created")
-    
-    # 4. Create Chat Sessions and Messages in root chats collection
-    chats = test_data.get('chats', [])
-    messages = test_data.get('chat_messages', [])
-    
-    if chats:
-        from ai_assistant.firestore_schemas import ChatSchema
-        for chat in chats:
-            chat_id = chat.get('chat_id', 'unknown_chat')
-            service_request_id = chat.get('service_request_id')
-            cand_id = chat.get('provider_candidate_id')
-            seeker_uid = chat.get('seeker_user_id')
-            provider_uid = chat.get('provider_user_id')
-            
-            # Skip chats without proper references
-            if not service_request_id or not cand_id or not seeker_uid or not provider_uid:
-                logger.warning(f"Skipping chat {chat_id}: missing required fields")
-                continue
-            
-            # Validate using Pydantic schema
-            try:
-                # Remove chat_id - it's the document ID, not stored data
-                chat_data = {k: v for k, v in chat.items() if k != 'chat_id'}
-                validated = ChatSchema(**chat_data)
-                validated_dict = validated.model_dump(mode='python', exclude_none=False)
-                
-                # Chat is now in root chats collection
-                chat_ref = db.collection('chats').document(chat_id)
-                chat_ref.set(validated_dict)
-            except Exception as e:
-                logger.error(f"Failed to create chat {chat_id}: {e}")
-                continue
-                
-        logger.info(f"  ✓ {len(chats)} Chat Sessions created")
-        
-        # Add messages to subcollections under chats
-        if messages:
-            from ai_assistant.firestore_schemas import ChatMessageSchema
-            count = 0
-            for msg in messages:
-                chat_id = msg.get('chat_id')
-                if not chat_id:
-                    continue
-                
-                msg_id = msg.get('chat_message_id', f'msg_{count}')
-                
-                # Validate using Pydantic schema
-                try:
-                    # Remove chat_message_id - it's the document ID, not stored data
-                    msg_data = {k: v for k, v in msg.items() if k != 'chat_message_id'}
-                    validated = ChatMessageSchema(**msg_data)
-                    validated_dict = validated.model_dump(mode='python', exclude_none=False)
-                    
-                    # Messages are now subcollection under root chats
-                    msg_ref = (db.collection('chats').document(chat_id)
-                              .collection('messages').document(msg_id))
-                    msg_ref.set(validated_dict)
-                    count += 1
-                except Exception as e:
-                    logger.error(f"Failed to create message {msg_id}: {e}")
-                    continue
-            logger.info(f"  ✓ {count} Chat Messages created")
-    
-    # 5. Create Reviews using validated schema
-    reviews = test_data.get('reviews', [])
-    if reviews:
-        from ai_assistant.firestore_schemas import ReviewSchema
-        for rev in reviews:
-            rev_id = rev.get('review_id', 'unknown_rev')
-            
-            # Validate using Pydantic schema
-            try:
-                # Remove review_id - it's the document ID, not stored data
-                rev_data = {k: v for k, v in rev.items() if k != 'review_id'}
-                validated = ReviewSchema(**rev_data)
-                validated_dict = validated.model_dump(mode='python', exclude_none=False)
-                
-                rev_ref = db.collection('reviews').document(rev_id)
-                rev_ref.set(validated_dict)
-            except Exception as e:
-                logger.error(f"Failed to create review {rev_id}: {e}")
-                continue
-        logger.info(f"  ✓ {len(reviews)} Reviews created")
+    # Note: Service requests, provider candidates, chats, and reviews have been removed from test data
     
 
 
@@ -585,7 +428,7 @@ async def main():
         if args.clean_only:
              # Just clean firestore
              if db:
-                 for c in ['users', 'service_requests', 'reviews', 'chat_sessions', 'chats']:
+                 for c in ['users', 'service_requests', 'reviews', 'chats']:
                      clean_firestore_collection(db.collection(c))
              logger.info("✓ Firestore collections cleaned")
         else:

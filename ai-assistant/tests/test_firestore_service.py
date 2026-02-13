@@ -558,3 +558,325 @@ class TestFirestoreService:
             mock_remove.assert_not_called()
             mock_doc_ref.delete.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_create_chat_message_with_valid_participants(self, firestore, mock_db_collection):
+        """Test creating a chat message with valid participants."""
+        # Arrange
+        chat_id = "chat_123"
+        message_data = {
+            "sender_user_id": "user_alice",
+            "receiver_user_id": "user_bob",
+            "message": "Hello!"
+        }
+        
+        # Mock chat document
+        mock_chat_doc = Mock()
+        mock_chat_doc.exists = True
+        mock_chat_doc.to_dict.return_value = {
+            "seeker_user_id": "user_alice",
+            "provider_user_id": "user_bob"
+        }
+        mock_chat_doc.id = chat_id
+        mock_db_collection.return_value.document.return_value.get.return_value = mock_chat_doc
+        
+        # Mock message document reference
+        mock_msg_doc_ref = Mock()
+        mock_db_collection.return_value.document.return_value.collection.return_value.document.return_value = mock_msg_doc_ref
+        
+        with patch.object(firestore, '_generate_prefixed_id', return_value='chat_message_456'):
+            # Act
+            result = await firestore.create_chat_message(chat_id, message_data)
+            
+            # Assert
+            assert result is not None
+            assert result['chat_message_id'] == 'chat_message_456'
+            assert result['sender_user_id'] == 'user_alice'
+            assert result['receiver_user_id'] == 'user_bob'
+            mock_msg_doc_ref.set.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_chat_message_with_invalid_sender(self, firestore, mock_db_collection):
+        """Test creating a chat message with invalid sender (not a chat participant)."""
+        # Arrange
+        chat_id = "chat_123"
+        message_data = {
+            "sender_user_id": "user_charlie",  # Not a participant
+            "receiver_user_id": "user_bob",
+            "message": "Hello!"
+        }
+        
+        # Mock chat document
+        mock_chat_doc = Mock()
+        mock_chat_doc.exists = True
+        mock_chat_doc.to_dict.return_value = {
+            "seeker_user_id": "user_alice",
+            "provider_user_id": "user_bob"
+        }
+        mock_chat_doc.id = chat_id
+        mock_db_collection.return_value.document.return_value.get.return_value = mock_chat_doc
+        
+        # Act
+        result = await firestore.create_chat_message(chat_id, message_data)
+        
+        # Assert
+        assert result is None  # Should fail validation
+
+    @pytest.mark.asyncio
+    async def test_create_chat_message_with_same_sender_receiver(self, firestore, mock_db_collection):
+        """Test creating a chat message where sender and receiver are the same."""
+        # Arrange
+        chat_id = "chat_123"
+        message_data = {
+            "sender_user_id": "user_alice",
+            "receiver_user_id": "user_alice",  # Same as sender
+            "message": "Hello!"
+        }
+        
+        # Mock chat document
+        mock_chat_doc = Mock()
+        mock_chat_doc.exists = True
+        mock_chat_doc.to_dict.return_value = {
+            "seeker_user_id": "user_alice",
+            "provider_user_id": "user_bob"
+        }
+        mock_chat_doc.id = chat_id
+        mock_db_collection.return_value.document.return_value.get.return_value = mock_chat_doc
+        
+        # Act
+        result = await firestore.create_chat_message(chat_id, message_data)
+        
+        # Assert
+        assert result is None  # Should fail validation
+
+    @pytest.mark.asyncio
+    async def test_create_chat_message_with_nonexistent_chat(self, firestore, mock_db_collection):
+        """Test creating a chat message when chat doesn't exist."""
+        # Arrange
+        chat_id = "chat_999"
+        message_data = {
+            "sender_user_id": "user_alice",
+            "receiver_user_id": "user_bob",
+            "message": "Hello!"
+        }
+        
+        # Mock non-existent chat
+        mock_chat_doc = Mock()
+        mock_chat_doc.exists = False
+        mock_db_collection.return_value.document.return_value.get.return_value = mock_chat_doc
+        
+        # Act
+        result = await firestore.create_chat_message(chat_id, message_data)
+        
+        # Assert
+        assert result is None  # Should fail when chat not found
+    @pytest.mark.asyncio
+    async def test_update_chat_message_with_valid_participants(self, firestore, mock_db_collection):
+        """Test updating a chat message with valid participants."""
+        # Arrange
+        chat_id = "chat_123"
+        message_id = "msg_456"
+        update_data = {
+            "message": "Updated message"
+        }
+        
+        # Mock chat document
+        mock_chat_doc = Mock()
+        mock_chat_doc.exists = True
+        mock_chat_doc.to_dict.return_value = {
+            "seeker_user_id": "user_alice",
+            "provider_user_id": "user_bob"
+        }
+        mock_chat_doc.id = chat_id
+        
+        # Mock message document
+        mock_msg_doc = Mock()
+        mock_msg_doc.exists = True
+        mock_msg_doc.to_dict.return_value = {
+            "sender_user_id": "user_alice",
+            "receiver_user_id": "user_bob",
+            "message": "Original message"
+        }
+        
+        # Setup mock returns
+        mock_db_collection.return_value.document.return_value.get.return_value = mock_chat_doc
+        mock_db_collection.return_value.document.return_value.collection.return_value.document.return_value.get.return_value = mock_msg_doc
+        
+        # Act
+        result = await firestore.update_chat_message(chat_id, message_id, update_data)
+        
+        # Assert - should succeed and return the updated message
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_update_chat_message_changing_to_invalid_sender(self, firestore, mock_db_collection):
+        """Test updating a chat message with invalid sender."""
+        # Arrange
+        chat_id = "chat_123"
+        message_id = "msg_456"
+        update_data = {
+            "sender_user_id": "user_charlie"  # Not a participant
+        }
+        
+        # Mock chat document
+        mock_chat_doc = Mock()
+        mock_chat_doc.exists = True
+        mock_chat_doc.to_dict.return_value = {
+            "seeker_user_id": "user_alice",
+            "provider_user_id": "user_bob"
+        }
+        mock_chat_doc.id = chat_id
+        
+        # Mock message document
+        mock_msg_doc = Mock()
+        mock_msg_doc.exists = True
+        mock_msg_doc.to_dict.return_value = {
+            "sender_user_id": "user_alice",
+            "receiver_user_id": "user_bob",
+            "message": "Original message"
+        }
+        
+        # Setup mock returns
+        mock_db_collection.return_value.document.return_value.get.return_value = mock_chat_doc
+        mock_db_collection.return_value.document.return_value.collection.return_value.document.return_value.get.return_value = mock_msg_doc
+        
+        # Act
+        result = await firestore.update_chat_message(chat_id, message_id, update_data)
+        
+        # Assert
+        assert result is None  # Should fail validation
+
+    @pytest.mark.asyncio
+    async def test_update_chat_message_making_sender_equal_receiver(self, firestore, mock_db_collection):
+        """Test updating a chat message where sender would equal receiver."""
+        # Arrange
+        chat_id = "chat_123"
+        message_id = "msg_456"
+        update_data = {
+            "sender_user_id": "user_bob"  # Same as receiver
+        }
+        
+        # Mock chat document
+        mock_chat_doc = Mock()
+        mock_chat_doc.exists = True
+        mock_chat_doc.to_dict.return_value = {
+            "seeker_user_id": "user_alice",
+            "provider_user_id": "user_bob"
+        }
+        mock_chat_doc.id = chat_id
+        
+        # Mock message document
+        mock_msg_doc = Mock()
+        mock_msg_doc.exists = True
+        mock_msg_doc.to_dict.return_value = {
+            "sender_user_id": "user_alice",
+            "receiver_user_id": "user_bob",
+            "message": "Original message"
+        }
+        
+        # Setup mock returns
+        mock_db_collection.return_value.document.return_value.get.return_value = mock_chat_doc
+        mock_db_collection.return_value.document.return_value.collection.return_value.document.return_value.get.return_value = mock_msg_doc
+        
+        # Act
+        result = await firestore.update_chat_message(chat_id, message_id, update_data)
+        
+        # Assert
+        assert result is None  # Should fail validation
+
+    @pytest.mark.asyncio
+    async def test_create_review_for_completed_service_request(self, firestore, mock_db_collection):
+        """Test creating a review for a completed service request."""
+        # Arrange
+        review_data = {
+            "service_request_id": "service_request_123",
+            "user_id": "user_bob",
+            "reviewer_user_id": "user_alice",
+            "feedback_raw": "Great work!",
+            "feedback_positive": ["Professional"],
+            "feedback_negative": [],
+            "rating_reliance": 5.0,
+            "rating_quality": 5.0,
+            "rating_competence": 5.0,
+            "rating_response_speed": 5.0
+        }
+        
+        # Mock review document reference
+        mock_review_ref = Mock()
+        mock_db_collection.return_value.document.return_value = mock_review_ref
+        
+        # Mock get_service_request to return a completed service request
+        with patch.object(firestore, 'get_service_request') as mock_get_request, \
+             patch.object(firestore, '_generate_prefixed_id', return_value='review_456'):
+            mock_get_request.return_value = {
+                "service_request_id": "service_request_123",
+                "status": "completed",
+                "seeker_user_id": "user_alice",
+                "title": "Test Request"
+            }
+            
+            # Act
+            result = await firestore.create_review(review_data)
+            
+            # Assert
+            assert result is not None
+            assert result['review_id'] == 'review_456'
+            mock_review_ref.set.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_review_for_non_completed_service_request(self, firestore, mock_db_collection):
+        """Test creating a review for a non-completed service request should fail."""
+        # Arrange
+        review_data = {
+            "service_request_id": "service_request_123",
+            "user_id": "user_bob",
+            "reviewer_user_id": "user_alice",
+            "feedback_raw": "Great work!",
+            "feedback_positive": ["Professional"],
+            "feedback_negative": [],
+            "rating_reliance": 5.0,
+            "rating_quality": 5.0,
+            "rating_competence": 5.0,
+            "rating_response_speed": 5.0
+        }
+        
+        # Mock get_service_request to return a pending service request
+        with patch.object(firestore, 'get_service_request') as mock_get_request:
+            mock_get_request.return_value = {
+                "service_request_id": "service_request_123",
+                "status": "pending",
+                "seeker_user_id": "user_alice",
+                "title": "Test Request"
+            }
+            
+            # Act
+            result = await firestore.create_review(review_data)
+            
+            # Assert
+            assert result is None  # Should fail validation
+
+    @pytest.mark.asyncio
+    async def test_create_review_for_nonexistent_service_request(self, firestore, mock_db_collection):
+        """Test creating a review for a non-existent service request should fail."""
+        # Arrange
+        review_data = {
+            "service_request_id": "service_request_999",
+            "user_id": "user_bob",
+            "reviewer_user_id": "user_alice",
+            "feedback_raw": "Great work!",
+            "feedback_positive": ["Professional"],
+            "feedback_negative": [],
+            "rating_reliance": 5.0,
+            "rating_quality": 5.0,
+            "rating_competence": 5.0,
+            "rating_response_speed": 5.0
+        }
+        
+        # Mock get_service_request to return None (non-existent)
+        with patch.object(firestore, 'get_service_request') as mock_get_request:
+            mock_get_request.return_value = None
+            
+            # Act
+            result = await firestore.create_review(review_data)
+            
+            # Assert
+            assert result is None  # Should fail validation

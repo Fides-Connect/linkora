@@ -17,12 +17,15 @@ class TestUserSeedingService:
         service.create_user = AsyncMock()
         service.update_user = AsyncMock()
         service.add_favorite = AsyncMock()
-        service.create_availability_time = AsyncMock(return_value="avail_123")
+        service.create_availability_time = AsyncMock(return_value={"availability_time_id": "avail_123"})
         service.create_competence = AsyncMock(return_value={"competence_id": "comp_123"})
-        service.create_service_request = AsyncMock(return_value="req_123")
-        service.create_provider_candidate = AsyncMock(return_value="cand_123")
+        service.create_service_request = AsyncMock(return_value={"service_request_id": "req_123"})
+        service.create_provider_candidate = AsyncMock(return_value={"candidate_id": "cand_123"})
         service.add_outgoing_service_requests = AsyncMock()
         service.add_incoming_service_requests = AsyncMock()
+        service.create_chat = AsyncMock(return_value={"chat_id": "chat_123"})
+        service.create_chat_message = AsyncMock(return_value={"chat_message_id": "msg_123"})
+        service.create_review = AsyncMock(return_value={"review_id": "review_123"})
         return service
     
     @pytest.fixture
@@ -37,6 +40,9 @@ class TestUserSeedingService:
               patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_COMPETENCIES', [{"title": "Coding"}]), \
               patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_SERVICE_REQUESTS', [{"title": "Help", "seeker_user_id": "{uid}"}]), \
               patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_PROVIDER_CANDIDATES', [[{"provider_candidate_user_id": "p1"}]]), \
+              patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_CHATS', [{"request_index": 0, "seeker_user_id": "{uid}", "provider_user_id": "p1", "title": "Test Chat"}]), \
+              patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_CHAT_MESSAGES', [[{"sender_user_id": "{uid}", "receiver_user_id": "p1", "message": "Hello"}]]), \
+              patch('ai_assistant.services.user_seeding_service.USER_TEMPLATE_REVIEWS', [{"request_index": 0, "user_id": "{uid}", "reviewer_user_id": "user_eva_005", "feedback_raw": "Great!", "feedback_positive": ["Fast"], "feedback_negative": [], "rating_reliance": 5.0, "rating_quality": 5.0, "rating_competence": 5.0, "rating_response_speed": 5.0}]), \
               patch('ai_assistant.services.user_seeding_service.USER_A', {"id": "user_alice_001", "name": "Alice"}):
              yield
 
@@ -75,6 +81,12 @@ class TestUserSeedingService:
             # Assert 5: Provider candidates created via service layer
             mock_firestore.create_provider_candidate.assert_called()
             
-            # Assert 6: Default friend added
+            # Assert 6: Chats created via service layer
+            mock_firestore.create_chat.assert_called()
+            
+            # Assert 7: Chat messages created via service layer
+            mock_firestore.create_chat_message.assert_called()
+            
+            # Assert 8: Default friend added
             mock_firestore.update_user.assert_any_call("user_alice_001", ANY)
             mock_firestore.add_favorite.assert_called_with(user_id, "user_alice_001")
