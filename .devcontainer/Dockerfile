@@ -59,13 +59,12 @@ RUN chown -R vscode:vscode $FLUTTER_ROOT $ANDROID_HOME
 USER vscode
 WORKDIR /home/vscode
 
-# Download and install Flutter SDK (minimal installation)
+# Download and install Flutter SDK (minimal installation with shallow clone)
 RUN git clone https://github.com/flutter/flutter.git -b stable --depth 1 $FLUTTER_ROOT \
-    && cd $FLUTTER_ROOT \
-    && git fetch --depth 1 origin stable \
-    && rm -rf .git \
     && $FLUTTER_ROOT/bin/flutter --version \
-    && $FLUTTER_ROOT/bin/flutter config --no-analytics
+    && $FLUTTER_ROOT/bin/flutter config --no-analytics \
+    && cd $FLUTTER_ROOT \
+    && git gc --aggressive --prune=all
 
 # Download and install Android SDK (minimal)
 RUN mkdir -p $ANDROID_HOME/cmdline-tools \
