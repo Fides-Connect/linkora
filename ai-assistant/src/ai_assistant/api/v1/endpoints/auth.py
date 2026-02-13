@@ -102,7 +102,8 @@ async def user_sync(request: web.Request) -> web.Response:
         
         existing_firestore_user = await firestore_service.get_user(user_id)
         if existing_firestore_user:
-            if not await firestore_service.update_user(user_id, user_data):
+            updated_user = await firestore_service.update_user(user_id, user_data)
+            if not updated_user:
                 return web.json_response({
                     "error": "Failed to update Firestore user"
                 }, status=500)

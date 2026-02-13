@@ -39,10 +39,15 @@ class TestFirestoreService:
         # Mock _generate_prefixed_id to return a predictable ID
         with patch.object(firestore, '_generate_prefixed_id', return_value='service_request_123'):
             # Act
-            req_id = await firestore.create_service_request(request_data)
+            result = await firestore.create_service_request(request_data)
 
             # Assert
-            assert req_id == 'service_request_123'
+            assert result is not None
+            assert isinstance(result, dict)
+            assert result['service_request_id'] == 'service_request_123'
+            assert result['title'] == 'Test Request'
+            assert 'created_at' in result
+            assert 'updated_at' in result
             
             # Verify collection was accessed
             mock_db_collection.assert_called_with('service_requests')
@@ -114,18 +119,29 @@ class TestFirestoreService:
         mock_doc_ref = Mock()
         mock_db_collection.return_value.document.return_value = mock_doc_ref
         
-        # Act
-        success = await firestore.update_service_request_status(request_id, status)
-        
-        # Assert
-        assert success is True
-        mock_db_collection.assert_called_with('service_requests')
-        mock_db_collection.return_value.document.assert_called_with(request_id)
-        
-        mock_doc_ref.update.assert_called_once()
-        update_args = mock_doc_ref.update.call_args[0][0]
-        assert update_args['status'] == status
-        assert 'updated_at' in update_args
+        # Mock get_service_request to return a valid service request object
+        expected_result = {
+            'service_request_id': request_id,
+            'status': status,
+            'title': 'Test Request',
+            'updated_at': datetime.now(timezone.utc)
+        }
+        with patch.object(firestore, 'get_service_request', return_value=expected_result):
+            # Act
+            result = await firestore.update_service_request_status(request_id, status)
+            
+            # Assert
+            assert result is not None
+            assert isinstance(result, dict)
+            assert result['service_request_id'] == request_id
+            assert result['status'] == status
+            mock_db_collection.assert_called_with('service_requests')
+            mock_db_collection.return_value.document.assert_called_with(request_id)
+            
+            mock_doc_ref.update.assert_called_once()
+            update_args = mock_doc_ref.update.call_args[0][0]
+            assert update_args['status'] == status
+            assert 'updated_at' in update_args
 
     @pytest.mark.asyncio
     async def test_add_favorite(self, firestore, mock_db_collection):

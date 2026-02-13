@@ -46,15 +46,15 @@ async def update_me(request: web.Request) -> web.Response:
         if not user:
             return web.json_response({"error": "User not found"}, status=404)
         
-        success = await firestore_service.update_user(user_id, body)
-        if success:
+        updated_user = await firestore_service.update_user(user_id, body)
+        if updated_user:
             # Sync to Weaviate
             try:
                 UserModelWeaviate.update_user(user_id, body)
             except Exception as e:
                 logger.error(f"Failed to sync user {user_id} update to Weaviate: {e}")
 
-            return web.json_response({"status": "updated"})
+            return web.json_response(serialize_datetime(updated_user))
         else:
             return web.json_response({"error": "Failed to update user"}, status=500)
     except ValidationError as e:
@@ -324,8 +324,8 @@ async def update_my_competence(request: web.Request) -> web.Response:
         if not competence_data:
             return web.json_response({"error": "Competence not found"}, status=404)
         
-        success = await firestore_service.update_competence(user_id, competence_id, body)
-        if success:
+        updated_competence = await firestore_service.update_competence(user_id, competence_id, body)
+        if updated_competence:
             # Sync to Weaviate
             try:
                 competence_data = await firestore_service.get_competence(user_id, competence_id)
@@ -334,7 +334,7 @@ async def update_my_competence(request: web.Request) -> web.Response:
             except Exception as e:
                 logger.error(f"Failed to sync competence {competence_id} update to Weaviate: {e}")
             
-            return web.json_response({"status": "updated"})
+            return web.json_response(serialize_datetime(updated_competence))
         else:
             return web.json_response({"error": "Failed to update competence"}, status=500)
     except ValidationError as e:

@@ -99,9 +99,9 @@ async def update_service_request(request: web.Request) -> web.Response:
                 "error": "Forbidden: Only the creator can update this service request"
             }, status=403)
         
-        success = await firestore_service.update_service_request(service_request_id, body)
-        if success:
-            return web.json_response({"status": "updated"})
+        updated_request = await firestore_service.update_service_request(service_request_id, body)
+        if updated_request:
+            return web.json_response(serialize_datetime(updated_request))
         else:
             return web.json_response({"error": "Failed to update service request"}, status=500)
     except ValidationError as e:
@@ -240,12 +240,12 @@ async def update_chat(request: web.Request) -> web.Response:
             return web.json_response({"error": "Chat not found"}, status=404)
         
         body = await request.json()
-        success = await firestore_service.update_chat(chat_id, body)
+        updated_chat = await firestore_service.update_chat(chat_id, body)
         
-        if not success:
+        if not updated_chat:
             return web.json_response({"error": "Failed to update chat"}, status=500)
         
-        return web.json_response({"status": "updated"})
+        return web.json_response(serialize_datetime(updated_chat))
     except web.HTTPException:
         raise
     except Exception as e:
@@ -366,12 +366,12 @@ async def update_chat_message(request: web.Request) -> web.Response:
             return web.json_response({"error": "Message not found"}, status=404)
         
         body = await request.json()
-        success = await firestore_service.update_chat_message(chat_id, message_id, body)
+        updated_message = await firestore_service.update_chat_message(chat_id, message_id, body)
         
-        if not success:
+        if not updated_message:
             return web.json_response({"error": "Failed to update message"}, status=500)
         
-        return web.json_response({"status": "updated"})
+        return web.json_response(serialize_datetime(updated_message))
     except web.HTTPException:
         raise
     except Exception as e:

@@ -159,12 +159,12 @@ async def update_review(request: web.Request) -> web.Response:
                     "error": "Rating must be between 1 and 5"
                 }, status=400)
         
-        success = await firestore_service.update_review(review_id, body)
+        updated_review = await firestore_service.update_review(review_id, body)
         
-        if not success:
+        if not updated_review:
             return web.json_response({"error": "Failed to update review"}, status=500)
         
-        return web.json_response({"status": "updated"})
+        return web.json_response(serialize_datetime(updated_review))
     except web.HTTPException:
         raise
     except Exception as e:

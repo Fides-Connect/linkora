@@ -160,10 +160,14 @@ class FirestoreService:
             logger.error(f"Error fetching requests for user {user_id}: {e}")
             return []
 
-    async def create_service_request(self, request_data: Dict[str, Any]) -> str:
-        """Create a new service request."""
+    async def create_service_request(self, request_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Create a new service request.
+        
+        Returns:
+            The created service request object with service_request_id, or None if failed
+        """
         if not self.db:
-            return ""
+            return None
         try:
             # Generate prefixed service request ID
             service_request_id = self._generate_prefixed_id('service_request')
@@ -178,10 +182,14 @@ class FirestoreService:
             # Create document with the prefixed ID
             ref = self._get_collection('service_requests').document(service_request_id)
             ref.set(validated_data)
-            return service_request_id
+            
+            # Return full object
+            result = validated_data.copy()
+            result['service_request_id'] = service_request_id
+            return result
         except Exception as e:
             logger.error(f"Error creating request: {e}")
-            return ""
+            return None
 
     async def get_service_request(self, request_id: str) -> Optional[Dict[str, Any]]:
         """Fetch a single service request by ID."""
@@ -198,10 +206,14 @@ class FirestoreService:
             logger.error(f"Error fetching request {request_id}: {e}")
             return None
 
-    async def update_service_request_status(self, request_id: str, status: str) -> bool:
-        """Update service request status."""
+    async def update_service_request_status(self, request_id: str, status: str) -> Optional[Dict[str, Any]]:
+        """Update service request status.
+        
+        Returns:
+            The full updated service request object, or None if failed
+        """
         if not self.db:
-            return False
+            return None
         try:
             # Validate status value using the update schema
             update_data = {'status': status}
@@ -212,12 +224,14 @@ class FirestoreService:
                 'status': validated_data['status'],
                 'updated_at': datetime.now(timezone.utc)
             })
-            return True
+            
+            # Fetch and return the updated object
+            return await self.get_service_request(request_id)
         except Exception as e:
             logger.error(f"Error updating request status {request_id}: {e}")
-            return False
+            return None
 
-    async def update_service_request(self, request_id: str, update_data: Dict[str, Any]) -> bool:
+    async def update_service_request(self, request_id: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update a service request with full data.
         
         Args:
@@ -225,16 +239,16 @@ class FirestoreService:
             update_data: Data to update
             
         Returns:
-            True if updated successfully, False otherwise
+            The full updated service request object, or None if failed
         """
         if not self.db:
-            return False
+            return None
         try:
             # Check if service request exists
             ref = self._get_collection('service_requests').document(request_id)
             if not ref.get().exists:
                 logger.warning(f"Cannot update service request {request_id}: service request does not exist")
-                return False
+                return None
             
             # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(update_data, ServiceRequestUpdateSchema, exclude_unset=True)
@@ -244,10 +258,12 @@ class FirestoreService:
             
             # Update the document
             ref.update(validated_data)
-            return True
+            
+            # Fetch and return the updated object
+            return await self.get_service_request(request_id)
         except Exception as e:
             logger.error(f"Error updating service request {request_id}: {e}")
-            return False
+            return None
 
     async def delete_service_request(self, request_id: str) -> bool:
         """Delete a service request and all its subcollections, plus related chats from root collection.
@@ -294,7 +310,7 @@ class FirestoreService:
         self,
         service_request_id: str,
         candidate_data: Dict[str, Any]
-    ) -> Optional[str]:
+    ) -> Optional[Dict[str, Any]]:
         """Create a new provider candidate for a service request.
         
         Args:
@@ -302,7 +318,7 @@ class FirestoreService:
             candidate_data: Provider candidate data
             
         Returns:
-            The generated provider_candidate_id or None if failed
+            The created provider candidate object with candidate_id, or None if failed
         """
         if not self.db:
             return None
@@ -324,7 +340,11 @@ class FirestoreService:
                   .collection('provider_candidates')
                   .document(provider_candidate_id))
             ref.set(validated_data)
-            return provider_candidate_id
+            
+            # Return full object
+            result = validated_data.copy()
+            result['candidate_id'] = provider_candidate_id
+            return result
         except Exception as e:
             logger.error(f"Error creating provider candidate for request {service_request_id}: {e}")
             return None
@@ -395,7 +415,7 @@ class FirestoreService:
         service_request_id: str,
         provider_candidate_id: str,
         update_data: Dict[str, Any]
-    ) -> bool:
+    ) -> Optional[Dict[str, Any]]:
         """Update a provider candidate.
         
         Args:
@@ -404,10 +424,10 @@ class FirestoreService:
             update_data: Data to update
             
         Returns:
-            True if updated successfully, False otherwise
+            Full updated provider candidate object, or None if failed
         """
         if not self.db:
-            return False
+            return None
         try:
             # Check if provider candidate exists
             ref = (self._get_collection('service_requests')
@@ -419,7 +439,7 @@ class FirestoreService:
                 logger.warning(
                     f"Cannot update provider candidate {provider_candidate_id}: does not exist"
                 )
-                return False
+                return None
             
             # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(
@@ -433,10 +453,10 @@ class FirestoreService:
             
             # Update document
             ref.update(validated_data)
-            return True
+            return await self.get_provider_candidate(service_request_id, provider_candidate_id)
         except Exception as e:
             logger.error(f"Error updating provider candidate {provider_candidate_id}: {e}")
-            return False
+            return None
 
     async def delete_provider_candidate(
         self,
@@ -693,16 +713,24 @@ class FirestoreService:
             logger.error(f"Error getting user {user_id}: {e}")
             return None
 
-    async def update_user(self, user_id: str, user_data: Dict[str, Any]) -> bool:
-        """Update user."""
+    async def update_user(self, user_id: str, user_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update user.
+        
+        Args:
+            user_id: The user's ID
+            user_data: Data to update
+            
+        Returns:
+            Full updated user object with competencies, or None if failed
+        """
         if not self.db:
-            return False
+            return None
         try:
             # Check if user exists
             user_ref = self._get_collection('users').document(user_id)
             if not user_ref.get().exists:
                 logger.warning(f"Cannot update user {user_id}: user does not exist")
-                return False
+                return None
             
             # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(user_data, UserUpdateSchema, exclude_unset=True)
@@ -712,12 +740,12 @@ class FirestoreService:
             
             # Update the document (will fail if document doesn't exist)
             user_ref.update(validated_data)
-            return True
+            return await self.get_user(user_id)
         except Exception as e:
             logger.error(f"Error updating {user_id}: {e}")
-            return False
+            return None
 
-    async def create_user(self, user_id: Optional[str] = None, user_data: Dict[str, Any] = None) -> Optional[str]:
+    async def create_user(self, user_id: Optional[str] = None, user_data: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Create a new user.
         
         Args:
@@ -725,7 +753,7 @@ class FirestoreService:
             user_data: User data to create
             
         Returns:
-            The user_id if created successfully, None otherwise
+            The created user object with user_id, or None if failed
         """
         if not self.db:
             return None
@@ -741,12 +769,17 @@ class FirestoreService:
             if user_id:
                 # Use provided ID
                 self._get_collection('users').document(user_id).set(validated_data)
-                return user_id
+                final_user_id = user_id
             else:
                 # Auto-generate ID using Firestore
                 doc_ref = self._get_collection('users').document()
                 doc_ref.set(validated_data)
-                return doc_ref.id
+                final_user_id = doc_ref.id
+            
+            # Return full object
+            result = validated_data.copy()
+            result['user_id'] = final_user_id
+            return result
         except Exception as e:
             logger.error(f"Error creating user: {e}")
             return None
@@ -861,7 +894,7 @@ class FirestoreService:
             logger.error(f"Error removing competence {competence_id} for {user_id}: {e}")
             return False
 
-    async def update_competence(self, user_id: str, competence_id: str, update_data: Dict[str, Any]) -> bool:
+    async def update_competence(self, user_id: str, competence_id: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update a competence.
         
         Args:
@@ -870,16 +903,16 @@ class FirestoreService:
             update_data: Data to update
             
         Returns:
-            True if updated successfully, False otherwise
+            Full updated competence object, or None if failed
         """
         if not self.db:
-            return False
+            return None
         try:
             # Check if competence exists
             competence_ref = self._get_collection('users').document(user_id).collection('competencies').document(competence_id)
             if not competence_ref.get().exists:
                 logger.warning(f"Cannot update competence {competence_id} for user {user_id}: competence does not exist")
-                return False
+                return None
             
             # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(update_data, CompetenceUpdateSchema, exclude_unset=True)
@@ -889,10 +922,10 @@ class FirestoreService:
             
             # Update document in competencies subcollection
             competence_ref.update(validated_data)
-            return True
+            return await self.get_competence(user_id, competence_id)
         except Exception as e:
             logger.error(f"Error updating competence {competence_id} for {user_id}: {e}")
-            return False
+            return None
 
     async def get_competence(self, user_id: str, competence_id: str) -> Optional[Dict[str, Any]]:
         """Get a single competence by ID.
@@ -923,7 +956,7 @@ class FirestoreService:
         user_id: str,
         availability_data: Dict[str, Any],
         competence_id: Optional[str] = None
-    ) -> Optional[str]:
+    ) -> Optional[Dict[str, Any]]:
         """Create an availability time for a user or competence.
         
         Args:
@@ -932,7 +965,7 @@ class FirestoreService:
             competence_id: Optional competence ID if this is for a competence subcollection
             
         Returns:
-            The generated availability_time_id or None if failed
+            The created availability time object with availability_time_id, or None if failed
         """
         if not self.db:
             return None
@@ -964,7 +997,11 @@ class FirestoreService:
                       .document(availability_time_id))
             
             ref.set(validated_data)
-            return availability_time_id
+            
+            # Return full object
+            result = validated_data.copy()
+            result['availability_time_id'] = availability_time_id
+            return result
         except Exception as e:
             logger.error(f"Error creating availability time: {e}")
             return None
@@ -1063,7 +1100,7 @@ class FirestoreService:
         availability_time_id: str,
         update_data: Dict[str, Any],
         competence_id: Optional[str] = None
-    ) -> bool:
+    ) -> Optional[Dict[str, Any]]:
         """Update an availability time.
         
         Args:
@@ -1073,10 +1110,10 @@ class FirestoreService:
             competence_id: Optional competence ID
             
         Returns:
-            True if updated successfully, False otherwise
+            Full updated availability time object, or None if failed
         """
         if not self.db:
-            return False
+            return None
         try:
             # Determine the collection reference
             if competence_id:
@@ -1098,7 +1135,7 @@ class FirestoreService:
                 logger.warning(
                     f"Cannot update availability time {availability_time_id}: does not exist"
                 )
-                return False
+                return None
             
             # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(
@@ -1112,7 +1149,7 @@ class FirestoreService:
             
             # Update document
             ref.update(validated_data)
-            return True
+            return await self.get_availability_time(user_id, availability_time_id, competence_id)
         except Exception as e:
             logger.error(f"Error updating availability time {availability_time_id}: {e}")
             return False
@@ -1160,14 +1197,14 @@ class FirestoreService:
 
     # --- Review Operations ---
 
-    async def create_review(self, review_data: Dict[str, Any]) -> Optional[str]:
+    async def create_review(self, review_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Create a new review.
         
         Args:
             review_data: Review data (should include service_request_id, user_id, reviewer_user_id, rating, etc.)
             
         Returns:
-            The generated review_id or None if failed
+            The created review object with review_id, or None if failed
         """
         if not self.db:
             return None
@@ -1185,7 +1222,11 @@ class FirestoreService:
             # Create document with the prefixed ID
             ref = self._get_collection('reviews').document(review_id)
             ref.set(validated_data)
-            return review_id
+            
+            # Return full object
+            result = validated_data.copy()
+            result['review_id'] = review_id
+            return result
         except Exception as e:
             logger.error(f"Error creating review: {e}")
             return None
@@ -1239,10 +1280,18 @@ class FirestoreService:
             logger.error(f"Error getting reviews for request {service_request_id}: {e}")
             return []
 
-    async def update_review(self, review_id: str, update_data: Dict[str, Any]) -> bool:
-        """Update a review."""
+    async def update_review(self, review_id: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Update a review.
+        
+        Args:
+            review_id: The review ID
+            update_data: Data to update
+            
+        Returns:
+            Full updated review object, or None if failed
+        """
         if not self.db:
-            return False
+            return None
         try:
             # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(update_data, ReviewUpdateSchema, exclude_unset=True)
@@ -1253,10 +1302,10 @@ class FirestoreService:
             # Update the document
             ref = self._get_collection('reviews').document(review_id)
             ref.update(validated_data)
-            return True
+            return await self.get_review(review_id)
         except Exception as e:
             logger.error(f"Error updating review {review_id}: {e}")
-            return False
+            return None
 
     async def delete_review(self, review_id: str) -> bool:
         """Delete a review."""
@@ -1271,7 +1320,7 @@ class FirestoreService:
 
     # --- Chat Operations ---
 
-    async def create_chat(self, chat_data: Dict[str, Any]) -> Optional[str]:
+    async def create_chat(self, chat_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Create a new chat in root chats collection.
         
         Args:
@@ -1279,7 +1328,7 @@ class FirestoreService:
                       seeker_user_id, provider_user_id, and optional title)
             
         Returns:
-            The generated chat_id or None if failed
+            The created chat object with chat_id, or None if failed
         """
         if not self.db:
             return None
@@ -1304,7 +1353,11 @@ class FirestoreService:
             # Create document in root chats collection
             ref = self._get_collection('chats').document(chat_id)
             ref.set(validated_data)
-            return chat_id
+            
+            # Return full object
+            result = validated_data.copy()
+            result['chat_id'] = chat_id
+            return result
         except Exception as e:
             logger.error(f"Error creating chat: {e}")
             return None
@@ -1393,7 +1446,7 @@ class FirestoreService:
             logger.error(f"Error getting chats for user {user_id}: {e}")
             return []
 
-    async def update_chat(self, chat_id: str, update_data: Dict[str, Any]) -> bool:
+    async def update_chat(self, chat_id: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update a chat in root chats collection.
         
         Args:
@@ -1401,16 +1454,16 @@ class FirestoreService:
             update_data: Data to update
             
         Returns:
-            True if updated successfully, False otherwise
+            Full updated chat object, or None if failed
         """
         if not self.db:
-            return False
+            return None
         try:
             ref = self._get_collection('chats').document(chat_id)
             
             if not ref.get().exists:
                 logger.warning(f"Cannot update chat {chat_id}: does not exist")
-                return False
+                return None
             
             # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
             validated_data = self._validate_data(update_data, ChatUpdateSchema, exclude_unset=True)
@@ -1420,7 +1473,7 @@ class FirestoreService:
             
             # Update the document
             ref.update(validated_data)
-            return True
+            return await self.get_chat(chat_id)
         except Exception as e:
             logger.error(f"Error updating chat {chat_id}: {e}")
             return False
@@ -1454,7 +1507,7 @@ class FirestoreService:
 
     # --- Chat Message Operations ---
 
-    async def create_chat_message(self, chat_id: str, message_data: Dict[str, Any]) -> Optional[str]:
+    async def create_chat_message(self, chat_id: str, message_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Create a new chat message in a chat's messages subcollection.
         
         Args:
@@ -1462,7 +1515,7 @@ class FirestoreService:
             message_data: Message data (should include sender_user_id, receiver_user_id, message)
             
         Returns:
-            The generated chat_message_id or None if failed
+            The created message object with chat_message_id, or None if failed
         """
         if not self.db:
             return None
@@ -1484,7 +1537,11 @@ class FirestoreService:
                    .collection('messages')
                    .document(message_id))
             ref.set(validated_data)
-            return message_id
+            
+            # Return full object
+            result = validated_data.copy()
+            result['chat_message_id'] = message_id
+            return result
         except Exception as e:
             logger.error(f"Error creating chat message in {chat_id}: {e}")
             return None
@@ -1537,7 +1594,7 @@ class FirestoreService:
             logger.error(f"Error getting message {message_id} from chat {chat_id}: {e}")
             return None
 
-    async def update_chat_message(self, chat_id: str, message_id: str, update_data: Dict[str, Any]) -> bool:
+    async def update_chat_message(self, chat_id: str, message_id: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Update a chat message.
         
         Args:
@@ -1546,10 +1603,10 @@ class FirestoreService:
             update_data: Data to update
             
         Returns:
-            True if updated successfully, False otherwise
+            Full updated chat message object, or None if failed
         """
         if not self.db:
-            return False
+            return None
         try:
             ref = (self._get_collection('chats')
                    .document(chat_id)
@@ -1564,7 +1621,7 @@ class FirestoreService:
             
             # Update the document
             ref.update(validated_data)
-            return True
+            return await self.get_chat_message(chat_id, message_id)
         except Exception as e:
             logger.error(f"Error updating message {message_id} in chat {chat_id}: {e}")
             return False

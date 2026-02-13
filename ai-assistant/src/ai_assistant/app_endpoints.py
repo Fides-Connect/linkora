@@ -68,9 +68,9 @@ async def create_service_request(request: web.Request) -> web.Response:
         # Enforce seeker_user_id to be the authenticated user
         body['seeker_user_id'] = user_id
         
-        service_request_id = await firestore_service.create_service_request(body)
-        if service_request_id:
-            return web.json_response({"service_request_id": service_request_id, "status": "created"}, status=201)
+        service_request = await firestore_service.create_service_request(body)
+        if service_request:
+            return web.json_response(serialize_datetime(service_request), status=201)
         else:
             return web.json_response({"error": "Failed to create service request"}, status=500)
     except ValidationError as e:
@@ -137,9 +137,9 @@ async def update_service_request(request: web.Request) -> web.Response:
         if user_id != seeker_id:
             return web.json_response({"error": "Forbidden: Only the creator can update this service request"}, status=403)
         
-        success = await firestore_service.update_service_request(service_request_id, body)
-        if success:
-            return web.json_response({"status": "updated"})
+        updated_request = await firestore_service.update_service_request(service_request_id, body)
+        if updated_request:
+            return web.json_response(serialize_datetime(updated_request))
         else:
             return web.json_response({"error": "Failed to update service request"}, status=500)
     except ValidationError as e:
@@ -239,15 +239,12 @@ async def create_provider_candidate(request: web.Request) -> web.Response:
         if not service_request:
             return web.json_response({"error": "Service request not found"}, status=404)
         
-        provider_candidate_id = await firestore_service.create_provider_candidate(
+        provider_candidate = await firestore_service.create_provider_candidate(
             service_request_id,
             body
         )
-        if provider_candidate_id:
-            return web.json_response({
-                "provider_candidate_id": provider_candidate_id,
-                "status": "created"
-            }, status=201)
+        if provider_candidate:
+            return web.json_response(serialize_datetime(provider_candidate), status=201)
         else:
             return web.json_response({"error": "Failed to create provider candidate"}, status=500)
     except ValidationError as e:
@@ -270,13 +267,13 @@ async def update_provider_candidate(request: web.Request) -> web.Response:
         provider_candidate_id = request.match_info['provider_candidate_id']
         body = await request.json()
         
-        success = await firestore_service.update_provider_candidate(
+        updated_candidate = await firestore_service.update_provider_candidate(
             service_request_id,
             provider_candidate_id,
             body
         )
-        if success:
-            return web.json_response({"status": "updated"})
+        if updated_candidate:
+            return web.json_response(serialize_datetime(updated_candidate))
         else:
             return web.json_response({"error": "Failed to update provider candidate"}, status=500)
     except ValidationError as e:
@@ -397,8 +394,8 @@ async def update_user(request: web.Request) -> web.Response:
         if not user:
             return web.json_response({"error": "User not found"}, status=404)
         
-        success = await firestore_service.update_user(user_id, body)
-        if success:
+        updated_user = await firestore_service.update_user(user_id, body)
+        if updated_user:
             # Sync to Weaviate
             try:
                 # We reuse the body, assuming fields match or UserModelWeaviate handles it safely
@@ -406,7 +403,7 @@ async def update_user(request: web.Request) -> web.Response:
             except Exception as e:
                 logger.error(f"Failed to sync user {user_id} update to Weaviate: {e}")
 
-            return web.json_response({"status": "updated"})
+            return web.json_response(serialize_datetime(updated_user))
         else:
              return web.json_response({"error": "Failed to update user"}, status=500)
     except ValidationError as e:
@@ -579,8 +576,8 @@ async def update_competence(request: web.Request) -> web.Response:
         if not competence_data:
             return web.json_response({"error": "Competence not found"}, status=404)
         
-        success = await firestore_service.update_competence(user_id, competence_id, body)
-        if success:
+        updated_competence = await firestore_service.update_competence(user_id, competence_id, body)
+        if updated_competence:
             # Sync to Weaviate
             try:
                 # Update in Weaviate by fetching the updated data
@@ -590,7 +587,7 @@ async def update_competence(request: web.Request) -> web.Response:
             except Exception as e:
                 logger.error(f"Failed to sync competence {competence_id} update to Weaviate: {e}")
             
-            return web.json_response({"status": "updated"})
+            return web.json_response(serialize_datetime(updated_competence))
         else:
             return web.json_response({"error": "Failed to update competence"}, status=500)
     except ValidationError as e:
@@ -653,16 +650,13 @@ async def create_availability_time(request: web.Request) -> web.Response:
         body = await request.json()
         competence_id = request.match_info.get('competence_id')
         
-        availability_time_id = await firestore_service.create_availability_time(
+        availability_time = await firestore_service.create_availability_time(
             user_id,
             body,
             competence_id
         )
-        if availability_time_id:
-            return web.json_response({
-                "availability_time_id": availability_time_id,
-                "status": "created"
-            }, status=201)
+        if availability_time:
+            return web.json_response(serialize_datetime(availability_time), status=201)
         else:
             return web.json_response({"error": "Failed to create availability time"}, status=500)
     except ValidationError as e:
@@ -783,15 +777,12 @@ async def create_review(request: web.Request) -> web.Response:
             'created_at': datetime.utcnow()
         }
         
-        review_id = await firestore_service.create_review(review_data)
+        review = await firestore_service.create_review(review_data)
         
-        if not review_id:
+        if not review:
             return web.json_response({"error": "Failed to create review"}, status=500)
         
-        return web.json_response({
-            "review_id": review_id,
-            "status": "created"
-        }, status=201)
+        return web.json_response(serialize_datetime(review), status=201)
     except ValidationError as e:
         logger.warning(f"Validation error in create_review: {e}")
         return web.json_response({
@@ -918,12 +909,12 @@ async def update_review(request: web.Request) -> web.Response:
             if not isinstance(rating, (int, float)) | rating < 1 | rating > 5:
                 return web.json_response({"error": "Rating must be between 1 and 5"}, status=400)
         
-        success = await firestore_service.update_review(review_id, body)
+        updated_review = await firestore_service.update_review(review_id, body)
         
-        if not success:
+        if not updated_review:
             return web.json_response({"error": "Failed to update review"}, status=500)
         
-        return web.json_response({"status": "updated"})
+        return web.json_response(serialize_datetime(updated_review))
     except web.HTTPException:
         raise
     except Exception as e:
@@ -985,16 +976,12 @@ async def create_chat(request: web.Request) -> web.Response:
             'provider_user_id': body['provider_user_id']
         }
         
-        chat_id = await firestore_service.create_chat(chat_data)
+        chat = await firestore_service.create_chat(chat_data)
         
-        if not chat_id:
+        if not chat:
             return web.json_response({"error": "Failed to create chat"}, status=500)
         
-        return web.json_response({
-            "chat_id": chat_id,
-            "provider_candidate_id": provider_candidate_id,
-            "status": "created"
-        }, status=201)
+        return web.json_response(serialize_datetime(chat), status=201)
     except web.HTTPException:
         raise
     except Exception as e:
@@ -1097,12 +1084,12 @@ async def update_chat(request: web.Request) -> web.Response:
         
         body = await request.json()
         
-        success = await firestore_service.update_chat(chat_id, body)
+        updated_chat = await firestore_service.update_chat(chat_id, body)
         
-        if not success:
+        if not updated_chat:
             return web.json_response({"error": "Failed to update chat"}, status=500)
         
-        return web.json_response({"status": "updated"})
+        return web.json_response(serialize_datetime(updated_chat))
     except web.HTTPException:
         raise
     except Exception as e:
@@ -1161,15 +1148,12 @@ async def create_chat_message(request: web.Request) -> web.Response:
             'message': body['message']
         }
         
-        message_id = await firestore_service.create_chat_message(chat_id, message_data)
+        message = await firestore_service.create_chat_message(chat_id, message_data)
         
-        if not message_id:
+        if not message:
             return web.json_response({"error": "Failed to create message"}, status=500)
         
-        return web.json_response({
-            "chat_message_id": message_id,
-            "status": "created"
-        }, status=201)
+        return web.json_response(serialize_datetime(message), status=201)
     except web.HTTPException:
         raise
     except Exception as e:
@@ -1246,12 +1230,12 @@ async def update_chat_message(request: web.Request) -> web.Response:
         
         body = await request.json()
         
-        success = await firestore_service.update_chat_message(chat_id, message_id, body)
+        updated_message = await firestore_service.update_chat_message(chat_id, message_id, body)
         
-        if not success:
+        if not updated_message:
             return web.json_response({"error": "Failed to update message"}, status=500)
         
-        return web.json_response({"status": "updated"})
+        return web.json_response(serialize_datetime(updated_message))
     except web.HTTPException:
         raise
     except Exception as e:
@@ -1304,7 +1288,8 @@ async def user_sync(request: web.Request) -> web.Response:
         }
         existing_firestore_user = await firestore_service.get_user(user_id)
         if existing_firestore_user:
-            if not await firestore_service.update_user(user_id, user_data):
+            updated_user = await firestore_service.update_user(user_id, user_data)
+            if not updated_user:
                 return web.json_response({"error": "Failed to update Firestore user"}, status=500)
             if UserModelWeaviate.get_user_by_id(user_id):
                 if not UserModelWeaviate.update_user(user_id, user_data):

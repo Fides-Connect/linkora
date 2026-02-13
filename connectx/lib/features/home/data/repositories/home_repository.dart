@@ -56,9 +56,9 @@ class HomeRepository {
   /// Wraps API call to `PATCH /api/v1/me`.
   /// Returns the updated user.
   Future<User> updateUser(User user) async {
-    await _apiService.patch('/api/v1/me', body: user.toJson());
-    // Return the updated user
-    return getUser();
+    final data = await _apiService.patch('/api/v1/me', body: user.toJson());
+    // API now returns the full updated user object
+    return User.fromJson(data);
   }
 
   /// Adds a single competence tag to the user.
@@ -98,13 +98,17 @@ class HomeRepository {
 
   /// Adds a new service request.
   /// Wraps API call to `POST /api/v1/service-requests`.
-  Future<void> addServiceRequest(ServiceRequest request) async {
-    await _apiService.post('/api/v1/service-requests', body: request.toJson());
+  /// Returns the created service request.
+  Future<ServiceRequest> addServiceRequest(ServiceRequest request) async {
+    final data = await _apiService.post('/api/v1/service-requests', body: request.toJson());
+    return ServiceRequest.fromJson(data);
   }
 
   /// Updates the status (Accepted, Rejected, Completed) of an existing service request.
   /// Wraps API call to `PATCH /api/v1/service-requests/{requestId}`.
-  Future<void> updateServiceRequestStatus(String requestId, RequestStatus status) async {
-    await _apiService.patch('/api/v1/service-requests/${Uri.encodeComponent(requestId)}', body: {'status': status.name});
+  /// Returns the updated service request.
+  Future<ServiceRequest> updateServiceRequestStatus(String requestId, RequestStatus status) async {
+    final data = await _apiService.patch('/api/v1/service-requests/${Uri.encodeComponent(requestId)}', body: {'status': status.name});
+    return ServiceRequest.fromJson(data);
   }
 }
