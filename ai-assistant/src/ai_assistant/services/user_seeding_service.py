@@ -1,6 +1,5 @@
 import logging
 import copy
-from typing import Optional
 from datetime import datetime, timezone
 
 from ..firestore_service import FirestoreService

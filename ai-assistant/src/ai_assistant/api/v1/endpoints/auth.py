@@ -13,9 +13,6 @@ from ai_assistant.firestore_service import FirestoreService
 from ai_assistant.weaviate_models import UserModelWeaviate
 from ai_assistant.services.user_seeding_service import UserSeedingService
 from ai_assistant.common_endpoints import _sessions
-from ai_assistant.hub_spoke_ingestion import HubSpokeIngestion
-from ai_assistant.hub_spoke_schema import get_user_collection
-from weaviate.classes.query import Filter
 
 logger = logging.getLogger(__name__)
 firestore_service = FirestoreService()

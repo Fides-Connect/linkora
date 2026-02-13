@@ -338,45 +338,44 @@ async def init_firestore(test_data):
     logger.info("  ✓ Competence availability_time subcollections created")
 
     # 3. Create Service Requests
-    requests = test_data.get('service_requests', [])
+    service_requests = test_data.get('service_requests', [])
     # Track which requests belong to which users for updating their open request arrays
     user_outgoing_requests = {}  # seeker_user_id -> [request_ids]
     user_incoming_requests = {}  # provider_user_id -> [request_ids]
     
-    if requests:
-        for req in requests:
-            req_collection_name = 'service_requests'
-            req_id = req.get('service_request_id', 'unknown_req')
+    if service_requests:
+        for service_request in service_requests:
+            service_request_id = service_request.get('service_request_id', 'unknown_req')
             
             # Track the request for updating user open request arrays
-            seeker_id = req.get('seeker_user_id')
-            provider_id = req.get('selected_provider_user_id')
+            seeker_id = service_request.get('seeker_user_id')
+            provider_id = service_request.get('selected_provider_user_id')
             
             if seeker_id:
                 if seeker_id not in user_outgoing_requests:
                     user_outgoing_requests[seeker_id] = []
-                user_outgoing_requests[seeker_id].append(req_id)
+                user_outgoing_requests[seeker_id].append(service_request_id)
             
             if provider_id:
                 if provider_id not in user_incoming_requests:
                     user_incoming_requests[provider_id] = []
-                user_incoming_requests[provider_id].append(req_id)
+                user_incoming_requests[provider_id].append(service_request_id)
             
             # Create using validated Pydantic schema
             from ai_assistant.firestore_schemas import ServiceRequestSchema
             try:
                 # Remove service_request_id - it's the document ID, not stored data
-                req_data = {k: v for k, v in req.items() if k != 'service_request_id'}
-                validated = ServiceRequestSchema(**req_data)
+                req_data = {k: v for k, v in service_request.items() if k != 'service_request_id'}
+                validated = ServiceRequestSchema(**service_request)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
-                req_ref = db.collection('service_requests').document(req_id)
+                req_ref = db.collection('service_requests').document(service_request_id)
                 req_ref.set(validated_dict)
             except Exception as e:
-                logger.error(f"Failed to create service request {req_id}: {e}")
+                logger.error(f"Failed to create service request {service_request_id}: {e}")
                 continue
                 
-        logger.info(f"  ✓ {len(requests)} Service Requests created")
+        logger.info(f"  ✓ {len(service_requests)} Service Requests created")
     
     # 3c. Update user documents with incoming/outgoing service request arrays
     for user_id, outgoing_req_ids in user_outgoing_requests.items():
@@ -393,11 +392,11 @@ async def init_firestore(test_data):
     provider_candidates = test_data.get('provider_candidates', [])
     if provider_candidates:
         for i, candidate in enumerate(provider_candidates):
-            req_id = candidate.get('service_request_id')
+            service_request_id = candidate.get('service_request_id')
             # Generate candidate ID from index if not present
-            cand_id = f"provider_candidate_{req_id}_{i+1}" if req_id else f"provider_candidate_{i+1}"
+            cand_id = f"provider_candidate_{service_request_id}_{i+1}" if service_request_id else f"provider_candidate_{i+1}"
             
-            if not req_id:
+            if not service_request_id:
                 continue
             
             # Validate using Pydantic schema
@@ -408,7 +407,7 @@ async def init_firestore(test_data):
                 validated = ProviderCandidateSchema(**cand_data)
                 validated_dict = validated.model_dump(mode='python', exclude_none=False)
                 
-                cand_ref = db.collection('service_requests').document(req_id).collection('provider_candidates').document(cand_id)
+                cand_ref = db.collection('service_requests').document(service_request_id).collection('provider_candidates').document(cand_id)
                 cand_ref.set(validated_dict)
             except Exception as e:
                 logger.error(f"Failed to create provider candidate {cand_id}: {e}")
@@ -423,13 +422,13 @@ async def init_firestore(test_data):
         from ai_assistant.firestore_schemas import ChatSchema
         for chat in chats:
             chat_id = chat.get('chat_id', 'unknown_chat')
-            req_id = chat.get('service_request_id')
+            service_request_id = chat.get('service_request_id')
             cand_id = chat.get('provider_candidate_id')
             seeker_uid = chat.get('seeker_user_id')
             provider_uid = chat.get('provider_user_id')
             
             # Skip chats without proper references
-            if not req_id or not cand_id or not seeker_uid or not provider_uid:
+            if not service_request_id or not cand_id or not seeker_uid or not provider_uid:
                 logger.warning(f"Skipping chat {chat_id}: missing required fields")
                 continue
             

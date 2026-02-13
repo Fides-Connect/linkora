@@ -188,7 +188,7 @@ async def delete_service_request(request: web.Request) -> web.Response:
 async def get_provider_candidates(request: web.Request) -> web.Response:
     """GET /service_requests/{service_request_id}/provider_candidates - Get all provider candidates."""
     try:
-        user_id = await get_current_user_id(request)
+        await get_current_user_id(request)
         service_request_id = request.match_info['service_request_id']
         
         # Verify user has access to this service request
@@ -208,7 +208,7 @@ async def get_provider_candidates(request: web.Request) -> web.Response:
 async def get_provider_candidate(request: web.Request) -> web.Response:
     """GET /service_requests/{service_request_id}/provider_candidates/{provider_candidate_id}"""
     try:
-        user_id = await get_current_user_id(request)
+        await get_current_user_id(request)
         service_request_id = request.match_info['service_request_id']
         provider_candidate_id = request.match_info['provider_candidate_id']
         
@@ -230,7 +230,7 @@ async def get_provider_candidate(request: web.Request) -> web.Response:
 async def create_provider_candidate(request: web.Request) -> web.Response:
     """POST /service_requests/{service_request_id}/provider_candidates - Create a provider candidate."""
     try:
-        user_id = await get_current_user_id(request)
+        await get_current_user_id(request)
         service_request_id = request.match_info['service_request_id']
         body = await request.json()
         
@@ -262,7 +262,7 @@ async def create_provider_candidate(request: web.Request) -> web.Response:
 async def update_provider_candidate(request: web.Request) -> web.Response:
     """PUT /service_requests/{service_request_id}/provider_candidates/{provider_candidate_id}"""
     try:
-        user_id = await get_current_user_id(request)
+        await get_current_user_id(request)
         service_request_id = request.match_info['service_request_id']
         provider_candidate_id = request.match_info['provider_candidate_id']
         body = await request.json()
@@ -291,7 +291,7 @@ async def update_provider_candidate(request: web.Request) -> web.Response:
 async def delete_provider_candidate(request: web.Request) -> web.Response:
     """DELETE /service_requests/{service_request_id}/provider_candidates/{provider_candidate_id}"""
     try:
-        user_id = await get_current_user_id(request)
+        await get_current_user_id(request)
         service_request_id = request.match_info['service_request_id']
         provider_candidate_id = request.match_info['provider_candidate_id']
         
