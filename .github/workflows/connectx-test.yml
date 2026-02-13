@@ -22,25 +22,33 @@ on:
         default: false
 
 jobs:
-  build:
+  build-container:
+    name: Build DevContainer
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      image-tag: ${{ steps.image-info.outputs.tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Lowercase repository name
-        id: repo_name
+      - name: Free Disk Space
         run: |
-          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-          echo "name=$(echo '${{ github.event.repository.name }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          echo "=== Disk space before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo rm -rf /usr/share/swift /usr/local/graalvm /usr/local/.ghcup
+          sudo rm -rf /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
+          sudo apt-get clean && sudo apt-get autoremove -y
+          sudo rm -rf /var/lib/apt/lists/*
+          docker system prune -af || true
+          echo "=== Disk space after cleanup ==="
+          df -h
       
-      - name: Setup Node.js (required for devcontainers/ci)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
       
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -48,96 +56,94 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Setup Firebase config for CI
+      
+      - name: Set image information
+        id: image-info
+        run: |
+          owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          name=$(echo '${{ github.event.repository.name }}' | tr '[:upper:]' '[:lower:]')
+          echo "owner=$owner" >> $GITHUB_OUTPUT
+          echo "name=$name" >> $GITHUB_OUTPUT
+          echo "tag=ghcr.io/$owner/$name/devcontainer:${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "cache-ref=ghcr.io/$owner/$name/devcontainer:buildcache" >> $GITHUB_OUTPUT
+      
+      - name: Build and Push DevContainer
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          push: true
+          tags: ${{ steps.image-info.outputs.tag }}
+          cache-from: ${{ github.event.inputs.force_rebuild != 'true' && format('type=registry,ref={0}', steps.image-info.outputs.cache-ref) || '' }}
+          cache-to: type=registry,ref=${{ steps.image-info.outputs.cache-ref }},mode=max
+          no-cache: ${{ github.event.inputs.force_rebuild == 'true' }}
+
+  test:
+    name: Run Flutter Tests
+    needs: build-container
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Free Disk Space
+        run: |
+          echo "=== Disk space before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo rm -rf /usr/share/swift /usr/local/graalvm /usr/local/.ghcup
+          sudo rm -rf /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
+          sudo apt-get clean && sudo apt-get autoremove -y
+          sudo rm -rf /var/lib/apt/lists/*
+          docker system prune -af || true
+          echo "=== Disk space after cleanup ==="
+          df -h
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Firebase config
         env:
           GOOGLE_SERVICES_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           cd connectx
           chmod +x ./scripts/setup_firebase_for_ci.sh
           ./scripts/setup_firebase_for_ci.sh
-          
-      - name: Free Disk Space Before Build
+      
+      - name: Run tests in pre-built container
         run: |
-          # Remove unnecessary tools and files to free space
-          echo "=== Disk space before cleanup ==="
-          df -h
-          
-          # Remove unnecessary system tools
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo rm -rf /usr/share/swift
-          sudo rm -rf /usr/local/graalvm
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /usr/local/share/powershell
-          sudo rm -rf /usr/local/share/chromium
-          sudo rm -rf /usr/local/lib/node_modules
-          
-          # Clean apt cache
-          sudo apt-get clean
-          sudo apt-get autoremove -y
-          sudo rm -rf /var/lib/apt/lists/*
-          
-          # Clean Docker if present
-          docker system prune -af || true
-          
-          echo "=== Disk space after cleanup ==="
-          df -h
-          
-      - name: Build and Test in Dev Container
-        uses: devcontainers/ci@v0.3
-        with:
-          # Use the same image/cache name as build-devcontainer workflow
-          # devcontainers/ci builds the environment from source (using .devcontainer folder)
-          # cacheFrom helps speed it up by pulling pre-built layers
-          cacheFrom: "${{ github.event.inputs.force_rebuild != 'true' && format('ghcr.io/{0}/{1}/devcontainer', steps.repo_name.outputs.owner, steps.repo_name.outputs.name) || '' }}"
-          push: "${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'always' || 'never' }}"
-          imageName: "ghcr.io/${{ steps.repo_name.outputs.owner }}/${{ steps.repo_name.outputs.name }}/devcontainer"
-          runCmd: |
-            set -e
-            cd ./connectx
-            cp ./template.env .env
-            
-            echo "=== Getting Flutter dependencies ==="
-            flutter pub get
-            
-            echo "=== Building APK (ARM64 only to save space) ==="
-            # Build only ARM64 for testing (most common) to save space
-            flutter build apk --target-platform android-arm64 --release
-            
-            echo "=== Aggressive cleanup before tests ==="
-            # Remove all build outputs except the APK we just built
-            rm -rf build/app/intermediates
-            rm -rf build/app/.transforms
-            rm -rf build/app/tmp
-            rm -rf build/kotlin
-            rm -rf build/flutter_webrtc
-            rm -rf build/firebase_*
-            rm -rf build/google_sign_in_android
-            rm -rf build/permission_handler_android
-            rm -rf build/path_provider_android
-            rm -rf build/flutter_local_notifications
-            
-            # Clean Gradle caches
-            rm -rf ~/.gradle/caches
-            rm -rf ~/.gradle/wrapper/dists
-            rm -rf .gradle
-            
-            # Clean Flutter caches
-            rm -rf ~/.pub-cache/hosted/*/doc
-            rm -rf ~/.pub-cache/hosted/*/example
-            rm -rf ~/.pub-cache/hosted/*/test
-            
-            # Clean Flutter build cache
-            flutter clean
-            
-            # Show disk space
-            echo "=== Disk space before tests ==="
-            df -h
-            
-            echo "=== Running tests ==="
-            # Re-get dependencies after flutter clean
-            flutter pub get
-            flutter test
+          docker pull ${{ needs.build-container.outputs.image-tag }}
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace/connectx \
+            ${{ needs.build-container.outputs.image-tag }} \
+            bash -c '
+              set -e
+              cp ./template.env .env
+              
+              echo "=== Getting Flutter dependencies ==="
+              flutter pub get
+              
+              echo "=== Building APK (ARM64 only) ==="
+              flutter build apk --target-platform android-arm64 --release
+              
+              echo "=== Cleanup before tests ==="
+              rm -rf build/app/intermediates build/app/.transforms build/app/tmp
+              rm -rf build/kotlin build/flutter_webrtc build/firebase_*
+              rm -rf build/google_sign_in_android build/permission_handler_android
+              rm -rf build/path_provider_android build/flutter_local_notifications
+              rm -rf ~/.gradle/caches ~/.gradle/wrapper/dists .gradle
+              rm -rf ~/.pub-cache/hosted/*/doc ~/.pub-cache/hosted/*/example ~/.pub-cache/hosted/*/test
+              flutter clean
+              
+              echo "=== Running tests ==="
+              flutter pub get
+              flutter test
+            '
