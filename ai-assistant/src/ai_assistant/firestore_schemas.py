@@ -142,7 +142,7 @@ class ServiceRequestSchema(BaseModel):
     description: str = Field(default="", max_length=1000)
     requested_competencies: List[str] = Field(default_factory=list)
     status: str = Field(default="pending", max_length=50)
-    start_date: Optional[datetime] = None  # Fixed typo from start_data
+    start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     category: Optional[str] = Field(None, max_length=100)
     location: Optional[str] = Field(None, max_length=200)
