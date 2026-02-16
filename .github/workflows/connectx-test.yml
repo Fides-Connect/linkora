@@ -1,62 +1,142 @@
-name: Build & Test ConnectX APK in Dev Container
+name: "Flutter Tests"
 
 on:
   push:
     branches: [main]
     paths:
       - 'connectx/**'
+      - '.devcontainer/**'
       - '.github/workflows/connectx-test.yml'
   pull_request:
+    branches: [main]
     paths:
       - 'connectx/**'
+      - '.devcontainer/**'
       - '.github/workflows/connectx-test.yml'
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild devcontainer without cache'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
-  build:
+  build-container:
+    name: Build DevContainer
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-tag: ${{ steps.image-info.outputs.tag }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
-      - name: Setup Firebase config for CI
+      
+      - name: Free Disk Space
+        run: |
+          echo "=== Disk space before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo rm -rf /usr/share/swift /usr/local/graalvm /usr/local/.ghcup
+          sudo rm -rf /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
+          sudo apt-get clean && sudo apt-get autoremove -y
+          sudo rm -rf /var/lib/apt/lists/*
+          docker system prune -af || true
+          echo "=== Disk space after cleanup ==="
+          df -h
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set image information
+        id: image-info
+        run: |
+          owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          name=$(echo '${{ github.event.repository.name }}' | tr '[:upper:]' '[:lower:]')
+          echo "owner=$owner" >> $GITHUB_OUTPUT
+          echo "name=$name" >> $GITHUB_OUTPUT
+          echo "tag=ghcr.io/$owner/$name/devcontainer:${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "cache-ref=ghcr.io/$owner/$name/devcontainer:buildcache" >> $GITHUB_OUTPUT
+      
+      - name: Build and Push DevContainer
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .devcontainer/Dockerfile
+          push: true
+          tags: ${{ steps.image-info.outputs.tag }}
+          cache-from: ${{ github.event.inputs.force_rebuild != 'true' && format('type=registry,ref={0}', steps.image-info.outputs.cache-ref) || '' }}
+          cache-to: type=registry,ref=${{ steps.image-info.outputs.cache-ref }},mode=max
+          no-cache: ${{ github.event.inputs.force_rebuild == 'true' }}
+
+  test:
+    name: Run Flutter Tests
+    needs: build-container
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Free Disk Space
+        run: |
+          echo "=== Disk space before cleanup ==="
+          df -h
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo rm -rf /usr/share/swift /usr/local/graalvm /usr/local/.ghcup
+          sudo rm -rf /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
+          sudo apt-get clean && sudo apt-get autoremove -y
+          sudo rm -rf /var/lib/apt/lists/*
+          docker system prune -af || true
+          echo "=== Disk space after cleanup ==="
+          df -h
+      
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Firebase config
         env:
           GOOGLE_SERVICES_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |
           cd connectx
           chmod +x ./scripts/setup_firebase_for_ci.sh
           ./scripts/setup_firebase_for_ci.sh
-          
-      - name: Free Disk Space Before Build
+      
+      - name: Run tests in pre-built container
         run: |
-          # Remove unnecessary tools to free space
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android/sdk/ndk-bundle
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          df -h
-          
-      - name: Build and Test in Dev Container
-        uses: devcontainers/ci@v0.3
-        with:
-          runCmd: |
-            cd ./connectx
-            cp ./template.env .env
-            
-            # Run build_runner
-            dart run build_runner build --delete-conflicting-outputs
-            
-            # Clean up after build_runner
-            flutter clean
-            rm -rf build/.dart_tool
-            
-            # Build APK with split-per-abi to reduce size
-            flutter build apk --split-per-abi
-            
-            # Clean up build artifacts before tests
-            rm -rf build/app/outputs
-            rm -rf build/app/intermediates
-            rm -rf ~/.gradle/caches
-            flutter clean
-            
-            # Run tests
-            flutter test
+          docker pull ${{ needs.build-container.outputs.image-tag }}
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace/connectx \
+            ${{ needs.build-container.outputs.image-tag }} \
+            bash -c '
+              set -e
+              cp ./template.env .env
+              
+              echo "=== Getting Flutter dependencies ==="
+              flutter pub get
+              
+              echo "=== Generating mock files for tests ==="
+              dart run build_runner build --delete-conflicting-outputs
+              
+              echo "=== Running unit tests ==="
+              flutter test --coverage
+              
+              echo "=== Test Summary ==="
+              echo "Unit tests completed successfully"
+            '
