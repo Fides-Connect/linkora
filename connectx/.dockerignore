@@ -1,0 +1,75 @@
+# Flutter and Dart build artifacts
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+*.dill
+*.snapshot
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test and coverage
+coverage/
+test_driver/
+*.coverage
+.test_cache/
+
+# Android specific
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/.gradle/
+android/captures/
+android/gradle/wrapper/gradle-wrapper.jar
+android/local.properties
+android/key.properties
+android/.gradletasknamecache
+
+# iOS specific
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/App.framework
+ios/Flutter/engine/
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+*.mode1v3
+*.mode2v3
+*.moved-aside
+*.pbxuser
+*.perspectivev3
+!default.pbxuser
+!default.mode1v3
+!default.mode2v3
+!default.perspectivev3
+
+# Web
+web/canvaskit/
+
+# Logs
+*.log
+
+# Environment files (keep template only)
+.env
+!template.env
+
+# Secrets and credentials
+*.json
+!google-services.json
+miracle-*.json
+credentials.json
+
+# Documentation
+doc/api/
+README.md
+docs/

@@ -219,3 +219,64 @@ flutter test
 - GitHub Actions for CI/CD
 
 **See**: [Helm Documentation](docs/helm.md) and [Terraform Documentation](docs/terraform.md)
+
+## 🔧 CI/CD & DevContainer
+
+### GitHub Actions Workflows
+
+The project includes automated CI/CD pipelines:
+
+1. **ConnectX Test** - Builds and tests Flutter app in devcontainer
+2. **AI-Assistant Test** - Runs Python backend tests
+3. **Build DevContainer** - Pre-builds and caches the development container
+4. **Cloud Deploy** - Deploys to GKE on successful tests
+
+### DevContainer Cache & Rebuild
+
+To speed up CI builds, we cache the devcontainer image. Here's how to manage it:
+
+#### Normal Builds (Uses Cache)
+Automatic - no action needed. The CI will use cached layers to speed up builds (1-2 min instead of 10 min).
+
+#### Force Rebuild from Scratch
+
+**Option 1: Manual Workflow Trigger (Recommended)**
+1. Go to GitHub → Actions tab
+2. Select "Build & Test ConnectX APK" or "Build and Cache DevContainer"
+3. Click "Run workflow"
+4. Check ✅ **"Force rebuild without cache"**
+5. Click "Run workflow"
+
+**Option 2: Commit Message Trigger**
+Include `[rebuild]` or `[no-cache]` in your commit message:
+```bash
+git commit -m "Update dependencies [rebuild]"
+git push
+```
+
+**Option 3: Delete Cache via GitHub CLI**
+```bash
+gh cache delete devcontainer-cache --repo Fides-Connect/Fides
+```
+
+**Option 4: GitHub UI**
+1. Go to your repo → Settings → Actions → Caches
+2. Find and delete the devcontainer cache
+
+#### When to Force Rebuild?
+- After major Dockerfile changes
+- When cache corruption is suspected
+- After updating system dependencies (Java, Android SDK, etc.)
+- To verify a clean build without cached layers
+
+### CI Space Optimizations
+
+The CI is optimized to prevent "No space left on device" errors:
+
+- **Minimal Docker image**: Only essential packages installed
+- **Aggressive cleanup**: Removes unused tools, docs, caches between steps
+- **Smart caching**: Reuses devcontainer layers across builds
+- **Single platform build**: Builds only ARM64 APK for testing
+- **Gradle cache cleanup**: Removes build artifacts after APK creation
+
+**Current space savings**: ~17-19 GB freed per CI run
