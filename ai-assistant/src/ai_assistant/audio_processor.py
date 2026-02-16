@@ -100,18 +100,51 @@ class AudioProcessor:
     async def start(self):
         """Start processing audio."""
         self.running = True
-        logger.debug(f"📥 Creating _process_audio task for connection {self.connection_id}...")
         self.processing_task = asyncio.create_task(self._process_audio())
         self.stt_task = asyncio.create_task(self._continuous_stt())
-        logger.info(f"🔊 Continuous STT streaming enabled")
+        logger.info(f"Audio processor started for connection {self.connection_id}")
         
         # Play greeting message
-        logger.debug(f"👋 Starting greeting playback...")
         asyncio.create_task(self._play_greeting())
+    
+    async def replace_input_track(self, new_track: MediaStreamTrack):
+        """Replace the input track during renegotiation (e.g., when Bluetooth device changes)."""
+        logger.info(f"Replacing input track: {self.input_track.id if self.input_track else 'None'} -> {new_track.id}")
+        
+        try:
+            # Cancel existing processing task
+            if self.processing_task and not self.processing_task.done():
+                self.processing_task.cancel()
+                try:
+                    await self.processing_task
+                except asyncio.CancelledError:
+                    pass  # Expected when cancelling the task
+            
+            # Cancel existing STT task to ensure clean state
+            if self.stt_task and not self.stt_task.done():
+                self.stt_task.cancel()
+                try:
+                    await self.stt_task
+                except asyncio.CancelledError:
+                    pass  # Expected when cancelling the task
+            
+            # Don't clear the queue - let STT drain buffered audio naturally
+            # This prevents audio loss during device transitions
+            
+            # Update to new track
+            self.input_track = new_track
+            
+            # Restart both tasks if processor is still running
+            if self.running:
+                self.processing_task = asyncio.create_task(self._process_audio())
+                self.stt_task = asyncio.create_task(self._continuous_stt())
+                logger.info("Audio processing restarted with new input track")
+            
+        except Exception as e:
+            logger.error(f"Error replacing input track: {e}", exc_info=True)
     
     async def stop(self):
         """Stop processing audio."""
-        logger.debug(f"Stopping audio processor for connection {self.connection_id}")
         self.running = False
         
         # Signal end of audio stream
@@ -122,14 +155,14 @@ class AudioProcessor:
             try:
                 await self.stt_task
             except asyncio.CancelledError:
-                logger.debug("STT task cancelled successfully")
+                pass  # Expected when cancelling the task
         
         if self.processing_task:
             self.processing_task.cancel()
             try:
                 await self.processing_task
             except asyncio.CancelledError:
-                logger.debug("Audio processing task cancelled successfully")
+                pass  # Expected when cancelling the task
         
         # Save debug recording if enabled
         self.debug_recorder.save()
@@ -139,14 +172,12 @@ class AudioProcessor:
     async def _play_greeting(self):
         """Play the AI greeting message when connection starts."""
         try:
-            logger.info("Generating and playing greeting message...")
-            
             # Set speaking flag to prevent interruption during greeting
             self.is_ai_speaking = True
             
             # Generate greeting text and audio (pass user_id if available)
             greeting_text, audio_stream = await self.ai_assistant.get_greeting_audio(user_id=self.user_id)
-            logger.info(f"Playing greeting: '{greeting_text}'")
+            logger.info(f"Greeting: {greeting_text}")
             
             # Send greeting text to client via data channel
             self._send_chat_message(greeting_text, is_user=False, is_chunk=False)
@@ -158,7 +189,6 @@ class AudioProcessor:
             
             # Clear speaking flag after greeting completes
             self.is_ai_speaking = False
-            logger.info("Greeting playback complete")
             
         except Exception as e:
             logger.error(f"Error playing greeting: {e}", exc_info=True)
@@ -169,59 +199,40 @@ class AudioProcessor:
         try:
             frame_count = 0
             
-            logger.info(f"🔄 Starting audio processing loop for connection {self.connection_id}")
-            
             while self.running:
                 try:
                     frame_count += 1
-                    if frame_count == 1:
-                        logger.debug(f"📥 [Frame {frame_count}] Waiting for FIRST audio frame (timeout=5s)...")
                     
-                    # Receive audio frame from input track
                     try:
                         frame = await asyncio.wait_for(
                             self.input_track.recv(),
                             timeout=5.0
                         )
-                        if frame_count == 1:
-                            logger.debug(f"✅ [Frame {frame_count}] First frame received successfully!")
                     except MediaStreamError:
-                        logger.warning(f"Input track closed for connection {self.connection_id} (frame {frame_count})")
+                        logger.warning(f"Input track closed (frame {frame_count})")
                         break
                     except asyncio.CancelledError:
-                        logger.warning(f"Audio processing cancelled at frame {frame_count}")
                         break
                     
-                    # Convert frame to numpy array
                     audio_data = self.frame_converter.frame_to_numpy(frame)
-                    
-                    # Store frame for debug recording
                     self.debug_recorder.add_frame(audio_data)
-                    
-                    # Convert to bytes and queue for STT
                     audio_bytes = audio_data.tobytes()
                     await self.audio_queue.put(audio_bytes)
                     
                 except asyncio.TimeoutError:
-                    logger.warning(f"Audio receive timeout after frame {frame_count}")
                     continue
                 except Exception as e:
-                    logger.error(f"Error receiving frame {frame_count}: {e}", exc_info=True)
+                    logger.error(f"Error receiving frame: {e}", exc_info=True)
                     
         except asyncio.CancelledError:
-            logger.info(f"Audio processing cancelled (processed {frame_count} frames)")
+            logger.info(f"Audio processing cancelled (frames={frame_count})")
         except Exception as e:
-            logger.error(f"Error in audio processing loop after {frame_count} frames: {e}", exc_info=True)
+            logger.error(f"Error in audio processing: {e}", exc_info=True)
     
     async def _continuous_stt(self):
         """Continuously stream audio to STT and process final transcripts."""
         try:
-            logger.info("🎙️  Starting continuous STT streaming...")
-            
-            # Keep processing utterances until stopped
             while self.running:
-                
-                # Create async generator for audio chunks
                 async def audio_generator():
                     chunk_count = 0
                     while self.running:
@@ -230,53 +241,32 @@ class AudioProcessor:
                                 self.audio_queue.get(),
                                 timeout=1.0
                             )
-                            if audio_chunk is None:  # Sentinel value to stop
-                                logger.debug("STT audio generator received stop signal")
+                            if audio_chunk is None:
                                 break
                             chunk_count += 1
-                            if chunk_count == 1:
-                                logger.info(f"✅ First audio chunk received by STT generator ({len(audio_chunk)} bytes)")
                             yield audio_chunk
                         except asyncio.TimeoutError:
                             continue
                         except Exception as e:
-                            logger.error(f"Error in audio generator: {e}", exc_info=True)
+                            logger.error(f"Audio generator error: {e}", exc_info=True)
                             break
-                    logger.debug(f"Audio generator finished (chunks={chunk_count})")
                 
-                # Stream to STT and process results using TranscriptProcessor
-                # This will process a single utterance and then return
                 audio_generator_instance = audio_generator()
                 async for transcript, is_final in self.transcript_processor.process_audio_stream(
                     audio_generator_instance
                 ):
-                    if transcript:
-                        # Check if AI is currently speaking - if so, trigger interrupt
-                        if self.is_ai_speaking and len(transcript.strip()) > 0:
-                            logger.info(f"🛑 INTERRUPT detected! User speaking while AI responds: '{transcript}'")
-                            await self._trigger_interrupt()
-                            # Give a moment for the interrupt to take effect
-                            await asyncio.sleep(0.05)
-                        
-                        if is_final:
-                            # Stop the audio generator to prevent it from consuming more chunks
-                            await self.audio_queue.put(None)
-                            # Process the transcript (interrupt already cleared speaking flag if needed)
-                            if not self.is_ai_speaking:
-                                await self._process_final_transcript(transcript)
-                            else:
-                                logger.warning(f"Skipping processing - AI still speaking despite interrupt")
-                            # Break out of the inner loop to start a new STT stream
-                            logger.info("🔄 Final transcript received, starting new STT stream for next utterance")
-                            break
-                        else:
-                            logger.debug(f"Interim transcript: '{transcript}'")
-                            # Interim results also trigger interruption if AI is speaking
+                    if transcript and self.is_ai_speaking and len(transcript.strip()) > 0:
+                        logger.info(f"Interrupt detected: '{transcript}'")
+                        await self._trigger_interrupt()
+                        await asyncio.sleep(0.05)
+                    
+                    if is_final:
+                        await self.audio_queue.put(None)
+                        if not self.is_ai_speaking:
+                            await self._process_final_transcript(transcript)
+                        break
                 
-                # Give a brief moment before starting next utterance processing
                 await asyncio.sleep(0.1)
-            
-            logger.info("Continuous STT streaming ended")
             
         except asyncio.CancelledError:
             logger.info("Continuous STT cancelled")
@@ -285,21 +275,11 @@ class AudioProcessor:
     
     async def _trigger_interrupt(self):
         """Trigger an interrupt to stop ongoing AI speech."""
-        logger.info("⚡ Triggering interrupt - cancelling ongoing TTS tasks")
-        
-        # Set the interrupt event
+        logger.info("Triggering interrupt")
         self.interrupt_event.set()
-        
-        # Interrupt TTS playback
         self.tts_manager.interrupt()
-        
-        # Clear the output audio queue to stop playback immediately
         await self.output_track.clear_queue()
-        
-        # Reset state
         self.is_ai_speaking = False
-        
-        logger.info("✅ Interrupt complete - AI speech stopped")
     
     async def _process_final_transcript(self, transcript: str):
         """Process a final transcript through LLM -> TTS pipeline."""
@@ -322,15 +302,11 @@ class AudioProcessor:
                 'tts_first_audio': None,
             }
             
-            # Stage 1: Get LLM stream
-            logger.info("Stage 1: Starting streaming LLM...")
+            # Get LLM stream
             llm_start = asyncio.get_event_loop().time()
             
             # Create LLM stream
             llm_stream = self.ai_assistant.generate_llm_response_stream(transcript)
-            
-            # Stage 2: Process through TTS manager (handles sentence parsing, TTS, and ordered playback)
-            logger.info("Stage 2: Processing LLM stream through TTS manager...")
             
             # Wrap LLM stream to track first token
             async def tracked_llm_stream():
@@ -407,7 +383,6 @@ class AudioProcessor:
                     empty_count += 1
                     # If queue and buffer are empty for 5 consecutive checks (100ms), we're done
                     if empty_count >= 5:
-                        logger.info("Audio playback completed - clearing speaking flag")
                         self.is_ai_speaking = False
                         break
                 else:

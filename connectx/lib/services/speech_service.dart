@@ -75,7 +75,6 @@ class SpeechService {
       debugPrint('SpeechService: Connected to AI-Assistant server');
       
     } catch (e) {
-      debugPrint('SpeechService: Error in startSpeech: $e');
       onSpeechEnd?.call();
       rethrow;
     }
@@ -95,8 +94,6 @@ class SpeechService {
   }
 
   void _initializeWebRTC() {
-    debugPrint('SpeechService: Initializing WebRTC service with language: $_languageCode');
-    
     _webrtcService = _webRTCServiceFactory(_languageCode);
     
     // Set up WebRTC callbacks
