@@ -12,7 +12,6 @@ from firebase_admin import auth as firebase_auth
 from ai_assistant.firestore_service import FirestoreService
 from ai_assistant.weaviate_models import UserModelWeaviate
 from ai_assistant.services.user_seeding_service import UserSeedingService
-from ai_assistant.common_endpoints import _sessions
 
 logger = logging.getLogger(__name__)
 firestore_service = FirestoreService()
@@ -40,20 +39,10 @@ async def sign_in_google(request: web.Request) -> web.Response:
         email = decoded_token.get("email")
         name = decoded_token.get("name")
 
-        # Create session id and store session
-        session_id = str(uuid4())
-        _sessions[session_id] = {
-            "user_id": user_id,
-            "email": email,
-            "name": name,
-            "created_at": datetime.now().isoformat(),
-        }
-
         logger.info(f"User signed in: {user_id}")
 
         # Return user information
         return web.json_response({
-            "session_id": session_id,
             "user_id": user_id,
             "email": email,
             "name": name,
@@ -175,13 +164,6 @@ async def user_logout(request: web.Request) -> web.Response:
         user_id = body.get("user_id")
         if not user_id:
             return web.json_response({"error": "Missing user_id"}, status=400)
-        
-        sessions_to_remove = [
-            sid for sid, sess in _sessions.items()
-            if sess.get("user_id") == user_id
-        ]
-        for sid in sessions_to_remove:
-            del _sessions[sid]
         
         logger.info(f"User logged out: {user_id}")
         return web.json_response({"status": "logged_out"})

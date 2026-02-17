@@ -110,19 +110,12 @@ class TestUserLogoutEndpoint:
         request.json = AsyncMock(return_value={
             "user_id": "test_user_123"
         })
+            
+        # Act
+        response = await user_logout(request)
         
-        # Mock sessions
-        with patch('ai_assistant.api.v1.endpoints.auth._sessions') as mock_sessions:
-            mock_sessions.items.return_value = [
-                ("session_1", {"user_id": "test_user_123"}),
-                ("session_2", {"user_id": "other_user"})
-            ]
-            
-            # Act
-            response = await user_logout(request)
-            
-            # Assert
-            assert response.status == 200
+        # Assert
+        assert response.status == 200
     
     @pytest.mark.asyncio
     async def test_user_logout_missing_user_id(self):

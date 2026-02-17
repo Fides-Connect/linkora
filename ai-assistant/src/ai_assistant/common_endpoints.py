@@ -11,9 +11,6 @@ from .weaviate_models import UserModelWeaviate
 
 logger = logging.getLogger(__name__)
 
-# Simple in-memory session store (needs to be replace with DB)
-_sessions: Dict[str, Dict[str, Any]] = {}
-
 def setup_cors(app: web.Application) -> None:
     # allow all origins for dev; tighten in production
     cors = aiohttp_cors.setup(app, defaults={
@@ -48,23 +45,8 @@ async def sign_in_google(request: web.Request) -> web.Response:
         email = decoded_token.get("email")
         name = decoded_token.get("name")
 
-        # create session id and store session
-        # Todo: Replace with persistent session storage
-        session_id = str(uuid4())
-        _sessions[session_id] = {
-            "user_id": user_id,
-            "email": email,
-            "name": name,
-            "created_at": datetime.now().isoformat(),
-        }
-
-        # Just for debugging, log current sessions
-        # Todo: remove in production
-        logger.info(f"Current sessions: {_sessions}")
-
         # Return user information
         return web.json_response({
-            "session_id": session_id,
             "user_id": user_id,
             "email": email,
             "name": name,
