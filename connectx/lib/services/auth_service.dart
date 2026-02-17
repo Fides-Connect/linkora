@@ -28,7 +28,7 @@ class AuthService {
 
   String? _photoUrl;
 
-  /// Expose the photo URL from Firebase user profile.
+  /// Expose the photo URL from Firebase user.
   String? get photoUrl => _photoUrl ?? currentUser?.photoURL;
 
   // Simple init guard
@@ -73,7 +73,7 @@ class AuthService {
     if (user != null) {
       _photoUrl = user.photoURL;
 
-      // Sync user profile with backend
+      // Sync user with backend
       await _userService.syncUserWithBackend();
 
       // Auto-connect to WebRTC if service is available
@@ -148,7 +148,7 @@ class AuthService {
     if (rawServer == null || rawServer.isEmpty) {
       return false;
     }
-    final String url = 'http://$rawServer/sign_in_google';
+    final String url = 'http://$rawServer/api/v1/auth/sign-in-google';
 
     try {
       final response = await http

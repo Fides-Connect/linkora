@@ -7,14 +7,14 @@ import '../../../../core/widgets/star_rating.dart';
 import '../../../../localization/app_localizations.dart';
 import '../viewmodels/home_tab_view_model.dart';
 
-class SupporterProfilePage extends StatefulWidget {
-  const SupporterProfilePage({super.key});
+class UserPage extends StatefulWidget {
+  const UserPage({super.key});
 
   @override
-  State<SupporterProfilePage> createState() => _SupporterProfilePageState();
+  State<UserPage> createState() => _UserPageState();
 }
 
-class _SupporterProfilePageState extends State<SupporterProfilePage> {
+class _UserPageState extends State<UserPage> {
 
   late String _introduction;
   late TextEditingController _introController;
@@ -32,11 +32,11 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
     super.didChangeDependencies();
     if (!_isInitialized) {
       final viewModel = context.read<HomeTabViewModel>();
-      final profile = viewModel.userProfile;
+      final profile = viewModel.user;
       
       // Fallback if profile not loaded yet (though it should be)
       if (profile != null) {
-        _introduction = profile.introduction;
+        _introduction = profile.selfIntroduction;
         _introController.text = _introduction;
       }
       _isInitialized = true;
@@ -96,13 +96,13 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
   Widget build(BuildContext context) {
     final localizations = AppLocalizations.of(context);
     final viewModel = context.watch<HomeTabViewModel>();
-    final profile = viewModel.userProfile;
+    final profile = viewModel.user;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         title: Text(
-          localizations?.menuSupporterProfile ?? 'Supporter Profile',
+          localizations?.menuUser ?? 'Profile',
           style: const TextStyle(color: Colors.white),
         ),
         backgroundColor: Colors.transparent,
@@ -202,7 +202,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                         ...?profile?.competencies.map((competence) {
                           return InputChip(
                             label: Text(
-                              competence,
+                              competence.title,
                               style: const TextStyle(color: Colors.white),
                             ),
                             backgroundColor: Colors.white.withValues(alpha: 0.1),
@@ -211,7 +211,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                               size: 18,
                               color: Colors.white70,
                             ),
-                            onDeleted: () => _removeCompetence(competence),
+                            onDeleted: () => _removeCompetence(competence.id),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
@@ -273,7 +273,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                           Row(
                             children: [
                               Text(
-                                profile?.rating.toString() ?? '0.0',
+                                profile?.averageRating.toString() ?? '0.0',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 32,
@@ -282,7 +282,7 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
                               ),
                               const SizedBox(width: 8),
                               StarRating(
-                                rating: profile?.rating ?? 0.0,
+                                rating: profile?.averageRating ?? 0.0,
                                 size: 28,
                               ),
                               const SizedBox(width: 8),
@@ -302,14 +302,14 @@ class _SupporterProfilePageState extends State<SupporterProfilePage> {
 
                   FeedbackDisplay(
                     title: localizations?.positiveFeedback ?? 'Positive Feedback',
-                    feedbackItems: profile?.positiveFeedback ?? [],
+                    feedbackItems: profile?.feedbackPositive ?? [],
                     titleColor: Colors.greenAccent,
                     chipColor: const Color(0x3369F0AE),
                   ),
 
                   FeedbackDisplay(
                     title: localizations?.negativeFeedback ?? 'Negative Feedback',
-                    feedbackItems: profile?.negativeFeedback ?? [],
+                    feedbackItems: profile?.feedbackNegative ?? [],
                     titleColor: Colors.redAccent,
                     chipColor: const Color(0x33FF5252),
                   ),

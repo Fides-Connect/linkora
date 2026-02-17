@@ -97,7 +97,7 @@ curl http://localhost:8090/v1/meta
 
 ```bash
 cd ../ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 ```
 
 **This script:**
@@ -165,7 +165,7 @@ WEAVIATE_URL=http://localhost:8090
 2. **Initialize Cloud Database:**
    ```bash
    cd ai-assistant
-   python scripts/init_hub_spoke_schema.py --load-test-data
+   python scripts/init_database.py --load-test-data
    ```
 
 3. **Configure AI-Assistant (in `.env`):**
@@ -263,30 +263,12 @@ WEAVIATE_URL=http://localhost:8090
 
 ```bash
 cd ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 ```
 
 **Options:**
 - `--load-test-data`: Load sample providers (default: true)
 - `--skip-test-data`: Skip loading test data
-
-### Add Service Providers
-
-```python
-from ai_assistant.weaviate_models import ServiceProvider
-
-provider = ServiceProvider(
-    name="Berlin Plumbing",
-    description="Professional plumbing services in Berlin",
-    category="Plumbing",
-    phone="+49 30 1234567",
-    email="info@berlinplumbing.de",
-    city="Berlin"
-)
-
-# Save to Weaviate
-provider_id = data_provider.add_service_provider(provider)
-```
 
 ### Query Providers
 
@@ -345,7 +327,7 @@ docker-compose up -d
 
 # Reinitialize
 cd ../ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 ```
 
 ## 🔍 Search Capabilities
@@ -527,7 +509,7 @@ curl http://localhost:8090/v1/schema
 
 # 3. Reinitialize if needed
 cd ../ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 
 # 4. Test search directly
 python scripts/test_search_providers.py
@@ -555,7 +537,7 @@ docker-compose up -d
 
 # If data is truly lost, restore from backup
 # or reinitialize:
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 ```
 
 ### Slow Search Performance

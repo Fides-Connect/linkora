@@ -12,9 +12,9 @@ import firebase_admin
 from firebase_admin import credentials
 
 from .signaling_server import SignalingServer
-from .common_endpoints import sign_in_google, setup_cors
-from .user_endpoints import user_sync, user_logout
+from .common_endpoints import setup_cors
 from .services.admin_service import AdminService
+from .api.v1.router import register_v1_routes
 
 # Configure logging
 logging.basicConfig(
@@ -73,6 +73,7 @@ async def main():
     
     # Log configuration
     logger.info("Configuration:")
+    logger.info(f"  Firestore Database: {os.getenv('FIRESTORE_DATABASE_NAME', '(default)')}")
     logger.info(f"  Language DE: {os.getenv('LANGUAGE_CODE_DE', 'de-DE')}")
     logger.info(f"  Voice DE: {os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat')}")
     logger.info(f"  Language EN: {os.getenv('LANGUAGE_CODE_EN', 'en-US')}")
@@ -97,9 +98,9 @@ async def main():
     app = web.Application()
     app.router.add_get('/ws', signaling_server.handle_websocket)
     app.router.add_get('/health', signaling_server.health_check)
-    app.router.add_post('/sign_in_google', sign_in_google)
-    app.router.add_post('/user/sync', user_sync)
-    app.router.add_post('/user/logout', user_logout)
+
+    # Register v1 API routes
+    register_v1_routes(app)
     
     # Register admin routes
     admin_service.register_routes(app)
@@ -111,7 +112,8 @@ async def main():
     logger.info(f"Starting AI Assistant server on {host}:{port}")
     logger.info(f"WebSocket endpoint: ws://{host}:{port}/ws")
     logger.info(f"Health check: http://{host}:{port}/health")
-    logger.info(f"Sign-In Google: http://{host}:{port}/sign_in_google")
+    logger.info(f"API v1: http://{host}:{port}/api/v1/")
+    logger.info(f"Sign-In: http://{host}:{port}/api/v1/auth/sign-in-google")
     
     runner = web.AppRunner(app)
     setup_cors(app)

@@ -298,12 +298,12 @@ class AppLocalizations {
     return MessagesEN.languageGerman;
   }
 
-  // Supporter Profile
-  String get menuSupporterProfile {
+  // Profile
+  String get menuUser {
     if (locale.languageCode == 'de') {
-      return MessagesDE.menuSupporterProfile;
+      return MessagesDE.menuProfile;
     }
-    return MessagesEN.menuSupporterProfile;
+    return MessagesEN.menuProfile;
   }
 
   String get competenciesTitle {
@@ -456,6 +456,20 @@ class AppLocalizations {
     return MessagesEN.completed;
   }
 
+  String get accepted {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.accepted;
+    }
+    return MessagesEN.accepted;
+  }
+
+  String get rejected {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.rejected;
+    }
+    return MessagesEN.rejected;
+  }
+
   String get unknown {
     if (locale.languageCode == 'de') {
       return MessagesDE.unknown;
@@ -524,6 +538,20 @@ class AppLocalizations {
       return MessagesDE.description;
     }
     return MessagesEN.description;
+  }
+
+  String get requester {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.requester;
+    }
+    return MessagesEN.requester;
+  }
+
+  String get provider {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.provider;
+    }
+    return MessagesEN.provider;
   }
 
   String get addToFavorites {

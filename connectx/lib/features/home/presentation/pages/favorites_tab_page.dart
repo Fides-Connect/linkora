@@ -3,9 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
-import '../../../../models/supporter_profile.dart';
+import '../../../../models/user.dart';
 import '../viewmodels/home_tab_view_model.dart';
-import 'profile_detail_page.dart';
+import 'user_detail_page.dart';
 
 class FavoritesTabPage extends StatelessWidget {
   const FavoritesTabPage({super.key});
@@ -36,8 +36,8 @@ class FavoritesTabPage extends StatelessWidget {
                 itemCount: favorites.length,
                 separatorBuilder: (context, index) => const SizedBox(height: 16),
                 itemBuilder: (context, index) {
-                  final profile = favorites[index];
-                  return _buildFavoriteCard(context, profile);
+                  final user = favorites[index];
+                  return _buildFavoriteCard(context, user);
                 },
               ),
           ],
@@ -46,7 +46,7 @@ class FavoritesTabPage extends StatelessWidget {
     );
   }
 
-  Widget _buildFavoriteCard(BuildContext context, SupporterProfile profile) {
+  Widget _buildFavoriteCard(BuildContext context, User user) {
     return Card(
       color: Colors.white.withValues(alpha: 0.1),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -60,7 +60,7 @@ class FavoritesTabPage extends StatelessWidget {
             MaterialPageRoute(
               builder: (_) => ChangeNotifierProvider.value(
                 value: viewModel,
-                child: ProfileDetailPage(profile: profile),
+                child: UserDetailPage(user: user),
               ),
             ),
           );
@@ -74,7 +74,7 @@ class FavoritesTabPage extends StatelessWidget {
                 radius: 30,
                 backgroundColor: Colors.white.withValues(alpha: 0.2),
                 child: Text(
-                  profile.name.isNotEmpty ? profile.name[0] : '?',
+                  user.name.isNotEmpty ? user.name[0] : '?',
                   style: const TextStyle(
                     fontSize: 24,
                     color: Colors.white,
@@ -88,7 +88,7 @@ class FavoritesTabPage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      profile.name,
+                      user.name,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 18,
@@ -97,7 +97,7 @@ class FavoritesTabPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      profile.introduction,
+                      user.selfIntroduction,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -109,7 +109,7 @@ class FavoritesTabPage extends StatelessWidget {
                     Wrap(
                       spacing: 4,
                       runSpacing: 4,
-                      children: profile.competencies.take(3).map((comp) {
+                      children: user.competencies.take(3).map((comp) {
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
@@ -117,7 +117,7 @@ class FavoritesTabPage extends StatelessWidget {
                                 borderRadius: BorderRadius.circular(4),
                               ),
                           child: Text(
-                            comp,
+                            comp.title,
                             style: const TextStyle(
                               color: Colors.white70,
                               fontSize: 11,

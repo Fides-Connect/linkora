@@ -64,23 +64,17 @@ brew install google-cloud-sdk  # macOS
 **Resources Created:**
 - Deployment: ai-assistant (configurable replicas)
 - Service: LoadBalancer for external access
-- ConfigMap: Non-sensitive configuration
 - Secrets: API keys and credentials
-- HorizontalPodAutoscaler: Auto-scaling rules
 
 **Structure:**
 ```
 helm/ai-assistant/
 ├── Chart.yaml           # Chart metadata
 ├── values.yaml          # Default configuration
-├── values-prod.yaml     # Production overrides
-├── values-dev.yaml      # Development overrides
 └── templates/
     ├── deployment.yaml  # Pod specification
     ├── service.yaml     # Network exposure
-    ├── configmap.yaml   # Configuration
-    ├── secrets.yaml     # Sensitive data
-    └── hpa.yaml         # Auto-scaling
+    └── secrets.yaml     # Sensitive data
 ```
 
 ### Weaviate Chart
@@ -150,7 +144,7 @@ kubectl port-forward svc/weaviate-service 8090:80 &
 
 # Run initialization script
 cd ../ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 
 # Stop port-forward
 kill %1

@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:connectx/features/home/presentation/viewmodels/home_tab_view_model.dart';
 import 'package:connectx/models/service_request.dart';
-import 'package:connectx/models/supporter_profile.dart';
+import 'package:connectx/models/user.dart';
 import 'package:connectx/models/service_category.dart';
 import '../../../../helpers/test_helpers.mocks.dart';
 
@@ -16,24 +16,24 @@ void main() {
   });
 
   group('loadData', () {
-    test('loads requests, favorites and profile', () async {
+    test('loads requests, favorites and user', () async {
       // Arrange
       final mockRequests = <ServiceRequest>[];
-      final mockFavorites = <SupporterProfile>[];
-      final mockProfile = SupporterProfile(
+      final mockFavorites = <User>[];
+      final mockUser = User(
           id: 'user_1',
           name: 'Me',
-          introduction: 'Hi',
+          selfIntroduction: 'Hi',
           competencies: [],
-          rating: 0,
+          averageRating: 0,
           reviewCount: 0,
-          positiveFeedback: [],
-          negativeFeedback: []
+          feedbackPositive: [],
+          feedbackNegative: []
       );
 
       when(mockRepository.getRequests()).thenAnswer((_) async => mockRequests);
       when(mockRepository.getFavorites()).thenAnswer((_) async => mockFavorites);
-      when(mockRepository.getSupporterProfile()).thenAnswer((_) async => mockProfile);
+      when(mockRepository.getUser()).thenAnswer((_) async => mockUser);
 
       // Act
       await viewModel.loadData();
@@ -43,34 +43,38 @@ void main() {
       expect(viewModel.incomingRequests, isEmpty);
       expect(viewModel.outgoingRequests, isEmpty);
       expect(viewModel.favorites, isEmpty);
-      expect(viewModel.userProfile, mockProfile);
+      expect(viewModel.user, mockUser);
       
       verify(mockRepository.getRequests()).called(1);
       verify(mockRepository.getFavorites()).called(1);
-      verify(mockRepository.getSupporterProfile()).called(1);
+      verify(mockRepository.getUser()).called(1);
     });
 
     test('filters requests into incoming and outgoing', () async {
       // Arrange
-      final req1 = ServiceRequest(
-          id: '1', title: 'In', amountValue: 10, startDate: DateTime(2023),
-          userName: 'U', userInitials: 'I', category: ServiceCategory.housekeeping,
-          type: RequestType.incoming, status: RequestStatus.pending, description: '', location: ''
-      );
-      final req2 = ServiceRequest(
-          id: '2', title: 'Out', amountValue: 10, startDate: DateTime(2023),
-          userName: 'U', userInitials: 'I', category: ServiceCategory.housekeeping,
-          type: RequestType.outgoing, status: RequestStatus.pending, description: '', location: ''
+      final mockUser = User(
+          id: 'user_1', name: 'Me', selfIntroduction: 'Hi', competencies: [], averageRating: 0,
+          reviewCount: 0, feedbackPositive: [], feedbackNegative: []
       );
       
-      final mockProfile = SupporterProfile(
-          id: 'user_1', name: 'Me', introduction: 'Hi', competencies: [], rating: 0,
-          reviewCount: 0, positiveFeedback: [], negativeFeedback: []
+      final req1 = ServiceRequest(
+          serviceRequestId: '1', title: 'In', amountValue: 10, startDate: DateTime(2023),
+          seekerUserId: 'other_user', seekerUserName: 'Other', seekerUserInitials: 'OU',
+          selectedProviderUserId: 'user_1', selectedProviderUserName: 'Me', selectedProviderUserInitials: 'ME',
+          category: ServiceCategory.housekeeping,
+          status: RequestStatus.pending, description: '', location: ''
+      );
+      final req2 = ServiceRequest(
+          serviceRequestId: '2', title: 'Out', amountValue: 10, startDate: DateTime(2023),
+          seekerUserId: 'user_1', seekerUserName: 'Me', seekerUserInitials: 'ME',
+          selectedProviderUserId: 'other_user', selectedProviderUserName: 'Other', selectedProviderUserInitials: 'OU',
+          category: ServiceCategory.housekeeping,
+          status: RequestStatus.pending, description: '', location: ''
       );
       
       when(mockRepository.getRequests()).thenAnswer((_) async => [req1, req2]);
       when(mockRepository.getFavorites()).thenAnswer((_) async => []);
-      when(mockRepository.getSupporterProfile()).thenAnswer((_) async => mockProfile);
+      when(mockRepository.getUser()).thenAnswer((_) async => mockUser);
 
       // Act
       await viewModel.loadData();
