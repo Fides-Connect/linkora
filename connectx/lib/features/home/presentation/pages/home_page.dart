@@ -45,8 +45,10 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   }
 
   Future<void> _loadInitialData() async {
+    debugPrint('[HomePage] _loadInitialData() called');
     try {
       await _homeTabViewModel.loadData();
+      debugPrint('[HomePage] _loadInitialData() completed');
     } catch (e) {
       debugPrint('Error loading initial data: $e');
     }

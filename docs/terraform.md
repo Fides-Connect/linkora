@@ -130,12 +130,10 @@ terraform/
 ├── main.tf              # Main infrastructure definition
 ├── variables.tf         # Input variables
 ├── outputs.tf           # Output values
-├── terraform.tfvars     # Variable values (gitignored)
 ├── bootstrap/           # State backend setup
 │   ├── main.tf         # GCS bucket creation
 │   ├── variables.tf    # Bootstrap variables
 │   └── outputs.tf      # Backend configuration
-└── README.md           # Documentation
 ```
 
 ## 🚀 Bootstrap Setup

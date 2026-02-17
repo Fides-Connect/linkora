@@ -17,7 +17,7 @@ class UserHeader extends StatelessWidget {
 
         Widget buildFallback() {
           return Semantics(
-            label: user.displayName ?? localizations?.menuSupporterProfile ?? 'User Profile',
+            label: user.displayName ?? localizations?.menuUser ?? 'Profile',
             child: CircleAvatar(
               radius: 16,
               backgroundColor: const Color(0xFF6C63FF),
@@ -48,7 +48,7 @@ class UserHeader extends StatelessWidget {
                   user.photoURL!.isNotEmpty &&
                   !kIsWeb)
                 Semantics(
-                  label: user.displayName ?? localizations?.menuSupporterProfile ?? 'User Profile',
+                  label: user.displayName ?? localizations?.menuUser ?? 'Profile',
                   child: ClipOval(
                     child: Image.network(
                       user.photoURL!,

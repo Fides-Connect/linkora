@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../../../../models/service_request.dart';
-import '../../../../models/supporter_profile.dart';
+import '../../../../models/user.dart';
 import '../../data/repositories/home_repository.dart';
 
 class HomeTabViewModel extends ChangeNotifier {
@@ -8,8 +8,8 @@ class HomeTabViewModel extends ChangeNotifier {
   
   List<ServiceRequest> _incomingRequests = [];
   List<ServiceRequest> _outgoingRequests = [];
-  List<SupporterProfile> _favorites = [];
-  SupporterProfile? _userProfile;
+  List<User> _favorites = [];
+  User? _user;
   
   bool _isLoading = false;
   String? _error;
@@ -19,24 +19,38 @@ class HomeTabViewModel extends ChangeNotifier {
 
   List<ServiceRequest> get incomingRequests => _incomingRequests;
   List<ServiceRequest> get outgoingRequests => _outgoingRequests;
-  List<SupporterProfile> get favorites => _favorites;
-  SupporterProfile? get userProfile => _userProfile;
+  List<User> get favorites => _favorites;
+  User? get user => _user;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
   Future<void> loadData() async {
+    debugPrint('[HomeTabViewModel] loadData() called');
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final requests = await _repository.getRequests();
-      _incomingRequests = requests.where((r) => r.type == RequestType.incoming).toList();
-      _outgoingRequests = requests.where((r) => r.type == RequestType.outgoing).toList();
+      debugPrint('[HomeTabViewModel] Fetching user...');
+      _user = await _repository.getUser();
+      debugPrint('[HomeTabViewModel] User fetched: ${_user?.name}');
       
+      debugPrint('[HomeTabViewModel] Fetching requests...');
+      final requests = await _repository.getRequests();
+      debugPrint('[HomeTabViewModel] Requests fetched: ${requests.length}');
+      
+      // Use getType() method with current user's ID to determine request type
+      final currentUserId = _user?.id ?? '';
+      _incomingRequests = requests.where((r) => r.getType(currentUserId) == RequestType.incoming).toList();
+      _outgoingRequests = requests.where((r) => r.getType(currentUserId) == RequestType.outgoing).toList();
+      debugPrint('[HomeTabViewModel] Incoming: ${_incomingRequests.length}, Outgoing: ${_outgoingRequests.length}');
+      
+      debugPrint('[HomeTabViewModel] Fetching favorites...');
       _favorites = await _repository.getFavorites();
-      _userProfile = await _repository.getSupporterProfile();
+      debugPrint('[HomeTabViewModel] Favorites fetched: ${_favorites.length}');
+      debugPrint('[HomeTabViewModel] loadData() completed successfully');
     } catch (e) {
+      debugPrint('[HomeTabViewModel] loadData() error: $e');
       _error = e.toString();
     } finally {
       _isLoading = false;
@@ -44,16 +58,16 @@ class HomeTabViewModel extends ChangeNotifier {
     }
   }
 
-  bool isFavorite(SupporterProfile profile) {
-    return _favorites.any((p) => p.id == profile.id);
+  bool isFavorite(User user) {
+    return _favorites.any((p) => p.id == user.id);
   }
 
-  Future<void> toggleFavorite(SupporterProfile profile) async {
+  Future<void> toggleFavorite(User user) async {
     try {
-      if (isFavorite(profile)) {
-        _favorites = await _repository.removeFavorite(profile);
+      if (isFavorite(user)) {
+        _favorites = await _repository.removeFavorite(user);
       } else {
-        _favorites = await _repository.addFavorite(profile);
+        _favorites = await _repository.addFavorite(user);
       }
       _error = null;
     } catch (e) {
@@ -62,39 +76,30 @@ class HomeTabViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<SupporterProfile?> getOtherProfile(String userId) {
-    return _repository.getOtherProfile(userId);
+  Future<User?> getOtherUser(String userId) {
+    return _repository.getOtherUser(userId);
   }
 
   Future<void> updateIntroduction(String introduction) async {
-    if (_userProfile == null) return;
+    if (_user == null) return;
     
-    final updatedProfile = SupporterProfile(
-      id: _userProfile!.id,
-      name: _userProfile!.name,
-      introduction: introduction,
-      competencies: _userProfile!.competencies,
-      rating: _userProfile!.rating,
-      reviewCount: _userProfile!.reviewCount,
-      positiveFeedback: _userProfile!.positiveFeedback,
-      negativeFeedback: _userProfile!.negativeFeedback
-    );
+    final updatedUser = _user!.copyWith(selfIntroduction: introduction);
 
     try {
-      // Use the profile returned by the repository to ensure consistency
-      _userProfile = await _repository.updateSupporterProfile(updatedProfile);
+      // Use the user returned by the repository to ensure consistency
+      _user = await _repository.updateUser(updatedUser);
       _error = null;
     } catch (e) {
-      _error = 'Failed to update profile: $e';
+      _error = 'Failed to update user: $e';
     }
     notifyListeners();
   }
 
   Future<void> addCompetence(String competence) async {
-    if (_userProfile == null) return;
+    if (_user == null) return;
     
     try {
-      _userProfile = await _repository.addCompetence(competence);
+      _user = await _repository.addCompetence(competence);
       _error = null;
     } catch (e) {
       _error = 'Failed to add competence: $e';
@@ -103,10 +108,10 @@ class HomeTabViewModel extends ChangeNotifier {
   }
 
   Future<void> removeCompetence(String competence) async {
-    if (_userProfile == null) return;
+    if (_user == null) return;
     
     try {
-      _userProfile = await _repository.removeCompetence(competence);
+      _user = await _repository.removeCompetence(competence);
       _error = null;
     } catch (e) {
       _error = 'Failed to remove competence: $e';

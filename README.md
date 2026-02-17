@@ -139,7 +139,7 @@ docker-compose up -d
 
 # Initialize database
 cd ../ai-assistant
-python scripts/init_hub_spoke_schema.py --load-test-data
+python scripts/init_database.py --load-test-data
 
 ```
 

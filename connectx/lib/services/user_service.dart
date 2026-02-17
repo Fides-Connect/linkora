@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/foundation.dart';
 
-/// Service for managing user profile sync and FCM token registration
+/// Service for managing user sync and FCM token registration
 class UserService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
@@ -47,7 +47,7 @@ class UserService {
     }
   }
 
-  /// Sync user profile with backend
+  /// Sync user with backend
   /// Creates or updates user record with FCM token
   Future<Map<String, dynamic>?> syncUserWithBackend() async {
     try {
@@ -73,7 +73,7 @@ class UserService {
       final backendUrl = serverUrl.startsWith('http')
           ? serverUrl
           : 'http://$serverUrl';
-      final url = Uri.parse('$backendUrl/user/sync');
+      final url = Uri.parse('$backendUrl/api/v1/auth/sync');
 
       debugPrint('Syncing user with backend: ${user.uid}');
 
@@ -117,7 +117,7 @@ class UserService {
       final backendUrl = serverUrl.startsWith('http')
           ? serverUrl
           : 'http://$serverUrl';
-      final url = Uri.parse('$backendUrl/user/logout');
+      final url = Uri.parse('$backendUrl/api/v1/auth/logout');
 
       debugPrint('Logging out user: ${user.uid}');
 

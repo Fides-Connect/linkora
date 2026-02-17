@@ -3,7 +3,6 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'wrappers.dart';
 
@@ -80,6 +79,18 @@ class ApiService {
 
     debugPrint('PUT $url');
     return _performRequest(() => _client.put(
+      url,
+      headers: headers,
+      body: body != null ? jsonEncode(body) : null,
+    ).timeout(_timeout));
+  }
+
+  Future<dynamic> patch(String endpoint, {dynamic body}) async {
+    final url = Uri.parse('$_baseUrl$endpoint');
+    final headers = await _getHeaders();
+
+    debugPrint('PATCH $url');
+    return _performRequest(() => _client.patch(
       url,
       headers: headers,
       body: body != null ? jsonEncode(body) : null,

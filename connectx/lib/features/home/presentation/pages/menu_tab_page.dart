@@ -6,7 +6,7 @@ import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../main.dart';
 import '../viewmodels/home_tab_view_model.dart';
-import 'supporter_profile_page.dart';
+import 'user_page.dart';
 
 class MenuTabPage extends StatelessWidget {
   const MenuTabPage({super.key});
@@ -56,7 +56,7 @@ class MenuTabPage extends StatelessWidget {
               child: ListView(
                 children: [
                    const SizedBox(height: 20),
-                   // User Profile Section
+                   // User Section
                    Consumer<UserProvider>(
                     builder: (context, userProvider, _) {
                       final user = userProvider.user;
@@ -100,7 +100,7 @@ class MenuTabPage extends StatelessWidget {
                   const SizedBox(height: 40),
                   _MenuItem(
                     icon: Icons.person_outline,
-                    title: localizations?.menuSupporterProfile ?? 'Supporter Profile',
+                    title: localizations?.menuUser ?? 'User',
                     onTap: () {
                       final viewModel = context.read<HomeTabViewModel>();
                       Navigator.push(
@@ -108,7 +108,7 @@ class MenuTabPage extends StatelessWidget {
                         MaterialPageRoute(
                           builder: (context) => ChangeNotifierProvider.value(
                             value: viewModel,
-                            child: const SupporterProfilePage(),
+                            child: const UserPage(),
                           ),
                         ),
                       );

@@ -34,7 +34,6 @@ def mock_conversation_service():
     service.create_prompt_for_stage = Mock(return_value="prompt")
     service.context = {
         "user_problem": [],
-        "detected_category": None,
         "providers_found": [],
         "current_provider_index": 0,
     }

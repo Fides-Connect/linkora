@@ -29,6 +29,8 @@ class MessagesDE {
   static const String pending = 'Ausstehend';
   static const String waitingForAnswer = 'Warten auf Antwort';
   static const String completed = 'Abgeschlossen';
+  static const String accepted = 'Angenommen';
+  static const String rejected = 'Abgelehnt';
   static const String unknown = 'Unbekannt';
   static const String acceptButton = 'Annehmen';
   static const String rejectButton = 'Ablehnen';
@@ -39,6 +41,8 @@ class MessagesDE {
   static const String date = 'Datum';
   static const String amount = 'Betrag';
   static const String description = 'Beschreibung';
+  static const String requester = 'Anfrager';
+  static const String provider = 'Anbieter';
 
   static const String saveButton = 'Speichern';
 
@@ -87,8 +91,8 @@ class MessagesDE {
   static const String languageEnglish = 'Englisch';
   static const String languageGerman = 'Deutsch';
 
-  // Supporter Profile
-  static const String menuSupporterProfile = 'Unterstützer Profil';
+  // Profile
+  static const String menuProfile = 'Profil';
   static const String competenciesTitle = 'Kompetenzen';
   static const String addCompetence = 'Kompetenz hinzufügen';
   static const String enterCompetence = 'Kompetenz eingeben';

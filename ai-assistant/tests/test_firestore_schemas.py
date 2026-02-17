@@ -1,0 +1,633 @@
+"""
+Unit tests for Firestore schema validation using Pydantic.
+"""
+import pytest
+from datetime import datetime, UTC
+from pydantic import ValidationError
+
+from ai_assistant.firestore_schemas import (
+    UserSchema,
+    UserUpdateSchema,
+    CompetenceSchema,
+    CompetenceUpdateSchema,
+    ServiceRequestSchema,
+    ServiceRequestUpdateSchema,
+    ReviewSchema,
+    ReviewUpdateSchema,
+    ChatSchema,
+    ChatUpdateSchema,
+    ChatMessageSchema,
+    ChatMessageUpdateSchema
+)
+
+
+class TestUserSchema:
+    """Tests for UserSchema validation."""
+    
+    def test_valid_user(self):
+        """Test valid user data passes validation."""
+        user_data = {
+            "name": "John Doe",
+            "email": "john@example.com",
+            "photo_url": "https://example.com/photo.jpg",
+            "fcm_token": "fcm_token_123",
+            "is_service_provider": True,
+            "self_introduction": "Hello!",
+            "average_rating": 4.5,
+            "review_count": 10,
+            "feedback_positive": ["Punctual", "Professional"],
+            "feedback_negative": ["Expensive"],
+            "last_sign_in": datetime.now(UTC)
+        }
+        
+        user = UserSchema(**user_data)
+        assert user.name == "John Doe"
+        assert user.email == "john@example.com"
+        assert user.average_rating == 4.5
+    
+    def test_minimal_user(self):
+        """Test minimal valid user data."""
+        user_data = {
+            "name": "Jane Doe",
+            "email": "jane@example.com"
+        }
+        
+        user = UserSchema(**user_data)
+        assert user.name == "Jane Doe"
+        assert user.email == "jane@example.com"
+        assert user.photo_url == ""
+        assert user.is_service_provider is False
+        assert user.average_rating == 0.0
+        assert user.review_count == 0
+    
+    def test_invalid_email(self):
+        """Test that invalid email format fails validation."""
+        user_data = {
+            "name": "John Doe",
+            "email": "invalid_email"
+        }
+        
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(**user_data)
+        
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('email',) for error in errors)
+    
+    def test_missing_required_fields(self):
+        """Test that missing required fields fail validation."""
+        user_data = {"name": "John Doe"}
+        
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(**user_data)
+        
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('email',) for error in errors)
+    
+    def test_invalid_rating_range(self):
+        """Test that rating outside 0-5 range fails validation."""
+        user_data = {
+            "name": "John Doe",
+            "email": "john@example.com",
+            "average_rating": 6.0
+        }
+        
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(**user_data)
+        
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('average_rating',) for error in errors)
+    
+    def test_extra_fields_rejected(self):
+        """Test that extra fields are rejected (strict mode)."""
+        user_data = {
+            "name": "John Doe",
+            "email": "john@example.com",
+            "unknown_field": "should_fail"
+        }
+        
+        with pytest.raises(ValidationError) as exc_info:
+            UserSchema(**user_data)
+        
+        errors = exc_info.value.errors()
+        assert any(error['type'] == 'extra_forbidden' for error in errors)
+
+
+class TestCompetenceSchema:
+    """Tests for CompetenceSchema validation."""
+    
+    def test_valid_competence(self):
+        """Test valid competence data passes validation."""
+        competence_data = {
+            "title": "Python Programming",
+            "description": "Expert in Python",
+            "category": "Programming",
+            "price_range": "$50-$100/hr"
+        }
+        
+        competence = CompetenceSchema(**competence_data)
+        assert competence.title == "Python Programming"
+    
+    def test_minimal_competence(self):
+        """Test minimal valid competence data."""
+        competence_data = {
+            "title": "Web Design"
+        }
+        
+        competence = CompetenceSchema(**competence_data)
+        assert competence.title == "Web Design"
+        assert competence.description == ""
+        assert competence.category == ""
+    
+    def test_missing_title(self):
+        """Test that missing title fails validation."""
+        competence_data = {}
+        
+        with pytest.raises(ValidationError) as exc_info:
+            CompetenceSchema(**competence_data)
+        
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('title',) for error in errors)
+
+
+class TestServiceRequestSchema:
+    """Tests for ServiceRequestSchema validation."""
+    
+    def test_valid_service_request(self):
+        """Test valid service request data passes validation."""
+        request_data = {
+            "title": "Need help with plumbing",
+            "seeker_user_id": "user_123",
+            "selected_provider_user_id": "user_456",
+            "status": "pending",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC)
+        }
+        
+        request = ServiceRequestSchema(**request_data)
+        assert request.seeker_user_id == "user_123"
+        assert request.selected_provider_user_id == "user_456"
+        assert request.status == "pending"
+    
+    def test_minimal_service_request(self):
+        """Test minimal valid service request data."""
+        request_data = {
+            "title": "Need help with plumbing",
+            "seeker_user_id": "user_123",
+            "created_at": datetime.now(UTC),
+            "updated_at": datetime.now(UTC)
+        }
+        
+        request = ServiceRequestSchema(**request_data)
+        assert request.seeker_user_id == "user_123"
+        assert request.selected_provider_user_id == ""
+        assert request.status == "pending"
+    
+    def test_invalid_status(self):
+        """Test that invalid status value fails validation."""
+        request_data = {
+            "seeker_user_id": "user_123",
+            "status": "invalid_status",
+            "created_at": datetime.now(UTC)
+        }
+        
+        with pytest.raises(ValidationError) as exc_info:
+            ServiceRequestSchema(**request_data)
+        
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('status',) for error in errors)
+
+
+class TestReviewSchema:
+    """Tests for ReviewSchema validation."""
+    
+    def test_valid_review(self):
+        """Test valid review data passes validation."""
+        review_data = {
+            "service_request_id": "service_request_xyz",
+            "user_id": "user_123",
+            "reviewer_user_id": "user_456",
+            "feedback_positive": ["Punctual", "Professional"],
+            "feedback_negative": [],
+            "rating_quality": 4.5
+        }
+        
+        review = ReviewSchema(**review_data)
+        assert review.rating_quality == 4.5
+        assert len(review.feedback_positive) == 2
+    
+    def test_minimal_review(self):
+        """Test minimal valid review data."""
+        review_data = {
+            "service_request_id": "service_request_abc",
+            "user_id": "user_123",
+            "reviewer_user_id": "user_456",
+            "rating_reliance": 3.0
+        }
+        
+        review = ReviewSchema(**review_data)
+        assert review.rating_reliance == 3.0
+        assert review.feedback_positive == []
+        assert review.feedback_negative == []
+    
+    def test_invalid_rating_too_low(self):
+        """Test that rating below 1 fails validation."""
+        review_data = {
+            "review_id": "review_abc123",
+            "service_request_id": "service_request_xyz",
+            "user_id": "user_123",
+            "reviewer_user_id": "user_456",
+            "rating_reliance": 0.5
+        }
+        
+        with pytest.raises(ValidationError) as exc_info:
+            ReviewSchema(**review_data)
+        
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('rating_reliance',) for error in errors)
+    
+    def test_invalid_rating_too_high(self):
+        """Test that rating above 5 fails validation."""
+        review_data = {
+
+            "service_request_id": "service_request_xyz",
+            "user_id": "user_123",
+            "reviewer_user_id": "user_456",
+            "rating_response_speed": 5.5
+        }
+        
+        with pytest.raises(ValidationError) as exc_info:
+            ReviewSchema(**review_data)
+        
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('rating_response_speed',) for error in errors)
+    
+    def test_empty_user_id(self):
+        """Test that empty user_id fails validation."""
+        review_data = {
+            "service_request_id": "service_request_xyz",
+            "user_id": "",
+            "reviewer_user_id": "user_456",
+            "rating_competence": 4.0
+        }
+        
+        with pytest.raises(ValidationError) as exc_info:
+            ReviewSchema(**review_data)
+        
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('user_id',) for error in errors)
+
+
+class TestChatSchema:
+    """Tests for ChatSchema validation."""
+    
+    def test_valid_chat(self):
+        """Test valid chat data passes validation."""
+        chat_data = {
+            "provider_candidate_id": "provider_456",
+            "service_request_id": "service_request_xyz",
+            "seeker_user_id": "user_seeker_123",
+            "provider_user_id": "user_provider_456",
+            "title": "Project Discussion"
+        }
+        
+        chat = ChatSchema(**chat_data)
+        assert chat.title == "Project Discussion"
+        assert chat.seeker_user_id == "user_seeker_123"
+        assert chat.provider_user_id == "user_provider_456"
+    
+    def test_minimal_chat(self):
+        """Test minimal valid chat data."""
+        chat_data = {
+            "provider_candidate_id": "provider_456",
+            "service_request_id": "service_request_abc",
+            "seeker_user_id": "user_seeker_123",
+            "provider_user_id": "user_provider_456"
+        }
+        
+        chat = ChatSchema(**chat_data)
+        assert chat.title == ""
+
+
+class TestChatMessageSchema:
+    """Tests for ChatMessageSchema validation."""
+    
+    def test_valid_chat_message(self):
+        """Test valid chat message data passes validation."""
+        message_data = {
+            "chat_id": "chat_xyz",
+            "sender_user_id": "user_123",
+            "receiver_user_id": "user_456",
+            "message": "Hello, how are you?"
+        }
+        
+        message = ChatMessageSchema(**message_data)
+        assert message.message == "Hello, how are you?"
+        assert message.sender_user_id == "user_123"
+    
+    def test_empty_message(self):
+        """Test that empty message fails validation."""
+        message_data = {
+            "chat_id": "chat_xyz",
+            "sender_user_id": "user_123",
+            "receiver_user_id": "user_456",
+            "message": ""
+        }
+        
+        with pytest.raises(ValidationError) as exc_info:
+            ChatMessageSchema(**message_data)
+        
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('message',) for error in errors)
+    
+    def test_empty_user_ids(self):
+        """Test that empty user IDs fail validation."""
+        message_data = {
+            "chat_message_id": "chat_message_abc123",
+            "chat_id": "chat_xyz",
+            "sender_user_id": "",
+            "receiver_user_id": "user_456",
+            "message": "Hello!"
+        }
+        
+        with pytest.raises(ValidationError) as exc_info:
+            ChatMessageSchema(**message_data)
+        
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('sender_user_id',) for error in errors)
+
+
+# ===== Update Schema Tests =====
+
+class TestUserUpdateSchema:
+    """Tests for UserUpdateSchema validation."""
+    
+    def test_empty_update(self):
+        """Test that empty update data is valid (all fields optional)."""
+        update_data = {}
+        user_update = UserUpdateSchema(**update_data)
+        assert user_update.model_dump(exclude_none=True) == {}
+    
+    def test_partial_update(self):
+        """Test that partial update with some fields is valid."""
+        update_data = {
+            "name": "Updated Name",
+            "email": "updated@example.com"
+        }
+        user_update = UserUpdateSchema(**update_data)
+        assert user_update.name == "Updated Name"
+        assert user_update.email == "updated@example.com"
+    
+    def test_validation_rules_apply(self):
+        """Test that validation rules still apply when fields are provided."""
+        update_data = {
+            "email": "invalid_email"
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            UserUpdateSchema(**update_data)
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('email',) for error in errors)
+    
+    def test_rating_range_validation(self):
+        """Test that rating range validation applies."""
+        update_data = {
+            "average_rating": 6.0
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            UserUpdateSchema(**update_data)
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('average_rating',) for error in errors)
+    
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
+        update_data = {
+            "id": "user_123",  # Should be ignored
+            "user_id": "user_456",  # Should be ignored
+            "name": "John",
+            "email": "john@example.com",
+            "unknown_field": "ignored"  # Should be ignored
+        }
+        user_update = UserUpdateSchema(**update_data)
+        result = user_update.model_dump(exclude_unset=True)
+        # Only name and email should be in the result
+        assert result == {"name": "John", "email": "john@example.com"}
+        assert "id" not in result
+        assert "user_id" not in result
+        assert "unknown_field" not in result
+
+
+class TestCompetenceUpdateSchema:
+    """Tests for CompetenceUpdateSchema validation."""
+    
+    def test_empty_update(self):
+        """Test that empty update is valid."""
+        update_data = {}
+        competence_update = CompetenceUpdateSchema(**update_data)
+        assert competence_update.model_dump(exclude_none=True) == {}
+    
+    def test_partial_update(self):
+        """Test partial update."""
+        update_data = {
+            "title": "Updated Title"
+        }
+        competence_update = CompetenceUpdateSchema(**update_data)
+        assert competence_update.title == "Updated Title"
+    
+    def test_validation_rules_apply(self):
+        """Test that min_length validation applies."""
+        update_data = {
+            "title": ""  # Empty string should fail min_length=1
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CompetenceUpdateSchema(**update_data)
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('title',) for error in errors)
+    
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
+        update_data = {
+            "id": "competence_123",  # Should be ignored
+            "competence_id": "competence_456",  # Should be ignored
+            "title": "Test",
+            "unknown_field": "ignored"  # Should be ignored
+        }
+        competence_update = CompetenceUpdateSchema(**update_data)
+        result = competence_update.model_dump(exclude_unset=True)
+        # Only title should be in the result
+        assert result == {"title": "Test"}
+        assert "id" not in result
+        assert "competence_id" not in result
+        assert "unknown_field" not in result
+
+
+class TestServiceRequestUpdateSchema:
+    """Tests for ServiceRequestUpdateSchema validation."""
+    
+    def test_empty_update(self):
+        """Test that empty update is valid."""
+        update_data = {}
+        request_update = ServiceRequestUpdateSchema(**update_data)
+        assert request_update.model_dump(exclude_none=True) == {}
+    
+    def test_status_update(self):
+        """Test status update with validation."""
+        update_data = {
+            "status": "completed"
+        }
+        request_update = ServiceRequestUpdateSchema(**update_data)
+        assert request_update.status == "completed"
+    
+    def test_invalid_status(self):
+        """Test that invalid status fails validation."""
+        update_data = {
+            "status": "invalid_status"
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            ServiceRequestUpdateSchema(**update_data)
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('status',) for error in errors)
+    
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
+        update_data = {
+            "id": "service_request_123",  # Should be ignored
+            "service_request_id": "service_request_456",  # Should be ignored
+            "status": "pending",
+            "unknown_field": "ignored"  # Should be ignored
+        }
+        request_update = ServiceRequestUpdateSchema(**update_data)
+        result = request_update.model_dump(exclude_unset=True)
+        # Only status should be in the result
+        assert result == {"status": "pending"}
+        assert "id" not in result
+        assert "service_request_id" not in result
+        assert "unknown_field" not in result
+
+
+class TestReviewUpdateSchema:
+    """Tests for ReviewUpdateSchema validation."""
+    
+    def test_empty_update(self):
+        """Test that empty update is valid."""
+        update_data = {}
+        review_update = ReviewUpdateSchema(**update_data)
+        assert review_update.model_dump(exclude_none=True) == {}
+    
+    def test_rating_update(self):
+        """Test rating update with validation."""
+        update_data = {
+            "rating_competence": 4.5
+        }
+        review_update = ReviewUpdateSchema(**update_data)
+        assert review_update.rating_competence == 4.5
+    
+    def test_invalid_rating(self):
+        """Test that rating outside range fails."""
+        update_data = {
+            "rating_quality": 6.0
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            ReviewUpdateSchema(**update_data)
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('rating_quality',) for error in errors)
+    
+    def test_feedback_raw_update(self):
+        """Test feedback_raw update."""
+        update_data = {
+            "feedback_raw": "Updated review feedback"
+        }
+        review_update = ReviewUpdateSchema(**update_data)
+        assert review_update.feedback_raw == "Updated review feedback"
+    
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
+        update_data = {
+            "id": "review_123",  # Should be ignored
+            "review_id": "review_456",  # Should be ignored
+            "rating_competence": 4.0,
+            "unknown_field": "ignored"  # Should be ignored
+        }
+        review_update = ReviewUpdateSchema(**update_data)
+        result = review_update.model_dump(exclude_unset=True)
+        # Only rating_competence should be in the result
+        assert result == {"rating_competence": 4.0}
+        assert "id" not in result
+        assert "review_id" not in result
+        assert "unknown_field" not in result
+
+
+class TestChatUpdateSchema:
+    """Tests for ChatUpdateSchema validation."""
+    
+    def test_empty_update(self):
+        """Test that empty update is valid."""
+        update_data = {}
+        chat_update = ChatUpdateSchema(**update_data)
+        assert chat_update.model_dump(exclude_none=True) == {}
+    
+    def test_title_update(self):
+        """Test title update."""
+        update_data = {
+            "title": "Updated Chat Title"
+        }
+        chat_update = ChatUpdateSchema(**update_data)
+        assert chat_update.title == "Updated Chat Title"
+    
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
+        update_data = {
+            "id": "chat_123",  # Should be ignored
+            "chat_id": "chat_456",  # Should be ignored
+            "title": "Test",
+            "unknown_field": "ignored"  # Should be ignored
+        }
+        chat_update = ChatUpdateSchema(**update_data)
+        result = chat_update.model_dump(exclude_unset=True)
+        # Only title should be in the result
+        assert result == {"title": "Test"}
+        assert "id" not in result
+        assert "chat_id" not in result
+        assert "unknown_field" not in result
+
+
+class TestChatMessageUpdateSchema:
+    """Tests for ChatMessageUpdateSchema validation."""
+    
+    def test_empty_update(self):
+        """Test that empty update is valid."""
+        update_data = {}
+        message_update = ChatMessageUpdateSchema(**update_data)
+        assert message_update.model_dump(exclude_none=True) == {}
+    
+    def test_message_update(self):
+        """Test message content update."""
+        update_data = {
+            "message": "Updated message content"
+        }
+        message_update = ChatMessageUpdateSchema(**update_data)
+        assert message_update.message == "Updated message content"
+    
+    def test_empty_message_fails(self):
+        """Test that empty message fails validation."""
+        update_data = {
+            "message": ""
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            ChatMessageUpdateSchema(**update_data)
+        errors = exc_info.value.errors()
+        assert any(error['loc'] == ('message',) for error in errors)
+    
+    def test_id_and_extra_fields_ignored(self):
+        """Test that id and extra fields are silently ignored."""
+        update_data = {
+            "id": "chat_message_123",  # Should be ignored
+            "chat_message_id": "chat_message_456",  # Should be ignored
+            "message": "Test",
+            "unknown_field": "ignored"  # Should be ignored
+        }
+        message_update = ChatMessageUpdateSchema(**update_data)
+        result = message_update.model_dump(exclude_unset=True)
+        # Only message should be in the result
+        assert result == {"message": "Test"}
+        assert "id" not in result
+        assert "chat_message_id" not in result
+        assert "unknown_field" not in result

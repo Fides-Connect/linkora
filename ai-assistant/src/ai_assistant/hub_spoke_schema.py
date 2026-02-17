@@ -3,12 +3,10 @@ Hub and Spoke Search Architecture for Service Marketplace
 ==========================================================
 
 Architecture:
-- Hub (UnifiedProfile): Unified identity model for users/companies
-- Spoke (CompetenceEntry): Specific skills/services with descriptions
-- Bidirectional Cross-References: Profile ↔ Competence
+- Hub (User): Identity model for users/companies
+- Spoke (Competence): Specific skills/services with descriptions
+- Bidirectional Cross-References: User ↔ Competence
 
-This replaces the old separate user/provider collections with a more
-granular, searchable, and abuse-resistant model.
 """
 import os
 import logging
@@ -22,9 +20,8 @@ from weaviate.auth import AuthApiKey
 logger = logging.getLogger(__name__)
 
 # Collection names
-UNIFIED_PROFILE_COLLECTION = "UnifiedProfile"
-COMPETENCE_ENTRY_COLLECTION = "CompetenceEntry"
-
+USER_COLLECTION = "User"
+COMPETENCE_COLLECTION = "Competence"
 
 class HubSpokeConnection:
     """Singleton connection manager for Hub and Spoke architecture."""
@@ -88,9 +85,9 @@ def init_hub_spoke_schema():
     Initialize Hub and Spoke schema with bidirectional cross-references.
     
     Collections:
-    1. CompetenceEntry (Spoke) - Created FIRST
-    2. UnifiedProfile (Hub) - Created SECOND with reference to CompetenceEntry
-    3. Add owned_by reference to CompetenceEntry after UnifiedProfile exists
+    1. Competence (Spoke) - Created FIRST
+    2. User (Hub) - Created SECOND with reference to Competence
+    3. Add owned_by reference to Competence after User exists
     
     Note: Weaviate v4 Python client handles cross-references at data insertion time,
     but we define the schema properties for explicit structure.
@@ -98,12 +95,13 @@ def init_hub_spoke_schema():
     try:
         client = HubSpokeConnection.get_client()
         
-        # Step 1: Create CompetenceEntry FIRST (without owned_by reference initially)
-        if not client.collections.exists(COMPETENCE_ENTRY_COLLECTION):
+        # Step 1: Create Competence FIRST (without owned_by reference initially)
+        if not client.collections.exists(COMPETENCE_COLLECTION):
             client.collections.create(
-                name=COMPETENCE_ENTRY_COLLECTION,
-                vectorizer_config=Configure.Vectorizer.text2vec_model2vec(),
+                name=COMPETENCE_COLLECTION,
+                vector_config=Configure.Vectors.text2vec_model2vec(),
                 properties=[
+                    Property(name="competence_id", data_type=DataType.TEXT),  # Link to Firestore ID
                     Property(name="title", data_type=DataType.TEXT),
                     Property(
                         name="description", 
@@ -116,41 +114,45 @@ def init_hub_spoke_schema():
                     Property(name="availability", data_type=DataType.TEXT),  # When service is available
                 ],
             )
-            logger.info(f"Created collection with vectorization: {COMPETENCE_ENTRY_COLLECTION}")
+            logger.info(f"Created collection with vectorization: {COMPETENCE_COLLECTION}")
         else:
-            logger.info(f"Collection already exists: {COMPETENCE_ENTRY_COLLECTION}")
+            logger.info(f"Collection already exists: {COMPETENCE_COLLECTION}")
         
-        # Step 2: Create UnifiedProfile SECOND (now it can reference existing CompetenceEntry)
-        if not client.collections.exists(UNIFIED_PROFILE_COLLECTION):
+        # Step 2: Create User SECOND (now it can reference existing Competence)
+        if not client.collections.exists(USER_COLLECTION):
             client.collections.create(
-                name=UNIFIED_PROFILE_COLLECTION,
+                name=USER_COLLECTION,
                 properties=[
                     Property(name="user_id", data_type=DataType.TEXT),  # External ID (e.g. Firebase UID)
                     Property(name="name", data_type=DataType.TEXT),
                     Property(name="email", data_type=DataType.TEXT),
-                    Property(name="type", data_type=DataType.TEXT),  # "client" or "provider"
-                    Property(name="is_provider", data_type=DataType.BOOL),  # True if user offers services
+                    Property(name="location", data_type=DataType.TEXT),
+                    Property(name="self_introduction", data_type=DataType.TEXT),
+                    Property(name="is_service_provider", data_type=DataType.BOOL),  # True if user offers services
                     Property(name="photo_url", data_type=DataType.TEXT),
                     Property(name="fcm_token", data_type=DataType.TEXT),
                     Property(name="created_at", data_type=DataType.DATE),
                     Property(name="last_sign_in", data_type=DataType.DATE),
                     Property(name="has_open_request", data_type=DataType.BOOL),
-                    Property(name="last_active_date", data_type=DataType.DATE),
+                    Property(name="feedback_positive", data_type=DataType.TEXT_ARRAY),
+                    Property(name="feedback_negative", data_type=DataType.TEXT_ARRAY),
+                    Property(name="average_rating", data_type=DataType.NUMBER),
+                    Property(name="review_count", data_type=DataType.INT),
                 ],
                 references=[
                     ReferenceProperty(
-                        name="has_competences",
-                        target_collection=COMPETENCE_ENTRY_COLLECTION
+                        name="has_competencies",
+                        target_collection=COMPETENCE_COLLECTION
                     )
                 ]
             )
-            logger.info(f"Created collection: {UNIFIED_PROFILE_COLLECTION}")
+            logger.info(f"Created collection: {USER_COLLECTION}")
         else:
-            logger.info(f"Collection already exists: {UNIFIED_PROFILE_COLLECTION}")
+            logger.info(f"Collection already exists: {USER_COLLECTION}")
         
-        # Step 3: Add owned_by reference to CompetenceEntry (now that UnifiedProfile exists)
+        # Step 3: Add owned_by reference to Competence (now that User exists)
         # Update the collection to add the cross-reference
-        competence_collection = client.collections.get(COMPETENCE_ENTRY_COLLECTION)
+        competence_collection = client.collections.get(COMPETENCE_COLLECTION)
         config = competence_collection.config.get()
         
         # Check if owned_by reference already exists
@@ -161,12 +163,12 @@ def init_hub_spoke_schema():
             competence_collection.config.add_reference(
                 ref=ReferenceProperty(
                     name="owned_by",
-                    target_collection=UNIFIED_PROFILE_COLLECTION
+                    target_collection=USER_COLLECTION
                 )
             )
-            logger.info(f"Added 'owned_by' reference to {COMPETENCE_ENTRY_COLLECTION}")
+            logger.info(f"Added 'owned_by' reference to {COMPETENCE_COLLECTION}")
         else:
-            logger.info(f"'owned_by' reference already exists in {COMPETENCE_ENTRY_COLLECTION}")
+            logger.info(f"'owned_by' reference already exists in {COMPETENCE_COLLECTION}")
         
         logger.info("Hub and Spoke schema initialization complete")
         return True
@@ -176,16 +178,16 @@ def init_hub_spoke_schema():
         raise
 
 
-def get_unified_profile_collection():
-    """Get UnifiedProfile collection."""
+def get_user_collection():
+    """Get User collection."""
     client = HubSpokeConnection.get_client()
-    return client.collections.get(UNIFIED_PROFILE_COLLECTION)
+    return client.collections.get(USER_COLLECTION)
 
 
-def get_competence_entry_collection():
-    """Get CompetenceEntry collection."""
+def get_competence_collection():
+    """Get Competence collection."""
     client = HubSpokeConnection.get_client()
-    return client.collections.get(COMPETENCE_ENTRY_COLLECTION)
+    return client.collections.get(COMPETENCE_COLLECTION)
 
 
 def cleanup_hub_spoke_schema():
@@ -193,13 +195,13 @@ def cleanup_hub_spoke_schema():
     try:
         client = HubSpokeConnection.get_client()
         
-        if client.collections.exists(COMPETENCE_ENTRY_COLLECTION):
-            client.collections.delete(COMPETENCE_ENTRY_COLLECTION)
-            logger.info(f"Deleted collection: {COMPETENCE_ENTRY_COLLECTION}")
+        if client.collections.exists(COMPETENCE_COLLECTION):
+            client.collections.delete(COMPETENCE_COLLECTION)
+            logger.info(f"Deleted collection: {COMPETENCE_COLLECTION}")
         
-        if client.collections.exists(UNIFIED_PROFILE_COLLECTION):
-            client.collections.delete(UNIFIED_PROFILE_COLLECTION)
-            logger.info(f"Deleted collection: {UNIFIED_PROFILE_COLLECTION}")
+        if client.collections.exists(USER_COLLECTION):
+            client.collections.delete(USER_COLLECTION)
+            logger.info(f"Deleted collection: {USER_COLLECTION}")
         
         logger.info("Hub and Spoke schema cleanup complete")
         return True

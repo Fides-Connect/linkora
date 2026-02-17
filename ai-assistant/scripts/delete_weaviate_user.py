@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 Delete User Script
-Deletes a user and all their competences from Weaviate.
+Deletes a user and all their competencies from Weaviate.
 
 Usage:
-    python scripts/delete_user.py --user-id <user_id>
+    python scripts/delete_weaviate_user.py --user-id <user_id>
 """
 import sys
 import os
@@ -16,8 +16,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.ai_assistant.hub_spoke_schema import (
     HubSpokeConnection,
-    get_unified_profile_collection,
-    get_competence_entry_collection
+    get_user_collection,
+    get_competence_collection
 )
 from weaviate.classes.query import Filter
 
@@ -25,9 +25,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
  # TODO : add remove user endpoint and remove skills endpoint to admin interface
-def delete_user_by_user_id(user_id: str) -> bool:
+def delete_user_by_id(user_id: str) -> bool:
     """
-    Delete a user and all their competences from Weaviate.
+    Delete a user and all their competencies from Weaviate.
     
     Args:
         user_id: The user_id to delete
@@ -37,12 +37,12 @@ def delete_user_by_user_id(user_id: str) -> bool:
     """
     try:
         client = HubSpokeConnection.get_client()
-        profile_collection = get_unified_profile_collection()
-        competence_collection = get_competence_entry_collection()
+        user_collection = get_user_collection()
+        competence_collection = get_competence_collection()
         
-        # Step 1: Find the profile by user_id
+        # Step 1: Find the user by user_id
         logger.info(f"Searching for user with user_id: {user_id}")
-        result = profile_collection.query.fetch_objects(
+        result = user_collection.query.fetch_objects(
             filters=Filter.by_property("user_id").equal(user_id),
             limit=1
         )
@@ -51,34 +51,34 @@ def delete_user_by_user_id(user_id: str) -> bool:
             logger.error(f"No user found with user_id: {user_id}")
             return False
         
-        profile_uuid = result.objects[0].uuid
-        profile_data = result.objects[0].properties
-        logger.info(f"Found profile: {profile_data.get('name')} (UUID: {profile_uuid})")
+        user_uuid = result.objects[0].uuid
+        user_data = result.objects[0].properties
+        logger.info(f"Found user: {user_data.get('name')} (UUID: {user_uuid})")
         
-        # Step 2: Find and delete all competences owned by this profile
-        logger.info("Searching for competences owned by this user...")
-        competences = competence_collection.query.fetch_objects(
+        # Step 2: Find and delete all competencies owned by this user
+        logger.info("Searching for competencies owned by this user...")
+        competencies = competence_collection.query.fetch_objects(
             return_references=["owned_by"],
-            limit=1000  # Adjust if user has more competences
+            limit=1000  # Adjust if user has more competencies
         )
         
-        deleted_competences = 0
-        for comp in competences.objects:
+        deleted_competencies = 0
+        for comp in competencies.objects:
             # Check if this competence is owned by our user
             if hasattr(comp, 'references') and 'owned_by' in comp.references:
                 owned_by_refs = comp.references['owned_by'].objects
-                if owned_by_refs and str(owned_by_refs[0].uuid) == str(profile_uuid):
+                if owned_by_refs and str(owned_by_refs[0].uuid) == str(user_uuid):
                     competence_uuid = comp.uuid
                     comp_title = comp.properties.get('title', 'Unknown')
                     logger.info(f"  Deleting competence: {comp_title} (UUID: {competence_uuid})")
                     competence_collection.data.delete_by_id(competence_uuid)
-                    deleted_competences += 1
+                    deleted_competencies += 1
         
-        logger.info(f"Deleted {deleted_competences} competence(s)")
+        logger.info(f"Deleted {deleted_competencies} competencies")
         
-        # Step 3: Delete the profile
-        logger.info(f"Deleting profile: {profile_data.get('name')}")
-        profile_collection.data.delete_by_id(profile_uuid)
+        # Step 3: Delete the user
+        logger.info(f"Deleting user: {user_data.get('name')}")
+        user_collection.data.delete_by_id(user_uuid)
         
         logger.info("✓ User deletion complete!")
         return True
@@ -99,7 +99,7 @@ def main():
     
     # Confirmation prompt
     if not args.confirm:
-        print(f"\n⚠️  WARNING: This will permanently delete user with user_id: {args.user_id}")
+        print(f"\n⚠️  WARNING: This will permanently delete user with user_id from Weaviate: {args.user_id}")
         print("   This action cannot be undone!")
         response = input("\nAre you sure you want to continue? (yes/no): ")
         if response.lower() != 'yes':
@@ -107,7 +107,7 @@ def main():
             return
     
     # Execute deletion
-    success = delete_user_by_user_id(args.user_id)
+    success = delete_user_by_id(args.user_id)
     sys.exit(0 if success else 1)
 
 

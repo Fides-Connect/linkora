@@ -5,7 +5,6 @@ import 'package:mockito/mockito.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:connectx/services/webrtc_service.dart';
 import 'package:connectx/services/audio_routing_service.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 import '../helpers/test_helpers.mocks.dart';
 import '../helpers/test_constants.dart';
 import '../mocks/mock_audio_hardware_controller.dart';
