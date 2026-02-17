@@ -33,7 +33,7 @@ async def sign_in_google(request: web.Request) -> web.Response:
             return web.json_response({"error": "Missing id_token"}, status=400)
 
         # Verify the Firebase ID token
-        decoded_token = firebase_auth.verify_id_token(token)
+        decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
 
         # Extract user information
         user_id = decoded_token["uid"]
