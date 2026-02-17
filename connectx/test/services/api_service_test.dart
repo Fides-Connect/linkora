@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:http/http.dart' as http;
-import 'package:firebase_auth/firebase_auth.dart'; // Import FirebaseAuth to use MockFirebaseAuth
 import 'package:connectx/services/api_service.dart';
 import '../helpers/test_helpers.mocks.dart';
 
