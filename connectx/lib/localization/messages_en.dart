@@ -61,6 +61,7 @@ class MessagesEN {
 
   // Main page messages
   static const String tapMicrophoneToStart = 'Tap the microphone to start speaking';
+  static const String typeMessageHint = 'Type a message...';
   static const String connecting = 'Connecting to AI-Assistant...';
   static const String connected = 'Connected! AI is listening and responding...';
   static const String disconnected = 'Disconnected';
@@ -76,7 +77,7 @@ class MessagesEN {
 
   // Navigation Bar
   static const String navHome = 'Home';
-  static const String navSearch = 'Assistant';
+  static const String navAssistant = 'Assistant';
   static const String navFavorites = 'Favorites';
   static const String navMenu = 'Menu';
 

@@ -4,20 +4,24 @@ import '../../../../models/chat_message.dart';
 class ChatDisplay extends StatelessWidget {
   final List<ChatMessage> messages;
   final String statusText;
+  final double? height;
 
   const ChatDisplay({
     super.key,
     required this.messages,
     required this.statusText,
+    this.height,
   });
 
   @override
   Widget build(BuildContext context) {
+    final displayHeight = height ?? 380;
+
     // If no messages, show status text
     if (messages.isEmpty) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 32),
-        height: 380,
+        height: displayHeight,
         alignment: Alignment.center,
         child: Text(
           statusText,
@@ -37,18 +41,18 @@ class ChatDisplay extends StatelessWidget {
     // Show chat messages with scrolling and fade effect at top
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 32),
-      height: 380,
+      height: displayHeight,
       child: ShaderMask(
         shaderCallback: (Rect bounds) {
           return LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: const [
-              Colors.transparent,
-              Colors.white,
-              Colors.white,
-            ],
-            stops: const [0.0, 0.10, 1.0], // Fade out top ~15% (roughly 2 lines)
+            colors: const [Colors.transparent, Colors.white, Colors.white],
+            stops: const [
+              0.0,
+              0.10,
+              1.0,
+            ], // Fade out top ~15% (roughly 2 lines)
           ).createShader(bounds);
         },
         blendMode: BlendMode.dstIn,
@@ -62,18 +66,54 @@ class ChatDisplay extends StatelessWidget {
             final text = message.text;
             final isUser = message.isUser;
 
+            // Check if we need extra spacing (30+ seconds gap from previous message)
+            bool needsExtraSpacing = false;
+            if (reversedIndex > 0) {
+              final previousMessage = messages[reversedIndex - 1];
+              if (message.timestamp != null &&
+                  previousMessage.timestamp != null) {
+                final timeDiff = message.timestamp!.difference(
+                  previousMessage.timestamp!,
+                );
+                needsExtraSpacing = timeDiff.inSeconds > 30;
+              }
+            }
+
             return Padding(
-              padding: const EdgeInsets.only(bottom: 12.0),
-              child: Text(
-                text,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: isUser ? FontWeight.w400 : FontWeight.w300,
-                  fontStyle: isUser ? FontStyle.italic : FontStyle.normal,
-                  height: 1.2,
+              padding: EdgeInsets.only(
+                bottom: 12.0,
+                top: needsExtraSpacing ? 24.0 : 0.0,
+              ),
+              child: Align(
+                alignment: isUser
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 10.0,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isUser
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.grey.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  constraints: BoxConstraints(
+                    maxWidth: MediaQuery.of(context).size.width * 0.75,
+                  ),
+                  child: Text(
+                    text,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: isUser ? FontWeight.w400 : FontWeight.w300,
+                      fontStyle: isUser ? FontStyle.italic : FontStyle.normal,
+                      height: 1.2,
+                    ),
+                    textAlign: isUser ? TextAlign.right : TextAlign.left,
+                  ),
                 ),
-                textAlign: isUser ? TextAlign.right : TextAlign.left,
               ),
             );
           },
