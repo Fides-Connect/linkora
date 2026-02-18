@@ -164,4 +164,14 @@ class SpeechService {
       debugPrint('SpeechService: Stack trace: ${StackTrace.current}');
     }
   }
+
+  /// Send text message to the AI Assistant via data channel
+  /// 
+  /// This allows text input to be sent directly to the server,
+  /// bypassing the speech-to-text step
+  /// 
+  /// [text] - The text message to send
+  void sendTextMessage(String text) {
+    _webrtcService?.sendTextMessage(text);
+  }
 }

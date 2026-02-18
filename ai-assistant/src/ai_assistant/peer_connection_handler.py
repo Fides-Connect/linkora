@@ -85,6 +85,29 @@ class PeerConnectionHandler:
             
             if self.audio_processor:
                 self.audio_processor.set_data_channel(channel)
+            
+            @channel.on("message")
+            def on_message(message):
+                """Handle incoming data channel messages."""
+                try:
+                    import json
+                    data = json.loads(message)
+                    logger.info(f"Data channel message received: {data.get('type')}")
+                    
+                    if data.get('type') == 'text-input':
+                        # Handle text input from client
+                        text = data.get('text', '').strip()
+                        if text and self.audio_processor:
+                            logger.info(f"Processing text input: {text}")
+                            # Process text input like a final transcript
+                            # This bypasses STT and goes directly to LLM -> TTS
+                            asyncio.create_task(
+                                self.audio_processor._process_final_transcript(text)
+                            )
+                        else:
+                            logger.warning(f"Empty text or audio processor not ready")
+                except Exception as e:
+                    logger.error(f"Error handling data channel message: {e}", exc_info=True)
                 
         @self.pc.on("connectionstatechange")
         async def on_connectionstatechange():

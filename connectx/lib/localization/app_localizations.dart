@@ -148,6 +148,13 @@ class AppLocalizations {
     return MessagesEN.tapMicrophoneToStart;
   }
 
+  String get typeMessageHint {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.typeMessageHint;
+    }
+    return MessagesEN.typeMessageHint;
+  }
+
   String get connecting {
     if (locale.languageCode == 'de') {
       return MessagesDE.connecting;
@@ -226,11 +233,11 @@ class AppLocalizations {
     return MessagesEN.navHome;
   }
 
-  String get navSearch {
+  String get navAssistant {
     if (locale.languageCode == 'de') {
-      return MessagesDE.navSearch;
+      return MessagesDE.navAssistant;
     }
-    return MessagesEN.navSearch;
+    return MessagesEN.navAssistant;
   }
 
   String get navFavorites {

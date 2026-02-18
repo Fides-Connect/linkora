@@ -1,18 +1,18 @@
 import 'package:connectx/models/app_types.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
-import 'package:connectx/features/home/presentation/viewmodels/search_tab_view_model.dart';
+import 'package:connectx/features/home/presentation/viewmodels/assistant_tab_view_model.dart';
 
 
 import '../../../../helpers/test_helpers.mocks.dart';
 
 void main() {
-  late SearchTabViewModel viewModel;
+  late AssistantTabViewModel viewModel;
   late MockSpeechService mockSpeechService;
 
   setUp(() {
     mockSpeechService = MockSpeechService();
-    viewModel = SearchTabViewModel(speechService: mockSpeechService);
+    viewModel = AssistantTabViewModel(speechService: mockSpeechService);
   });
 
   test('initialize sets up callbacks and status', () {
