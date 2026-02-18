@@ -167,6 +167,8 @@ class AssistantTabViewModel extends ChangeNotifier {
 
   void _handleIdleTimeout() {
     debugPrint('AssistantTabViewModel: idle timeout — closing session');
+    _idleTimer?.cancel();
+    _idleTimer = null;
     try {
       _speechService.stopSpeech();
     } catch (e) {
