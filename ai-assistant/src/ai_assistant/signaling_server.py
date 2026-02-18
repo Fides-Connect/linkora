@@ -30,7 +30,14 @@ class SignalingServer:
         # Extract user_id, language, and session mode from query parameters
         user_id = request.query.get('user_id')
         language = request.query.get('language', 'de')  # Default to German
-        session_mode = request.query.get('mode', 'voice')  # 'voice' or 'text'
+        raw_mode = request.query.get('mode', 'voice')
+        if raw_mode not in ('voice', 'text'):
+            logger.warning(
+                f"Invalid session mode '{raw_mode}' from {client_ip}; defaulting to 'voice'"
+            )
+            session_mode = 'voice'
+        else:
+            session_mode = raw_mode
         
         if user_id:
             logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (user: {user_id}, language: {language}, mode: {session_mode})")
