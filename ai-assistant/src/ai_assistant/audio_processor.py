@@ -293,6 +293,18 @@ class AudioProcessor:
         await self.output_track.clear_queue()
         self.is_ai_speaking = False
     
+    async def process_text_input(self, text: str):
+        """Public entry point for text-mode input from the data channel.
+
+        Validates the input and delegates to the internal pipeline.
+        Use this instead of calling _process_final_transcript directly.
+        """
+        text = text.strip()
+        if not text:
+            logger.warning("process_text_input called with empty text — ignoring")
+            return
+        await self._process_final_transcript(text)
+
     async def _process_final_transcript(self, transcript: str):
         """Process a final transcript through LLM -> TTS pipeline."""
         try:

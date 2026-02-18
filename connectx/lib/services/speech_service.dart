@@ -70,7 +70,7 @@ class SpeechService {
 
     try {
       // Initialize audio player and WebRTC
-      await _initialize();
+      await _initialize(mode: mode);
 
       // Connect to AI-Assistant server
       await _webrtcService!.connect(mode: mode);
@@ -82,11 +82,13 @@ class SpeechService {
     }
   }
 
-  Future<void> _initialize() async {
-    // Check microphone permission
-    final microphoneRequest = await _permissionWrapper.requestMicrophone();
-    if (!microphoneRequest.isGranted) {
-      throw Exception('Microphone permission denied');
+  Future<void> _initialize({String mode = 'voice'}) async {
+    // Microphone permission is only needed for voice mode
+    if (mode == 'voice') {
+      final microphoneRequest = await _permissionWrapper.requestMicrophone();
+      if (!microphoneRequest.isGranted) {
+        throw Exception('Microphone permission denied');
+      }
     }
 
     // Initialize WebRTC service

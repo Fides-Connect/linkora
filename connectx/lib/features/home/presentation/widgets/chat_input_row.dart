@@ -38,14 +38,20 @@ class _ChatInputRowState extends State<ChatInputRow> {
   void initState() {
     super.initState();
     _focusNode.addListener(_onFocusChange);
+    _textController.addListener(_onTextChanged);
   }
 
   @override
   void dispose() {
     _focusNode.removeListener(_onFocusChange);
     _focusNode.dispose();
+    _textController.removeListener(_onTextChanged);
     _textController.dispose();
     super.dispose();
+  }
+
+  void _onTextChanged() {
+    setState(() {}); // Rebuild so suffixIcon visibility reflects current text
   }
 
   void _onFocusChange() {
@@ -211,8 +217,6 @@ class _ChatInputRowState extends State<ChatInputRow> {
                   ),
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _handleTextSubmit(),
-                  onChanged: (_) =>
-                      setState(() {}), // Rebuild to show/hide send button
                 ),
               ),
             ],

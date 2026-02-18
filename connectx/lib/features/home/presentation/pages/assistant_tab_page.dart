@@ -196,12 +196,12 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                         viewModel.switchToTextMode();
                       }
                     },
-                    onTextSubmit: (text) {
+                    onTextSubmit: (text) async {
                       if (viewModel.conversationState ==
                           ConversationState.idle) {
                         // Start a text session with the message queued for
                         // delivery once the data channel is ready (no race).
-                        viewModel.startChat(
+                        await viewModel.startChat(
                           voiceMode: false,
                           pendingText: text,
                         );
