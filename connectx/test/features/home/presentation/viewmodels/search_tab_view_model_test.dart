@@ -87,20 +87,22 @@ void main() {
   });
 
   test('startChat calls speechService.startSpeech', () async {
-    when(mockSpeechService.startSpeech()).thenAnswer((_) async {});
-    
+    when(mockSpeechService.startSpeech(mode: anyNamed('mode')))
+        .thenAnswer((_) async {});
+
     await viewModel.startChat();
-    
-    verify(mockSpeechService.startSpeech()).called(1);
+
+    verify(mockSpeechService.startSpeech(mode: 'text')).called(1);
     expect(viewModel.error, null);
   });
   
   test('startChat handles errors', () async {
-    when(mockSpeechService.startSpeech()).thenThrow(Exception('Mic error'));
-    
+    when(mockSpeechService.startSpeech(mode: anyNamed('mode')))
+        .thenThrow(Exception('Mic error'));
+
     await viewModel.startChat();
-    
-    verify(mockSpeechService.startSpeech()).called(1);
+
+    verify(mockSpeechService.startSpeech(mode: 'text')).called(1);
     expect(viewModel.error, contains('Mic error'));
     expect(viewModel.conversationState, ConversationState.idle);
   });
