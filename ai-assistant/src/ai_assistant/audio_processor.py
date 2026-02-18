@@ -18,6 +18,7 @@ from .services.audio_frame_converter import AudioFrameConverter
 from .services.debug_recorder import DebugRecorder
 from .services.transcript_processor import TranscriptProcessor
 from .services.tts_playback_manager import TTSPlaybackManager, SentenceParser
+from .services.conversation_service import ConversationStage
 
 logger = logging.getLogger(__name__)
 
@@ -25,15 +26,20 @@ logger = logging.getLogger(__name__)
 class AudioProcessor:
     """Processes audio through the STT -> LLM -> TTS pipeline."""
     
-    def __init__(self, connection_id: str, input_track: MediaStreamTrack, user_id: Optional[str] = None, language: str = 'de'):
+    def __init__(self, connection_id: str, input_track: MediaStreamTrack, user_id: Optional[str] = None, language: str = 'de', skip_greeting: bool = False):
         self.connection_id = connection_id
         self.input_track = input_track
         self.user_id = user_id
         self.language = language
+        self.skip_greeting = skip_greeting
         self.output_track = AudioOutputTrack()
         self.running = False
         self.processing_task = None
         self.stt_task = None
+        
+        # Activity hook: called on every _process_final_transcript invocation
+        # Used by PeerConnectionHandler to reset the idle timer.
+        self.on_activity = None
         
         # Create language-specific AI assistant for this connection
         self.ai_assistant = self._create_language_specific_assistant(language)
@@ -104,8 +110,14 @@ class AudioProcessor:
         self.stt_task = asyncio.create_task(self._continuous_stt())
         logger.info(f"Audio processor started for connection {self.connection_id}")
         
-        # Play greeting message
-        asyncio.create_task(self._play_greeting())
+        if self.skip_greeting:
+            logger.info(f"Skipping greeting for text-initiated session {self.connection_id}")
+            # Advance stage directly to TRIAGE — normally done inside generate_greeting().
+            # Without this, every user message would be processed using the GREETING prompt.
+            self.ai_assistant.conversation_service.set_stage(ConversationStage.TRIAGE)
+        else:
+            # Play greeting message for voice-initiated sessions
+            asyncio.create_task(self._play_greeting())
     
     async def replace_input_track(self, new_track: MediaStreamTrack):
         """Replace the input track during renegotiation (e.g., when Bluetooth device changes)."""
@@ -285,6 +297,10 @@ class AudioProcessor:
         """Process a final transcript through LLM -> TTS pipeline."""
         try:
             logger.info(f"Processing final transcript: '{transcript}'")
+            
+            # Notify the connection handler of activity (resets idle timer)
+            if self.on_activity:
+                self.on_activity()
             
             # Send user transcript to client
             self._send_chat_message(transcript, is_user=True)
