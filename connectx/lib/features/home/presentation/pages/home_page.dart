@@ -37,7 +37,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       const FavoritesTabPage(),
       const MenuTabPage(),
     ];
-    
+
     // Explicitly handle async initialization
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadInitialData();
@@ -61,14 +61,9 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     super.dispose();
   }
 
-  void _onItemTapped(int index) async {
-    // If leaving the Search page (index 1), stop the chat
-    if (_selectedIndex == 1 && index != 1) {
-      final localizations = AppLocalizations.of(context);
-      await _searchViewModel.stopChat(
-          localizations?.tapMicrophoneToStart ?? 'Tap microphone to start');
-    }
-
+  void _onItemTapped(int index) {
+    // Session and chat history are preserved across tab switches.
+    // The session ends only via the stop button, app dispose, or 10-min idle timeout.
     setState(() {
       _selectedIndex = index;
     });
@@ -84,10 +79,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
         ChangeNotifierProvider.value(value: _homeTabViewModel),
       ],
       child: Scaffold(
-        body: IndexedStack(
-          index: _selectedIndex,
-          children: _pages,
-        ),
+        body: IndexedStack(index: _selectedIndex, children: _pages),
         bottomNavigationBar: BottomNavigationBar(
           type: BottomNavigationBarType.fixed, // Needed for 4+ items
           items: <BottomNavigationBarItem>[

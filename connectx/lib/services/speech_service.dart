@@ -11,7 +11,7 @@ import '../models/app_types.dart';
 class SpeechService {
   // WebRTC service for server communication
   WebRTCService? _webrtcService;
-  
+
   // Remote audio renderer for WebRTC audio playback
   RTCVideoRenderer? _remoteRenderer;
 
@@ -28,18 +28,21 @@ class SpeechService {
   OnConnectedCallback? onConnected;
   OnDisconnectedCallback? onDisconnected;
   OnChatMessageCallback? onChatMessage;
+  Function()? onDataChannelOpen;
 
   SpeechService({
     PermissionWrapper? permissionWrapper,
     WebRTCService Function(String)? webRTCServiceFactory,
-  })  : _permissionWrapper = permissionWrapper ?? PermissionWrapper(),
-        _webRTCServiceFactory = webRTCServiceFactory ?? ((lang) => WebRTCService(languageCode: lang));
+  }) : _permissionWrapper = permissionWrapper ?? PermissionWrapper(),
+       _webRTCServiceFactory =
+           webRTCServiceFactory ??
+           ((lang) => WebRTCService(languageCode: lang));
 
   /// Set the language code for the AI Assistant
   void setLanguageCode(String languageCode) {
     _languageCode = languageCode;
   }
-  
+
   /// Check if microphone is currently muted
   bool get isMicrophoneMuted => _webrtcService?.isMicrophoneMuted ?? true;
 
@@ -62,18 +65,17 @@ class SpeechService {
 
   /// Start speech session by connecting to AI-Assistant server via WebRTC
   /// The server will handle audio streaming, STT, LLM, and TTS processing
-  Future<void> startSpeech() async {
+  Future<void> startSpeech({String mode = 'voice'}) async {
     onSpeechStart?.call();
-    
+
     try {
       // Initialize audio player and WebRTC
       await _initialize();
-      
+
       // Connect to AI-Assistant server
-      await _webrtcService!.connect();
-      
+      await _webrtcService!.connect(mode: mode);
+
       debugPrint('SpeechService: Connected to AI-Assistant server');
-      
     } catch (e) {
       onSpeechEnd?.call();
       rethrow;
@@ -95,28 +97,33 @@ class SpeechService {
 
   void _initializeWebRTC() {
     _webrtcService = _webRTCServiceFactory(_languageCode);
-    
+
     // Set up WebRTC callbacks
     _webrtcService!.onConnected = () async {
       debugPrint('SpeechService: WebRTC connected');
       onConnected?.call();
     };
-    
+
     _webrtcService!.onDisconnected = () {
       debugPrint('SpeechService: WebRTC disconnected');
       onDisconnected?.call();
       onSpeechEnd?.call();
     };
-    
+
     _webrtcService!.onChatMessage = (String text, bool isUser, bool isChunk) {
       onChatMessage?.call(text, isUser, isChunk);
     };
-    
+
     _webrtcService!.onRemoteStream = (MediaStream stream) {
       debugPrint('SpeechService: Received remote audio stream');
       Future.microtask(() => _handleRemoteStream(stream));
     };
-    
+
+    _webrtcService!.onDataChannelOpen = () {
+      debugPrint('SpeechService: Data channel open');
+      onDataChannelOpen?.call();
+    };
+
     _webrtcService!.onError = (String error) {
       debugPrint('SpeechService: WebRTC error: $error');
       onSpeechEnd?.call();
@@ -127,7 +134,7 @@ class SpeechService {
   /// This stream contains the processed audio (STT -> LLM -> TTS)
   Future<void> _handleRemoteStream(MediaStream stream) async {
     debugPrint('SpeechService: Setting up remote audio stream playback');
-    
+
     try {
       // Get the audio track
       final audioTracks = stream.getAudioTracks();
@@ -135,30 +142,31 @@ class SpeechService {
         debugPrint('SpeechService: No audio tracks in remote stream');
         return;
       }
-      
+
       final audioTrack = audioTracks[0];
-      debugPrint('SpeechService: Got remote audio track: ${audioTrack.id}, enabled: ${audioTrack.enabled}, muted: ${audioTrack.muted}');
-      
+      debugPrint(
+        'SpeechService: Got remote audio track: ${audioTrack.id}, enabled: ${audioTrack.enabled}, muted: ${audioTrack.muted}',
+      );
+
       // Clean up any existing renderer
       if (_remoteRenderer != null) {
         debugPrint('SpeechService: Disposing existing renderer');
         _remoteRenderer!.srcObject = null;
         await _remoteRenderer!.dispose();
       }
-      
+
       // Create and initialize an RTCVideoRenderer to handle the audio stream
       debugPrint('SpeechService: Creating new RTCVideoRenderer');
       _remoteRenderer = RTCVideoRenderer();
       await _remoteRenderer!.initialize();
       debugPrint('SpeechService: Renderer initialized');
-      
+
       // Set the remote stream to the renderer
       _remoteRenderer!.srcObject = stream;
       debugPrint('SpeechService: Remote stream assigned to renderer');
-      
+
       // Ensure the audio track is enabled and not muted
       audioTrack.enabled = true;
-      
     } catch (e) {
       debugPrint('SpeechService: Error handling remote stream: $e');
       debugPrint('SpeechService: Stack trace: ${StackTrace.current}');
@@ -166,10 +174,10 @@ class SpeechService {
   }
 
   /// Send text message to the AI Assistant via data channel
-  /// 
+  ///
   /// This allows text input to be sent directly to the server,
   /// bypassing the speech-to-text step
-  /// 
+  ///
   /// [text] - The text message to send
   void sendTextMessage(String text) {
     _webrtcService?.sendTextMessage(text);

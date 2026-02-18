@@ -19,25 +19,45 @@ logger = logging.getLogger(__name__)
 class PeerConnectionHandler:
     """Handles WebRTC peer connection for a single client."""
     
-    def __init__(self, connection_id: str, websocket, user_id: str = None, language: str = 'de'):
+    def __init__(self, connection_id: str, websocket, user_id: str = None, language: str = 'de', session_mode: str = 'voice'):
         self.connection_id = connection_id
         self.websocket = websocket
         self.user_id = user_id
         self.language = language
+        self.session_mode = session_mode  # 'voice' or 'text'
         self.pc = RTCPeerConnection()
         self.relay = MediaRelay()
         self.audio_processor = None
         self.track_ready = asyncio.Event()
         self.track_update_ready = asyncio.Event()
         self.track_update_ready.set()  # Initially set - no update pending
+        self._idle_task: asyncio.Task = None  # 10-minute idle timeout task
         
-        logger.info(f"PeerConnectionHandler created for connection {connection_id} with language: {language}")
+        logger.info(f"PeerConnectionHandler created for connection {connection_id} with language: {language}, mode: {session_mode}")
         
         # Set up event handlers
         self._setup_event_handlers()
         
+    # ── Idle timer ────────────────────────────────────────────────────────────
+
+    def _reset_idle_timer(self):
+        """Cancel existing idle task and start a fresh 10-minute countdown."""
+        if self._idle_task and not self._idle_task.done():
+            self._idle_task.cancel()
+        self._idle_task = asyncio.create_task(self._idle_timeout_task())
+
+    async def _idle_timeout_task(self):
+        """Close the connection after 10 minutes of inactivity."""
+        try:
+            await asyncio.sleep(600)  # 10 minutes
+            logger.info(f"Idle timeout reached for connection {self.connection_id} — closing")
+            await self.close()
+        except asyncio.CancelledError:
+            pass  # Normal cancellation when activity is detected
+
+    # ── Event handlers ────────────────────────────────────────────────────────
+
     def _setup_event_handlers(self):
-        """Set up WebRTC event handlers."""
         
         @self.pc.on("icecandidate")
         async def on_icecandidate(candidate):
@@ -68,14 +88,19 @@ class PeerConnectionHandler:
                         connection_id=self.connection_id,
                         input_track=track,
                         user_id=self.user_id,
-                        language=self.language
+                        language=self.language,
+                        skip_greeting=(self.session_mode == 'text'),
                     )
+                    # Wire activity hook so STT transcripts reset the idle timer
+                    self.audio_processor.on_activity = self._reset_idle_timer
                     
                     if hasattr(self, 'data_channel') and self.data_channel:
                         self.audio_processor.set_data_channel(self.data_channel)
 
                     self.track_ready.set()
                     asyncio.create_task(self.audio_processor.start())
+                    # Start idle timer once the audio processor is up
+                    self._reset_idle_timer()
         
         @self.pc.on("datachannel")
         def on_datachannel(channel):
@@ -99,6 +124,8 @@ class PeerConnectionHandler:
                         text = data.get('text', '').strip()
                         if text and self.audio_processor:
                             logger.info(f"Processing text input: {text}")
+                            # Reset idle timer on any user activity
+                            self._reset_idle_timer()
                             # Process text input like a final transcript
                             # This bypasses STT and goes directly to LLM -> TTS
                             asyncio.create_task(
@@ -176,6 +203,10 @@ class PeerConnectionHandler:
     async def close(self):
         """Close peer connection and cleanup resources."""
         logger.info(f"Closing connection {self.connection_id}")
+        
+        # Cancel idle timer
+        if self._idle_task and not self._idle_task.done():
+            self._idle_task.cancel()
         
         if self.audio_processor:
             await self.audio_processor.stop()

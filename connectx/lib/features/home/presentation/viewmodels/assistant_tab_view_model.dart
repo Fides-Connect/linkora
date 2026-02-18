@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:connectx/services/speech_service.dart';
 import 'package:connectx/models/chat_message.dart';
@@ -9,26 +10,47 @@ class AssistantTabViewModel extends ChangeNotifier {
   AssistantTabViewModel({SpeechService? speechService})
     : _speechService = speechService ?? SpeechService();
 
-  // State
+  // ── Conversation state ──────────────────────────────────────────────────
   ConversationState _conversationState = ConversationState.idle;
   final List<ChatMessage> _chatMessages = [];
   String _currentMessage = '';
   String _statusText = '';
   bool _lastMessageWasUser = false;
   bool _areCallbacksSetup = false;
-  String? _error; // For UI to consume (e.g. show dialog)
-  bool _isTextInputMode = false; // Track if user is in text input mode
+  String? _error;
 
-  // Getters
+  // ── Session mode ────────────────────────────────────────────────────────
+  /// true = voice session (mic active); false = text session (mic muted)
+  bool _isVoiceMode = false;
+
+  // ── Connection readiness ─────────────────────────────────────────────────
+  /// Guards against concurrent startChat() calls
+  bool _isStarting = false;
+
+  /// true once the data channel is confirmed open (safe to send text)
+  bool _dataChannelReady = false;
+
+  /// Text message queued before the data channel was ready
+  String? _pendingTextMessage;
+
+  // ── Idle timer ───────────────────────────────────────────────────────────
+  Timer? _idleTimer;
+  static const _idleTimeout = Duration(minutes: 10);
+
+  /// Stored so _handleIdleTimeout can restore the hint text
+  String _resetStatusText = '';
+
+  // ── Getters ──────────────────────────────────────────────────────────────
   ConversationState get conversationState => _conversationState;
   List<ChatMessage> get chatMessages => List.unmodifiable(_chatMessages);
   String get currentMessage => _currentMessage;
   String get statusText => _statusText;
   String? get error => _error;
-  bool get isTextInputMode => _isTextInputMode;
+  bool get isVoiceMode => _isVoiceMode;
 
-  // Initialize
+  // ── Initialisation ───────────────────────────────────────────────────────
   void initialize(String localStatusText, String languageCode) {
+    _resetStatusText = localStatusText;
     if (_statusText.isEmpty ||
         (_chatMessages.isEmpty &&
             _conversationState == ConversationState.idle)) {
@@ -43,18 +65,25 @@ class AssistantTabViewModel extends ChangeNotifier {
     }
   }
 
+  // ── Callback wiring ───────────────────────────────────────────────────────
   void _setupCallbacks() {
     _speechService.onSpeechStart = () {
       _conversationState = ConversationState.connecting;
-      // Mute microphone until connection is fully established (AI speaks greeting)
+      // Always start muted; unmuted per mode once the channel is ready
       _speechService.setMicrophoneMuted(true);
       notifyListeners();
     };
 
+    // Fallback gate: if data channel was already open before onDataChannelOpen fired
     _speechService.onConnected = () {
-      // Clear status text so chat messages appear immediately
       _statusText = '';
+      _onDataChannelReady(); // dedup-safe
       notifyListeners();
+    };
+
+    // Primary gate: data channel explicitly opened
+    _speechService.onDataChannelOpen = () {
+      _onDataChannelReady();
     };
 
     _speechService.onSpeechEnd = () {
@@ -70,27 +99,30 @@ class AssistantTabViewModel extends ChangeNotifier {
     };
 
     _speechService.onChatMessage = (String text, bool isUser, bool isChunk) {
+      // Any activity resets the idle timer
+      _resetIdleTimer();
+
       if (isUser) {
         _currentMessage = text;
         _chatMessages.add(ChatMessage(text: text, isUser: true));
         _lastMessageWasUser = true;
         _conversationState = ConversationState.processing;
       } else {
-        // AI Message
         if (_lastMessageWasUser ||
             _chatMessages.isEmpty ||
             _chatMessages.last.isUser) {
-          // New AI response starting (after user message OR first message OR last was user)
+          // New AI response starting
           _currentMessage = text;
           _chatMessages.add(ChatMessage(text: text, isUser: false));
           _lastMessageWasUser = false;
-          _conversationState = ConversationState.listening; // AI is speaking
-          // Unmute microphone now that AI is responding (which implies connection is ready)
-          _speechService.setMicrophoneMuted(false);
+          _conversationState = ConversationState.listening;
+          // Unmute mic only for voice sessions when AI responds
+          if (_isVoiceMode) {
+            _speechService.setMicrophoneMuted(false);
+          }
         } else {
-          // Appending chunks to existing AI response
+          // Append chunk to last AI message
           _currentMessage += text;
-          // Update the last message in the list
           if (_chatMessages.isNotEmpty && !_chatMessages.last.isUser) {
             _chatMessages[_chatMessages.length - 1] = ChatMessage(
               text: _currentMessage,
@@ -103,24 +135,87 @@ class AssistantTabViewModel extends ChangeNotifier {
     };
   }
 
-  Future<void> startChat() async {
+  // ── Data-channel readiness (dual-gate, dedup) ────────────────────────────
+  void _onDataChannelReady() {
+    if (_dataChannelReady) return; // already handled
+    _dataChannelReady = true;
+
+    // Apply correct mic state for the session mode
+    if (_isVoiceMode) {
+      _speechService.setMicrophoneMuted(false);
+    }
+    // else: stays muted for text sessions
+
+    // Start idle timer once connected
+    _resetIdleTimer();
+
+    // Flush any pending text message
+    final pending = _pendingTextMessage;
+    _pendingTextMessage = null;
+    if (pending != null && pending.trim().isNotEmpty) {
+      _sendTextMessageInternal(pending);
+    }
+
+    notifyListeners();
+  }
+
+  // ── Idle timer ────────────────────────────────────────────────────────────
+  void _resetIdleTimer() {
+    _idleTimer?.cancel();
+    _idleTimer = Timer(_idleTimeout, _handleIdleTimeout);
+  }
+
+  void _handleIdleTimeout() {
+    debugPrint('AssistantTabViewModel: idle timeout — closing session');
     try {
-      await _speechService.startSpeech();
+      _speechService.stopSpeech();
+    } catch (e) {
+      debugPrint('Error stopping speech on idle timeout: $e');
+    }
+    _conversationState = ConversationState.idle;
+    _currentMessage = '';
+    _chatMessages.clear();
+    _statusText = _resetStatusText;
+    _isVoiceMode = false;
+    _dataChannelReady = false;
+    _pendingTextMessage = null;
+    _isStarting = false;
+    notifyListeners();
+  }
+
+  // ── Public session API ────────────────────────────────────────────────────
+
+  /// Start a new session.
+  ///
+  /// [voiceMode] — true: unmute mic after connection; false: keep mic muted.
+  /// [pendingText] — text to send as soon as the data channel is ready.
+  Future<void> startChat({bool voiceMode = false, String? pendingText}) async {
+    if (_isStarting || _conversationState != ConversationState.idle) return;
+    _isStarting = true;
+    _isVoiceMode = voiceMode;
+    _pendingTextMessage = pendingText;
+    _dataChannelReady = false;
+
+    try {
+      await _speechService.startSpeech(mode: voiceMode ? 'voice' : 'text');
     } catch (e) {
       _error = e.toString();
       _statusText = 'Error: $_error';
       _conversationState = ConversationState.idle;
+      _isVoiceMode = false;
+      _pendingTextMessage = null;
       notifyListeners();
+    } finally {
+      _isStarting = false;
     }
   }
 
-  // Method to clear error after UI has shown it
-  void clearError() {
-    _error = null;
-    notifyListeners();
-  }
-
+  /// Stop the session and clear history.
   Future<void> stopChat(String resetStatusText) async {
+    _resetStatusText = resetStatusText;
+    _idleTimer?.cancel();
+    _idleTimer = null;
+
     try {
       _speechService.stopSpeech();
     } catch (e) {
@@ -131,65 +226,69 @@ class AssistantTabViewModel extends ChangeNotifier {
     _currentMessage = '';
     _chatMessages.clear();
     _statusText = resetStatusText;
-    _isTextInputMode = false;
+    _isVoiceMode = false;
+    _dataChannelReady = false;
+    _pendingTextMessage = null;
+    _isStarting = false;
     notifyListeners();
   }
 
-  /// Send text message to AI assistant
-  ///
-  /// This method is called when user submits text input.
-  /// It mutes the microphone and sends the text directly to the server.
+  /// Switch to text mode: mute mic, keep session alive.
+  void switchToTextMode() {
+    if (_isVoiceMode) {
+      _isVoiceMode = false;
+      _speechService.setMicrophoneMuted(true);
+      notifyListeners();
+    }
+  }
+
+  /// Switch to voice mode: unmute mic, keep session alive.
+  void switchToVoiceMode() {
+    if (!_isVoiceMode) {
+      _isVoiceMode = true;
+      _speechService.setMicrophoneMuted(false);
+      notifyListeners();
+    }
+  }
+
+  // ── Text messaging ────────────────────────────────────────────────────────
+
+  /// Send a text message.  Safe to call only when [_dataChannelReady] is true.
   void sendTextMessage(String text) {
     if (text.trim().isEmpty) return;
+    if (!_dataChannelReady) {
+      debugPrint(
+        'AssistantTabViewModel: data channel not ready, dropping message',
+      );
+      return;
+    }
+    _sendTextMessageInternal(text);
+  }
 
+  void _sendTextMessageInternal(String text) {
     try {
-      // Send the text message via speech service
       _speechService.sendTextMessage(text);
-
-      // The message will be echoed back by the server via data channel
-      // and handled by the onChatMessage callback, so we don't add it here
+      _resetIdleTimer();
     } catch (e) {
       _error = e.toString();
       notifyListeners();
     }
   }
 
-  /// Handle text field focus changes
-  ///
-  /// When text field is focused, switch to text input mode and mute microphone.
-  /// When focus is lost, switch back to voice mode if not in an active conversation.
-  void onTextFieldFocusChanged(bool hasFocus) {
-    _isTextInputMode = hasFocus;
-
-    if (hasFocus && _conversationState != ConversationState.idle) {
-      // User wants to type - mute microphone but keep connection active
-      _speechService.setMicrophoneMuted(true);
-    }
-
+  // ── Error handling ────────────────────────────────────────────────────────
+  void clearError() {
+    _error = null;
     notifyListeners();
   }
 
-  /// Handle microphone button tap
-  ///
-  /// When tapped during text input mode, this will unmute the microphone
-  /// and start recording immediately.
-  Future<void> onMicButtonTap() async {
-    if (_conversationState != ConversationState.idle) {
-      // Stop the conversation
-      return;
-    }
-
-    // Starting voice input - unmute microphone and start speech
-    _isTextInputMode = false;
-    _speechService.setMicrophoneMuted(false);
-    notifyListeners();
-  }
-
+  // ── Dispose ───────────────────────────────────────────────────────────────
   @override
   void dispose() {
+    _idleTimer?.cancel();
     _speechService.stopSpeech();
     _speechService.onSpeechStart = null;
     _speechService.onConnected = null;
+    _speechService.onDataChannelOpen = null;
     _speechService.onSpeechEnd = null;
     _speechService.onDisconnected = null;
     _speechService.onChatMessage = null;
