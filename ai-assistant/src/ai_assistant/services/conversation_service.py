@@ -67,6 +67,8 @@ class ConversationService:
             "request_summary": "",
             "providers_found": [],
             "current_provider_index": 0,
+            "user_name": "",
+            "has_open_request": False,
         }
         
         logger.info(f"Conversation service initialized: agent={agent_name}, company={company_name}")
@@ -97,10 +99,14 @@ class ConversationService:
         """
         if stage == ConversationStage.GREETING:
             language_instruction = get_language_instruction(self.language)
+            user_name = self.context.get("user_name", "")
+            has_open_request = "Yes" if self.context.get("has_open_request", False) else "No"
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT).format(
                     agent_name=self.agent_name,
                     company_name=self.company_name,
+                    user_name=user_name,
+                    has_open_request=has_open_request,
                     language_instruction=language_instruction
                 ),
                 MessagesPlaceholder(variable_name="history"),
@@ -279,6 +285,9 @@ class ConversationService:
         try:
             logger.info(f"🤖 generate_greeting called with user_name='{user_name}', has_open_request={has_open_request}")
             self.set_stage(ConversationStage.GREETING)
+            # Persist so create_prompt_for_stage can use them if needed
+            self.context["user_name"] = user_name
+            self.context["has_open_request"] = has_open_request
             
             language_instruction = get_language_instruction(self.language)
             prompt_template = ChatPromptTemplate.from_messages([

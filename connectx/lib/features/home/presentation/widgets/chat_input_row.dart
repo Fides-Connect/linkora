@@ -9,15 +9,19 @@ import '../../../../utils/constants.dart';
 /// - Text focused: Small microphone button (48x48) on left, expanded text field
 class ChatInputRow extends StatefulWidget {
   final ConversationState state;
+  final bool isVoiceMode;
   final VoidCallback onMicTap;
   final Function(String) onTextSubmit;
+  final Function(bool)? onFocusChanged;
   final String hintText;
 
   const ChatInputRow({
     super.key,
     required this.state,
+    required this.isVoiceMode,
     required this.onMicTap,
     required this.onTextSubmit,
+    this.onFocusChanged,
     required this.hintText,
   });
 
@@ -48,6 +52,8 @@ class _ChatInputRowState extends State<ChatInputRow> {
     setState(() {
       _isTextFieldFocused = _focusNode.hasFocus;
     });
+    // Notify the page once per focus change (not per keypress)
+    widget.onFocusChanged?.call(_focusNode.hasFocus);
   }
 
   void _handleTextSubmit() {
@@ -87,7 +93,9 @@ class _ChatInputRowState extends State<ChatInputRow> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: LinearGradient(
-                    colors: widget.state != ConversationState.idle
+                    colors:
+                        (widget.isVoiceMode &&
+                            widget.state != ConversationState.idle)
                         ? [Colors.red.shade400, Colors.red.shade700]
                         : [
                             AppConstants.primaryCyan,
@@ -99,7 +107,8 @@ class _ChatInputRowState extends State<ChatInputRow> {
                   boxShadow: [
                     BoxShadow(
                       color:
-                          (widget.state != ConversationState.idle
+                          (widget.isVoiceMode &&
+                                      widget.state != ConversationState.idle
                                   ? Colors.red
                                   : AppConstants.primaryPurple)
                               .withValues(alpha: AppConstants.shadowOpacity),
@@ -126,8 +135,9 @@ class _ChatInputRowState extends State<ChatInputRow> {
                         ),
                       )
                     : Icon(
-                        widget.state != ConversationState.idle
-                            ? Icons.stop
+                        widget.isVoiceMode &&
+                                widget.state != ConversationState.idle
+                            ? Icons.mic_off
                             : Icons.mic,
                         color: Colors.white,
                         size: micIconSize,

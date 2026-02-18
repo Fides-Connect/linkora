@@ -162,45 +162,60 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                   const SizedBox(height: 20),
                   ChatInputRow(
                     state: viewModel.conversationState,
+                    isVoiceMode: viewModel.isVoiceMode,
                     hintText:
                         AppLocalizations.of(context)?.typeMessageHint ??
                         'Type a message...',
+                    onFocusChanged: (focused) {
+                      // Switching to text mode: mute mic once on focus (not per keypress)
+                      if (focused) viewModel.switchToTextMode();
+                    },
                     onMicTap: () async {
-                      if (viewModel.conversationState !=
-                          ConversationState.idle) {
-                        HapticFeedback.mediumImpact();
-                        final localizations = AppLocalizations.of(context);
-                        await viewModel.stopChat(
+                      final state = viewModel.conversationState;
+                      final localizations = AppLocalizations.of(context);
+                      final resetText =
                           localizations?.tapMicrophoneToStart ??
-                              'Tap microphone to start',
-                        );
-                      } else {
-                        await viewModel.startChat();
+                          'Tap microphone to start';
+
+                      if (state == ConversationState.idle) {
+                        // Start a voice session
+                        await viewModel.startChat(voiceMode: true);
                         if (context.mounted) {
                           final err = viewModel.error;
-                          if (err != null) {
-                            _handleError(err);
-                          }
+                          if (err != null) _handleError(err);
                         }
+                      } else if (state == ConversationState.connecting &&
+                          !viewModel.isVoiceMode) {
+                        // Text session is connecting — ignore tap (no-op guard)
+                        return;
+                      } else if (state == ConversationState.connecting &&
+                          viewModel.isVoiceMode) {
+                        // User aborts a voice session while it's still connecting
+                        HapticFeedback.mediumImpact();
+                        await viewModel.stopChat(resetText);
+                      } else if (!viewModel.isVoiceMode) {
+                        // Active text session → switch to voice (unmute mic)
+                        viewModel.switchToVoiceMode();
+                      } else {
+                        // Active voice session → mute mic, stay in session
+                        viewModel.switchToTextMode();
                       }
                     },
                     onTextSubmit: (text) {
                       if (viewModel.conversationState ==
                           ConversationState.idle) {
-                        // Start conversation first if not already connected
-                        viewModel.startChat().then((_) {
-                          if (context.mounted) {
-                            final err = viewModel.error;
-                            if (err != null) {
-                              _handleError(err);
-                            } else {
-                              // Send text message after connection established
-                              viewModel.sendTextMessage(text);
-                            }
-                          }
-                        });
+                        // Start a text session with the message queued for
+                        // delivery once the data channel is ready (no race).
+                        viewModel.startChat(
+                          voiceMode: false,
+                          pendingText: text,
+                        );
+                        if (context.mounted) {
+                          final err = viewModel.error;
+                          if (err != null) _handleError(err);
+                        }
                       } else {
-                        // Already connected, just send the message
+                        // Session already alive — send immediately
                         viewModel.sendTextMessage(text);
                       }
                     },

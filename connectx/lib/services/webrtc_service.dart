@@ -21,18 +21,24 @@ class WebRTCService {
 
   // Audio track for sending
   MediaStreamTrack? _audioTrack;
-  
+
   // Desired mute state (persisted even when track is not yet created)
   bool _desiredMuteState = true;
-  
+
   // Data Channel
   RTCDataChannel? _dataChannel;
 
   // Audio routing service
   AudioRoutingService? _audioRoutingService;
-  
+
   // Track recreation flag to prevent concurrent calls
   bool _isRecreatingTrack = false;
+
+  // Session mode ('voice' or 'text')
+  String _sessionMode = 'voice';
+
+  // Data channel open tracking (for safe pending-message flush)
+  bool _dataChannelOpenFired = false;
 
   // Callbacks
   Function()? onConnected;
@@ -40,6 +46,7 @@ class WebRTCService {
   Function(MediaStream)? onRemoteStream;
   Function(String)? onError;
   Function(String, bool, bool)? onChatMessage; // text, isUser, isChunk
+  Function()? onDataChannelOpen;
 
   // Configuration
   late final String _serverUrl;
@@ -66,14 +73,15 @@ class WebRTCService {
     AudioRoutingService Function()? audioRoutingServiceFactory,
     String? serverUrl,
     String? languageCode,
-  })  : _webRTCWrapper = webRTCWrapper ?? WebRTCWrapper(),
-        _webSocketFactory =
-            webSocketFactory ?? ((uri) => WebSocketChannel.connect(uri)),
-        _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper(),
-        _audioRoutingServiceFactory = audioRoutingServiceFactory,
-        _languageCode = languageCode ?? 'de' {
+  }) : _webRTCWrapper = webRTCWrapper ?? WebRTCWrapper(),
+       _webSocketFactory =
+           webSocketFactory ?? ((uri) => WebSocketChannel.connect(uri)),
+       _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper(),
+       _audioRoutingServiceFactory = audioRoutingServiceFactory,
+       _languageCode = languageCode ?? 'de' {
     // Load server URL from environment variable
-    final String? rawServer = serverUrl ?? dotenv.env['AI_ASSISTANT_SERVER_URL'];
+    final String? rawServer =
+        serverUrl ?? dotenv.env['AI_ASSISTANT_SERVER_URL'];
     if (rawServer == null || rawServer.isEmpty) {
       throw Exception(
         'AI_ASSISTANT_SERVER_URL not set in .env. Add AI_ASSISTANT_SERVER_URL to .env',
@@ -84,10 +92,10 @@ class WebRTCService {
 
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
-  
+
   /// Get the audio routing service for manual control if needed
   AudioRoutingService? get audioRouting => _audioRoutingService;
-  
+
   /// Check if microphone is currently muted
   /// Returns true if muted or if audio track is not initialized (default state)
   bool get isMicrophoneMuted {
@@ -96,33 +104,38 @@ class WebRTCService {
     }
     return true;
   }
-  
+
   /// Set microphone muted state
-  /// 
+  ///
   /// Enables or disables the audio track to mute/unmute the microphone.
   /// If the audio track is not yet initialized, the desired state is stored
   /// and will be applied when the track is created.
-  /// 
+  ///
   /// [muted] - true to mute the microphone, false to unmute
   void setMicrophoneMuted(bool muted) {
     _desiredMuteState = muted;
     if (_audioTrack != null) {
       _audioTrack!.enabled = !muted;
     } else {
-      debugPrint('WebRTC: Microphone ${muted ? "mute" : "unmute"} requested before track initialized - will apply when ready');
+      debugPrint(
+        'WebRTC: Microphone ${muted ? "mute" : "unmute"} requested before track initialized - will apply when ready',
+      );
     }
   }
 
   /// Initialize and connect to the AI-Assistant server
-  Future<void> connect() async {
+  Future<void> connect({String mode = 'voice'}) async {
     if (_isConnected || _isConnecting) return;
+    _sessionMode = mode;
+    _dataChannelOpenFired = false;
 
     _isConnecting = true;
 
     try {
       // Initialize audio routing service if not on web
       if (!kIsWeb) {
-        _audioRoutingService = _audioRoutingServiceFactory?.call() ?? AudioRoutingService();
+        _audioRoutingService =
+            _audioRoutingServiceFactory?.call() ?? AudioRoutingService();
         _audioRoutingService!.onInputDeviceChanged = _recreateAudioTrack;
         await _audioRoutingService!.initialize();
       }
@@ -145,6 +158,7 @@ class WebRTCService {
     _isConnected = false;
     _isConnecting = false;
     _remoteDescriptionSet = false;
+    _dataChannelOpenFired = false;
     _iceCandidatesQueue.clear();
 
     await _signaling?.sink.close();
@@ -164,11 +178,11 @@ class WebRTCService {
 
     await _peerConnection?.close();
     _peerConnection = null;
-    
+
     _dataChannel?.close();
     _dataChannel = null;
     _audioTrack = null;
-    
+
     _audioRoutingService?.dispose();
     _audioRoutingService = null;
 
@@ -213,7 +227,7 @@ class WebRTCService {
   }
 
   /// Recreate audio track when input device changes (e.g., Bluetooth connects mid-stream)
-  /// 
+  ///
   /// Strategy: Keep old track running until new track is ready to minimize audio gap
   Future<void> _recreateAudioTrack() async {
     if (_peerConnection == null || _localStream == null || _isRecreatingTrack) {
@@ -223,26 +237,28 @@ class WebRTCService {
     try {
       _isRecreatingTrack = true;
       final wasMuted = isMicrophoneMuted;
-      
+
       // Save references to old stream/track for later disposal
       final oldStream = _localStream;
       final oldTrack = _audioTrack;
-      
+
       // Create new stream FIRST, before stopping the old one
       // This minimizes the gap where no audio is being captured
       _localStream = null;
       _audioTrack = null;
-      
+
       try {
         await _createLocalStream(startMuted: wasMuted);
       } catch (createError) {
         // If stream creation fails, restore the old stream/track to keep audio working
         _localStream = oldStream;
         _audioTrack = oldTrack;
-        debugPrint('WebRTC: Failed to create new stream, keeping old stream: $createError');
+        debugPrint(
+          'WebRTC: Failed to create new stream, keeping old stream: $createError',
+        );
         rethrow;
       }
-      
+
       // Now that new track is ready, remove old track from peer connection
       if (oldTrack != null) {
         final senders = await _peerConnection!.getSenders();
@@ -253,21 +269,23 @@ class WebRTCService {
           }
         }
       }
-      
+
       // Dispose old stream and its tracks after new stream is ready
       if (oldStream != null) {
         oldStream.getTracks().forEach((track) => track.stop());
         await oldStream.dispose();
       }
-      
-      if (_audioTrack != null && _localStream != null && _peerConnection != null) {
+
+      if (_audioTrack != null &&
+          _localStream != null &&
+          _peerConnection != null) {
         await _peerConnection!.addTrack(_audioTrack!, _localStream!);
-        
+
         // Restore muted state if track was previously muted
         if (wasMuted) {
           _audioTrack!.enabled = false;
         }
-        
+
         await _renegotiateConnection();
       }
     } catch (e) {
@@ -304,10 +322,13 @@ class WebRTCService {
         throw Exception('No authenticated user found');
       }
 
-      final Uri wsUri = Uri.parse(_serverUrl).replace(queryParameters: {
-        'user_id': userId,
-        'language': _languageCode,
-      });
+      final Uri wsUri = Uri.parse(_serverUrl).replace(
+        queryParameters: {
+          'user_id': userId,
+          'language': _languageCode,
+          'mode': _sessionMode,
+        },
+      );
       _signaling = _webSocketFactory(wsUri);
 
       _signaling!.stream.listen(
@@ -336,10 +357,15 @@ class WebRTCService {
         'sdpSemantics': 'unified-plan',
       };
 
-      _peerConnection = await _webRTCWrapper.createPeerConnection(configuration);
+      _peerConnection = await _webRTCWrapper.createPeerConnection(
+        configuration,
+      );
 
       final dataChannelInit = RTCDataChannelInit()..ordered = true;
-      _dataChannel = await _peerConnection!.createDataChannel('chat', dataChannelInit);
+      _dataChannel = await _peerConnection!.createDataChannel(
+        'chat',
+        dataChannelInit,
+      );
 
       _dataChannel!.onMessage = (RTCDataChannelMessage message) {
         if (message.isBinary) return;
@@ -347,13 +373,22 @@ class WebRTCService {
           final data = jsonDecode(message.text);
           if (data['type'] == 'chat') {
             onChatMessage?.call(
-              data['text'], 
-              data['isUser'], 
-              data['isChunk'] ?? false
+              data['text'],
+              data['isUser'],
+              data['isChunk'] ?? false,
             );
           }
         } catch (e) {
           debugPrint('WebRTC: Data channel message error: $e');
+        }
+      };
+
+      // Primary gate: fire when the data channel explicitly opens
+      _dataChannel!.onDataChannelState = (RTCDataChannelState state) {
+        if (state == RTCDataChannelState.RTCDataChannelOpen &&
+            !_dataChannelOpenFired) {
+          _dataChannelOpenFired = true;
+          onDataChannelOpen?.call();
         }
       };
 
@@ -372,13 +407,22 @@ class WebRTCService {
         });
       };
 
-      _peerConnection!.onConnectionState = (RTCPeerConnectionState state) async {
+      _peerConnection!
+          .onConnectionState = (RTCPeerConnectionState state) async {
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _isConnected = true;
           _isConnecting = false;
           onConnected?.call();
-        } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-            state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
+          // Safety net: if data channel was already open before this callback fired
+          if (_dataChannel?.state == RTCDataChannelState.RTCDataChannelOpen &&
+              !_dataChannelOpenFired) {
+            _dataChannelOpenFired = true;
+            onDataChannelOpen?.call();
+          }
+        } else if (state ==
+                RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
+            state ==
+                RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
             state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
           if (_isConnected || _isConnecting) disconnect();
         }
@@ -474,18 +518,15 @@ class WebRTCService {
   }
 
   /// Send text message to server via data channel
-  /// 
+  ///
   /// This allows sending text input directly to the AI assistant,
   /// bypassing the speech-to-text step while maintaining the conversation
-  /// 
+  ///
   /// [text] - The text message to send
   void sendTextMessage(String text) {
     if (_dataChannel != null) {
       try {
-        final message = jsonEncode({
-          'type': 'text-input',
-          'text': text,
-        });
+        final message = jsonEncode({'type': 'text-input', 'text': text});
         _dataChannel!.send(RTCDataChannelMessage(message));
         debugPrint('WebRTC: Sent text message: $text');
       } catch (e) {
