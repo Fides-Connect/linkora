@@ -123,13 +123,14 @@ class PeerConnectionHandler:
                         # Handle text input from client
                         text = data.get('text', '').strip()
                         if text and self.audio_processor:
-                            logger.info(f"Processing text input: {text}")
+                            preview = text[:50] + '…' if len(text) > 50 else text
+                            logger.debug(f"Processing text input ({len(text)} chars): {preview}")
                             # Reset idle timer on any user activity
                             self._reset_idle_timer()
-                            # Process text input like a final transcript
+                            # Process text input through the public API
                             # This bypasses STT and goes directly to LLM -> TTS
                             asyncio.create_task(
-                                self.audio_processor._process_final_transcript(text)
+                                self.audio_processor.process_text_input(text)
                             )
                         else:
                             logger.warning(f"Empty text or audio processor not ready")

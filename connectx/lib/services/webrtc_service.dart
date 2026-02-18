@@ -126,21 +126,36 @@ class WebRTCService {
   /// Initialize and connect to the AI-Assistant server
   Future<void> connect({String mode = 'voice'}) async {
     if (_isConnected || _isConnecting) return;
-    _sessionMode = mode;
+
+    const _validModes = {'voice', 'text'};
+    final String validatedMode;
+    if (_validModes.contains(mode)) {
+      validatedMode = mode;
+    } else {
+      debugPrint(
+        'WebRTC: Invalid session mode "$mode" provided to connect(); defaulting to "voice".',
+      );
+      validatedMode = 'voice';
+    }
+
+    _sessionMode = validatedMode;
     _dataChannelOpenFired = false;
 
     _isConnecting = true;
 
     try {
-      // Initialize audio routing service if not on web
-      if (!kIsWeb) {
-        _audioRoutingService =
-            _audioRoutingServiceFactory?.call() ?? AudioRoutingService();
-        _audioRoutingService!.onInputDeviceChanged = _recreateAudioTrack;
-        await _audioRoutingService!.initialize();
+      // Voice mode: capture mic audio and send it to the server.
+      // Text mode: receive-only — no local audio track needed.
+      if (validatedMode == 'voice') {
+        if (!kIsWeb) {
+          _audioRoutingService =
+              _audioRoutingServiceFactory?.call() ?? AudioRoutingService();
+          _audioRoutingService!.onInputDeviceChanged = _recreateAudioTrack;
+          await _audioRoutingService!.initialize();
+        }
+        await _createLocalStream();
       }
 
-      await _createLocalStream();
       await _connectSignaling();
       await _createPeerConnection();
       await _createOffer();
@@ -524,17 +539,20 @@ class WebRTCService {
   ///
   /// [text] - The text message to send
   void sendTextMessage(String text) {
-    if (_dataChannel != null) {
+    if (_dataChannel != null &&
+        _dataChannel!.state == RTCDataChannelState.RTCDataChannelOpen) {
       try {
         final message = jsonEncode({'type': 'text-input', 'text': text});
         _dataChannel!.send(RTCDataChannelMessage(message));
-        debugPrint('WebRTC: Sent text message: $text');
+        debugPrint(
+          'WebRTC: Sent text message (${text.length} chars) over data channel',
+        );
       } catch (e) {
         debugPrint('WebRTC: Error sending text message: $e');
         onError?.call('Failed to send text message: $e');
       }
     } else {
-      debugPrint('WebRTC: Data channel not available');
+      debugPrint('WebRTC: Data channel not available or not open');
       onError?.call('Cannot send message: Connection not ready');
     }
   }
