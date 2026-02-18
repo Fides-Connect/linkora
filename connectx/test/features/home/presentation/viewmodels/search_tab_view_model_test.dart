@@ -27,6 +27,7 @@ void main() {
     // We verify the setter was called with ANY value (which should be the closure)
     verify(mockSpeechService.onSpeechStart = any);
     verify(mockSpeechService.onConnected = any);
+    verify(mockSpeechService.onDataChannelOpen = any);
     verify(mockSpeechService.onSpeechEnd = any);
     verify(mockSpeechService.onDisconnected = any);
     verify(mockSpeechService.onChatMessage = any);
@@ -124,6 +125,7 @@ void main() {
     verify(mockSpeechService.stopSpeech()).called(1);
     verify(mockSpeechService.onSpeechStart = null);
     verify(mockSpeechService.onConnected = null);
+    verify(mockSpeechService.onDataChannelOpen = null);
     verify(mockSpeechService.onSpeechEnd = null);
     verify(mockSpeechService.onDisconnected = null);
     verify(mockSpeechService.onChatMessage = null);

@@ -258,8 +258,10 @@ class AssistantTabViewModel extends ChangeNotifier {
     if (text.trim().isEmpty) return;
     if (!_dataChannelReady) {
       debugPrint(
-        'AssistantTabViewModel: data channel not ready, dropping message',
+        'AssistantTabViewModel: data channel not ready, unable to send message',
       );
+      _error = 'Unable to send message: connection is not ready yet.';
+      notifyListeners();
       return;
     }
     _sendTextMessageInternal(text);

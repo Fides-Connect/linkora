@@ -20,7 +20,7 @@ class ConnectXHomePage extends StatefulWidget {
 
 class _ConnectXHomePageState extends State<ConnectXHomePage> {
   int _selectedIndex = 0;
-  late AssistantTabViewModel _searchViewModel;
+  late AssistantTabViewModel _assistantViewModel;
   late HomeTabViewModel _homeTabViewModel;
 
   late final List<Widget> _pages;
@@ -28,7 +28,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   @override
   void initState() {
     super.initState();
-    _searchViewModel = AssistantTabViewModel();
+    _assistantViewModel = AssistantTabViewModel();
     _homeTabViewModel = HomeTabViewModel();
 
     _pages = [
@@ -56,7 +56,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
   @override
   void dispose() {
-    _searchViewModel.dispose();
+    _assistantViewModel.dispose();
     _homeTabViewModel.dispose();
     super.dispose();
   }
@@ -75,7 +75,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
 
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider.value(value: _searchViewModel),
+        ChangeNotifierProvider.value(value: _assistantViewModel),
         ChangeNotifierProvider.value(value: _homeTabViewModel),
       ],
       child: Scaffold(

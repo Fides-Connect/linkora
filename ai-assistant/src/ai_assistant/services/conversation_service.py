@@ -299,7 +299,7 @@ class ConversationService:
                 agent_name=self.agent_name,
                 company_name=self.company_name,
                 user_name=user_name,
-                has_open_request="YES" if has_open_request else "NO",
+                has_open_request="Yes" if has_open_request else "No",
                 language_instruction=language_instruction
             )
             

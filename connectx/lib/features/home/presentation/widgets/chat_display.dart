@@ -68,7 +68,7 @@ class ChatDisplay extends StatelessWidget {
 
             // Check if we need extra spacing (30+ seconds gap from previous message)
             bool needsExtraSpacing = false;
-            if (reversedIndex > 0) {
+            if (index > 0) {
               final previousMessage = messages[reversedIndex - 1];
               if (message.timestamp != null &&
                   previousMessage.timestamp != null) {
