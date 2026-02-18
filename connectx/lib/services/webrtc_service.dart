@@ -472,4 +472,29 @@ class WebRTCService {
   void _sendSignalingMessage(Map<String, dynamic> message) {
     _signaling?.sink.add(json.encode(message));
   }
+
+  /// Send text message to server via data channel
+  /// 
+  /// This allows sending text input directly to the AI assistant,
+  /// bypassing the speech-to-text step while maintaining the conversation
+  /// 
+  /// [text] - The text message to send
+  void sendTextMessage(String text) {
+    if (_dataChannel != null) {
+      try {
+        final message = jsonEncode({
+          'type': 'text-input',
+          'text': text,
+        });
+        _dataChannel!.send(RTCDataChannelMessage(message));
+        debugPrint('WebRTC: Sent text message: $text');
+      } catch (e) {
+        debugPrint('WebRTC: Error sending text message: $e');
+        onError?.call('Failed to send text message: $e');
+      }
+    } else {
+      debugPrint('WebRTC: Data channel not available');
+      onError?.call('Cannot send message: Connection not ready');
+    }
+  }
 }

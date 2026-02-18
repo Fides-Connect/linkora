@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../../../localization/app_localizations.dart';
 import '../../../../utils/constants.dart';
-import '../viewmodels/search_tab_view_model.dart';
+import '../viewmodels/assistant_tab_view_model.dart';
 import '../viewmodels/home_tab_view_model.dart';
 import 'assistant_tab_page.dart';
 
@@ -20,7 +20,7 @@ class ConnectXHomePage extends StatefulWidget {
 
 class _ConnectXHomePageState extends State<ConnectXHomePage> {
   int _selectedIndex = 0;
-  late SearchTabViewModel _searchViewModel;
+  late AssistantTabViewModel _searchViewModel;
   late HomeTabViewModel _homeTabViewModel;
 
   late final List<Widget> _pages;
@@ -28,7 +28,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   @override
   void initState() {
     super.initState();
-    _searchViewModel = SearchTabViewModel();
+    _searchViewModel = AssistantTabViewModel();
     _homeTabViewModel = HomeTabViewModel();
 
     _pages = [
@@ -97,7 +97,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
             ),
             BottomNavigationBarItem(
               icon: const Icon(Icons.auto_awesome),
-              label: localizations?.navSearch ?? 'Assistant',
+              label: localizations?.navAssistant ?? 'Assistant',
             ),
             BottomNavigationBarItem(
               icon: const Icon(Icons.favorite),

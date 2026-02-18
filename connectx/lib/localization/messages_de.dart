@@ -61,6 +61,7 @@ class MessagesDE {
 
   // Main page messages
   static const String tapMicrophoneToStart = 'Tippen Sie auf das Mikrofon, um zu sprechen';
+  static const String typeMessageHint = 'Nachricht eingeben...';
   static const String connecting = 'Verbindung zum KI-Assistenten wird hergestellt...';
   static const String connected = 'Verbunden! KI hört zu und antwortet...';
   static const String disconnected = 'Getrennt';
@@ -76,7 +77,7 @@ class MessagesDE {
 
   // Navigation Bar
   static const String navHome = 'Startseite';
-  static const String navSearch = 'Assistent';
+  static const String navAssistant = 'Assistent';
   static const String navFavorites = 'Favoriten';
   static const String navMenu = 'Menü';
 
