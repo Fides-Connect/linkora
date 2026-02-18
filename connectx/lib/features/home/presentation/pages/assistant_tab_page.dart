@@ -103,17 +103,12 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
 
     // Calculate available height for chat display
     final screenHeight = MediaQuery.of(context).size.height;
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final topPadding = MediaQuery.of(context).padding.top;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     final inputRowHeight =
-        130.0; // 20 (top spacing) + ~80 (input row) + 30 (bottom spacing)
+        130.0; // 20 (top spacing) + ~80 (input row) + 30 (bottom gap in widget)
     final chatHeight =
-        screenHeight -
-        topPadding -
-        bottomPadding -
-        inputRowHeight -
-        bottomInset;
+        screenHeight - topPadding - bottomPadding - inputRowHeight;
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -220,7 +215,6 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                       }
                     },
                   ),
-                  const SizedBox(height: 30),
                 ],
               ),
             ],
