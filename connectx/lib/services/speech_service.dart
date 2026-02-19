@@ -181,7 +181,15 @@ class SpeechService {
   /// bypassing the speech-to-text step
   ///
   /// [text] - The text message to send
-  void sendTextMessage(String text) {
-    _webrtcService?.sendTextMessage(text);
+  /// Returns `true` if the message was dispatched, `false` if the WebRTC service is not ready.
+  bool sendTextMessage(String text) {
+    if (_webrtcService == null) {
+      debugPrint(
+        'SpeechService: Cannot send text message, WebRTC service not initialized',
+      );
+      return false;
+    }
+    _webrtcService!.sendTextMessage(text);
+    return true;
   }
 }
