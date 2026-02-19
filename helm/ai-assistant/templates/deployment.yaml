@@ -33,11 +33,6 @@ spec:
             secretKeyRef:
               name: {{ .Chart.Name }}
               key: gemini-api-key
-        - name: GOOGLE_OAUTH_CLIENT_ID
-          valueFrom:
-            secretKeyRef:
-              name: {{ .Chart.Name }}
-              key: google-oauth-client-id
         - name: WEAVIATE_URL
           value: {{ .Values.env.weaviateUrl | quote }}
         - name: LANGUAGE_CODE_DE

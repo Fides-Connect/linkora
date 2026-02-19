@@ -91,7 +91,6 @@ jobs:
           --set image.tag=${{ github.sha }} \
           --set-file secrets.googleServiceAccountJson=/tmp/google-service-account.json \
           --set secrets.geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
-          --set secrets.googleOauthClientId="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
           --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}"
 
     - name: Cleanup service account file

@@ -262,14 +262,11 @@ GOOGLE_SERVICE_ACCOUNT_JSON_PATH=path/to/service-account.json
 # Gemini AI
 GEMINI_API_KEY=your_gemini_api_key_here
 
-# Authentication (for ConnectX integration)
-GOOGLE_OAUTH_CLIENT_ID=your-oauth-client-id.apps.googleusercontent.com
-
 # Firestore Database Configuration
 # Specify which Firestore database to use (e.g., "development", "production")
 # This database must be created in your Firestore instance beforehand
 # If not set, defaults to "(default)" database
-FIRESTORE_DATABASE_NAME=development
+FIRESTORE_DATABASE_NAME=(default)
 
 # Weaviate Configuration
 # Local Weaviate (self-hosted)

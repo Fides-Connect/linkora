@@ -139,7 +139,23 @@ Installing with `pip install -e .` makes imports like `from ai_assistant.hub_spo
 - Download JSON key file
 - Place in `ai-assistant/` directory
 
-**2. Enable Required APIs:**
+**2. Authenticate with gcloud:**
+
+```bash
+# Authenticate your user account with Google Cloud
+gcloud auth login
+
+# Set up Application Default Credentials for local development
+gcloud auth application-default login
+```
+
+**What these commands do:**
+
+- `gcloud auth login`: Authenticates your personal Google account with the gcloud CLI. This allows you to run gcloud commands and access Google Cloud resources through the command line.
+
+- `gcloud auth application-default login`: Sets up Application Default Credentials (ADC) for your local development environment. This allows applications (like the AI-Assistant) to automatically authenticate with Google Cloud services without explicitly passing credentials.
+
+**3. Enable Required APIs:**
 ```bash
 gcloud services enable speech.googleapis.com
 gcloud services enable texttospeech.googleapis.com

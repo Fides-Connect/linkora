@@ -159,7 +159,6 @@ cd ../helm
 kubectl create secret generic ai-assistant-secrets \
   --from-literal=gemini-api-key=$GEMINI_API_KEY \
   --from-literal=google-service-account="$(cat ../ai-assistant/service-account.json)" \
-  --from-literal=oauth-client-id=$GOOGLE_OAUTH_CLIENT_ID
 
 # Install AI-Assistant
 helm install ai-assistant ./ai-assistant \
@@ -306,7 +305,6 @@ The platform uses automated deployment via GitHub Actions:
 **Required GitHub Secrets:**
 - `GOOGLE_SERVICE_ACCOUNT_JSON`: GCP credentials with GKE/GCR access
 - `GEMINI_API_KEY`: Google Gemini API key
-- `GOOGLE_OAUTH_CLIENT_ID`: OAuth client ID
 - `ADMIN_SECRET_KEY`: Admin interface key
 
 ### Manual Deployment
