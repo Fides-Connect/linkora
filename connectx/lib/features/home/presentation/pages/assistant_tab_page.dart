@@ -105,8 +105,12 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
     final screenHeight = MediaQuery.of(context).size.height;
     final topPadding = MediaQuery.of(context).padding.top;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
-    final inputRowHeight =
-        130.0; // 20 (top spacing) + ~80 (input row) + 30 (bottom gap in widget)
+    // Estimate input row height based on keyboard visibility.
+    // 20 (top spacing) + 80/48 (mic button animates on focus) + 30/10 (bottom gap animates on focus)
+    const double maxInputRowHeight = 20.0 + 80.0 + 30.0; // unfocused
+    const double minInputRowHeight = 20.0 + 48.0 + 10.0; // focused / keyboard visible
+    final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+    final inputRowHeight = keyboardVisible ? minInputRowHeight : maxInputRowHeight;
     final chatHeight =
         screenHeight - topPadding - bottomPadding - inputRowHeight;
 

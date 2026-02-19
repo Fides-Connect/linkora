@@ -271,7 +271,12 @@ class AssistantTabViewModel extends ChangeNotifier {
 
   void _sendTextMessageInternal(String text) {
     try {
-      _speechService.sendTextMessage(text);
+      final sent = _speechService.sendTextMessage(text);
+      if (!sent) {
+        _error = 'Unable to send message: connection is not ready yet.';
+        notifyListeners();
+        return;
+      }
       _resetIdleTimer();
     } catch (e) {
       _error = e.toString();
