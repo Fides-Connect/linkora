@@ -556,4 +556,60 @@ class WebRTCService {
       onError?.call('Cannot send message: Connection not ready');
     }
   }
+
+  /// Send a mode-switch notification to the server over the data channel.
+  ///
+  /// Used to pause/resume the voice pipeline without a WebRTC renegotiation.
+  /// [mode] is either 'text' or 'voice'.
+  void sendModeSwitch(String mode) {
+    if (_dataChannel != null &&
+        _dataChannel!.state == RTCDataChannelState.RTCDataChannelOpen) {
+      try {
+        _dataChannel!.send(
+          RTCDataChannelMessage(
+            jsonEncode({'type': 'mode-switch', 'mode': mode}),
+          ),
+        );
+        debugPrint('WebRTC: Sent mode-switch \u2192 $mode');
+      } catch (e) {
+        debugPrint('WebRTC: Error sending mode-switch: $e');
+      }
+    } else {
+      debugPrint('WebRTC: Cannot send mode-switch \u2014 data channel not open');
+    }
+  }
+
+  /// Upgrade a text session to voice by creating a local audio track and
+  /// renegotiating the peer connection.  No-op if already in voice mode.
+  Future<void> enableVoiceMode() async {
+    if (!_isConnected || _peerConnection == null) {
+      debugPrint('WebRTC: Cannot enable voice mode – not connected');
+      return;
+    }
+    if (_audioTrack != null) {
+      // Resuming a previously paused voice session:
+      // unmute the existing track and tell the server to re-enable TTS.
+      setMicrophoneMuted(false);
+      sendModeSwitch('voice');
+      return;
+    }
+
+    try {
+      if (!kIsWeb) {
+        _audioRoutingService =
+            _audioRoutingServiceFactory?.call() ?? AudioRoutingService();
+        _audioRoutingService!.onInputDeviceChanged = _recreateAudioTrack;
+        await _audioRoutingService!.initialize();
+      }
+      await _createLocalStream(startMuted: false);
+
+      if (_audioTrack != null && _localStream != null) {
+        await _peerConnection!.addTrack(_audioTrack!, _localStream!);
+        await _renegotiateConnection();
+      }
+    } catch (e) {
+      debugPrint('WebRTC: Error enabling voice mode: $e');
+      rethrow;
+    }
+  }
 }
