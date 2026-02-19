@@ -192,4 +192,26 @@ class SpeechService {
     _webrtcService!.sendTextMessage(text);
     return true;
   }
+
+  /// Notify the server of a mode switch over the data channel.
+  ///
+  /// Call when the audio pipeline already exists (voice pause/resume)
+  /// so no WebRTC renegotiation is needed.
+  void notifyModeSwitch(String mode) {
+    _webrtcService?.sendModeSwitch(mode);
+  }
+
+  /// Upgrade the current text session to voice mode by acquiring the
+  /// microphone and renegotiating the WebRTC connection.
+  Future<void> enableVoiceMode() async {
+    if (_webrtcService == null) {
+      debugPrint('SpeechService: Cannot enable voice mode – service not initialized');
+      return;
+    }
+    final microphoneRequest = await _permissionWrapper.requestMicrophone();
+    if (!microphoneRequest.isGranted) {
+      throw Exception('Microphone permission denied');
+    }
+    await _webrtcService!.enableVoiceMode();
+  }
 }

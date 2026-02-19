@@ -193,8 +193,12 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                         HapticFeedback.mediumImpact();
                         await viewModel.stopChat(resetText);
                       } else if (!viewModel.isVoiceMode) {
-                        // Active text session → switch to voice (unmute mic)
-                        viewModel.switchToVoiceMode();
+                        // Active text session → switch to voice (acquire mic + renegotiate)
+                        await viewModel.switchToVoiceMode();
+                        if (context.mounted) {
+                          final err = viewModel.error;
+                          if (err != null) _handleError(err);
+                        }
                       } else {
                         // Active voice session → mute mic, stay in session
                         viewModel.switchToTextMode();

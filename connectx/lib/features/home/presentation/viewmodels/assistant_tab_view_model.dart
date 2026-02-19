@@ -103,8 +103,15 @@ class AssistantTabViewModel extends ChangeNotifier {
       _resetIdleTimer();
 
       if (isUser) {
-        _currentMessage = text;
-        _chatMessages.add(ChatMessage(text: text, isUser: true));
+        // Dedup: if the last message is an optimistically-added user message
+        // with the same text, skip re-adding it (the server echo arrived).
+        final alreadyShown = _chatMessages.isNotEmpty &&
+            _chatMessages.last.isUser &&
+            _chatMessages.last.text == text;
+        if (!alreadyShown) {
+          _currentMessage = text;
+          _chatMessages.add(ChatMessage(text: text, isUser: true));
+        }
         _lastMessageWasUser = true;
         _conversationState = ConversationState.processing;
       } else {
@@ -198,6 +205,16 @@ class AssistantTabViewModel extends ChangeNotifier {
     _pendingTextMessage = pendingText;
     _dataChannelReady = false;
 
+    // Optimistic update: show the user's first message immediately so the UI
+    // responds before the server echo arrives (which may take a few seconds
+    // while WebRTC is being established).
+    if (pendingText != null && pendingText.trim().isNotEmpty) {
+      _chatMessages.add(ChatMessage(text: pendingText.trim(), isUser: true));
+      _lastMessageWasUser = true;
+      _conversationState = ConversationState.connecting;
+      notifyListeners();
+    }
+
     try {
       await _speechService.startSpeech(mode: voiceMode ? 'voice' : 'text');
     } catch (e) {
@@ -235,20 +252,28 @@ class AssistantTabViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Switch to text mode: mute mic, keep session alive.
+  /// Switch to text mode: mute mic and tell the server to pause TTS output.
   void switchToTextMode() {
     if (_isVoiceMode) {
       _isVoiceMode = false;
       _speechService.setMicrophoneMuted(true);
+      // Notify server so ongoing TTS is interrupted immediately.
+      _speechService.notifyModeSwitch('text');
       notifyListeners();
     }
   }
 
-  /// Switch to voice mode: unmute mic, keep session alive.
-  void switchToVoiceMode() {
-    if (!_isVoiceMode) {
-      _isVoiceMode = true;
-      _speechService.setMicrophoneMuted(false);
+  /// Switch to voice mode: acquire microphone and renegotiate the WebRTC
+  /// connection so the server activates the STT + TTS pipeline.
+  Future<void> switchToVoiceMode() async {
+    if (_isVoiceMode) return;
+    _isVoiceMode = true;
+    notifyListeners();
+    try {
+      await _speechService.enableVoiceMode();
+    } catch (e) {
+      _isVoiceMode = false;
+      _error = 'Failed to switch to voice mode: $e';
       notifyListeners();
     }
   }
@@ -266,6 +291,11 @@ class AssistantTabViewModel extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    // Optimistic update: add message immediately so UI feels instant.
+    _chatMessages.add(ChatMessage(text: text.trim(), isUser: true));
+    _lastMessageWasUser = true;
+    _conversationState = ConversationState.processing;
+    notifyListeners();
     _sendTextMessageInternal(text);
   }
 
