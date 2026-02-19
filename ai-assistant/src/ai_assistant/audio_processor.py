@@ -26,12 +26,11 @@ logger = logging.getLogger(__name__)
 class AudioProcessor:
     """Processes audio through the STT -> LLM -> TTS pipeline."""
     
-    def __init__(self, connection_id: str, input_track: MediaStreamTrack, user_id: Optional[str] = None, language: str = 'de', skip_greeting: bool = False):
+    def __init__(self, connection_id: str, input_track: Optional[MediaStreamTrack] = None, user_id: Optional[str] = None, language: str = 'de'):
         self.connection_id = connection_id
         self.input_track = input_track
         self.user_id = user_id
         self.language = language
-        self.skip_greeting = skip_greeting
         self.output_track = AudioOutputTrack()
         self.running = False
         self.processing_task = None
@@ -63,6 +62,17 @@ class AudioProcessor:
         self.is_ai_speaking = False  # True when generating OR playing AI response
         self.interrupt_event = asyncio.Event()
         self.data_channel = None
+
+        # True when session has no audio pipeline (text-only)
+        self._is_text_mode = (input_track is None)
+
+        # True once greeting has been sent (text or voice); prevents duplicate
+        # greetings when connectionstatechange fires on renegotiation.
+        self._greeting_sent = False
+
+        # Tracks the current LLM+TTS response task so it can be cancelled on
+        # interrupt.  Set by _continuous_stt and process_text_input.
+        self._response_task: Optional[asyncio.Task] = None
 
     def _create_language_specific_assistant(self, language: str):
         """Create a language-specific AI assistant instance."""
@@ -106,18 +116,18 @@ class AudioProcessor:
     async def start(self):
         """Start processing audio."""
         self.running = True
-        self.processing_task = asyncio.create_task(self._process_audio())
-        self.stt_task = asyncio.create_task(self._continuous_stt())
-        logger.info(f"Audio processor started for connection {self.connection_id}")
-        
-        if self.skip_greeting:
-            logger.info(f"Skipping greeting for text-initiated session {self.connection_id}")
-            # Advance stage directly to TRIAGE — normally done inside generate_greeting().
-            # Without this, every user message would be processed using the GREETING prompt.
-            self.ai_assistant.conversation_service.set_stage(ConversationStage.TRIAGE)
+        if self.input_track is not None:
+            self.processing_task = asyncio.create_task(self._process_audio())
+            self.stt_task = asyncio.create_task(self._continuous_stt())
         else:
-            # Play greeting message for voice-initiated sessions
+            logger.info(f"Text-only mode — skipping audio processing tasks for connection {self.connection_id}")
+        logger.info(f"Audio processor started for connection {self.connection_id}")
+
+        if not self._is_text_mode:
+            # Voice mode: play greeting audio; greeting also advances stage to TRIAGE.
             asyncio.create_task(self._play_greeting())
+        # Text mode: send_text_greeting() is called from on_connectionstatechange
+        # once the data channel is confirmed open.
     
     async def replace_input_track(self, new_track: MediaStreamTrack):
         """Replace the input track during renegotiation (e.g., when Bluetooth device changes)."""
@@ -155,6 +165,92 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Error replacing input track: {e}", exc_info=True)
     
+    async def send_text_greeting(self):
+        """Generate and send a text-only greeting for text-mode sessions.
+
+        Polls until the data channel is open then generates the greeting
+        text (advancing the stage to TRIAGE) without producing TTS audio.
+        """
+        if self._greeting_sent:
+            # Renegotiation caused connectionstatechange to fire again — skip.
+            logger.info("Text greeting already sent — ignoring duplicate call")
+            return
+        self._greeting_sent = True
+
+        if not self.running:
+            return
+        # Wait up to 5 s for the data channel to open
+        for _ in range(50):
+            if self.data_channel and self.data_channel.readyState == 'open':
+                break
+            await asyncio.sleep(0.1)
+        else:
+            logger.warning(
+                f"Data channel not open after 5 s for connection {self.connection_id} "
+                "— advancing stage without sending greeting"
+            )
+            self.ai_assistant.conversation_service.set_stage(ConversationStage.TRIAGE)
+            return
+
+        try:
+            # get_greeting_audio: returns (text, lazy_audio_stream).
+            # We discard the audio stream — TTS synthesis is lazy and never called.
+            greeting_text, _ = await self.ai_assistant.get_greeting_audio(
+                user_id=self.user_id
+            )
+            logger.info(f"Text greeting: {greeting_text}")
+            self._send_chat_message(greeting_text, is_user=False, is_chunk=False)
+        except Exception as e:
+            logger.error(f"Error sending text greeting: {e}", exc_info=True)
+            self.ai_assistant.conversation_service.set_stage(ConversationStage.TRIAGE)
+
+    async def enable_voice_mode(self, input_track: Optional[MediaStreamTrack] = None) -> 'AudioOutputTrack':
+        """Resume or start voice mode.
+
+        Two cases:
+        - input_track provided and self.input_track is None: fresh text→voice
+          upgrade (pure text session).  Starts STT and audio-frame tasks.
+        - input_track is None (or tasks already running): resuming a previously
+          paused voice session.  Only flips the mode flag — tasks keep running.
+        """
+        logger.info(f"Enabling voice mode for connection {self.connection_id}")
+        self._is_text_mode = False
+
+        if input_track is not None and self.input_track is None:
+            # Pure-text session upgrading to voice: wire up new track, start tasks
+            self.input_track = input_track
+            if self.running:
+                self.processing_task = asyncio.create_task(self._process_audio())
+                self.stt_task = asyncio.create_task(self._continuous_stt())
+            logger.info("Voice tasks started for text→voice upgrade")
+        elif input_track is not None and self.input_track is not None:
+            # Track replacement (e.g. Bluetooth change during resume)
+            await self.replace_input_track(input_track)
+        else:
+            logger.info("Voice mode resumed — existing STT/audio tasks kept as-is")
+
+        self._reset_idle_timer_if_available()
+        return self.output_track
+
+    def _reset_idle_timer_if_available(self):
+        """Reset idle timer if the hook is wired."""
+        if self.on_activity:
+            self.on_activity()
+
+    async def disable_voice_mode(self):
+        """Pause TTS output and mark session as text-only.
+
+        Keeps the STT / audio-frame tasks alive so switching back to voice
+        is instant — no WebRTC renegotiation or task restart required.
+        """
+        if self._is_text_mode:
+            return  # Already paused
+        logger.info(f"Pausing voice mode for connection {self.connection_id}")
+        self._is_text_mode = True
+        # Stop any TTS that is currently playing / being generated
+        await self._trigger_interrupt()
+        logger.info("Voice mode paused — STT/audio tasks remain alive for fast resume")
+
     async def stop(self):
         """Stop processing audio."""
         self.running = False
@@ -183,6 +279,9 @@ class AudioProcessor:
     
     async def _play_greeting(self):
         """Play the AI greeting message when connection starts."""
+        # Mark as sent immediately to prevent any duplicate greeting trigger
+        # from connectionstatechange firing again during renegotiation.
+        self._greeting_sent = True
         try:
             # Set speaking flag to prevent interruption during greeting
             self.is_ai_speaking = True
@@ -194,9 +293,12 @@ class AudioProcessor:
             # Send greeting text to client via data channel
             self._send_chat_message(greeting_text, is_user=False, is_chunk=False)
             
-            # Queue greeting audio for playback
+            # Queue greeting audio for playback; stop early if interrupted
             async for audio_chunk in audio_stream:
                 if audio_chunk:
+                    if self.interrupt_event.is_set():
+                        logger.info("Greeting interrupted by user speech")
+                        break
                     await self.output_track.queue_audio(audio_chunk)
             
             # Clear speaking flag after greeting completes
@@ -274,8 +376,18 @@ class AudioProcessor:
                     
                     if is_final:
                         await self.audio_queue.put(None)
-                        if not self.is_ai_speaking:
-                            await self._process_final_transcript(transcript)
+                        # Interrupt any ongoing AI response before processing
+                        # the new transcript (handles the case where partial
+                        # speech wasn't enough to fire the interrupt but the
+                        # final transcript arrived while AI was still speaking).
+                        if self.is_ai_speaking:
+                            await self._trigger_interrupt()
+                        if transcript and transcript.strip():
+                            # Start response as a background task so STT can
+                            # immediately resume listening for the next interrupt.
+                            self._response_task = asyncio.create_task(
+                                self._process_final_transcript(transcript)
+                            )
                         break
                 
                 await asyncio.sleep(0.1)
@@ -288,22 +400,35 @@ class AudioProcessor:
     async def _trigger_interrupt(self):
         """Trigger an interrupt to stop ongoing AI speech."""
         logger.info("Triggering interrupt")
-        self.interrupt_event.set()
+        # Stop TTS and clear audio output immediately so the user hears silence.
         self.tts_manager.interrupt()
         await self.output_track.clear_queue()
         self.is_ai_speaking = False
+        self.interrupt_event.set()
+        # Cancel the ongoing LLM/TTS response task (fire-and-forget; the task
+        # will clean up via its CancelledError handler).
+        if self._response_task and not self._response_task.done():
+            self._response_task.cancel()
+            self._response_task = None
     
     async def process_text_input(self, text: str):
         """Public entry point for text-mode input from the data channel.
 
-        Validates the input and delegates to the internal pipeline.
-        Use this instead of calling _process_final_transcript directly.
+        Validates the input, interrupts any ongoing response, and starts a new
+        response task.  Use this instead of calling _process_final_transcript
+        directly.
         """
         text = text.strip()
         if not text:
             logger.warning("process_text_input called with empty text — ignoring")
             return
-        await self._process_final_transcript(text)
+        # Interrupt any in-progress response before generating the new one so
+        # the user gets a fresh reply without the old stream still running.
+        if self.is_ai_speaking or (self._response_task and not self._response_task.done()):
+            await self._trigger_interrupt()
+        self._response_task = asyncio.create_task(
+            self._process_final_transcript(text)
+        )
 
     async def _process_final_transcript(self, transcript: str):
         """Process a final transcript through LLM -> TTS pipeline."""
@@ -350,15 +475,27 @@ class AudioProcessor:
                         first_chunk = False
                     yield chunk
             
-            # Process through TTS manager
-            await self.tts_manager.process_llm_stream(tracked_llm_stream())
-            
-            # Monitor playback completion in background
-            asyncio.create_task(self._monitor_playback_completion())
-            
+            if self._is_text_mode:
+                # Text mode: consume the LLM stream (chunks already sent via
+                # data channel inside tracked_llm_stream) without TTS.
+                async for _ in tracked_llm_stream():
+                    pass
+                self.is_ai_speaking = False
+            else:
+                # Voice mode: process through TTS manager
+                await self.tts_manager.process_llm_stream(tracked_llm_stream())
+                # Monitor playback completion in background; it will clear
+                # is_ai_speaking once the audio queue drains.
+                asyncio.create_task(self._monitor_playback_completion())
+
             total_time = asyncio.get_event_loop().time() - start_time
             logger.info(f"✅ Pipeline complete in {total_time:.3f}s")
-            
+
+        except asyncio.CancelledError:
+            # User interrupted — reset state and let the task exit cleanly.
+            logger.info(f"Response generation interrupted for: '{transcript}'")
+            self.is_ai_speaking = False
+            raise
         except Exception as e:
             logger.error(f"Error processing final transcript: {e}", exc_info=True)
             self.is_ai_speaking = False

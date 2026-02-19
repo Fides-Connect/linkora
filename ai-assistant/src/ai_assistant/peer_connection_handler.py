@@ -78,7 +78,15 @@ class PeerConnectionHandler:
             logger.info(f"Received {track.kind} track: {track.id}")
             
             if track.kind == "audio":
-                if self.audio_processor is not None:
+                if self.audio_processor is not None and self.audio_processor._is_text_mode:
+                    # Text → voice upgrade: enable audio pipeline and add output track
+                    logger.info("Text → voice upgrade detected")
+                    output_track = await self.audio_processor.enable_voice_mode(track)
+                    self.pc.addTrack(output_track)
+                    self.audio_processor.on_activity = self._reset_idle_timer
+                    self._reset_idle_timer()
+                    self.track_update_ready.set()
+                elif self.audio_processor is not None:
                     logger.info("Track replacement detected (renegotiation)")
                     # Event was already cleared in handle_offer before setRemoteDescription
                     await self.audio_processor.replace_input_track(track)
@@ -89,7 +97,6 @@ class PeerConnectionHandler:
                         input_track=track,
                         user_id=self.user_id,
                         language=self.language,
-                        skip_greeting=(self.session_mode == 'text'),
                     )
                     # Wire activity hook so STT transcripts reset the idle timer
                     self.audio_processor.on_activity = self._reset_idle_timer
@@ -134,13 +141,34 @@ class PeerConnectionHandler:
                             logger.debug(f"Processing text input ({len(text)} chars): {preview}")
                             # Reset idle timer on any user activity
                             self._reset_idle_timer()
-                            # Process text input through the public API
-                            # This bypasses STT and goes directly to LLM -> TTS
-                            asyncio.create_task(
-                                self.audio_processor.process_text_input(text)
-                            )
+                            if not self.audio_processor._is_text_mode:
+                                # Voice → text: stop STT/TTS then process as text
+                                logger.info("Voice → text switch triggered by text-input")
+                                asyncio.create_task(
+                                    self._handle_voice_to_text_switch(text)
+                                )
+                            else:
+                                asyncio.create_task(
+                                    self.audio_processor.process_text_input(text)
+                                )
                         else:
                             logger.warning("Audio processor not ready — cannot process text input")
+
+                    elif data.get('type') == 'mode-switch':
+                        # Flutter explicitly switched mode without sending a message.
+                        # 'text': pause TTS immediately.
+                        # 'voice': resume TTS/STT (tasks already alive from prior voice session).
+                        mode = data.get('mode', '')
+                        if self.audio_processor:
+                            self._reset_idle_timer()
+                            if mode == 'text' and not self.audio_processor._is_text_mode:
+                                logger.info("mode-switch → text: pausing voice pipeline")
+                                asyncio.create_task(self.audio_processor.disable_voice_mode())
+                            elif mode == 'voice' and self.audio_processor._is_text_mode:
+                                logger.info("mode-switch → voice: resuming voice pipeline")
+                                asyncio.create_task(self.audio_processor.enable_voice_mode())
+                        else:
+                            logger.warning("mode-switch received but audio processor not ready")
                 except Exception as e:
                     logger.error(f"Error handling data channel message: {e}", exc_info=True)
                 
@@ -148,29 +176,68 @@ class PeerConnectionHandler:
         async def on_connectionstatechange():
             """Handle connection state changes."""
             logger.info(f"Connection state: {self.pc.connectionState}")
-            if self.pc.connectionState == "failed":
+            if self.pc.connectionState == "connected":
+                # For text-mode sessions, send the greeting now that the data
+                # channel is open. The greeting also advances stage to TRIAGE.
+                # Guard with _greeting_sent so renegotiation (text→voice
+                # upgrade) does not trigger a second greeting when
+                # connectionstatechange fires "connected" again.
+                if (
+                    self.audio_processor
+                    and self.audio_processor._is_text_mode
+                    and not self.audio_processor._greeting_sent
+                ):
+                    asyncio.create_task(self.audio_processor.send_text_greeting())
+            elif self.pc.connectionState == "failed":
                 await self.close()
     
     async def handle_offer(self, offer: RTCSessionDescription):
         """Handle WebRTC offer from client."""
         try:
-            is_renegotiation = len(self.pc.getSenders()) > 0
-            logger.info(f"Handling {'renegotiation' if is_renegotiation else 'initial'} offer")
-            
+            # Use AudioProcessor presence as renegotiation indicator.
+            # getSenders() is 0 in text mode (server never sends audio there),
+            # so the old len(getSenders()) check was wrong for text→voice upgrades.
+            is_renegotiation = self.audio_processor is not None
+            is_text_to_voice_upgrade = (
+                is_renegotiation and self.audio_processor._is_text_mode
+            )
+            logger.info(
+                f"Handling {'renegotiation' if is_renegotiation else 'initial'} offer"
+                + (" (text→voice upgrade)" if is_text_to_voice_upgrade else "")
+            )
+
             # For renegotiation, clear the event before setRemoteDescription
-            # This ensures we wait for the track replacement to complete
+            # This ensures we wait for the track replacement/upgrade to complete
             if is_renegotiation:
                 self.track_update_ready.clear()
-            
+
             await self.pc.setRemoteDescription(offer)
-            
+
             if is_renegotiation:
                 # Wait for track update to complete (will be set by on_track handler)
                 await asyncio.wait_for(self.track_update_ready.wait(), timeout=5.0)
+            elif self.session_mode == 'text':
+                # Initial text mode: no audio track will arrive — create AudioProcessor directly
+                if self.audio_processor is None:
+                    self.audio_processor = AudioProcessor(
+                        connection_id=self.connection_id,
+                        input_track=None,
+                        user_id=self.user_id,
+                        language=self.language,
+                    )
+                    self.audio_processor.on_activity = self._reset_idle_timer
+                    if hasattr(self, 'data_channel') and self.data_channel:
+                        self.audio_processor.set_data_channel(self.data_channel)
+                    asyncio.create_task(self.audio_processor.start())
+                    self._reset_idle_timer()
+                    logger.info("Text-mode AudioProcessor created without audio track")
             else:
                 await asyncio.wait_for(self.track_ready.wait(), timeout=5.0)
 
-            if not is_renegotiation:
+            # Add output track for initial voice sessions.
+            # For text→voice upgrades the output track is added inside on_track
+            # (via enable_voice_mode) before this point.
+            if not is_renegotiation and self.session_mode != 'text':
                 if self.audio_processor:
                     output_track = self.audio_processor.get_output_track()
                     logger.info(f"Adding output track: {output_track.id}")
@@ -189,6 +256,11 @@ class PeerConnectionHandler:
         except Exception as e:
             logger.error(f"Error handling offer: {e}", exc_info=True)
     
+    async def _handle_voice_to_text_switch(self, text: str):
+        """Disable voice pipeline then process the incoming text message."""
+        await self.audio_processor.disable_voice_mode()
+        await self.audio_processor.process_text_input(text)
+
     async def handle_ice_candidate(self, candidate_data: dict):
         """Handle ICE candidate from client."""
         try:
