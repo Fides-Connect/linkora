@@ -68,7 +68,9 @@ class ChatDisplay extends StatelessWidget {
 
             // Check if we need extra spacing (30+ seconds gap from previous message)
             bool needsExtraSpacing = false;
-            if (index > 0) {
+            if (reversedIndex > 0) {
+              // reversedIndex > 0 guards against the oldest message (reversedIndex == 0)
+              // which has no earlier message to compare against.
               final previousMessage = messages[reversedIndex - 1];
               if (message.timestamp != null &&
                   previousMessage.timestamp != null) {

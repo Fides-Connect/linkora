@@ -122,7 +122,14 @@ class PeerConnectionHandler:
                     if data.get('type') == 'text-input':
                         # Handle text input from client
                         text = data.get('text', '').strip()
-                        if text and self.audio_processor:
+                        if not text:
+                            logger.warning("Empty text input received — ignoring")
+                        elif len(text) > 10_000:
+                            logger.warning(
+                                f"Text input too large ({len(text)} chars) from connection "
+                                f"{self.connection_id} — rejecting"
+                            )
+                        elif self.audio_processor:
                             preview = text[:50] + '…' if len(text) > 50 else text
                             logger.debug(f"Processing text input ({len(text)} chars): {preview}")
                             # Reset idle timer on any user activity
@@ -133,7 +140,7 @@ class PeerConnectionHandler:
                                 self.audio_processor.process_text_input(text)
                             )
                         else:
-                            logger.warning(f"Empty text or audio processor not ready")
+                            logger.warning("Audio processor not ready — cannot process text input")
                 except Exception as e:
                     logger.error(f"Error handling data channel message: {e}", exc_info=True)
                 
