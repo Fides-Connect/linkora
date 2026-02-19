@@ -249,4 +249,77 @@ void main() {
       expect(webRTCService.audioRouting, isNotNull);
     });
   });
+
+  group('WebRTCService sendTextMessage', () {
+    test('calls onError when data channel is null (no prior connect)', () {
+      // Arrange
+      String? capturedError;
+      webRTCService.onError = (e) => capturedError = e;
+
+      // Act — _dataChannel is null since connect() was never called
+      webRTCService.sendTextMessage('hello');
+
+      // Assert
+      expect(capturedError, isNotNull);
+      expect(capturedError, contains('Cannot send message'));
+      verifyNever(mockDataChannel.send(any));
+    });
+
+    test('calls onError when data channel is not open', () async {
+      // Arrange
+      await webRTCService.connect();
+      when(mockDataChannel.state)
+          .thenReturn(RTCDataChannelState.RTCDataChannelConnecting);
+
+      String? capturedError;
+      webRTCService.onError = (e) => capturedError = e;
+
+      // Act
+      webRTCService.sendTextMessage('hello');
+
+      // Assert
+      expect(capturedError, isNotNull);
+      expect(capturedError, contains('Cannot send message'));
+      verifyNever(mockDataChannel.send(any));
+    });
+
+    test('sends JSON-encoded message over open data channel', () async {
+      // Arrange
+      await webRTCService.connect();
+      when(mockDataChannel.state)
+          .thenReturn(RTCDataChannelState.RTCDataChannelOpen);
+      when(mockDataChannel.send(any)).thenAnswer((_) async {});
+
+      bool errorCalled = false;
+      webRTCService.onError = (_) => errorCalled = true;
+
+      // Act
+      webRTCService.sendTextMessage('hello');
+
+      // Assert
+      expect(errorCalled, false);
+      verify(mockDataChannel.send(argThat(predicate<RTCDataChannelMessage>((msg) {
+        final data = jsonDecode(msg.text);
+        return data['type'] == 'text-input' && data['text'] == 'hello';
+      })))).called(1);
+    });
+
+    test('calls onError when data channel send throws an exception', () async {
+      // Arrange
+      await webRTCService.connect();
+      when(mockDataChannel.state)
+          .thenReturn(RTCDataChannelState.RTCDataChannelOpen);
+      when(mockDataChannel.send(any)).thenThrow(Exception('network error'));
+
+      String? capturedError;
+      webRTCService.onError = (e) => capturedError = e;
+
+      // Act
+      webRTCService.sendTextMessage('hello');
+
+      // Assert
+      expect(capturedError, isNotNull);
+      expect(capturedError, contains('Failed to send'));
+    });
+  });
 }
