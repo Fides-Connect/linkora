@@ -157,7 +157,7 @@ cd ../helm
 
 # Install AI-Assistant (GKE Workload Identity handles GCP auth)
 helm install ai-assistant ./ai-assistant \
-  --namespace default \
+  --namespace production \
   --set image.repository=gcr.io/<project-id>/ai-assistant \
   --set image.tag=latest \
   --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"=linkora-rt-service-account-dev@<project-id>.iam.gserviceaccount.com
