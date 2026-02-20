@@ -305,6 +305,87 @@ The platform uses automated deployment via GitHub Actions:
 - `GEMINI_API_KEY`: Google Gemini API key
 - `ADMIN_SECRET_KEY`: Admin interface key
 
+**Required GitHub Repository Variables** (Settings → Secrets and variables → Variables):
+- `GCP_PROJECT_ID`: The GCP project ID (e.g. `linkora-dev`)
+
+### Workload Identity Federation Setup
+
+WIF must be configured in GCP **before** the first deployment. Run the following once per project:
+
+```bash
+PROJECT_ID="linkora-dev"
+GITHUB_ORG="Fides-Connect"
+GITHUB_REPO="Fides"
+SA_NAME="ai-assistant"
+POOL_ID="github-actions-pool"
+PROVIDER_ID="github-actions-provider"
+
+# 1. Create a Workload Identity Pool
+gcloud iam workload-identity-pools create "$POOL_ID" \
+  --project="$PROJECT_ID" \
+  --location="global" \
+  --display-name="GitHub Actions Pool"
+
+# 2. Create the OIDC provider for GitHub
+gcloud iam workload-identity-pools providers create-oidc "$PROVIDER_ID" \
+  --project="$PROJECT_ID" \
+  --location="global" \
+  --workload-identity-pool="$POOL_ID" \
+  --display-name="GitHub Actions Provider" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --issuer-uri="https://token.actions.githubusercontent.com"
+
+# 3. Create the GCP service account
+gcloud iam service-accounts create "$SA_NAME" \
+  --project="$PROJECT_ID" \
+  --display-name="AI Assistant Service Account"
+
+# 4. Grant the SA the roles it needs for CI/CD and runtime
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/container.developer"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.admin"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/cloudspeech.client"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/cloudtts.serviceAgent"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/datastore.user"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/firebase.admin"
+
+# 5. Allow GitHub Actions to impersonate the SA
+gcloud iam service-accounts add-iam-policy-binding \
+  "$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --project="$PROJECT_ID" \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')/locations/global/workloadIdentityPools/$POOL_ID/attribute.repository/$GITHUB_ORG/$GITHUB_REPO"
+
+# 6. Bind the Kubernetes Service Account (KSA) to the GCP SA for pod-level WIF
+gcloud iam service-accounts add-iam-policy-binding \
+  "$SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --project="$PROJECT_ID" \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="serviceAccount:$PROJECT_ID.svc.id.goog[production/$SA_NAME]"
+
+# 7. Retrieve the values for GitHub secrets
+echo "WIF_PROVIDER:"
+gcloud iam workload-identity-pools providers describe "$PROVIDER_ID" \
+  --project="$PROJECT_ID" \
+  --location="global" \
+  --workload-identity-pool="$POOL_ID" \
+  --format="value(name)"
+echo "WIF_SERVICE_ACCOUNT: $SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
+```
+
+Set `WIF_PROVIDER` and `WIF_SERVICE_ACCOUNT` as **GitHub Actions secrets**, and `GCP_PROJECT_ID` as a **GitHub repository variable**.
+
 ### Manual Deployment
 
 ```bash

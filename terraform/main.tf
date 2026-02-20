@@ -16,6 +16,7 @@ terraform {
   # Or create a backend.hcl file with `bucket = "<PROJECT_ID>-tfstate"` and run:
   #   terraform init -backend-config=backend.hcl
   backend "gcs" {
+    # bucket = "<PROJECT_ID>-tfstate"  # Pass at init time: terraform init -backend-config="bucket=<PROJECT_ID>-tfstate"
     prefix = "terraform/state"
   }
 }

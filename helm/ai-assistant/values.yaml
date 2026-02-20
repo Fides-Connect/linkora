@@ -66,8 +66,8 @@ secrets:
 serviceAccount:
   create: true
   name: "ai-assistant"
-  annotations:
-    # Set to your GCP service account email, e.g.:
-    # iam.gke.io/gcp-service-account: ai-assistant@<PROJECT_ID>.iam.gserviceaccount.com
-    # Override at deploy time: --set "serviceAccount.annotations.iam\.gke\.io/gcp-service-account=<SA_EMAIL>"
-    iam.gke.io/gcp-service-account: "ai-assistant@YOUR_PROJECT_ID.iam.gserviceaccount.com"
+  # Workload Identity annotation — required for GCP API access at runtime.
+  # Must be set at deploy time:
+  #   --set "serviceAccount.annotations.iam\.gke\.io/gcp-service-account=ai-assistant@<PROJECT_ID>.iam.gserviceaccount.com"
+  # See docs/helm.md for full WIF setup instructions.
+  annotations: {}
