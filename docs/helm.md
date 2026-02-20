@@ -305,14 +305,10 @@ The platform uses automated deployment via GitHub Actions:
 **Required GitHub Secrets:**
 - `WIF_PROVIDER`: Workload Identity Federation provider resource name
 - `WIF_CI_SERVICE_ACCOUNT`: GCP service account email for CI/CD WIF impersonation (`linkora-ci-service-account-dev@...`)
+- `WIF_RT_SERVICE_ACCOUNT`: Runtime GCP SA email (`linkora-rt-service-account-dev@<project>.iam.gserviceaccount.com`)
+- `GCP_PROJECT_ID`: The GCP project ID (e.g. `linkora-dev`)
 - `GEMINI_API_KEY`: Google Gemini API key
 - `ADMIN_SECRET_KEY`: Admin interface key
-
-> **Note:** Two service accounts are used. `linkora-ci-service-account-dev` is impersonated by GitHub Actions and holds deploy permissions only. `linkora-rt-service-account-dev` is bound to the GKE pod via Workload Identity and holds only the runtime permissions (Speech, TTS, Firestore, Firebase). If you deploy to a namespace other than `production`, re-run step 6 with `NAMESPACE=<your-namespace>`.
-
-**Required GitHub Repository Variables** (Settings → Secrets and variables → Variables):
-- `GCP_PROJECT_ID`: The GCP project ID (e.g. `linkora-dev`)
-- `WIF_RUNTIME_SERVICE_ACCOUNT`: Runtime GCP SA email (`linkora-rt-service-account-dev@<project>.iam.gserviceaccount.com`)
 
 ### Workload Identity Federation Setup
 
@@ -405,7 +401,9 @@ gcloud iam workload-identity-pools providers describe "$PROVIDER_ID" \
 echo "WIF_CI_SERVICE_ACCOUNT: $CI_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
 ```
 
-Set `WIF_PROVIDER` and `WIF_CI_SERVICE_ACCOUNT` as **GitHub Actions secrets**, and `GCP_PROJECT_ID` and `WIF_RUNTIME_SERVICE_ACCOUNT` as **GitHub repository variables**.
+Set all of the above as **GitHub Actions secrets** (Settings → Secrets and variables → Actions).
+
+> **Note:** Two service accounts are used. `linkora-ci-service-account-dev` is impersonated by GitHub Actions and holds deploy permissions only. `linkora-rt-service-account-dev` is bound to the GKE pod via Workload Identity and holds only the runtime permissions (Speech, TTS, Firestore, Firebase). If you deploy to a namespace other than `production`, re-run step 6 with `NAMESPACE=<your-namespace>`.
 
 ### Manual Deployment
 
