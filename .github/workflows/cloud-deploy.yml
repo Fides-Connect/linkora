@@ -32,7 +32,7 @@ jobs:
       uses: google-github-actions/auth@v2
       with:
         workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-        service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+        service_account: ${{ secrets.WIF_CI_SERVICE_ACCOUNT }}
     
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
@@ -92,7 +92,7 @@ jobs:
           --set image.tag=${{ github.sha }} \
           --set secrets.geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
           --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}" \
-          --set "serviceAccount.annotations.iam\.gke\.io/gcp-service-account=${{ secrets.WIF_SERVICE_ACCOUNT }}"
+          --set "serviceAccount.annotations.iam\.gke\.io/gcp-service-account=${{ vars.WIF_RUNTIME_SERVICE_ACCOUNT }}"
 
     - name: Deployment Summary
       run: |

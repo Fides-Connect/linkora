@@ -170,7 +170,7 @@ Platform boundaries (`FirebaseAuth`, `permission_handler`, `flutter_webrtc`) are
 
 \`\`\`bash
 cd connectx
-cp template.env .env   # required: AI_ASSISTANT_SERVER_URL
+cp template.env .env   # required: AI_ASSISTANT_SERVER_URL, GOOGLE_OAUTH_CLIENT_ID
 flutter pub get
 flutter run
 flutter test
