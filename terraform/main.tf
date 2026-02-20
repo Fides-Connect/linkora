@@ -8,9 +8,12 @@ terraform {
     }
   }
   
-  # Partial backend config — pass the bucket at init time:
+  # GCS backend for Terraform state.
+  # NOTE: Terraform backend blocks do not support variable interpolation.
+  # The bucket must exist before running `terraform init`.
+  # Create a bucket named "<project_id>-tfstate" (e.g. "linkora-dev-tfstate") first, then run:
   #   terraform init -backend-config="bucket=<PROJECT_ID>-tfstate"
-  # Or create a backend.hcl file and run:
+  # Or create a backend.hcl file with `bucket = "<PROJECT_ID>-tfstate"` and run:
   #   terraform init -backend-config=backend.hcl
   backend "gcs" {
     prefix = "terraform/state"

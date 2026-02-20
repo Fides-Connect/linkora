@@ -2,8 +2,8 @@
 replicaCount: 1
 
 image:
-  # Override at deploy time: --set image.repository=gcr.io/<PROJECT_ID>/ai-assistant
-  repository: gcr.io/YOUR_PROJECT_ID/ai-assistant
+  # Image repository; set at deploy time via --set image.repository=gcr.io/<PROJECT_ID>/ai-assistant
+  repository: ai-assistant
   pullPolicy: IfNotPresent
   tag: latest
 
@@ -48,13 +48,13 @@ env:
   # Debug: Record received audio to WAV files
   debugRecordAudio: "false"
 
+  # Firestore database name; use "(default)" unless a named database is configured
+  firestoreDatabaseName: "(default)"
+
 # Secrets - these will be created from GitHub Actions
 secrets:
   # Gemini API Key
   geminiApiKey: ""
-  
-  # Google OAuth Client ID
-  googleOauthClientId: ""
   
   # Admin Secret Key
   adminSecretKey: ""
@@ -69,4 +69,5 @@ serviceAccount:
   annotations:
     # Set to your GCP service account email, e.g.:
     # iam.gke.io/gcp-service-account: ai-assistant@<PROJECT_ID>.iam.gserviceaccount.com
-    iam.gke.io/gcp-service-account: ""
+    # Override at deploy time: --set "serviceAccount.annotations.iam\.gke\.io/gcp-service-account=<SA_EMAIL>"
+    iam.gke.io/gcp-service-account: "ai-assistant@YOUR_PROJECT_ID.iam.gserviceaccount.com"

@@ -59,6 +59,8 @@ spec:
             secretKeyRef:
               name: {{ .Chart.Name }}
               key: admin-secret-key
+        - name: FIRESTORE_DATABASE_NAME
+          value: {{ .Values.env.firestoreDatabaseName | default "(default)" | quote }}
         livenessProbe:
           httpGet:
             path: /health
