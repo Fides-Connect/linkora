@@ -391,7 +391,7 @@ gcloud iam service-accounts add-iam-policy-binding \
   --role="roles/iam.workloadIdentityUser" \
   --member="serviceAccount:$PROJECT_ID.svc.id.goog[${NAMESPACE}/${KSA_NAME}]"
 
-# 7. Retrieve the values for GitHub secrets (use the CI service account)
+# 7. Retrieve the values for GitHub secrets
 echo "WIF_PROVIDER:"
 gcloud iam workload-identity-pools providers describe "$PROVIDER_ID" \
   --project="$PROJECT_ID" \
@@ -399,11 +399,18 @@ gcloud iam workload-identity-pools providers describe "$PROVIDER_ID" \
   --workload-identity-pool="$POOL_ID" \
   --format="value(name)"
 echo "WIF_CI_SERVICE_ACCOUNT: $CI_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
+echo "WIF_RT_SERVICE_ACCOUNT: $RUNTIME_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
+echo "GCP_PROJECT_ID: $PROJECT_ID"
 ```
 
 Set all of the above as **GitHub Actions secrets** (Settings → Secrets and variables → Actions).
 
 > **Note:** Two service accounts are used. `linkora-ci-service-account-dev` is impersonated by GitHub Actions and holds deploy permissions only. `linkora-rt-service-account-dev` is bound to the GKE pod via Workload Identity and holds only the runtime permissions (Speech, TTS, Firestore, Firebase). If you deploy to a namespace other than `production`, re-run step 6 with `NAMESPACE=<your-namespace>`.
+>
+> **Secret values to set in GitHub:**
+> - `WIF_CI_SERVICE_ACCOUNT` → full email: `linkora-ci-service-account-dev@<GCP_PROJECT_ID>.iam.gserviceaccount.com`
+> - `WIF_RT_SERVICE_ACCOUNT` → full email: `linkora-rt-service-account-dev@<GCP_PROJECT_ID>.iam.gserviceaccount.com`
+> - `GCP_PROJECT_ID` → your GCP project ID (e.g. `linkora-dev`)
 
 ### Manual Deployment
 
