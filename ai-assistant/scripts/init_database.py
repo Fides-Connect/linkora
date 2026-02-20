@@ -66,7 +66,15 @@ if not firebase_admin._apps:
     try:
         firebase_admin.initialize_app()
     except Exception as e:
-        logger.warning(f"Could not initialize Firebase with ApplicationDefault: {e}")
+        logger.error(
+            "Failed to initialize Firebase app. This script requires Firestore access.\n"
+            "Verify that one of the following is correctly configured:\n"
+            "  - Application Default Credentials are set up (run `gcloud auth application-default login`),\n"
+            "  - GOOGLE_APPLICATION_CREDENTIALS points to a valid service account JSON,\n"
+            "  - or FIRESTORE_EMULATOR_HOST is set if you are using the Firestore emulator.\n"
+            f"Underlying error: {e}"
+        )
+        raise SystemExit(1)
 
 try:
     # Use the database specified in FIRESTORE_DATABASE_NAME env var, or default

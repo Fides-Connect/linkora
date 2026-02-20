@@ -255,11 +255,14 @@ helm install ai-assistant ./ai-assistant \
 
 ### Secrets Management
 
-**Option 1: kubectl create secret (Gemini key only)**
+**Option 1: kubectl create secret**
 ```bash
-kubectl create secret generic ai-assistant-secrets \
-  --from-literal=gemini-api-key=$GEMINI_API_KEY
+kubectl create secret generic ai-assistant \
+  --from-literal=gemini-api-key=$GEMINI_API_KEY \
+  --from-literal=admin-secret-key=$ADMIN_SECRET_KEY
 ```
+
+> The secret must be named `ai-assistant` (matching `.Chart.Name`) and must contain both `gemini-api-key` and `admin-secret-key`.
 
 > GCP authentication (Cloud Speech, TTS, Firebase Admin) uses **GKE Workload Identity** — no JSON key file is needed in Kubernetes.
 

@@ -264,7 +264,9 @@ kubectl get nodes
 variable "project_id" {
   description = "GCP Project ID"
   type        = string
-  default     = "<PROJECT_ID>"
+  # Required — no default. Set via terraform.tfvars or TF_VAR_project_id.
+  # Example terraform.tfvars:
+  #   project_id = "linkora-dev"
 }
 
 variable "region" {

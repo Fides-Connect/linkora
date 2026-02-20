@@ -12,10 +12,10 @@ services:
       # Mount Application Default Credentials for local development.
       # Run `gcloud auth application-default login` first.
       # On Linux/macOS (default below):
-      #   export GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/application_default_credentials.json
+      #   export GOOGLE_APPLICATION_CREDENTIALS=${HOME}/.config/gcloud/application_default_credentials.json
       # On Windows (PowerShell), ADC is typically at:
       #   $env:GOOGLE_APPLICATION_CREDENTIALS="$env:APPDATA\gcloud\application_default_credentials.json"
-      - ${GOOGLE_APPLICATION_CREDENTIALS:-~/.config/gcloud/application_default_credentials.json}:/app/application_default_credentials.json:ro
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}:/app/application_default_credentials.json:ro
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/application_default_credentials.json
       - GEMINI_API_KEY=${GEMINI_API_KEY}
