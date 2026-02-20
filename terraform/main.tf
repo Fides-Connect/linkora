@@ -8,8 +8,11 @@ terraform {
     }
   }
   
+  # Partial backend config — pass the bucket at init time:
+  #   terraform init -backend-config="bucket=<PROJECT_ID>-tfstate"
+  # Or create a backend.hcl file and run:
+  #   terraform init -backend-config=backend.hcl
   backend "gcs" {
-    bucket = "gen-lang-client-0859968110-tfstate"
     prefix = "terraform/state"
   }
 }

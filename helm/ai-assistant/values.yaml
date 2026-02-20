@@ -2,7 +2,8 @@
 replicaCount: 1
 
 image:
-  repository: gcr.io/gen-lang-client-0859968110/ai-assistant
+  # Override at deploy time: --set image.repository=gcr.io/<PROJECT_ID>/ai-assistant
+  repository: gcr.io/YOUR_PROJECT_ID/ai-assistant
   pullPolicy: IfNotPresent
   tag: latest
 
