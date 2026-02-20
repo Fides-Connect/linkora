@@ -9,10 +9,12 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Mount your Google Cloud credentials
-      - ./${GOOGLE_SERVICE_ACCOUNT_JSON_PATH:-service-account.json}:/app/credentials.json:ro
+      # Mount Application Default Credentials for local development.
+      # Run `gcloud auth application-default login` first, then set:
+      #   GOOGLE_APPLICATION_CREDENTIALS=~/.config/gcloud/application_default_credentials.json
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-~/.config/gcloud/application_default_credentials.json}:/app/application_default_credentials.json:ro
     environment:
-      - GOOGLE_SERVICE_ACCOUNT_JSON_PATH=/app/credentials.json
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/application_default_credentials.json
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
       - LANGUAGE_CODE_DE=${LANGUAGE_CODE_DE:-de-DE}

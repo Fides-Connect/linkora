@@ -155,16 +155,12 @@ kill %1
 ```bash
 cd ../helm
 
-# Create secrets
-kubectl create secret generic ai-assistant-secrets \
-  --from-literal=gemini-api-key=$GEMINI_API_KEY \
-  --from-literal=google-service-account="$(cat ../ai-assistant/service-account.json)" \
-
-# Install AI-Assistant
+# Install AI-Assistant (GKE Workload Identity handles GCP auth)
 helm install ai-assistant ./ai-assistant \
   --namespace default \
   --set image.repository=gcr.io/<project-id>/ai-assistant \
-  --set image.tag=latest
+  --set image.tag=latest \
+  --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"=ai-assistant@<project-id>.iam.gserviceaccount.com
 
 # Verify deployment
 kubectl get pods -l app=ai-assistant
@@ -259,12 +255,13 @@ helm install ai-assistant ./ai-assistant \
 
 ### Secrets Management
 
-**Option 1: kubectl create secret**
+**Option 1: kubectl create secret (Gemini key only)**
 ```bash
 kubectl create secret generic ai-assistant-secrets \
-  --from-literal=gemini-api-key=$GEMINI_API_KEY \
-  --from-file=google-service-account=./service-account.json
+  --from-literal=gemini-api-key=$GEMINI_API_KEY
 ```
+
+> GCP authentication (Cloud Speech, TTS, Firebase Admin) uses **GKE Workload Identity** — no JSON key file is needed in Kubernetes.
 
 **Option 2: External Secrets Operator (Recommended for Production)**
 ```yaml
@@ -303,7 +300,8 @@ The platform uses automated deployment via GitHub Actions:
 5. Run smoke tests
 
 **Required GitHub Secrets:**
-- `GOOGLE_SERVICE_ACCOUNT_JSON`: GCP credentials with GKE/GCR access
+- `WIF_PROVIDER`: Workload Identity Federation provider resource name
+- `WIF_SERVICE_ACCOUNT`: GCP service account email for WIF impersonation
 - `GEMINI_API_KEY`: Google Gemini API key
 - `ADMIN_SECRET_KEY`: Admin interface key
 

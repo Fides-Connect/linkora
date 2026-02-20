@@ -452,12 +452,13 @@ terraform force-unlock <lock-id>
 **Never commit:**
 - `terraform.tfvars` (add to `.gitignore`)
 - `*.tfstate` files
-- Service account keys
+- Service account keys (use Workload Identity Federation instead)
 
 **Use environment variables:**
 ```bash
 export TF_VAR_project_id="gen-lang-client-0859968110"
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
+# Authenticate via WIF or user ADC rather than a key file:
+gcloud auth application-default login
 ```
 
 ### Network Security

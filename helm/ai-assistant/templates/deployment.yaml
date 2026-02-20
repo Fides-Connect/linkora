@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: {{ .Chart.Name }}
         app.kubernetes.io/instance: {{ .Chart.Name }}
     spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
       containers:
       - name: {{ .Chart.Name }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -26,8 +27,6 @@ spec:
           containerPort: {{ .Values.env.port }}
           protocol: TCP
         env:
-        - name: GOOGLE_SERVICE_ACCOUNT_JSON_PATH
-          value: {{ .Values.env.googleApplicationCredentials }}
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
@@ -60,10 +59,6 @@ spec:
             secretKeyRef:
               name: {{ .Chart.Name }}
               key: admin-secret-key
-        volumeMounts:
-        - name: google-application-credentials
-          mountPath: /app/secrets
-          readOnly: true
         livenessProbe:
           httpGet:
             path: /health
@@ -82,10 +77,3 @@ spec:
           failureThreshold: 3
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
-      volumes:
-      - name: google-application-credentials
-        secret:
-          secretName: {{ .Chart.Name }}
-          items:
-          - key: google-application-credentials.json
-            path: google-application-credentials.json

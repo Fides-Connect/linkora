@@ -21,9 +21,6 @@ resources:
     memory: 1Gi
 
 env:
-  # Google Cloud Configuration
-  googleApplicationCredentials: "/app/secrets/google-application-credentials.json"
-  
   # Language and Voice Configuration
   languageCodeDe: "de-DE"
   voiceNameDe: "de-DE-Chirp3-HD-Sulafat"
@@ -52,9 +49,6 @@ env:
 
 # Secrets - these will be created from GitHub Actions
 secrets:
-  # GCP Service Account Key (JSON file content)
-  googleServiceAccountJson: ""
-  
   # Gemini API Key
   geminiApiKey: ""
   
@@ -63,3 +57,15 @@ secrets:
   
   # Admin Secret Key
   adminSecretKey: ""
+
+# Kubernetes Service Account for GKE Workload Identity Federation
+# Annotate with the GCP service account that has the required IAM roles.
+# Prerequisite: run `gcloud iam service-accounts add-iam-policy-binding` to bind
+# the KSA to the GCP SA before deploying.
+serviceAccount:
+  create: true
+  name: "ai-assistant"
+  annotations:
+    # Set to your GCP service account email, e.g.:
+    # iam.gke.io/gcp-service-account: ai-assistant@<PROJECT_ID>.iam.gserviceaccount.com
+    iam.gke.io/gcp-service-account: ""

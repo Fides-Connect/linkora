@@ -71,12 +71,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Create Google credentials file
-        working-directory: ai-assistant
-        run: |
-          # Create credentials file from secret
-          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > google-service-account.json
-          echo "GOOGLE_SERVICE_ACCOUNT_JSON_PATH=$(pwd)/google-service-account.json" >> $GITHUB_ENV
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
       - name: Create test environment file
         working-directory: ai-assistant
@@ -84,7 +83,6 @@ jobs:
           cat > .env << EOF
           # Test environment variables
           GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-          GOOGLE_SERVICE_ACCOUNT_JSON_PATH=${{ env.GOOGLE_SERVICE_ACCOUNT_JSON_PATH }}
           LOG_LEVEL=INFO
           HOST=0.0.0.0
           PORT=8080
