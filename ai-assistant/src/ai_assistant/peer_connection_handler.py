@@ -49,15 +49,18 @@ class PeerConnectionHandler:
     def _wire_runtime_fsm(self, audio_processor: "AudioProcessor") -> None:
         """Wire the AgentRuntimeFSM on_state_change callback to emit DataChannel events.
 
-        After this call, every FSM state transition inside the orchestrator will
-        automatically push a ``{"type": "runtime-state", ...}`` message to the
-        Flutter client via the audio processor's DataChannel.
+        After wiring, immediately advances the FSM from BOOTSTRAP through
+        DATA_CHANNEL_WAIT to LISTENING so that Flutter receives the initial
+        runtime-state events and the FSM is ready to accept "final_transcript".
         """
         try:
             fsm = audio_processor.ai_assistant.response_orchestrator.runtime_fsm
             fsm.on_state_change = lambda _old, new: audio_processor._emit_runtime_state(new)
+            # Advance FSM to LISTENING: BOOTSTRAP → DATA_CHANNEL_WAIT → LISTENING
+            fsm.transition("data_channel_wait")
+            fsm.transition("data_channel_opened")
             logger.info(
-                "RuntimeFSM wired to DataChannel for connection %s",
+                "RuntimeFSM wired and advanced to LISTENING for connection %s",
                 self.connection_id,
             )
         except AttributeError as exc:

@@ -20,6 +20,7 @@ from .services.transcript_processor import TranscriptProcessor
 from .services.tts_playback_manager import TTSPlaybackManager, SentenceParser
 from .services.conversation_service import ConversationStage
 from .services.agent_runtime_fsm import AgentRuntimeState
+from .services.ai_conversation_service import AIConversationService
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,12 @@ class AudioProcessor:
             llm_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
             session_id=self.connection_id
         )
+
+        # Wire AIConversationService so every session is persisted to Firestore.
+        # firestore_service is None here (injected later by PeerConnectionHandler
+        # if credentials are available); AIConversationService handles None safely.
+        ai_conv_service = AIConversationService(firestore_service=None)
+        assistant.response_orchestrator.ai_conversation_service = ai_conv_service
         
         logger.info(f"AI Assistant created with language '{language}': {assistant.language_code}, {assistant.voice_name}")
         
@@ -448,11 +455,32 @@ class AudioProcessor:
         Validates the input, interrupts any ongoing response, and starts a new
         response task.  Use this instead of calling _process_final_transcript
         directly.
+
+        Special case: when the conversation is in FINALIZE stage (actively
+        searching for providers), interrupting would lose the search results.
+        Instead, send a bilingual 'please wait' message and return early.
         """
         text = text.strip()
         if not text:
             logger.warning("process_text_input called with empty text — ignoring")
             return
+
+        # Guard: do not interrupt provider search in progress
+        if (
+            self.ai_assistant.conversation_service.get_current_stage()
+            == ConversationStage.FINALIZE
+        ):
+            busy_msg = (
+                "Ich suche noch nach passenden Anbietern – bitte noch einen Moment Geduld! "
+                "I'm still searching for providers – just a moment more, thank you!"
+            )
+            self._send_chat_message(busy_msg, is_user=False)
+            logger.info(
+                "process_text_input: FINALIZE stage — returning busy message, "
+                "not interrupting provider search"
+            )
+            return
+
         # Interrupt any in-progress response before generating the new one so
         # the user gets a fresh reply without the old stream still running.
         if self.is_ai_speaking or (self._response_task and not self._response_task.done()):
@@ -469,6 +497,18 @@ class AudioProcessor:
             # Notify the connection handler of activity (resets idle timer)
             if self.on_activity:
                 self.on_activity()
+
+            # Open AI conversation session on the first turn (idempotent after that)
+            ai_conv = self.ai_assistant.response_orchestrator.ai_conversation_service
+            if ai_conv is not None and self.user_id:
+                await ai_conv.open_session(
+                    user_id=self.user_id,
+                    session_id=self.connection_id,
+                )
+
+            # Advance the runtime FSM: LISTENING → THINKING
+            fsm = self.ai_assistant.response_orchestrator.runtime_fsm
+            fsm.transition("final_transcript")
             
             # Send user transcript to client
             self._send_chat_message(transcript, is_user=True)
@@ -490,7 +530,9 @@ class AudioProcessor:
             llm_start = asyncio.get_event_loop().time()
             
             # Create LLM stream
-            llm_stream = self.ai_assistant.generate_llm_response_stream(transcript)
+            llm_stream = self.ai_assistant.generate_llm_response_stream(
+                transcript, user_id=self.user_id
+            )
             
             # Wrap LLM stream to track first token
             async def tracked_llm_stream():

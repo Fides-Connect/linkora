@@ -315,3 +315,38 @@ class TestRuntimeStateFSMWiring:
         ap = Mock(spec=[])  # no attributes at all
         peer_handler._wire_runtime_fsm(ap)  # must not raise
 
+
+class TestRuntimeFsmAdvancesToListening:
+    """After _wire_runtime_fsm, the FSM must immediately advance to LISTENING."""
+
+    def test_fsm_is_listening_after_wire(self, peer_handler):
+        """_wire_runtime_fsm must advance BOOTSTRAP → DATA_CHANNEL_WAIT → LISTENING."""
+        from ai_assistant.services.agent_runtime_fsm import AgentRuntimeFSM, AgentRuntimeState
+
+        runtime_fsm = AgentRuntimeFSM()
+        ap = Mock()
+        ap.ai_assistant.response_orchestrator.runtime_fsm = runtime_fsm
+        ap._emit_runtime_state = Mock()
+
+        peer_handler._wire_runtime_fsm(ap)
+
+        assert runtime_fsm.current_state == AgentRuntimeState.LISTENING, (
+            f"Expected LISTENING after _wire_runtime_fsm, got {runtime_fsm.current_state}"
+        )
+
+    def test_emit_runtime_state_called_for_each_transition(self, peer_handler):
+        """_wire_runtime_fsm must emit DATA_CHANNEL_WAIT and LISTENING states."""
+        from ai_assistant.services.agent_runtime_fsm import AgentRuntimeFSM, AgentRuntimeState
+
+        runtime_fsm = AgentRuntimeFSM()
+        ap = Mock()
+        ap.ai_assistant.response_orchestrator.runtime_fsm = runtime_fsm
+        emitted = []
+        ap._emit_runtime_state = Mock(side_effect=lambda s: emitted.append(s))
+
+        peer_handler._wire_runtime_fsm(ap)
+
+        assert AgentRuntimeState.DATA_CHANNEL_WAIT in emitted
+        assert AgentRuntimeState.LISTENING in emitted
+
+

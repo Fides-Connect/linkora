@@ -179,14 +179,20 @@ def init_hub_spoke_schema():
 
 
 def get_user_collection():
-    """Get User collection."""
+    """Get User collection, auto-initialising schema if needed."""
     client = HubSpokeConnection.get_client()
+    if not client.collections.exists(USER_COLLECTION):
+        logger.warning("User collection missing — auto-initialising Hub and Spoke schema")
+        init_hub_spoke_schema()
     return client.collections.get(USER_COLLECTION)
 
 
 def get_competence_collection():
-    """Get Competence collection."""
+    """Get Competence collection, auto-initialising schema if needed."""
     client = HubSpokeConnection.get_client()
+    if not client.collections.exists(COMPETENCE_COLLECTION):
+        logger.warning("Competence collection missing — auto-initialising Hub and Spoke schema")
+        init_hub_spoke_schema()
     return client.collections.get(COMPETENCE_COLLECTION)
 
 
