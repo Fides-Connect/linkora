@@ -46,6 +46,26 @@ class PeerConnectionHandler:
             self._idle_task.cancel()
         self._idle_task = asyncio.create_task(self._idle_timeout_task())
 
+    def _wire_runtime_fsm(self, audio_processor: "AudioProcessor") -> None:
+        """Wire the AgentRuntimeFSM on_state_change callback to emit DataChannel events.
+
+        After this call, every FSM state transition inside the orchestrator will
+        automatically push a ``{"type": "runtime-state", ...}`` message to the
+        Flutter client via the audio processor's DataChannel.
+        """
+        try:
+            fsm = audio_processor.ai_assistant.response_orchestrator.runtime_fsm
+            fsm.on_state_change = lambda _old, new: audio_processor._emit_runtime_state(new)
+            logger.info(
+                "RuntimeFSM wired to DataChannel for connection %s",
+                self.connection_id,
+            )
+        except AttributeError as exc:
+            logger.warning(
+                "Could not wire RuntimeFSM for connection %s: %s",
+                self.connection_id, exc,
+            )
+
     async def _idle_timeout_task(self):
         """Close the connection after 10 minutes of inactivity."""
         try:
@@ -100,6 +120,8 @@ class PeerConnectionHandler:
                     )
                     # Wire activity hook so STT transcripts reset the idle timer
                     self.audio_processor.on_activity = self._reset_idle_timer
+                    # Wire FSM state-change → DataChannel runtime-state events
+                    self._wire_runtime_fsm(self.audio_processor)
                     
                     if hasattr(self, 'data_channel') and self.data_channel:
                         self.audio_processor.set_data_channel(self.data_channel)
@@ -226,6 +248,8 @@ class PeerConnectionHandler:
                         language=self.language,
                     )
                     self.audio_processor.on_activity = self._reset_idle_timer
+                    # Wire FSM state-change → DataChannel runtime-state events
+                    self._wire_runtime_fsm(self.audio_processor)
                     if hasattr(self, 'data_channel') and self.data_channel:
                         self.audio_processor.set_data_channel(self.data_channel)
                     asyncio.create_task(self.audio_processor.start())

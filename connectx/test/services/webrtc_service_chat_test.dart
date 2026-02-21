@@ -6,6 +6,7 @@ import 'package:mockito/mockito.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:connectx/services/webrtc_service.dart';
 import 'package:connectx/services/audio_routing_service.dart';
+import 'package:connectx/models/app_types.dart';
 import '../helpers/test_helpers.mocks.dart';
 import '../helpers/test_constants.dart';
 import '../mocks/mock_audio_hardware_controller.dart';
@@ -355,6 +356,82 @@ void main() {
 
       // A new audio stream must be acquired
       verify(mockWebRTCWrapper.getUserMedia(any)).called(1);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // runtime-state DataChannel messages
+  // ══════════════════════════════════════════════════════════════════════════
+
+  group('WebRTCService onRuntimeState', () {
+    test('fires onRuntimeState with parsed state for runtime-state message',
+        () async {
+      final svc = _buildService();
+      addTearDown(svc.disconnect);
+
+      Function(RTCDataChannelMessage)? msgHandler;
+      when(mockDataChannel.onMessage = any).thenAnswer((inv) {
+        msgHandler = inv.positionalArguments[0] as Function(RTCDataChannelMessage)?;
+      });
+
+      AgentRuntimeState? received;
+      svc.onRuntimeState = (state) => received = state;
+
+      await svc.connect(mode: 'voice');
+
+      expect(msgHandler, isNotNull);
+      msgHandler!(RTCDataChannelMessage(
+        '{"type":"runtime-state","runtimeState":"thinking"}',
+      ));
+
+      expect(received, AgentRuntimeState.thinking);
+    });
+
+    test('does not fire onRuntimeState for unknown runtimeState values',
+        () async {
+      final svc = _buildService();
+      addTearDown(svc.disconnect);
+
+      Function(RTCDataChannelMessage)? msgHandler;
+      when(mockDataChannel.onMessage = any).thenAnswer((inv) {
+        msgHandler = inv.positionalArguments[0] as Function(RTCDataChannelMessage)?;
+      });
+
+      bool callbackFired = false;
+      svc.onRuntimeState = (_) => callbackFired = true;
+
+      await svc.connect(mode: 'voice');
+
+      msgHandler!(RTCDataChannelMessage(
+        '{"type":"runtime-state","runtimeState":"not_a_real_state"}',
+      ));
+
+      expect(callbackFired, isFalse);
+    });
+
+    test('does not fire onRuntimeState for chat messages', () async {
+      final svc = _buildService();
+      addTearDown(svc.disconnect);
+
+      Function(RTCDataChannelMessage)? msgHandler;
+      when(mockDataChannel.onMessage = any).thenAnswer((inv) {
+        msgHandler = inv.positionalArguments[0] as Function(RTCDataChannelMessage)?;
+      });
+
+      bool runtimeCalled = false;
+      svc.onRuntimeState = (_) => runtimeCalled = true;
+
+      String? chatText;
+      svc.onChatMessage = (text, isUser, isChunk) => chatText = text;
+
+      await svc.connect(mode: 'voice');
+
+      msgHandler!(RTCDataChannelMessage(
+        '{"type":"chat","text":"hello","isUser":false,"isChunk":false}',
+      ));
+
+      expect(runtimeCalled, isFalse);
+      expect(chatText, 'hello');
     });
   });
 }

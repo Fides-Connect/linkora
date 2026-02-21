@@ -12,6 +12,41 @@ enum ConversationState {
   processing, // Processing user input (thinking)
 }
 
+/// Agent runtime state — mirrors the backend AgentRuntimeState enum.
+/// Sent over the DataChannel as {"type": "runtime-state", "runtimeState": "<value>"}.
+enum AgentRuntimeState {
+  bootstrap,
+  dataChannelWait,
+  listening,
+  thinking,
+  llmStreaming,
+  toolExecuting,
+  speaking,
+  interrupting,
+  modeSwitch,
+  errorRetryable,
+  terminated;
+
+  /// Parse a snake_case / kebab-case string from the backend into the enum value.
+  /// Returns null for unknown values so callers can decide how to handle them.
+  static AgentRuntimeState? tryParse(String raw) {
+    const map = {
+      'bootstrap': AgentRuntimeState.bootstrap,
+      'data_channel_wait': AgentRuntimeState.dataChannelWait,
+      'listening': AgentRuntimeState.listening,
+      'thinking': AgentRuntimeState.thinking,
+      'llm_streaming': AgentRuntimeState.llmStreaming,
+      'tool_executing': AgentRuntimeState.toolExecuting,
+      'speaking': AgentRuntimeState.speaking,
+      'interrupting': AgentRuntimeState.interrupting,
+      'mode_switch': AgentRuntimeState.modeSwitch,
+      'error_retryable': AgentRuntimeState.errorRetryable,
+      'terminated': AgentRuntimeState.terminated,
+    };
+    return map[raw];
+  }
+}
+
 // ============================================================================
 // Callback Type Definitions
 // ============================================================================
@@ -31,6 +66,9 @@ typedef OnDisconnectedCallback = void Function();
 /// Callback for when a chat message is received
 /// Parameters: text, isUser, isChunk
 typedef OnChatMessageCallback = void Function(String text, bool isUser, bool isChunk);
+
+/// Callback for when the backend runtime FSM changes state.
+typedef OnRuntimeStateCallback = void Function(AgentRuntimeState state);
 
 /// Callback for locale changes
 typedef OnLocaleChangeCallback = void Function(String languageCode);
