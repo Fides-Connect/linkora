@@ -140,6 +140,33 @@ class AssistantTabViewModel extends ChangeNotifier {
       }
       notifyListeners();
     };
+
+    _speechService.onRuntimeState = (AgentRuntimeState state) {
+      _resetIdleTimer();
+      _conversationState = _runtimeStateToConversationState(state);
+      notifyListeners();
+    };
+  }
+
+  /// Maps a backend [AgentRuntimeState] to the UI [ConversationState].
+  ConversationState _runtimeStateToConversationState(AgentRuntimeState state) {
+    switch (state) {
+      case AgentRuntimeState.bootstrap:
+      case AgentRuntimeState.dataChannelWait:
+        return ConversationState.connecting;
+      case AgentRuntimeState.thinking:
+      case AgentRuntimeState.llmStreaming:
+      case AgentRuntimeState.toolExecuting:
+        return ConversationState.processing;
+      case AgentRuntimeState.listening:
+      case AgentRuntimeState.speaking:
+      case AgentRuntimeState.interrupting:
+      case AgentRuntimeState.modeSwitch:
+        return ConversationState.listening;
+      case AgentRuntimeState.errorRetryable:
+      case AgentRuntimeState.terminated:
+        return ConversationState.idle;
+    }
   }
 
   // ── Data-channel readiness (dual-gate, dedup) ────────────────────────────

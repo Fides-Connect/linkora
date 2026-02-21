@@ -7,6 +7,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'wrappers.dart';
 import 'audio_routing_service.dart';
+import '../models/app_types.dart';
 
 /// WebRTC service for connecting to the AI-Assistant server
 /// Handles WebSocket signaling and WebRTC peer connection
@@ -47,6 +48,7 @@ class WebRTCService {
   Function(String)? onError;
   Function(String, bool, bool)? onChatMessage; // text, isUser, isChunk
   Function()? onDataChannelOpen;
+  OnRuntimeStateCallback? onRuntimeState;
 
   // Configuration
   late final String _serverUrl;
@@ -392,6 +394,12 @@ class WebRTCService {
               data['isUser'],
               data['isChunk'] ?? false,
             );
+          } else if (data['type'] == 'runtime-state') {
+            final raw = data['runtimeState'] as String?;
+            if (raw != null) {
+              final state = AgentRuntimeState.tryParse(raw);
+              if (state != null) onRuntimeState?.call(state);
+            }
           }
         } catch (e) {
           debugPrint('WebRTC: Data channel message error: $e');

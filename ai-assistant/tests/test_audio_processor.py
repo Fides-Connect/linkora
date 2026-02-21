@@ -365,44 +365,128 @@ class TestAudioQueue:
 
 
 class TestGreetingPlayback:
-    """Test greeting playback functionality."""
-    
+    """Test greeting playback functionality — kept for backward compat until Phase 8."""
+
     @pytest.mark.asyncio
     async def test_play_greeting(self, audio_processor, mock_ai_assistant):
         """Test playing greeting message."""
-        # Mock output track
         audio_processor.output_track.queue_audio = AsyncMock()
-        
-        # Mock the get_greeting_audio method on the actual ai_assistant created by AudioProcessor
         audio_processor.ai_assistant.get_greeting_audio = AsyncMock(
             return_value=("Hello!", async_audio_generator())
         )
-        
+
         await audio_processor._play_greeting()
-        
-        # Verify greeting was requested
+
         audio_processor.ai_assistant.get_greeting_audio.assert_called_once()
-        
-        # Verify audio was queued
         assert audio_processor.output_track.queue_audio.call_count > 0
-    
+
     @pytest.mark.asyncio
     async def test_play_greeting_sets_speaking_flag(self, audio_processor, mock_ai_assistant):
-        """Test that greeting playback sets speaking flag."""
+        """Test that greeting playback clears the speaking flag on completion."""
         audio_processor.output_track.queue_audio = AsyncMock()
-        
-        # Capture speaking flag state during greeting
-        speaking_states = []
-        
-        original_queue = audio_processor.output_track.queue_audio
-        
-        async def capture_speaking(*args):
-            speaking_states.append(audio_processor.is_ai_speaking)
-            await original_queue(*args)
-        
-        audio_processor.output_track.queue_audio = capture_speaking
-        
+
         await audio_processor._play_greeting()
-        
-        # Flag should be False after greeting completes
+
         assert audio_processor.is_ai_speaking is False
+
+
+class TestTranscriptCallback:
+    """Test on_transcript_final composability hook."""
+
+    def test_on_transcript_final_is_initially_none(self, audio_processor):
+        assert audio_processor.on_transcript_final is None
+
+    def test_on_transcript_final_can_be_set(self, audio_processor):
+        async def my_callback(text: str):
+            pass
+
+        audio_processor.on_transcript_final = my_callback
+        assert audio_processor.on_transcript_final is my_callback
+
+    @pytest.mark.asyncio
+    async def test_on_transcript_final_callback_used_when_set(self, audio_processor):
+        """When on_transcript_final is set, _continuous_stt calls it for final transcripts."""
+        called_with = []
+
+        async def capture(text: str):
+            called_with.append(text)
+
+        audio_processor.on_transcript_final = capture
+
+        # Simulate one STT cycle producing a final transcript
+        async def fake_audio_stream(_):
+            yield "hello world", True  # (transcript, is_final)
+
+        audio_processor.transcript_processor.process_audio_stream = Mock(
+            return_value=fake_audio_stream(None)
+        )
+        audio_processor.running = True
+        stt_task = asyncio.create_task(audio_processor._continuous_stt())
+        await asyncio.sleep(0.05)
+        audio_processor.running = False
+        stt_task.cancel()
+        try:
+            await stt_task
+        except asyncio.CancelledError:
+            pass
+
+        assert called_with == ["hello world"]
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_process_final_transcript_when_callback_is_none(
+        self, audio_processor
+    ):
+        """When on_transcript_final is None, _continuous_stt falls back to _process_final_transcript."""
+        audio_processor.on_transcript_final = None
+
+        pft_called = []
+
+        async def fake_pft(text: str):
+            pft_called.append(text)
+
+        async def fake_audio_stream(_):
+            yield "fallback text", True
+
+        audio_processor.transcript_processor.process_audio_stream = Mock(
+            return_value=fake_audio_stream(None)
+        )
+        audio_processor.running = True
+        with patch.object(audio_processor, "_process_final_transcript", side_effect=fake_pft):
+            stt_task = asyncio.create_task(audio_processor._continuous_stt())
+            await asyncio.sleep(0.05)
+            audio_processor.running = False
+            stt_task.cancel()
+            try:
+                await stt_task
+            except asyncio.CancelledError:
+                pass
+
+        assert pft_called == ["fallback text"]
+
+
+class TestRuntimeStateEmission:
+    """Test _emit_runtime_state DataChannel notification."""
+
+    def test_emit_runtime_state_sends_data_channel_message(self, audio_processor):
+        from ai_assistant.services.agent_runtime_fsm import AgentRuntimeState
+
+        dc = Mock()
+        dc.readyState = "open"
+        sent = []
+        dc.send = Mock(side_effect=lambda m: sent.append(m))
+        audio_processor.data_channel = dc
+
+        audio_processor._emit_runtime_state(AgentRuntimeState.LISTENING)
+
+        assert len(sent) == 1
+        import json
+        msg = json.loads(sent[0])
+        assert msg["type"] == "runtime-state"
+        assert msg["runtimeState"] == AgentRuntimeState.LISTENING.value
+
+    def test_emit_runtime_state_no_data_channel_does_not_crash(self, audio_processor):
+        from ai_assistant.services.agent_runtime_fsm import AgentRuntimeState
+
+        audio_processor.data_channel = None
+        # Must not raise
+        audio_processor._emit_runtime_state(AgentRuntimeState.THINKING)
