@@ -119,20 +119,34 @@ class AIAssistant:
         
         logger.info("AI Assistant initialized with service-oriented architecture")
     
-    async def generate_llm_response_stream(self, prompt: str) -> AsyncIterator[str]:
+    async def generate_llm_response_stream(
+        self, prompt: str, user_id: Optional[str] = None
+    ) -> AsyncIterator[str]:
         """
         Generate streaming response using LLM.
         Delegates to ResponseOrchestrator for stage-aware conversation flow.
-        
+
         Args:
             prompt: User input prompt
-        
+            user_id: Authenticated user ID — forwarded to tools that need it
+
         Yields:
             Response chunks as strings
         """
+        from .services.agent_tools import ToolCapability
+        context = {
+            "user_id": user_id or "",
+            "user_capabilities": [
+                ToolCapability("providers", "read"),
+                ToolCapability("favorites", "read"),
+                ToolCapability("service_requests", "read"),
+                ToolCapability("service_requests", "write"),
+            ],
+            "data_provider": self.data_provider,
+            "firestore_service": None,
+        }
         async for chunk in self.response_orchestrator.generate_response_stream(
-            prompt,
-            self.session_id
+            prompt, self.session_id, context=context
         ):
             yield chunk
     

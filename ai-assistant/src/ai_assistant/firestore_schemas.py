@@ -4,7 +4,7 @@ All schemas use ConfigDict with extra='forbid' to reject unknown fields.
 Timestamps (created_at, updated_at) are auto-injected and not part of validation.
 """
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
 
@@ -470,3 +470,62 @@ class AvailabilityTimeUpdateSchema(BaseModel):
     saturday_time_ranges: Optional[List[dict]] = None
     sunday_time_ranges: Optional[List[dict]] = None
     absence_days: Optional[List[str]] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI Conversation schemas
+# ─────────────────────────────────────────────────────────────────────────────
+
+_AI_CONV_TTL_DAYS = 30
+
+
+class AIConversationSchema(BaseModel):
+    """Schema for AIConversation documents in the 'ai_conversations' collection.
+
+    TTL is enforced via the ``expires_at`` field (Firestore TTL policy).
+    The document ID is the WebRTC session_id.
+    """
+    model_config = ConfigDict(extra='ignore')
+
+    user_id: str = Field(..., min_length=1)
+    session_id: str = Field(..., min_length=1)
+    topic_title: str = Field(default="", max_length=300)
+    final_stage: Optional[str] = Field(default=None)
+    first_message_at: Optional[datetime] = Field(default=None)
+    last_message_at: Optional[datetime] = Field(default=None)
+    message_count: int = Field(default=0, ge=0)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    expires_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc) + timedelta(days=_AI_CONV_TTL_DAYS)
+    )
+
+
+class AIConversationUpdateSchema(BaseModel):
+    """Partial-update schema for AIConversation documents."""
+    model_config = ConfigDict(extra='ignore')
+
+    topic_title: Optional[str] = Field(default=None, max_length=300)
+    final_stage: Optional[str] = Field(default=None)
+    first_message_at: Optional[datetime] = Field(default=None)
+    last_message_at: Optional[datetime] = Field(default=None)
+    message_count: Optional[int] = Field(default=None, ge=0)
+    updated_at: Optional[datetime] = Field(default=None)
+
+
+class AIConversationMessageSchema(BaseModel):
+    """Schema for messages in the 'messages' subcollection of an AIConversation."""
+    model_config = ConfigDict(extra='ignore')
+
+    conversation_id: str = Field(..., min_length=1)
+    role: str = Field(..., pattern=r'^(user|assistant)$')
+    text: str = Field(..., min_length=1)
+    stage: str = Field(default="")
+    sequence: int = Field(..., ge=0)
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )

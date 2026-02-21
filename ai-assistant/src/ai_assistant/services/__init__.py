@@ -19,6 +19,7 @@ from .agent_tools import (
     AgentTool, AgentToolRegistry, ToolCapability, ToolPermissionError,
     check_capability, build_default_registry,
 )
+from .ai_conversation_service import AIConversationService
 
 __all__ = [
     'SpeechToTextService',
@@ -46,4 +47,5 @@ __all__ = [
     'ToolPermissionError',
     'check_capability',
     'build_default_registry',
+    'AIConversationService',
 ]

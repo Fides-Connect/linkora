@@ -743,3 +743,81 @@ class TestContinuousSttTaskScheduling:
                 pass
 
         assert interrupted, "_trigger_interrupt must be called before new response"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FINALIZE-stage busy guard
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestFinalizeStageGuard:
+    """
+    When ConversationStage is FINALIZE, process_text_input must send an
+    apologetic 'still searching' message and return without cancelling the
+    ongoing response task.
+    When the stage is anything other than FINALIZE, interruption proceeds
+    as normal.
+    """
+
+    def _make_busy_proc(self):
+        proc = _make_processor(input_track=None)
+        dc = _open_data_channel()
+        proc.set_data_channel(dc)
+        return proc
+
+    async def test_new_message_during_finalize_sends_busy_message(self):
+        proc = self._make_busy_proc()
+        proc.ai_assistant.conversation_service.get_current_stage = Mock(
+            return_value=ConversationStage.FINALIZE
+        )
+
+        sent_messages = []
+        with patch.object(
+            proc,
+            "_send_chat_message",
+            side_effect=lambda text, is_user, **kw: sent_messages.append(text),
+        ):
+            await proc.process_text_input("Noch jemanden?")
+
+        assert any("such" in m.lower() or "search" in m.lower() or "moment" in m.lower()
+                   for m in sent_messages), \
+            f"Expected a 'still searching' busy message, got: {sent_messages}"
+
+    async def test_new_message_during_finalize_does_not_cancel_task(self):
+        proc = self._make_busy_proc()
+        proc.ai_assistant.conversation_service.get_current_stage = Mock(
+            return_value=ConversationStage.FINALIZE
+        )
+
+        # Plant a fake running response task
+        never_done = asyncio.create_task(asyncio.sleep(999))
+        proc._response_task = never_done
+
+        with patch.object(proc, "_send_chat_message", new=Mock()):
+            await proc.process_text_input("Bitte warten")
+
+        assert not never_done.cancelled(), \
+            "Running task must NOT be cancelled during FINALIZE stage"
+        never_done.cancel()
+        try:
+            await never_done
+        except asyncio.CancelledError:
+            pass
+
+    async def test_new_message_outside_finalize_still_interrupts(self):
+        proc = self._make_busy_proc()
+        proc.ai_assistant.conversation_service.get_current_stage = Mock(
+            return_value=ConversationStage.TRIAGE
+        )
+
+        interrupted = False
+
+        async def fake_interrupt():
+            nonlocal interrupted
+            interrupted = True
+
+        proc.is_ai_speaking = True
+        with patch.object(proc, "_trigger_interrupt", side_effect=fake_interrupt):
+            with patch.object(proc, "_process_final_transcript", new=AsyncMock()):
+                await proc.process_text_input("New question")
+
+        assert interrupted, "Should interrupt when not in FINALIZE stage"
