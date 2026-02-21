@@ -1,0 +1,195 @@
+"""
+Tests for AIConversationService — manages lifecycle of one AI conversation session.
+"""
+import pytest
+from unittest.mock import AsyncMock, Mock
+
+from ai_assistant.services.ai_conversation_service import AIConversationService
+from ai_assistant.services.conversation_service import ConversationStage
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _make_fs(conv_id="conv_abc"):
+    """Return a mock FirestoreService with the AI-conversation methods wired."""
+    fs = Mock()
+    fs.create_ai_conversation = AsyncMock(return_value=conv_id)
+    fs.save_ai_conversation_message = AsyncMock(return_value="msg_1")
+    fs.update_ai_conversation = AsyncMock(return_value=True)
+    fs.get_ai_conversations = AsyncMock(return_value=[])
+    fs.get_ai_conversation_messages = AsyncMock(return_value=[])
+    return fs
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# open_session
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestOpenSession:
+
+    async def test_open_session_creates_conversation(self):
+        fs = _make_fs("conv_abc")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="u1", session_id="s1")
+        fs.create_ai_conversation.assert_called_once()
+        assert svc.conversation_id == "conv_abc"
+
+    async def test_open_session_is_idempotent(self):
+        """Second call must be a no-op — firestore called only once."""
+        fs = _make_fs("conv_abc")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="u1", session_id="s1")
+        await svc.open_session(user_id="u1", session_id="s1")
+        assert fs.create_ai_conversation.call_count == 1
+
+    async def test_open_session_passes_user_and_session_id(self):
+        fs = _make_fs("conv_xyz")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="user_99", session_id="sess_99")
+        call_data = fs.create_ai_conversation.call_args[0][0]
+        assert call_data["user_id"] == "user_99"
+        assert call_data["session_id"] == "sess_99"
+
+    async def test_open_session_passes_topic_title_when_provided(self):
+        fs = _make_fs("conv_abc")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="u1", session_id="s1", topic_title="Test topic")
+        call_data = fs.create_ai_conversation.call_args[0][0]
+        assert call_data.get("topic_title") == "Test topic"
+
+    async def test_open_session_default_topic_title_is_empty(self):
+        fs = _make_fs("conv_abc")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="u1", session_id="s1")
+        call_data = fs.create_ai_conversation.call_args[0][0]
+        assert call_data.get("topic_title") == ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# save_message
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSaveMessage:
+
+    async def test_save_message_before_open_session_is_noop(self):
+        """save_message before open_session must not raise and must not call firestore."""
+        fs = _make_fs()
+        svc = AIConversationService(firestore_service=fs)
+        await svc.save_message(role="user", text="hello", stage=ConversationStage.TRIAGE)
+        fs.save_ai_conversation_message.assert_not_called()
+
+    async def test_save_message_calls_firestore(self):
+        fs = _make_fs("conv_1")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="u1", session_id="s1")
+        await svc.save_message(role="user", text="hello", stage=ConversationStage.TRIAGE)
+        fs.save_ai_conversation_message.assert_called_once_with(
+            "conv_1", "user", "hello", ConversationStage.TRIAGE, 0
+        )
+
+    async def test_save_message_increments_sequence(self):
+        fs = _make_fs("conv_1")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="u1", session_id="s1")
+        await svc.save_message(role="user", text="a", stage=ConversationStage.TRIAGE)
+        await svc.save_message(role="assistant", text="b", stage=ConversationStage.TRIAGE)
+        await svc.save_message(role="user", text="c", stage=ConversationStage.FINALIZE)
+        calls = fs.save_ai_conversation_message.call_args_list
+        assert calls[0][0][4] == 0
+        assert calls[1][0][4] == 1
+        assert calls[2][0][4] == 2
+
+    async def test_save_message_passes_role_and_text(self):
+        fs = _make_fs("conv_1")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="u1", session_id="s1")
+        await svc.save_message(role="assistant", text="Hallo!", stage=ConversationStage.GREETING)
+        call_args = fs.save_ai_conversation_message.call_args[0]
+        assert call_args[1] == "assistant"
+        assert call_args[2] == "Hallo!"
+        assert call_args[3] == ConversationStage.GREETING
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# set_topic_title
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSetTopicTitle:
+
+    async def test_set_topic_title_calls_firestore(self):
+        fs = _make_fs("conv_1")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="u1", session_id="s1")
+        await svc.set_topic_title("Elektriker gesucht")
+        fs.update_ai_conversation.assert_called_once()
+        args = fs.update_ai_conversation.call_args[0]
+        assert args[0] == "conv_1"
+        assert args[1].get("topic_title") == "Elektriker gesucht"
+
+    async def test_set_topic_title_before_open_session_is_noop(self):
+        fs = _make_fs()
+        svc = AIConversationService(firestore_service=fs)
+        await svc.set_topic_title("something")
+        fs.update_ai_conversation.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# close_session
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCloseSession:
+
+    async def test_close_session_calls_update_with_final_stage(self):
+        fs = _make_fs("conv_1")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="u1", session_id="s1")
+        await svc.close_session(final_stage=ConversationStage.COMPLETED)
+        fs.update_ai_conversation.assert_called_once()
+        call_data = fs.update_ai_conversation.call_args[0][1]
+        assert call_data.get("final_stage") == ConversationStage.COMPLETED.value
+
+    async def test_close_session_before_open_is_noop(self):
+        fs = _make_fs()
+        svc = AIConversationService(firestore_service=fs)
+        await svc.close_session(final_stage=ConversationStage.TRIAGE)
+        fs.update_ai_conversation.assert_not_called()
+
+    async def test_close_session_uses_conversation_id(self):
+        fs = _make_fs("conv_close_test")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="u1", session_id="s1")
+        await svc.close_session(final_stage=ConversationStage.FINALIZE)
+        call_conv_id = fs.update_ai_conversation.call_args[0][0]
+        assert call_conv_id == "conv_close_test"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# null firestore — all methods must be no-ops
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestNullFirestore:
+    """All methods must be safe no-ops when firestore_service=None."""
+
+    async def test_open_session_no_raise(self):
+        svc = AIConversationService(firestore_service=None)
+        await svc.open_session(user_id="u1", session_id="s1")
+        assert svc.conversation_id is None
+
+    async def test_save_message_no_raise(self):
+        svc = AIConversationService(firestore_service=None)
+        await svc.open_session(user_id="u1", session_id="s1")
+        await svc.save_message(role="user", text="hello", stage=ConversationStage.TRIAGE)
+
+    async def test_set_topic_title_no_raise(self):
+        svc = AIConversationService(firestore_service=None)
+        await svc.set_topic_title("anything")
+
+    async def test_close_session_no_raise(self):
+        svc = AIConversationService(firestore_service=None)
+        await svc.close_session(final_stage=ConversationStage.TRIAGE)
+
+    async def test_conversation_id_is_none(self):
+        svc = AIConversationService(firestore_service=None)
+        assert svc.conversation_id is None

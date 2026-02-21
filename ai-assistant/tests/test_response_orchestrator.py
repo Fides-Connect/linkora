@@ -46,6 +46,7 @@ def mock_conversation_service():
 def mock_tool_registry():
     registry = Mock(spec=AgentToolRegistry)
     registry.execute = AsyncMock(return_value={"result": "ok"})
+    registry.all_schemas.return_value = []
     return registry
 
 
@@ -244,3 +245,335 @@ class TestProviderSearchTiming:
         async for _ in orchestrator.generate_response_stream("Ja bitte", "test-session"):
             pass
         mock_conversation_service.accumulate_problem_description.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tool-call text filter
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestToolCallTextFilter:
+    """signal_transition(...) and any identifier(...) patterns must be stripped."""
+
+    async def test_signal_transition_text_is_stripped(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Plain-text signal_transition(...) emitted by LLM must not reach the caller."""
+        async def leaky_stream(*args, **kwargs):
+            yield "Ich leite weiter. "
+            yield "signal_transition(finalize)"
+
+        mock_llm_service.generate_stream = leaky_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        combined = "".join(chunks)
+        assert "signal_transition" not in combined
+
+    async def test_generic_tool_call_text_is_stripped(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """Any identifier(...) pattern must be stripped."""
+        async def leaky_stream(*args, **kwargs):
+            yield "Calling search_providers(query='plumber') now."
+
+        mock_llm_service.generate_stream = leaky_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        combined = "".join(chunks)
+        assert "search_providers" not in combined
+
+    async def test_clean_text_passes_through(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """Text with no tool-call patterns must be forwarded unchanged."""
+        async def clean_stream(*args, **kwargs):
+            yield "Hallo, ich helfe dir gerne!"
+
+        mock_llm_service.generate_stream = clean_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        assert "Hallo, ich helfe dir gerne!" in "".join(chunks)
+
+    async def test_chunk_that_becomes_empty_after_strip_is_not_yielded(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """A chunk that is purely a tool-call pattern must not be yielded at all."""
+        async def pure_tool_stream(*args, **kwargs):
+            yield "signal_transition(triage)"
+
+        mock_llm_service.generate_stream = pure_tool_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        # Nothing should be yielded
+        assert chunks == [] or all(c.strip() == "" for c in chunks)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SIGNAL_TRANSITION_SCHEMA tool registration
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSignalTransitionToolRegistration:
+    """register_functions must be called with SIGNAL_TRANSITION_SCHEMA per stream."""
+
+    async def test_register_functions_called_each_stream(
+        self, mock_conversation_service
+    ):
+        from ai_assistant.services.llm_service import SIGNAL_TRANSITION_SCHEMA
+
+        llm = Mock()
+        llm.register_functions = Mock()
+
+        async def noop_stream(*args, **kwargs):
+            if False:
+                yield ""
+
+        llm.generate_stream = noop_stream
+
+        orch = ResponseOrchestrator(
+            llm_service=llm,
+            conversation_service=mock_conversation_service,
+        )
+        async for _ in orch.generate_response_stream("hello", "sess-1"):
+            pass
+
+        call_args = llm.register_functions.call_args
+        assert call_args[0][0] == "sess-1"
+        assert SIGNAL_TRANSITION_SCHEMA in call_args[0][1]
+
+    async def test_register_functions_called_with_correct_session_id(
+        self, mock_conversation_service
+    ):
+        from ai_assistant.services.llm_service import SIGNAL_TRANSITION_SCHEMA
+
+        llm = Mock()
+        llm.register_functions = Mock()
+
+        async def noop_stream(*args, **kwargs):
+            if False:
+                yield ""
+
+        llm.generate_stream = noop_stream
+
+        orch = ResponseOrchestrator(
+            llm_service=llm,
+            conversation_service=mock_conversation_service,
+        )
+        async for _ in orch.generate_response_stream("hello", "my-session-42"):
+            pass
+
+        call_args = llm.register_functions.call_args
+        assert call_args[0][0] == "my-session-42"
+        assert SIGNAL_TRANSITION_SCHEMA in call_args[0][1]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FSM transitions fired during stream
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFsmTransitionsDuringStream:
+    """Key FSM events must be fired at the right points in generate_response_stream."""
+
+    def _make_orch_with_real_fsm(self, mock_llm_service, mock_conversation_service):
+        fsm = AgentRuntimeFSM()
+        # Advance to LISTENING so the THINKING transition can fire
+        fsm.transition("data_channel_wait")
+        fsm.transition("data_channel_opened")
+        return ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            runtime_fsm=fsm,
+        ), fsm
+
+    async def test_llm_stream_started_fires_on_first_chunk(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        async def one_chunk(*args, **kwargs):
+            yield "Hello"
+
+        mock_llm_service.generate_stream = one_chunk
+        orch, fsm = self._make_orch_with_real_fsm(mock_llm_service, mock_conversation_service)
+        # Prime to THINKING
+        fsm.transition("final_transcript")
+        assert fsm.current_state == AgentRuntimeState.THINKING
+
+        async for _ in orch.generate_response_stream("hi", "sess"):
+            pass
+
+        # After text stream completes we should be back at LISTENING
+        assert fsm.current_state == AgentRuntimeState.LISTENING
+
+    async def test_tool_call_and_tool_done_fired_around_signal_transition(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+
+        async def stream_with_fn(*args, **kwargs):
+            yield {"type": "function_call", "name": "signal_transition",
+                   "args": {"target_stage": "finalize"}}
+
+        mock_llm_service.generate_stream = stream_with_fn
+        orch, fsm = self._make_orch_with_real_fsm(mock_llm_service, mock_conversation_service)
+        fsm.transition("final_transcript")
+
+        states_seen = []
+        fsm.on_state_change = lambda _old, new: states_seen.append(new)
+
+        async for _ in orch.generate_response_stream("ready", "sess"):
+            pass
+
+        assert AgentRuntimeState.TOOL_EXECUTING in states_seen
+
+    async def test_stream_complete_text_fires_at_end(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        async def text_only(*args, **kwargs):
+            yield "Done"
+
+        mock_llm_service.generate_stream = text_only
+        orch, fsm = self._make_orch_with_real_fsm(mock_llm_service, mock_conversation_service)
+        fsm.transition("final_transcript")
+
+        async for _ in orch.generate_response_stream("hi", "sess"):
+            pass
+
+        assert fsm.current_state == AgentRuntimeState.LISTENING
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AIConversationService integration inside the orchestrator
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAIConversationServiceIntegration:
+    """Orchestrator must delegate message persistence to AIConversationService."""
+
+    def _make_ai_conv_svc(self):
+        svc = Mock()
+        svc.save_message = AsyncMock()
+        svc.set_topic_title = AsyncMock()
+        svc.close_session = AsyncMock()
+        return svc
+
+    async def test_user_message_saved_before_stream(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        ai_conv = self._make_ai_conv_svc()
+
+        async def noop(*args, **kwargs):
+            if False:
+                yield ""
+
+        mock_llm_service.generate_stream = noop
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            ai_conversation_service=ai_conv,
+        )
+        async for _ in orch.generate_response_stream("My problem", "sess"):
+            pass
+
+        # First save_message call must be the user turn
+        first_call = ai_conv.save_message.call_args_list[0]
+        assert first_call[1]["role"] == "user" or first_call[0][0] == "user"
+
+    async def test_ai_response_saved_after_stream(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        ai_conv = self._make_ai_conv_svc()
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            ai_conversation_service=ai_conv,
+        )
+        async for _ in orch.generate_response_stream("hi", "sess"):
+            pass
+
+        # At least two save_message calls: user + assistant
+        assert ai_conv.save_message.call_count >= 2
+        # Last save must be the assistant turn
+        last_call = ai_conv.save_message.call_args_list[-1]
+        role_arg = last_call[1].get("role") or last_call[0][0]
+        assert role_arg == "assistant"
+
+    async def test_set_topic_title_called_on_finalize_transition(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_conversation_service._get_problem_summary = Mock(return_value="Elektriker")
+
+        ai_conv = self._make_ai_conv_svc()
+
+        async def stream_with_finalize(*args, **kwargs):
+            yield {"type": "function_call", "name": "signal_transition",
+                   "args": {"target_stage": "finalize"}}
+
+        mock_llm_service.generate_stream = stream_with_finalize
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            ai_conversation_service=ai_conv,
+        )
+        async for _ in orch.generate_response_stream("ready", "sess"):
+            pass
+
+        ai_conv.set_topic_title.assert_called_once()
+
+    async def test_close_session_called_on_completed_stage(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+
+        ai_conv = self._make_ai_conv_svc()
+
+        async def stream_with_completed(*args, **kwargs):
+            yield {"type": "function_call", "name": "signal_transition",
+                   "args": {"target_stage": "completed"}}
+
+        mock_llm_service.generate_stream = stream_with_completed
+
+        # Make FINALIZE→COMPLETED a legal transition for this test
+        from unittest.mock import patch
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                ai_conversation_service=ai_conv,
+            )
+            async for _ in orch.generate_response_stream("done", "sess"):
+                pass
+
+        ai_conv.close_session.assert_called_once()
+
+    async def test_no_error_when_ai_conversation_service_is_none(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """Orchestrator must work normally when ai_conversation_service is not provided."""
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        assert len(chunks) > 0

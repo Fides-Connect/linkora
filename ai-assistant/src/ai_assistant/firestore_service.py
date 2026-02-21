@@ -21,7 +21,10 @@ from .firestore_schemas import (
     ProviderCandidateSchema,
     ProviderCandidateUpdateSchema,
     AvailabilityTimeSchema,
-    AvailabilityTimeUpdateSchema
+    AvailabilityTimeUpdateSchema,
+    AIConversationSchema,
+    AIConversationUpdateSchema,
+    AIConversationMessageSchema,
 )
 
 logger = logging.getLogger(__name__)
@@ -1790,3 +1793,170 @@ class FirestoreService:
         except Exception as e:
             logger.error(f"Error deleting message {message_id} from chat {chat_id}: {e}")
             return False
+
+    # ── AI Conversations ─────────────────────────────────────────────────────
+
+    async def create_ai_conversation(self, data: Dict[str, Any]) -> Optional[str]:
+        """Create a new AI conversation document.
+
+        Args:
+            data: Dict with at minimum user_id, session_id.  topic_title is optional.
+
+        Returns:
+            The auto-generated conversation_id string, or None on failure.
+        """
+        if not self.db:
+            return None
+        try:
+            validated = self._validate_data(data, AIConversationSchema)
+            doc_ref = self._get_collection('ai_conversations').document()
+            doc_ref.set(validated)
+            return doc_ref.id
+        except Exception as exc:
+            logger.error("Error creating ai_conversation: %s", exc)
+            return None
+
+    async def save_ai_conversation_message(
+        self,
+        conversation_id: str,
+        role: str,
+        text: str,
+        stage,
+        sequence: int,
+    ) -> Optional[str]:
+        """Append a message to the ai_conversation's messages subcollection.
+
+        Also updates first_message_at / last_message_at / message_count on the
+        parent document atomically.
+
+        Args:
+            conversation_id: The parent ai_conversation document ID.
+            role:            'user' or 'assistant'.
+            text:            Plain text of the message.
+            stage:           Current ConversationStage value.
+            sequence:        0-based monotonically-increasing counter.
+
+        Returns:
+            The new message document ID, or None on failure.
+        """
+        if not self.db:
+            return None
+        try:
+            stage_str = stage.value if hasattr(stage, 'value') else str(stage)
+            msg_data = {
+                "conversation_id": conversation_id,
+                "role": role,
+                "text": text,
+                "stage": stage_str,
+                "sequence": sequence,
+            }
+            validated = self._validate_data(msg_data, AIConversationMessageSchema)
+            now = datetime.now(timezone.utc)
+            msg_ref = (
+                self._get_collection('ai_conversations')
+                .document(conversation_id)
+                .collection('messages')
+                .document()
+            )
+            msg_ref.set(validated)
+            # Update parent doc counters
+            parent_update: Dict[str, Any] = {
+                "last_message_at": now,
+                "message_count": firestore.Increment(1),
+                "updated_at": now,
+            }
+            if sequence == 0:
+                parent_update["first_message_at"] = now
+            self._get_collection('ai_conversations').document(conversation_id).update(parent_update)
+            return msg_ref.id
+        except Exception as exc:
+            logger.error("Error saving ai_conversation message: %s", exc)
+            return None
+
+    async def update_ai_conversation(
+        self, conversation_id: str, update_data: Dict[str, Any]
+    ) -> bool:
+        """Partial-update an AI conversation document.
+
+        Returns True on success, False otherwise.
+        """
+        if not self.db:
+            return False
+        try:
+            validated = self._validate_data(update_data, AIConversationUpdateSchema, exclude_unset=True)
+            validated["updated_at"] = datetime.now(timezone.utc)
+            self._get_collection('ai_conversations').document(conversation_id).update(validated)
+            return True
+        except Exception as exc:
+            logger.error("Error updating ai_conversation %s: %s", conversation_id, exc)
+            return False
+
+    async def get_ai_conversations(
+        self,
+        user_id: str,
+        limit: int = 20,
+        start_after=None,
+    ) -> List[Dict[str, Any]]:
+        """List AI conversations for a user, ordered by last_message_at DESC.
+
+        Args:
+            user_id:     Filter to this user's conversations.
+            limit:       Maximum number of results to return.
+            start_after: Firestore DocumentSnapshot for cursor-based pagination.
+
+        Returns:
+            List of conversation dicts (each includes 'conversation_id').
+        """
+        if not self.db:
+            return []
+        try:
+            query = (
+                self._get_collection('ai_conversations')
+                .where(filter=FieldFilter('user_id', '==', user_id))
+                .order_by('last_message_at', direction='DESCENDING')
+                .limit(limit)
+            )
+            if start_after is not None:
+                query = query.start_after(start_after)
+            results = []
+            for doc in query.stream():
+                data = doc.to_dict()
+                data['conversation_id'] = doc.id
+                results.append(data)
+            return results
+        except Exception as exc:
+            logger.error("Error listing ai_conversations for user %s: %s", user_id, exc)
+            return []
+
+    async def get_ai_conversation_messages(
+        self, conversation_id: str
+    ) -> List[Dict[str, Any]]:
+        """Return all messages for an AI conversation, ordered by sequence ASC.
+
+        Args:
+            conversation_id: The parent ai_conversation document ID.
+
+        Returns:
+            List of message dicts (each includes 'message_id').
+        """
+        if not self.db:
+            return []
+        try:
+            query = (
+                self._get_collection('ai_conversations')
+                .document(conversation_id)
+                .collection('messages')
+                .order_by('sequence')
+            )
+            results = []
+            for doc in query.stream():
+                data = doc.to_dict()
+                data['message_id'] = doc.id
+                results.append(data)
+            return results
+        except Exception as exc:
+            logger.error(
+                "Error listing messages for ai_conversation %s: %s",
+                conversation_id, exc,
+            )
+            return []

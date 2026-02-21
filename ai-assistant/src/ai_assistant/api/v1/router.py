@@ -3,7 +3,7 @@ API v1 Router
 Registers all v1 API endpoints.
 """
 from aiohttp import web
-from .endpoints import me, users, service_requests, reviews, auth
+from .endpoints import me, users, service_requests, reviews, auth, ai_conversations
 
 
 def register_v1_routes(app: web.Application):
@@ -61,3 +61,10 @@ def register_v1_routes(app: web.Application):
     app.router.add_get('/api/v1/reviews/{review_id}', reviews.get_review)
     app.router.add_patch('/api/v1/reviews/{review_id}', reviews.update_review)
     app.router.add_delete('/api/v1/reviews/{review_id}', reviews.delete_review)
+
+    # AI conversation history endpoints
+    app.router.add_get('/api/v1/ai-conversations', ai_conversations.list_ai_conversations)
+    app.router.add_get(
+        '/api/v1/ai-conversations/{conversation_id}/messages',
+        ai_conversations.get_ai_conversation_messages,
+    )
