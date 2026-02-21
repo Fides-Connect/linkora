@@ -28,6 +28,7 @@ class SpeechService {
   OnConnectedCallback? onConnected;
   OnDisconnectedCallback? onDisconnected;
   OnChatMessageCallback? onChatMessage;
+  OnRuntimeStateCallback? onRuntimeState;
   Function()? onDataChannelOpen;
 
   SpeechService({
@@ -114,6 +115,10 @@ class SpeechService {
 
     _webrtcService!.onChatMessage = (String text, bool isUser, bool isChunk) {
       onChatMessage?.call(text, isUser, isChunk);
+    };
+
+    _webrtcService!.onRuntimeState = (AgentRuntimeState state) {
+      onRuntimeState?.call(state);
     };
 
     _webrtcService!.onRemoteStream = (MediaStream stream) {

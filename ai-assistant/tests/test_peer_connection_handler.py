@@ -272,3 +272,46 @@ class TestRenegotiation:
 
         # Verify addTrack WAS called for output track during initial connection
         peer_handler.pc.addTrack.assert_called_once_with(mock_output_track)
+
+
+class TestRuntimeStateFSMWiring:
+    """Test that FSM on_state_change is wired to _emit_runtime_state."""
+
+    def test_wire_runtime_fsm_sets_on_state_change(self, peer_handler):
+        """_wire_runtime_fsm must set fsm.on_state_change to a callable."""
+        from ai_assistant.services.agent_runtime_fsm import AgentRuntimeFSM, AgentRuntimeState
+
+        runtime_fsm = AgentRuntimeFSM()
+
+        # Build a mock audio_processor with the right attribute path
+        ap = Mock()
+        ap.ai_assistant.response_orchestrator.runtime_fsm = runtime_fsm
+        emit_calls = []
+        ap._emit_runtime_state = Mock(side_effect=lambda s: emit_calls.append(s))
+
+        peer_handler._wire_runtime_fsm(ap)
+
+        assert runtime_fsm.on_state_change is not None
+
+    def test_wire_runtime_fsm_callback_calls_emit_runtime_state(self, peer_handler):
+        """After wiring, every FSM transition must call _emit_runtime_state."""
+        from ai_assistant.services.agent_runtime_fsm import AgentRuntimeFSM, AgentRuntimeState
+
+        runtime_fsm = AgentRuntimeFSM()
+        ap = Mock()
+        ap.ai_assistant.response_orchestrator.runtime_fsm = runtime_fsm
+        emit_calls = []
+        ap._emit_runtime_state = Mock(side_effect=lambda s: emit_calls.append(s))
+
+        peer_handler._wire_runtime_fsm(ap)
+
+        # Trigger a real transition: BOOTSTRAP -> DATA_CHANNEL_WAIT
+        runtime_fsm.transition("data_channel_wait")
+        assert emit_calls, "Expected _emit_runtime_state to be called on FSM transition"
+        assert emit_calls[0] == AgentRuntimeState.DATA_CHANNEL_WAIT
+
+    def test_wire_runtime_fsm_does_not_raise_on_missing_attribute(self, peer_handler):
+        """_wire_runtime_fsm must not raise if audio_processor.ai_assistant is missing."""
+        ap = Mock(spec=[])  # no attributes at all
+        peer_handler._wire_runtime_fsm(ap)  # must not raise
+

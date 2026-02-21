@@ -1,35 +1,37 @@
 """
-Unit tests for ResponseOrchestrator.
-Tests the conversation flow and provider search timing.
+Unit tests for ResponseOrchestrator — agentic brain.
+Tests stage ownership, signal_transition handling, tool dispatch,
+FSM ownership, and provider search triggered by signal_transition.
 """
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock
 
-from ai_assistant.services import ConversationStage
+from ai_assistant.services.conversation_service import ConversationStage
+from ai_assistant.services.agent_runtime_fsm import AgentRuntimeState, AgentRuntimeFSM
+from ai_assistant.services.agent_tools import (
+    AgentToolRegistry, ToolCapability, ToolPermissionError,
+)
 from ai_assistant.services.response_orchestrator import ResponseOrchestrator
 
 
 @pytest.fixture
 def mock_llm_service():
-    """Mock LLM service."""
     service = Mock()
-    
+
     async def mock_generate_stream(*args, **kwargs):
         yield "Test "
         yield "response"
-    
+
     service.generate_stream = mock_generate_stream
     return service
 
 
 @pytest.fixture
 def mock_conversation_service():
-    """Mock conversation service."""
     service = Mock()
     service.get_current_stage = Mock(return_value=ConversationStage.TRIAGE)
     service.accumulate_problem_description = AsyncMock()
     service.search_providers_for_request = AsyncMock()
-    service.detect_stage_transition = AsyncMock(return_value=None)
     service.set_stage = Mock()
     service.create_prompt_for_stage = Mock(return_value="prompt")
     service.context = {
@@ -41,194 +43,204 @@ def mock_conversation_service():
 
 
 @pytest.fixture
-def orchestrator(mock_llm_service, mock_conversation_service):
-    """Create ResponseOrchestrator instance."""
+def mock_tool_registry():
+    registry = Mock(spec=AgentToolRegistry)
+    registry.execute = AsyncMock(return_value={"result": "ok"})
+    return registry
+
+
+@pytest.fixture
+def orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry):
     return ResponseOrchestrator(
         llm_service=mock_llm_service,
-        conversation_service=mock_conversation_service
+        conversation_service=mock_conversation_service,
+        tool_registry=mock_tool_registry,
     )
 
 
-class TestProviderSearchTiming:
-    """Test that provider search happens at the correct stage."""
-    
-    @pytest.mark.asyncio
-    async def test_no_search_during_triage_stage(self, orchestrator, mock_conversation_service):
-        """Test that provider search is NOT called during TRIAGE stage."""
-        # Setup: conversation is in TRIAGE stage
+# ─────────────────────────────────────────────────────────────────────────────
+# FSM ownership
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestOrchestratorOwnsFSMs:
+
+    def test_runtime_fsm_is_agent_runtime_fsm(self, orchestrator):
+        assert isinstance(orchestrator.runtime_fsm, AgentRuntimeFSM)
+
+    def test_runtime_fsm_starts_at_bootstrap(self, orchestrator):
+        assert orchestrator.runtime_fsm.current_state == AgentRuntimeState.BOOTSTRAP
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# handle_signal_transition (sync)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestHandleSignalTransition:
+
+    def test_legal_target_calls_set_stage(self, orchestrator, mock_conversation_service):
         mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
-        mock_conversation_service.detect_stage_transition.return_value = None
-        
-        # Execute: generate response in TRIAGE stage
-        user_input = "Ich brauche einen Elektriker für mein Haus"
-        response_chunks = []
-        async for chunk in orchestrator.generate_response_stream(user_input, "test-session"):
-            response_chunks.append(chunk)
-        
-        # Verify: accumulate was called, but search was NOT called
-        mock_conversation_service.accumulate_problem_description.assert_called_once_with(user_input)
+        orchestrator.handle_signal_transition("finalize")
+        mock_conversation_service.set_stage.assert_called_once_with(ConversationStage.FINALIZE)
+
+    def test_legal_target_returns_true(self, orchestrator, mock_conversation_service):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        assert orchestrator.handle_signal_transition("clarify") is True
+
+    def test_unknown_string_does_not_call_set_stage(self, orchestrator, mock_conversation_service):
+        orchestrator.handle_signal_transition("bogus_stage")
+        mock_conversation_service.set_stage.assert_not_called()
+
+    def test_unknown_string_returns_false(self, orchestrator):
+        assert orchestrator.handle_signal_transition("completely_unknown") is False
+
+    def test_illegal_jump_does_not_call_set_stage(self, orchestrator, mock_conversation_service):
+        # TRIAGE → COMPLETED is not a legal transition
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        orchestrator.handle_signal_transition("completed")
+        mock_conversation_service.set_stage.assert_not_called()
+
+    def test_illegal_jump_returns_false(self, orchestrator, mock_conversation_service):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.GREETING
+        assert orchestrator.handle_signal_transition("completed") is False
+
+    async def test_finalize_target_also_triggers_provider_search(
+        self, orchestrator, mock_conversation_service
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        await orchestrator.handle_signal_transition_async("finalize")
+        mock_conversation_service.search_providers_for_request.assert_called_once()
+
+    async def test_non_finalize_target_does_not_trigger_search(
+        self, orchestrator, mock_conversation_service
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        await orchestrator.handle_signal_transition_async("clarify")
         mock_conversation_service.search_providers_for_request.assert_not_called()
-    
-    @pytest.mark.asyncio
-    async def test_search_when_entering_finalize_stage(self, orchestrator, mock_conversation_service, mock_llm_service):
-        """Test that provider search IS called when transitioning to FINALIZE stage."""
-        # Setup: conversation is in TRIAGE, will transition to FINALIZE
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
-        mock_conversation_service.detect_stage_transition.return_value = ConversationStage.FINALIZE
-        
-        # Mock provider search to populate context
-        async def mock_search():
-            mock_conversation_service.context["providers_found"] = [
-                {"provider_id": "p1", "name": "Provider 1"}
-            ]
-        mock_conversation_service.search_providers_for_request = AsyncMock(side_effect=mock_search)
-        
-        # Execute: generate response that triggers stage transition
-        user_input = "Ich brauche einen Elektriker"
-        response_chunks = []
-        async for chunk in orchestrator.generate_response_stream(user_input, "test-session"):
-            response_chunks.append(chunk)
-        
-        # Verify: search was called when entering FINALIZE
-        mock_conversation_service.search_providers_for_request.assert_called_once()
-        mock_conversation_service.set_stage.assert_called_with(ConversationStage.FINALIZE)
-    
-    @pytest.mark.asyncio
-    async def test_finalize_presentation_after_search(self, orchestrator, mock_conversation_service):
-        """Test that provider presentation is generated after search in FINALIZE."""
-        # Setup: transition to FINALIZE detected
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
-        mock_conversation_service.detect_stage_transition.return_value = ConversationStage.FINALIZE
-        
-        # Mock search to add providers
-        async def mock_search():
-            mock_conversation_service.context["providers_found"] = [
-                {"provider_id": "p1", "name": "Test Provider", "description": "Great service"}
-            ]
-        mock_conversation_service.search_providers_for_request = AsyncMock(side_effect=mock_search)
-        
-        # Execute
-        user_input = "Ich brauche einen Klempner"
-        response_chunks = []
-        async for chunk in orchestrator.generate_response_stream(user_input, "test-session"):
-            response_chunks.append(chunk)
-        
-        # Verify: search was called before generating finalize presentation
-        mock_conversation_service.search_providers_for_request.assert_called_once()
-        # Verify: create_prompt_for_stage was called for FINALIZE stage
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# dispatch_tool
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestToolDispatch:
+
+    async def test_happy_path_calls_registry_execute(
+        self, orchestrator, mock_tool_registry
+    ):
+        ctx = {
+            "user_id": "u1",
+            "user_capabilities": [ToolCapability("providers", "read")],
+        }
+        chunks = []
+        async for chunk in orchestrator.dispatch_tool("search_providers", {"query": "plumber"}, ctx):
+            chunks.append(chunk)
+
+        mock_tool_registry.execute.assert_called_once_with(
+            "search_providers", {"query": "plumber"}, ctx
+        )
+
+    async def test_permission_denied_yields_error_dict(
+        self, orchestrator, mock_tool_registry
+    ):
+        mock_tool_registry.execute.side_effect = ToolPermissionError(
+            "search_providers", ToolCapability("providers", "read")
+        )
+        ctx = {"user_id": "u1", "user_capabilities": []}
+        chunks = []
+        async for chunk in orchestrator.dispatch_tool("search_providers", {}, ctx):
+            chunks.append(chunk)
+
         assert any(
-            call[0][0] == ConversationStage.FINALIZE 
-            for call in mock_conversation_service.create_prompt_for_stage.call_args_list
+            isinstance(c, dict) and c.get("error") == "permission_denied"
+            for c in chunks
+        )
+
+    async def test_unknown_tool_yields_error_dict(
+        self, orchestrator, mock_tool_registry
+    ):
+        mock_tool_registry.execute.side_effect = KeyError("no_such_tool")
+        ctx = {"user_id": "u1", "user_capabilities": []}
+        chunks = []
+        async for chunk in orchestrator.dispatch_tool("no_such_tool", {}, ctx):
+            chunks.append(chunk)
+
+        assert any(
+            isinstance(c, dict) and c.get("error") == "unknown_tool"
+            for c in chunks
         )
 
 
-class TestConversationFlowIntegration:
-    """Test the complete conversation flow."""
-    
-    @pytest.mark.asyncio
-    async def test_full_triage_to_finalize_flow(self, orchestrator, mock_conversation_service):
-        """Test complete flow from TRIAGE to FINALIZE with correct search timing."""
-        # Setup: Start in TRIAGE
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
-        
-        # First call: TRIAGE stage, no transition
-        mock_conversation_service.detect_stage_transition.return_value = None
-        
-        user_input_1 = "Mein Wasserhahn ist kaputt"
-        async for _ in orchestrator.generate_response_stream(user_input_1, "test-session"):
-            pass
-        
-        # Verify: accumulate called, no search
-        assert mock_conversation_service.accumulate_problem_description.call_count == 1
-        assert mock_conversation_service.search_providers_for_request.call_count == 0
-        
-        # Second call: Still TRIAGE, will transition to FINALIZE
-        mock_conversation_service.detect_stage_transition.return_value = ConversationStage.FINALIZE
-        
-        async def mock_search():
-            mock_conversation_service.context["providers_found"] = [
-                {"provider_id": "p1", "name": "Plumber Joe"}
-            ]
-        mock_conversation_service.search_providers_for_request = AsyncMock(side_effect=mock_search)
-        
-        user_input_2 = "Es ist dringend"
-        async for _ in orchestrator.generate_response_stream(user_input_2, "test-session"):
-            pass
-        
-        # Verify: accumulate called again, search called once when entering FINALIZE
-        assert mock_conversation_service.accumulate_problem_description.call_count == 2
-        assert mock_conversation_service.search_providers_for_request.call_count == 1
-    
-    @pytest.mark.asyncio
-    async def test_no_search_in_greeting_stage(self, orchestrator, mock_conversation_service):
-        """Test that search is not called in GREETING stage."""
-        # Setup: conversation in GREETING stage
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.GREETING
-        mock_conversation_service.detect_stage_transition.return_value = None
-        
-        # Execute
-        user_input = "Hallo"
-        async for _ in orchestrator.generate_response_stream(user_input, "test-session"):
-            pass
-        
-        # Verify: neither accumulate nor search were called
-        mock_conversation_service.accumulate_problem_description.assert_not_called()
-        mock_conversation_service.search_providers_for_request.assert_not_called()
-    
-    @pytest.mark.asyncio
-    async def test_no_double_search_in_finalize(self, orchestrator, mock_conversation_service):
-        """Test that search is not called again if already in FINALIZE stage."""
-        # Setup: already in FINALIZE stage
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
-        mock_conversation_service.detect_stage_transition.return_value = None
-        mock_conversation_service.context["providers_found"] = [
-            {"provider_id": "p1", "name": "Provider 1"}
-        ]
-        
-        # Execute
-        user_input = "Ja, das klingt gut"
-        async for _ in orchestrator.generate_response_stream(user_input, "test-session"):
-            pass
-        
-        # Verify: search was NOT called (already searched when entering FINALIZE)
-        mock_conversation_service.search_providers_for_request.assert_not_called()
-        # Verify: accumulate was NOT called (not in TRIAGE)
-        mock_conversation_service.accumulate_problem_description.assert_not_called()
+# ─────────────────────────────────────────────────────────────────────────────
+# Provider search triggered by signal_transition("finalize") in stream
+# ─────────────────────────────────────────────────────────────────────────────
 
+class TestProviderSearchViaSignalTransition:
 
-class TestStageTransitionDetection:
-    """Test stage transition detection and handling."""
-    
-    @pytest.mark.asyncio
-    async def test_stage_transition_updates_stage(self, orchestrator, mock_conversation_service):
-        """Test that detected stage transition updates the conversation stage."""
-        # Setup
+    async def test_search_not_called_without_signal_transition(
+        self, orchestrator, mock_conversation_service
+    ):
         mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
-        mock_conversation_service.detect_stage_transition.return_value = ConversationStage.FINALIZE
-        
-        async def mock_search():
+        # LLM stream produces only text — no function-call chunks
+        async for _ in orchestrator.generate_response_stream("hi", "sess"):
             pass
-        mock_conversation_service.search_providers_for_request = AsyncMock(side_effect=mock_search)
-        
-        # Execute
-        user_input = "Test"
-        async for _ in orchestrator.generate_response_stream(user_input, "test-session"):
+        mock_conversation_service.search_providers_for_request.assert_not_called()
+
+    async def test_search_called_when_signal_transition_finalize_received(
+        self, orchestrator, mock_conversation_service, mock_llm_service
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+
+        async def stream_with_transition(*args, **kwargs):
+            yield "Searching now..."
+            yield {"type": "function_call", "name": "signal_transition",
+                   "args": {"target_stage": "finalize"}}
+
+        mock_llm_service.generate_stream = stream_with_transition
+        async for _ in orchestrator.generate_response_stream("ready", "sess"):
             pass
-        
-        # Verify: set_stage was called with FINALIZE
+
         mock_conversation_service.set_stage.assert_called_with(ConversationStage.FINALIZE)
-    
-    @pytest.mark.asyncio
-    async def test_no_stage_change_without_transition(self, orchestrator, mock_conversation_service):
-        """Test that stage is not changed when no transition is detected."""
-        # Setup: no transition
+        mock_conversation_service.search_providers_for_request.assert_called_once()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Timing: accumulate + no-double-search guards
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProviderSearchTiming:
+
+    async def test_no_search_during_triage_without_signal(
+        self, orchestrator, mock_conversation_service
+    ):
         mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
-        mock_conversation_service.detect_stage_transition.return_value = None
-        
-        # Execute
-        user_input = "Test"
-        async for _ in orchestrator.generate_response_stream(user_input, "test-session"):
+        async for _ in orchestrator.generate_response_stream(
+            "Ich brauche einen Elektriker", "test-session"
+        ):
             pass
-        
-        # Verify: set_stage was not called
-        mock_conversation_service.set_stage.assert_not_called()
+        mock_conversation_service.search_providers_for_request.assert_not_called()
+
+    async def test_accumulate_called_in_triage(
+        self, orchestrator, mock_conversation_service
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        async for _ in orchestrator.generate_response_stream("some input", "test-session"):
+            pass
+        mock_conversation_service.accumulate_problem_description.assert_called_once_with(
+            "some input"
+        )
+
+    async def test_no_accumulate_in_greeting(
+        self, orchestrator, mock_conversation_service
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.GREETING
+        async for _ in orchestrator.generate_response_stream("Hallo", "test-session"):
+            pass
+        mock_conversation_service.accumulate_problem_description.assert_not_called()
+
+    async def test_no_accumulate_in_finalize(
+        self, orchestrator, mock_conversation_service
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+        async for _ in orchestrator.generate_response_stream("Ja bitte", "test-session"):
+            pass
+        mock_conversation_service.accumulate_problem_description.assert_not_called()

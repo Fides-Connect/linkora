@@ -4,8 +4,9 @@ Handles conversation flow, stage management, and orchestration.
 """
 import logging
 import json
+from enum import Enum
 from datetime import datetime
-from typing import Optional, AsyncIterator, Dict, Any
+from typing import Optional, AsyncIterator, Dict, Any, List
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -14,6 +15,9 @@ from ..prompts_templates import (
     GREETING_AND_TRIAGE_PROMPT,
     TRIAGE_CONVERSATION_PROMPT,
     FINALIZE_SERVICE_REQUEST_PROMPT,
+    CLARIFY_PROMPT,
+    CONFIRMATION_PROMPT,
+    RECOVERY_PROMPT,
     get_language_instruction
 )
 
@@ -28,12 +32,39 @@ def json_serializer(obj):
     raise TypeError(f"Type {type(obj)} not serializable")
 
 
-class ConversationStage:
-    """Conversation stage constants."""
-    GREETING = "greeting"
-    TRIAGE = "triage"
-    FINALIZE = "finalize"
-    COMPLETED = "completed"
+class ConversationStage(str, Enum):
+    """External conversation stage — owned exclusively by ResponseOrchestrator."""
+    GREETING      = "greeting"
+    TRIAGE        = "triage"
+    CLARIFY       = "clarify"
+    TOOL_EXECUTION = "tool_execution"
+    CONFIRMATION  = "confirmation"
+    FINALIZE      = "finalize"
+    RECOVERY      = "recovery"
+    COMPLETED     = "completed"
+
+
+# Legal stage transitions: { from_stage: { allowed_to_stages } }
+_LEGAL_TRANSITIONS: Dict["ConversationStage", List["ConversationStage"]] = {
+    ConversationStage.GREETING:       [ConversationStage.TRIAGE],
+    ConversationStage.TRIAGE:         [ConversationStage.FINALIZE, ConversationStage.CLARIFY,
+                                       ConversationStage.TOOL_EXECUTION, ConversationStage.RECOVERY],
+    ConversationStage.CLARIFY:        [ConversationStage.TRIAGE],
+    ConversationStage.TOOL_EXECUTION: [ConversationStage.TRIAGE, ConversationStage.CONFIRMATION,
+                                       ConversationStage.FINALIZE],
+    ConversationStage.CONFIRMATION:   [ConversationStage.FINALIZE, ConversationStage.TRIAGE],
+    ConversationStage.FINALIZE:       [ConversationStage.COMPLETED, ConversationStage.RECOVERY],
+    ConversationStage.RECOVERY:       [ConversationStage.TRIAGE],
+    ConversationStage.COMPLETED:      [],
+}
+
+
+def is_legal_transition(from_stage: ConversationStage, to_stage: ConversationStage) -> bool:
+    """
+    Return True when transitioning from_stage → to_stage is allowed.
+    Used by ResponseOrchestrator to guard signal_transition() calls.
+    """
+    return to_stage in _LEGAL_TRANSITIONS.get(from_stage, [])
 
 
 class ConversationService:
@@ -137,51 +168,32 @@ class ConversationService:
                 ("human", "{input}")
             ])
         
+        elif stage in (
+            ConversationStage.CLARIFY,
+            ConversationStage.TOOL_EXECUTION,
+            ConversationStage.CONFIRMATION,
+            ConversationStage.RECOVERY,
+        ):
+            # Map each stage to its dedicated prompt template
+            stage_prompt_map = {
+                ConversationStage.CLARIFY: CLARIFY_PROMPT,
+                ConversationStage.CONFIRMATION: CONFIRMATION_PROMPT,
+                ConversationStage.RECOVERY: RECOVERY_PROMPT,
+                # TOOL_EXECUTION: reuse triage until a dedicated template is needed
+                ConversationStage.TOOL_EXECUTION: TRIAGE_CONVERSATION_PROMPT,
+            }
+            template = stage_prompt_map.get(stage, TRIAGE_CONVERSATION_PROMPT)
+            return ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(template).format(
+                    agent_name=self.agent_name,
+                ),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{input}")
+            ])
+
         else:
             # Default to triage
             return self.create_prompt_for_stage(ConversationStage.TRIAGE)
-    
-    async def detect_stage_transition(self, user_input: str, ai_response: str) -> Optional[str]:
-        """
-        Detect if conversation should transition to a new stage.
-        
-        Args:
-            user_input: User's input text
-            ai_response: AI's response text
-        
-        Returns:
-            New stage name if transition detected, None otherwise
-        """
-        response_lower = ai_response.lower()
-        self.context["ai_responses"].append(ai_response)
-        
-        # Detect transition from TRIAGE to FINALIZE
-        if self.current_stage == ConversationStage.TRIAGE:
-            transition_keywords = [
-                "database durchsuchen",
-                "datenbank durchsuchen",
-                "einen moment",
-                "please hold",
-                "bitte warten"
-            ]
-            if any(keyword in response_lower for keyword in transition_keywords):
-                logger.info("Detected transition trigger to FINALIZE stage")
-                # Accumulate the final user input
-
-                return ConversationStage.FINALIZE
-        
-        # Detect transition from FINALIZE to COMPLETED
-        if self.current_stage == ConversationStage.FINALIZE:
-            closing_keywords = [
-                "schönen tag",
-                "auf wiedersehen",
-                "vielen dank",
-                "thank you"
-            ]
-            if any(keyword in response_lower for keyword in closing_keywords):
-                return ConversationStage.COMPLETED
-        
-        return None
     
     async def accumulate_problem_description(self, user_input: str):
         """

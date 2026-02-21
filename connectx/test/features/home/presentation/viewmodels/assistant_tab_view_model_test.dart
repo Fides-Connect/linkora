@@ -36,11 +36,15 @@ void main() {
     final chatCb = verify(
       mockSpeech.onChatMessage = captureAny,
     ).captured.last as OnChatMessageCallback;
+    final runtimeStateCb = verify(
+      mockSpeech.onRuntimeState = captureAny,
+    ).captured.last as OnRuntimeStateCallback;
     return {
       'speechStart': speechStartCb,
       'connected': connectedCb,
       'dataChannelOpen': dataChannelOpenCb,
       'chat': chatCb,
+      'runtimeState': runtimeStateCb,
     };
   }
 
@@ -430,6 +434,71 @@ void main() {
       expect(vm.error, isNotNull);
       vm.clearError();
       expect(vm.error, isNull);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // onRuntimeState — ViewModel state mapping
+  // ══════════════════════════════════════════════════════════════════════════
+
+  group('onRuntimeState callback', () {
+    test('thinking → processing', () {
+      final cbs = _init();
+      final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
+      rsCb(AgentRuntimeState.thinking);
+      expect(vm.conversationState, ConversationState.processing);
+    });
+
+    test('llmStreaming → processing', () {
+      final cbs = _init();
+      final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
+      rsCb(AgentRuntimeState.llmStreaming);
+      expect(vm.conversationState, ConversationState.processing);
+    });
+
+    test('toolExecuting → processing', () {
+      final cbs = _init();
+      final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
+      rsCb(AgentRuntimeState.toolExecuting);
+      expect(vm.conversationState, ConversationState.processing);
+    });
+
+    test('listening → listening', () {
+      final cbs = _init();
+      final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
+      rsCb(AgentRuntimeState.listening);
+      expect(vm.conversationState, ConversationState.listening);
+    });
+
+    test('speaking → listening', () {
+      final cbs = _init();
+      final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
+      rsCb(AgentRuntimeState.speaking);
+      expect(vm.conversationState, ConversationState.listening);
+    });
+
+    test('bootstrap → connecting', () {
+      final cbs = _init();
+      final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
+      rsCb(AgentRuntimeState.bootstrap);
+      expect(vm.conversationState, ConversationState.connecting);
+    });
+
+    test('terminated → idle', () {
+      final cbs = _init();
+      final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
+      rsCb(AgentRuntimeState.terminated);
+      expect(vm.conversationState, ConversationState.idle);
+    });
+
+    test('calls notifyListeners on every runtime state change', () {
+      final cbs = _init();
+      final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
+      int notifyCount = 0;
+      vm.addListener(() => notifyCount++);
+      rsCb(AgentRuntimeState.thinking);
+      rsCb(AgentRuntimeState.speaking);
+      expect(notifyCount, 2);
     });
   });
 }

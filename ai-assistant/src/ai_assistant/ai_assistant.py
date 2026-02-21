@@ -11,6 +11,8 @@ from .services import (
     TextToSpeechService,
     LLMService,
     ConversationService,
+    AgentRuntimeFSM,
+    build_default_registry,
 )
 from .services.response_orchestrator import ResponseOrchestrator
 from .services.greeting_service import GreetingService
@@ -92,10 +94,19 @@ class AIAssistant:
             language=self.language
         )
         
+        # Build agentic runtime FSM and tool registry
+        self.runtime_fsm = AgentRuntimeFSM()
+        self.tool_registry = build_default_registry(
+            data_provider=self.data_provider,
+            firestore_service=None,  # injected later by PeerConnectionHandler when available
+        )
+
         # Initialize orchestration services
         self.response_orchestrator = ResponseOrchestrator(
             llm_service=self.llm_service,
-            conversation_service=self.conversation_service
+            conversation_service=self.conversation_service,
+            runtime_fsm=self.runtime_fsm,
+            tool_registry=self.tool_registry,
         )
         
         self.greeting_service = GreetingService(

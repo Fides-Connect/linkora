@@ -5,7 +5,65 @@ Tests conversation flow, stage management, and provider search timing.
 import pytest
 from unittest.mock import Mock, AsyncMock, patch
 
-from ai_assistant.services.conversation_service import ConversationService, ConversationStage
+from ai_assistant.services.conversation_service import ConversationService, ConversationStage, is_legal_transition
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ConversationStage Enum contract
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestConversationStageEnum:
+
+    def test_all_8_members_exist(self):
+        expected = {
+            "GREETING", "TRIAGE", "CLARIFY", "TOOL_EXECUTION",
+            "CONFIRMATION", "FINALIZE", "RECOVERY", "COMPLETED",
+        }
+        actual = {m.name for m in ConversationStage}
+        assert actual == expected
+
+    def test_each_member_is_string_valued(self):
+        for member in ConversationStage:
+            assert isinstance(member.value, str), f"{member.name} value is not a str"
+
+    def test_lookup_by_value(self):
+        assert ConversationStage("triage") == ConversationStage.TRIAGE
+
+    def test_members_are_enum_instances(self):
+        assert isinstance(ConversationStage.TRIAGE, ConversationStage)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# is_legal_transition
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestIsLegalTransition:
+
+    @pytest.mark.parametrize("from_s,to_s", [
+        (ConversationStage.GREETING,  ConversationStage.TRIAGE),
+        (ConversationStage.TRIAGE,    ConversationStage.FINALIZE),
+        (ConversationStage.TRIAGE,    ConversationStage.CLARIFY),
+        (ConversationStage.TRIAGE,    ConversationStage.TOOL_EXECUTION),
+        (ConversationStage.TRIAGE,    ConversationStage.RECOVERY),
+        (ConversationStage.CLARIFY,   ConversationStage.TRIAGE),
+        (ConversationStage.FINALIZE,  ConversationStage.COMPLETED),
+        (ConversationStage.FINALIZE,  ConversationStage.RECOVERY),
+        (ConversationStage.RECOVERY,  ConversationStage.TRIAGE),
+    ])
+    def test_legal_pairs_return_true(self, from_s, to_s):
+        assert is_legal_transition(from_s, to_s) is True
+
+    @pytest.mark.parametrize("from_s,to_s", [
+        (ConversationStage.GREETING,  ConversationStage.COMPLETED),
+        (ConversationStage.COMPLETED, ConversationStage.TRIAGE),
+        (ConversationStage.TRIAGE,    ConversationStage.GREETING),
+        (ConversationStage.COMPLETED, ConversationStage.GREETING),
+    ])
+    def test_illegal_pairs_return_false(self, from_s, to_s):
+        assert is_legal_transition(from_s, to_s) is False
+
+    def test_completed_self_loop_returns_false(self):
+        assert is_legal_transition(ConversationStage.COMPLETED, ConversationStage.COMPLETED) is False
 
 
 @pytest.fixture
@@ -166,69 +224,42 @@ class TestAccumulateProblemDescription:
 
 class TestStageManagement:
     """Test conversation stage management."""
-    
+
     def test_initial_stage_is_greeting(self, conversation_service):
-        """Test that initial stage is GREETING."""
+        """Initial stage must be GREETING."""
         assert conversation_service.get_current_stage() == ConversationStage.GREETING
-    
-    def test_set_stage(self, conversation_service):
-        """Test setting conversation stage."""
-        # Execute: set to TRIAGE
+
+    def test_set_stage_to_triage(self, conversation_service):
         conversation_service.set_stage(ConversationStage.TRIAGE)
-        
-        # Verify
         assert conversation_service.get_current_stage() == ConversationStage.TRIAGE
-        
-        # Execute: set to FINALIZE
+
+    def test_set_stage_to_finalize(self, conversation_service):
         conversation_service.set_stage(ConversationStage.FINALIZE)
-        
-        # Verify
         assert conversation_service.get_current_stage() == ConversationStage.FINALIZE
-    
-    @pytest.mark.asyncio
-    async def test_detect_stage_transition_triage_to_finalize(self, conversation_service):
-        """Test detection of TRIAGE to FINALIZE transition."""
-        # Setup: set to TRIAGE stage
+
+    def test_set_stage_to_clarify(self, conversation_service):
         conversation_service.set_stage(ConversationStage.TRIAGE)
-        
-        # Execute: provide AI response with transition keyword
-        user_input = "Ich brauche einen Klempner"
-        ai_response = "Einen Moment bitte, ich durchsuche die Datenbank für Sie."
-        
-        new_stage = await conversation_service.detect_stage_transition(user_input, ai_response)
-        
-        # Verify: transition to FINALIZE is detected
-        assert new_stage == ConversationStage.FINALIZE
-    
-    @pytest.mark.asyncio
-    async def test_detect_stage_transition_finalize_to_completed(self, conversation_service):
-        """Test detection of FINALIZE to COMPLETED transition."""
-        # Setup: set to FINALIZE stage
+        conversation_service.set_stage(ConversationStage.CLARIFY)
+        assert conversation_service.get_current_stage() == ConversationStage.CLARIFY
+
+    def test_set_stage_to_recovery(self, conversation_service):
         conversation_service.set_stage(ConversationStage.FINALIZE)
-        
-        # Execute: provide AI response with closing keyword
-        user_input = "Danke"
-        ai_response = "Vielen Dank für das Gespräch. Schönen Tag noch!"
-        
-        new_stage = await conversation_service.detect_stage_transition(user_input, ai_response)
-        
-        # Verify: transition to COMPLETED is detected
-        assert new_stage == ConversationStage.COMPLETED
-    
-    @pytest.mark.asyncio
-    async def test_no_transition_detected(self, conversation_service):
-        """Test when no stage transition should be detected."""
-        # Setup: set to TRIAGE stage
+        conversation_service.set_stage(ConversationStage.RECOVERY)
+        assert conversation_service.get_current_stage() == ConversationStage.RECOVERY
+
+    def test_set_stage_to_tool_execution(self, conversation_service):
         conversation_service.set_stage(ConversationStage.TRIAGE)
-        
-        # Execute: normal conversation without transition keywords
-        user_input = "Es ist im Badezimmer"
-        ai_response = "Verstehe, im Badezimmer. Können Sie mir mehr Details geben?"
-        
-        new_stage = await conversation_service.detect_stage_transition(user_input, ai_response)
-        
-        # Verify: no transition
-        assert new_stage is None
+        conversation_service.set_stage(ConversationStage.TOOL_EXECUTION)
+        assert conversation_service.get_current_stage() == ConversationStage.TOOL_EXECUTION
+
+    def test_legal_transition_applied_via_set_stage(self, conversation_service):
+        """set_stage + is_legal_transition work end-to-end."""
+        conversation_service.set_stage(ConversationStage.TRIAGE)
+        assert is_legal_transition(
+            conversation_service.get_current_stage(), ConversationStage.FINALIZE
+        ) is True
+        conversation_service.set_stage(ConversationStage.FINALIZE)
+        assert conversation_service.get_current_stage() == ConversationStage.FINALIZE
 
 
 class TestConversationFlow:
@@ -236,43 +267,23 @@ class TestConversationFlow:
     
     @pytest.mark.asyncio
     async def test_complete_triage_to_finalize_flow(self, conversation_service, mock_data_provider):
-        """Test complete flow: accumulate in TRIAGE, then search in FINALIZE."""
-        # Step 1: Start in GREETING, move to TRIAGE
+        """Stage is set via set_stage (driven by orchestrator signal_transition) then search runs."""
+        # Accumulate problem descriptions during TRIAGE
         conversation_service.set_stage(ConversationStage.TRIAGE)
-        
-        # Step 2: Accumulate problem descriptions (no search)
         await conversation_service.accumulate_problem_description("Mein Wasserhahn tropft")
         await conversation_service.accumulate_problem_description("Es ist im Badezimmer")
-        
-        # Verify: search not called yet
         mock_data_provider.search_providers.assert_not_called()
-        
-        # Verify: problem description accumulated
-        problem = conversation_service.context["user_problem"]
-        assert any("Wasserhahn" in item for item in problem)
-        assert any("Badezimmer" in item for item in problem)
-        
-        # Step 3: Simulate earlier conversation (to populate ai_responses list)
-        conversation_service.context["ai_responses"].append("Earlier conversation message")
-        
-        # Step 4: Detect transition - agent creates summary as part of conversation
-        user_input = "Ja, es ist dringend"
-        ai_response = "Verstanden: Sie haben einen tropfenden Wasserhahn im Badezimmer und es ist dringend. Einen Moment bitte, ich durchsuche die Datenbank."
-        new_stage = await conversation_service.detect_stage_transition(user_input, ai_response)
-        
-        # Verify: transition detected and summary captured (now has 2 items)
-        assert new_stage == ConversationStage.FINALIZE
-        assert len(conversation_service.context["ai_responses"]) == 2
-        assert "durchsuche" in conversation_service.context["ai_responses"][-1]
-        
-        # Step 5: Set stage and search for providers
+
+        # Orchestrator calls set_stage when signal_transition("finalize") is received
+        assert is_legal_transition(
+            conversation_service.get_current_stage(), ConversationStage.FINALIZE
+        ) is True
         conversation_service.set_stage(ConversationStage.FINALIZE)
+
+        # Orchestrator then calls search_providers_for_request
         await conversation_service.search_providers_for_request()
-        
-        # Verify: search WAS called with the agent's summary from conversation
+
         mock_data_provider.search_providers.assert_called_once()
-        
-        # Verify: providers are in context
         assert len(conversation_service.context["providers_found"]) > 0
     
     @pytest.mark.asyncio
@@ -291,3 +302,48 @@ class TestConversationFlow:
         
         # Verify: stage transitioned to TRIAGE after greeting
         assert conversation_service.get_current_stage() == ConversationStage.TRIAGE
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 7 — prompt templates for new stages
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPromptTemplatesForNewStages:
+
+    def test_clarify_stage_uses_dedicated_template(self, conversation_service):
+        from ai_assistant.prompts_templates import CLARIFY_PROMPT
+        template = conversation_service.create_prompt_for_stage(ConversationStage.CLARIFY)
+        # The system message should contain CLARIFY_PROMPT content, not TRIAGE
+        rendered = str(template.messages[0])
+        assert "CLARIFY" in rendered.upper() or "clarif" in rendered.lower()
+
+    def test_confirmation_stage_uses_dedicated_template(self, conversation_service):
+        template = conversation_service.create_prompt_for_stage(ConversationStage.CONFIRMATION)
+        rendered = str(template.messages[0])
+        assert "CONFIRMATION" in rendered.upper() or "confirm" in rendered.lower()
+
+    def test_recovery_stage_uses_dedicated_template(self, conversation_service):
+        template = conversation_service.create_prompt_for_stage(ConversationStage.RECOVERY)
+        rendered = str(template.messages[0])
+        assert "RECOVERY" in rendered.upper() or "recover" in rendered.lower()
+
+    def test_triage_prompt_contains_state_contract(self, conversation_service):
+        from ai_assistant.prompts_templates import TRIAGE_CONVERSATION_PROMPT
+        assert "signal_transition" in TRIAGE_CONVERSATION_PROMPT
+        assert "State Contract" in TRIAGE_CONVERSATION_PROMPT
+
+    def test_clarify_prompt_exported(self):
+        from ai_assistant.prompts_templates import CLARIFY_PROMPT
+        assert "signal_transition" in CLARIFY_PROMPT
+        assert CLARIFY_PROMPT.strip()
+
+    def test_confirmation_prompt_exported(self):
+        from ai_assistant.prompts_templates import CONFIRMATION_PROMPT
+        assert "signal_transition" in CONFIRMATION_PROMPT
+        assert CONFIRMATION_PROMPT.strip()
+
+    def test_recovery_prompt_exported(self):
+        from ai_assistant.prompts_templates import RECOVERY_PROMPT
+        assert "signal_transition" in RECOVERY_PROMPT
+        assert RECOVERY_PROMPT.strip()
+

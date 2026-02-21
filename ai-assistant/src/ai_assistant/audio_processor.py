@@ -19,6 +19,7 @@ from .services.debug_recorder import DebugRecorder
 from .services.transcript_processor import TranscriptProcessor
 from .services.tts_playback_manager import TTSPlaybackManager, SentenceParser
 from .services.conversation_service import ConversationStage
+from .services.agent_runtime_fsm import AgentRuntimeState
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,11 @@ class AudioProcessor:
         # Activity hook: called on every _process_final_transcript invocation
         # Used by PeerConnectionHandler to reset the idle timer.
         self.on_activity = None
+
+        # Composability hook: when set, _continuous_stt calls this instead of
+        # _process_final_transcript directly.  PeerConnectionHandler wires this
+        # to the ResponseOrchestrator in Phase 8.
+        self.on_transcript_final = None
         
         # Create language-specific AI assistant for this connection
         self.ai_assistant = self._create_language_specific_assistant(language)
@@ -108,6 +114,23 @@ class AudioProcessor:
                 self.data_channel.send(message)
             except Exception as e:
                 logger.error(f"Error sending chat message: {e}")
+
+    def _emit_runtime_state(self, state: AgentRuntimeState):
+        """Broadcast the current AgentRuntimeState to the Flutter client.
+
+        Sends a DataChannel JSON message of the form:
+            {"type": "runtime-state", "runtimeState": "<state.value>"}
+        Does nothing if the data channel is not open yet.
+        """
+        if self.data_channel and self.data_channel.readyState == "open":
+            try:
+                message = json.dumps({
+                    "type": "runtime-state",
+                    "runtimeState": state.value,
+                })
+                self.data_channel.send(message)
+            except Exception as e:
+                logger.error("Error emitting runtime state %s: %s", state, e)
         
     def get_output_track(self) -> MediaStreamTrack:
         """Get the output audio track."""
@@ -385,8 +408,16 @@ class AudioProcessor:
                         if transcript and transcript.strip():
                             # Start response as a background task so STT can
                             # immediately resume listening for the next interrupt.
+                            # Use on_transcript_final hook if wired (e.g. to
+                            # ResponseOrchestrator in Phase 8), otherwise fall
+                            # back to _process_final_transcript.
+                            handler = (
+                                self.on_transcript_final
+                                if self.on_transcript_final is not None
+                                else self._process_final_transcript
+                            )
                             self._response_task = asyncio.create_task(
-                                self._process_final_transcript(transcript)
+                                handler(transcript)
                             )
                         break
                 
