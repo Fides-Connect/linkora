@@ -6,6 +6,7 @@ signal_transition dispatch, tool dispatch, and FSM ownership.
 import re
 import json
 import logging
+from datetime import datetime, timezone, timedelta
 from typing import AsyncIterator, Optional, Union
 
 from langchain_core.messages import AIMessage
@@ -93,6 +94,39 @@ class ResponseOrchestrator:
             except ValueError:
                 pass  # already caught above; can't happen here
         return applied
+
+    # ── Tool dispatch ──────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _should_pitch_provider(context: Optional[dict]) -> bool:
+        """
+        Return True when all eligibility conditions for the provider pitch are met:
+          1. user_context is present in context
+          2. is_service_provider is False
+          3. last_time_asked_being_provider is not None
+          4. last_time_asked_being_provider != PROVIDER_PITCH_OPT_OUT_SENTINEL
+          5. at least 30 days have elapsed since last_time_asked_being_provider
+        """
+        if not context:
+            return False
+        user_ctx = context.get("user_context", {})
+        if not user_ctx:
+            return False
+        if user_ctx.get("is_service_provider", False):
+            return False
+        last_asked = user_ctx.get("last_time_asked_being_provider")
+        if last_asked is None:
+            return False
+
+        # Import here to avoid circular imports at module load time
+        from ..firestore_schemas import PROVIDER_PITCH_OPT_OUT_SENTINEL
+        if last_asked == PROVIDER_PITCH_OPT_OUT_SENTINEL:
+            return False
+
+        now = datetime.now(timezone.utc)
+        if last_asked.tzinfo is None:
+            last_asked = last_asked.replace(tzinfo=timezone.utc)
+        return (now - last_asked) >= timedelta(days=30)
 
     # ── Tool dispatch ──────────────────────────────────────────────────────────
 
@@ -224,6 +258,10 @@ class ResponseOrchestrator:
                             )
                             if not is_error:
                                 pending_tool_results.append((fn_name, tool_result))
+                                # If the tool returned a stage transition signal, apply it
+                                if isinstance(tool_result, dict) and "signal_transition" in tool_result:
+                                    sig_target = tool_result["signal_transition"]
+                                    await self.handle_signal_transition_async(sig_target)
                                 # Surface provider list for stage-context use
                                 if (
                                     fn_name == "search_providers"
@@ -309,6 +347,13 @@ class ResponseOrchestrator:
                 async for chunk in self._generate_finalize_presentation(session_id):
                     yield chunk
 
+            # Auto-pitch provider after COMPLETED when eligible
+            if transitioned_to_completed and self._should_pitch_provider(context):
+                applied = await self.handle_signal_transition_async("provider_pitch")
+                if applied:
+                    async for chunk in self._generate_provider_pitch_stream(session_id):
+                        yield chunk
+
         except Exception as exc:
             logger.error("Error in response orchestration: %s", exc, exc_info=True)
             yield "Entschuldigung, ich konnte keine Antwort generieren."
@@ -322,6 +367,18 @@ class ResponseOrchestrator:
         logger.info("Auto-generating provider presentation in FINALIZE stage")
         prompt_template = self.conversation_service.create_prompt_for_stage(
             ConversationStage.FINALIZE
+        )
+        async for chunk in self.llm_service.generate_stream(" ", prompt_template, session_id):
+            if isinstance(chunk, str):
+                yield chunk
+
+    async def _generate_provider_pitch_stream(
+        self, session_id: str
+    ) -> AsyncIterator[str]:
+        """Auto-generate provider pitch after entering PROVIDER_PITCH stage."""
+        logger.info("Auto-generating provider pitch in PROVIDER_PITCH stage")
+        prompt_template = self.conversation_service.create_prompt_for_stage(
+            ConversationStage.PROVIDER_PITCH
         )
         async for chunk in self.llm_service.generate_stream(" ", prompt_template, session_id):
             if isinstance(chunk, str):

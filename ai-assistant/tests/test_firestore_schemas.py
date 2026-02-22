@@ -2,7 +2,7 @@
 Unit tests for Firestore schema validation using Pydantic.
 """
 import pytest
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from pydantic import ValidationError
 
 from ai_assistant.firestore_schemas import (
@@ -17,7 +17,8 @@ from ai_assistant.firestore_schemas import (
     ChatSchema,
     ChatUpdateSchema,
     ChatMessageSchema,
-    ChatMessageUpdateSchema
+    ChatMessageUpdateSchema,
+    PROVIDER_PITCH_OPT_OUT_SENTINEL,
 )
 
 
@@ -110,6 +111,54 @@ class TestUserSchema:
         
         errors = exc_info.value.errors()
         assert any(error['type'] == 'extra_forbidden' for error in errors)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Provider pitch timestamp field
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProviderPitchTimestamp:
+    """Tests for last_time_asked_being_provider field and opt-out sentinel."""
+
+    def test_sentinel_constant_is_far_future(self):
+        assert PROVIDER_PITCH_OPT_OUT_SENTINEL == datetime(9999, 1, 1)
+
+    def test_user_schema_defaults_to_none(self):
+        user = UserSchema(name="A", email="a@b.com")
+        assert user.last_time_asked_being_provider is None
+
+    def test_user_schema_accepts_datetime(self):
+        ts = datetime(2026, 1, 1, 12, 0, 0)
+        user = UserSchema(name="A", email="a@b.com", last_time_asked_being_provider=ts)
+        assert user.last_time_asked_being_provider == ts
+
+    def test_user_schema_accepts_opt_out_sentinel(self):
+        user = UserSchema(
+            name="A", email="a@b.com",
+            last_time_asked_being_provider=PROVIDER_PITCH_OPT_OUT_SENTINEL,
+        )
+        assert user.last_time_asked_being_provider == datetime(9999, 1, 1)
+
+    def test_user_update_schema_defaults_to_none(self):
+        update = UserUpdateSchema()
+        assert update.last_time_asked_being_provider is None
+
+    def test_user_update_schema_accepts_datetime(self):
+        ts = datetime(2025, 6, 15)
+        update = UserUpdateSchema(last_time_asked_being_provider=ts)
+        assert update.last_time_asked_being_provider == ts
+
+    def test_user_update_schema_accepts_sentinel(self):
+        update = UserUpdateSchema(
+            last_time_asked_being_provider=PROVIDER_PITCH_OPT_OUT_SENTINEL
+        )
+        assert update.last_time_asked_being_provider == datetime(9999, 1, 1)
+
+    def test_user_schema_dumps_timestamp_field(self):
+        ts = datetime(2026, 2, 22, 10, 0, 0)
+        user = UserSchema(name="A", email="a@b.com", last_time_asked_being_provider=ts)
+        d = user.model_dump()
+        assert d["last_time_asked_being_provider"] == ts
 
 
 class TestCompetenceSchema:

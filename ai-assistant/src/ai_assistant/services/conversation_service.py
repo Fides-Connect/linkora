@@ -18,6 +18,8 @@ from ..prompts_templates import (
     CLARIFY_PROMPT,
     CONFIRMATION_PROMPT,
     RECOVERY_PROMPT,
+    PROVIDER_PITCH_PROMPT,
+    PROVIDER_ONBOARDING_PROMPT,
     get_language_instruction
 )
 
@@ -42,20 +44,25 @@ class ConversationStage(str, Enum):
     FINALIZE      = "finalize"
     RECOVERY      = "recovery"
     COMPLETED     = "completed"
+    PROVIDER_PITCH      = "provider_pitch"
+    PROVIDER_ONBOARDING = "provider_onboarding"
 
 
 # Legal stage transitions: { from_stage: { allowed_to_stages } }
 _LEGAL_TRANSITIONS: Dict["ConversationStage", List["ConversationStage"]] = {
     ConversationStage.GREETING:       [ConversationStage.TRIAGE],
     ConversationStage.TRIAGE:         [ConversationStage.FINALIZE, ConversationStage.CLARIFY,
-                                       ConversationStage.TOOL_EXECUTION, ConversationStage.RECOVERY],
+                                       ConversationStage.TOOL_EXECUTION, ConversationStage.RECOVERY,
+                                       ConversationStage.PROVIDER_ONBOARDING],
     ConversationStage.CLARIFY:        [ConversationStage.TRIAGE],
     ConversationStage.TOOL_EXECUTION: [ConversationStage.TRIAGE, ConversationStage.CONFIRMATION,
                                        ConversationStage.FINALIZE],
     ConversationStage.CONFIRMATION:   [ConversationStage.FINALIZE, ConversationStage.TRIAGE],
     ConversationStage.FINALIZE:       [ConversationStage.COMPLETED, ConversationStage.RECOVERY],
     ConversationStage.RECOVERY:       [ConversationStage.TRIAGE],
-    ConversationStage.COMPLETED:      [],
+    ConversationStage.COMPLETED:      [ConversationStage.PROVIDER_PITCH],
+    ConversationStage.PROVIDER_PITCH: [ConversationStage.PROVIDER_ONBOARDING, ConversationStage.COMPLETED],
+    ConversationStage.PROVIDER_ONBOARDING: [ConversationStage.COMPLETED],
 }
 
 
@@ -100,6 +107,9 @@ class ConversationService:
             "current_provider_index": 0,
             "user_name": "",
             "has_open_request": False,
+            # Holds partial skill data during PROVIDER_ONBOARDING (in-memory MVP).
+            # List of dicts, each representing one competence being assembled.
+            "onboarding_draft": [],
         }
         
         logger.info(f"Conversation service initialized: agent={agent_name}, company={company_name}")
@@ -186,6 +196,34 @@ class ConversationService:
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(template).format(
                     agent_name=self.agent_name,
+                ),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{input}")
+            ])
+
+        elif stage == ConversationStage.PROVIDER_PITCH:
+            language_instruction = get_language_instruction(self.language)
+            return ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(PROVIDER_PITCH_PROMPT).format(
+                    agent_name=self.agent_name,
+                    language_instruction=language_instruction,
+                ),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{input}")
+            ])
+
+        elif stage == ConversationStage.PROVIDER_ONBOARDING:
+            language_instruction = get_language_instruction(self.language)
+            onboarding_draft_json = json.dumps(
+                self.context.get("onboarding_draft", []),
+                ensure_ascii=False,
+                default=json_serializer,
+            )
+            return ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(PROVIDER_ONBOARDING_PROMPT).format(
+                    agent_name=self.agent_name,
+                    language_instruction=language_instruction,
+                    onboarding_draft_json=onboarding_draft_json,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
