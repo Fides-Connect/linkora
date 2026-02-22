@@ -1796,11 +1796,12 @@ class FirestoreService:
 
     # ── AI Conversations ─────────────────────────────────────────────────────
 
-    async def create_ai_conversation(self, data: Dict[str, Any]) -> Optional[str]:
-        """Create a new AI conversation document.
+    async def create_ai_conversation(self, user_id: str, data: Dict[str, Any]) -> Optional[str]:
+        """Create a new AI conversation document under users/{user_id}/ai_conversations.
 
         Args:
-            data: Dict with at minimum user_id, session_id.  topic_title is optional.
+            user_id: The owner of this conversation.
+            data:    Dict with optional topic_title, request_id, etc.
 
         Returns:
             The auto-generated conversation_id string, or None on failure.
@@ -1809,7 +1810,12 @@ class FirestoreService:
             return None
         try:
             validated = self._validate_data(data, AIConversationSchema)
-            doc_ref = self._get_collection('ai_conversations').document()
+            doc_ref = (
+                self._get_collection('users')
+                .document(user_id)
+                .collection('ai_conversations')
+                .document()
+            )
             doc_ref.set(validated)
             return doc_ref.id
         except Exception as exc:
@@ -1818,6 +1824,7 @@ class FirestoreService:
 
     async def save_ai_conversation_message(
         self,
+        user_id: str,
         conversation_id: str,
         role: str,
         text: str,
@@ -1830,6 +1837,7 @@ class FirestoreService:
         parent document atomically.
 
         Args:
+            user_id:         The owner of the conversation.
             conversation_id: The parent ai_conversation document ID.
             role:            'user' or 'assistant'.
             text:            Plain text of the message.
@@ -1852,12 +1860,13 @@ class FirestoreService:
             }
             validated = self._validate_data(msg_data, AIConversationMessageSchema)
             now = datetime.now(timezone.utc)
-            msg_ref = (
-                self._get_collection('ai_conversations')
+            conv_ref = (
+                self._get_collection('users')
+                .document(user_id)
+                .collection('ai_conversations')
                 .document(conversation_id)
-                .collection('messages')
-                .document()
             )
+            msg_ref = conv_ref.collection('messages').document()
             msg_ref.set(validated)
             # Update parent doc counters
             parent_update: Dict[str, Any] = {
@@ -1867,14 +1876,14 @@ class FirestoreService:
             }
             if sequence == 0:
                 parent_update["first_message_at"] = now
-            self._get_collection('ai_conversations').document(conversation_id).update(parent_update)
+            conv_ref.update(parent_update)
             return msg_ref.id
         except Exception as exc:
             logger.error("Error saving ai_conversation message: %s", exc)
             return None
 
     async def update_ai_conversation(
-        self, conversation_id: str, update_data: Dict[str, Any]
+        self, user_id: str, conversation_id: str, update_data: Dict[str, Any]
     ) -> bool:
         """Partial-update an AI conversation document.
 
@@ -1885,7 +1894,13 @@ class FirestoreService:
         try:
             validated = self._validate_data(update_data, AIConversationUpdateSchema, exclude_unset=True)
             validated["updated_at"] = datetime.now(timezone.utc)
-            self._get_collection('ai_conversations').document(conversation_id).update(validated)
+            (
+                self._get_collection('users')
+                .document(user_id)
+                .collection('ai_conversations')
+                .document(conversation_id)
+                .update(validated)
+            )
             return True
         except Exception as exc:
             logger.error("Error updating ai_conversation %s: %s", conversation_id, exc)
@@ -1895,14 +1910,14 @@ class FirestoreService:
         self,
         user_id: str,
         limit: int = 20,
-        start_after=None,
+        start_after_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """List AI conversations for a user, ordered by last_message_at DESC.
 
         Args:
-            user_id:     Filter to this user's conversations.
-            limit:       Maximum number of results to return.
-            start_after: Firestore DocumentSnapshot for cursor-based pagination.
+            user_id:        The user whose conversations to list.
+            limit:          Maximum number of results to return.
+            start_after_id: Document ID to start after for cursor-based pagination.
 
         Returns:
             List of conversation dicts (each includes 'conversation_id').
@@ -1910,14 +1925,20 @@ class FirestoreService:
         if not self.db:
             return []
         try:
+            user_conv_ref = (
+                self._get_collection('users')
+                .document(user_id)
+                .collection('ai_conversations')
+            )
             query = (
-                self._get_collection('ai_conversations')
-                .where(filter=FieldFilter('user_id', '==', user_id))
+                user_conv_ref
                 .order_by('last_message_at', direction='DESCENDING')
                 .limit(limit)
             )
-            if start_after is not None:
-                query = query.start_after(start_after)
+            if start_after_id:
+                cursor_doc = user_conv_ref.document(start_after_id).get()
+                if cursor_doc.exists:
+                    query = query.start_after(cursor_doc)
             results = []
             for doc in query.stream():
                 data = doc.to_dict()
@@ -1929,11 +1950,12 @@ class FirestoreService:
             return []
 
     async def get_ai_conversation_messages(
-        self, conversation_id: str
+        self, user_id: str, conversation_id: str
     ) -> List[Dict[str, Any]]:
         """Return all messages for an AI conversation, ordered by sequence ASC.
 
         Args:
+            user_id:         The owner of the conversation.
             conversation_id: The parent ai_conversation document ID.
 
         Returns:
@@ -1943,7 +1965,9 @@ class FirestoreService:
             return []
         try:
             query = (
-                self._get_collection('ai_conversations')
+                self._get_collection('users')
+                .document(user_id)
+                .collection('ai_conversations')
                 .document(conversation_id)
                 .collection('messages')
                 .order_by('sequence')
@@ -1960,3 +1984,32 @@ class FirestoreService:
                 conversation_id, exc,
             )
             return []
+
+    async def get_ai_conversation(
+        self, user_id: str, conversation_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch a single AI conversation document by owner + ID (O(1) lookup).
+
+        Returns the conversation dict (including 'conversation_id') or None if
+        the document does not exist.
+        """
+        if not self.db:
+            return None
+        try:
+            doc = (
+                self._get_collection('users')
+                .document(user_id)
+                .collection('ai_conversations')
+                .document(conversation_id)
+                .get()
+            )
+            if not doc.exists:
+                return None
+            data = doc.to_dict()
+            data['conversation_id'] = doc.id
+            return data
+        except Exception as exc:
+            logger.error(
+                "Error fetching ai_conversation %s: %s", conversation_id, exc,
+            )
+            return None

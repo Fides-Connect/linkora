@@ -631,3 +631,65 @@ class TestChatMessageUpdateSchema:
         assert "id" not in result
         assert "chat_message_id" not in result
         assert "unknown_field" not in result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AIConversationSchema / AIConversationUpdateSchema
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAIConversationSchema:
+    """Tests for the AI conversation persistence schemas."""
+
+    def test_valid_minimal(self):
+        from ai_assistant.firestore_schemas import AIConversationSchema
+        schema = AIConversationSchema(user_id="u1")
+        assert schema.user_id == "u1"
+        assert schema.topic_title == ""
+        assert schema.request_id is None
+        assert schema.final_stage is None
+        assert schema.message_count == 0
+        assert schema.expires_at > schema.created_at
+
+    def test_no_session_id_field(self):
+        """session_id was removed — extra='ignore' swallows it silently."""
+        from ai_assistant.firestore_schemas import AIConversationSchema
+        schema = AIConversationSchema(user_id="u1", session_id="old_val")
+        assert not hasattr(schema, "session_id")
+
+    def test_request_id_stored(self):
+        from ai_assistant.firestore_schemas import AIConversationSchema
+        schema = AIConversationSchema(user_id="u1", request_id="req_xyz")
+        assert schema.request_id == "req_xyz"
+
+    def test_missing_user_id_raises(self):
+        from ai_assistant.firestore_schemas import AIConversationSchema
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            AIConversationSchema()
+
+    def test_topic_title_max_length(self):
+        from ai_assistant.firestore_schemas import AIConversationSchema
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            AIConversationSchema(user_id="u1", topic_title="x" * 301)
+
+
+class TestAIConversationUpdateSchema:
+
+    def test_request_id_updatable(self):
+        from ai_assistant.firestore_schemas import AIConversationUpdateSchema
+        schema = AIConversationUpdateSchema(request_id="req_abc")
+        result = schema.model_dump(exclude_unset=True)
+        assert result == {"request_id": "req_abc"}
+
+    def test_final_stage_updatable(self):
+        from ai_assistant.firestore_schemas import AIConversationUpdateSchema
+        schema = AIConversationUpdateSchema(final_stage="completed")
+        result = schema.model_dump(exclude_unset=True)
+        assert result == {"final_stage": "completed"}
+
+    def test_empty_update_excludes_all(self):
+        from ai_assistant.firestore_schemas import AIConversationUpdateSchema
+        schema = AIConversationUpdateSchema()
+        result = schema.model_dump(exclude_unset=True)
+        assert result == {}

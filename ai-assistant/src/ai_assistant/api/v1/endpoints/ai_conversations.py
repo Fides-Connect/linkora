@@ -16,8 +16,8 @@ async def list_ai_conversations(request: web.Request) -> web.Response:
     """GET /api/v1/ai-conversations — List the current user's AI conversations.
 
     Query params:
-    - limit (int, default 20): Maximum number of results.
-    - cursor (str, optional): Firestore document ID to start after (pagination).
+    - limit  (int, default 20): Maximum number of results (1–100).
+    - cursor (str, optional):   conversation_id to start after (cursor pagination).
     """
     try:
         user_id = await get_current_user_id(request)
@@ -28,9 +28,11 @@ async def list_ai_conversations(request: web.Request) -> web.Response:
         except (ValueError, TypeError):
             limit = 20
 
+        cursor = request.query.get("cursor") or None
         conversations = await firestore_service.get_ai_conversations(
             user_id=user_id,
             limit=limit,
+            start_after_id=cursor,
         )
         conversations = serialize_datetime(conversations)
         return web.json_response({"conversations": conversations})
@@ -44,25 +46,20 @@ async def list_ai_conversations(request: web.Request) -> web.Response:
 async def get_ai_conversation_messages(request: web.Request) -> web.Response:
     """GET /api/v1/ai-conversations/{conversation_id}/messages — List messages.
 
-    Only the owner of the conversation (matching user_id) may read it.
+    Only the owner of the conversation may read it.
+    Ownership is verified with an O(1) direct document read.
     """
     try:
         user_id = await get_current_user_id(request)
         conversation_id = request.match_info["conversation_id"]
 
-        # Ownership check — fetch the conversation first
-        conversations = await firestore_service.get_ai_conversations(
-            user_id=user_id, limit=1
-        )
-        # We need to verify this specific conversation belongs to the user.
-        # Re-fetch all (up to 200) is expensive; instead we filter after load.
-        # A more scalable approach would use a direct document read.
-        all_convs = await firestore_service.get_ai_conversations(user_id=user_id, limit=200)
-        owned_ids = {c["conversation_id"] for c in all_convs if "conversation_id" in c}
-        if conversation_id not in owned_ids:
+        # O(1) ownership check: the conversation lives under users/{user_id}/ai_conversations
+        # so a successful read implicitly proves ownership.
+        conv = await firestore_service.get_ai_conversation(user_id, conversation_id)
+        if conv is None:
             raise web.HTTPForbidden(reason="Conversation not found or access denied")
 
-        messages = await firestore_service.get_ai_conversation_messages(conversation_id)
+        messages = await firestore_service.get_ai_conversation_messages(user_id, conversation_id)
         messages = serialize_datetime(messages)
         return web.json_response({"messages": messages})
     except web.HTTPException:
