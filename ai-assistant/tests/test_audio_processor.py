@@ -490,3 +490,88 @@ class TestRuntimeStateEmission:
         audio_processor.data_channel = None
         # Must not raise
         audio_processor._emit_runtime_state(AgentRuntimeState.THINKING)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Voice-mode FINALIZE stage guard
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestVoiceFinalizeGuard:
+    """
+    When ConversationStage is FINALIZE, a voice final transcript received in
+    _continuous_stt must send a 'please wait' message and NOT cancel the
+    ongoing provider-search task.
+    """
+
+    @pytest.mark.asyncio
+    async def test_voice_input_during_finalize_sends_busy_message(self, audio_processor):
+        from ai_assistant.services.conversation_service import ConversationStage
+
+        audio_processor.ai_assistant.conversation_service.get_current_stage = Mock(
+            return_value=ConversationStage.FINALIZE
+        )
+
+        sent_messages = []
+
+        with patch.object(
+            audio_processor,
+            "_send_chat_message",
+            side_effect=lambda text, is_user, **kw: sent_messages.append(text),
+        ):
+            async def fake_audio_stream(_):
+                yield "passende Anbieter bitte", True  # final transcript
+
+            audio_processor.transcript_processor.process_audio_stream = Mock(
+                return_value=fake_audio_stream(None)
+            )
+            audio_processor.running = True
+            stt_task = asyncio.create_task(audio_processor._continuous_stt())
+            await asyncio.sleep(0.05)
+            audio_processor.running = False
+            stt_task.cancel()
+            try:
+                await stt_task
+            except asyncio.CancelledError:
+                pass
+
+        assert any(
+            "such" in m.lower() or "search" in m.lower() or "moment" in m.lower()
+            for m in sent_messages
+        ), f"Expected a busy message, got: {sent_messages}"
+
+    @pytest.mark.asyncio
+    async def test_voice_input_during_finalize_does_not_cancel_task(self, audio_processor):
+        from ai_assistant.services.conversation_service import ConversationStage
+
+        audio_processor.ai_assistant.conversation_service.get_current_stage = Mock(
+            return_value=ConversationStage.FINALIZE
+        )
+
+        never_done = asyncio.create_task(asyncio.sleep(999))
+        audio_processor._response_task = never_done
+
+        with patch.object(audio_processor, "_send_chat_message", new=Mock()):
+            async def fake_audio_stream(_):
+                yield "ich warte", True
+
+            audio_processor.transcript_processor.process_audio_stream = Mock(
+                return_value=fake_audio_stream(None)
+            )
+            audio_processor.running = True
+            stt_task = asyncio.create_task(audio_processor._continuous_stt())
+            await asyncio.sleep(0.05)
+            audio_processor.running = False
+            stt_task.cancel()
+            try:
+                await stt_task
+            except asyncio.CancelledError:
+                pass
+
+        assert not never_done.cancelled(), (
+            "Running provider-search task must NOT be cancelled during FINALIZE stage"
+        )
+        never_done.cancel()
+        try:
+            await never_done
+        except asyncio.CancelledError:
+            pass

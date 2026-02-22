@@ -531,7 +531,12 @@ class AIConversationUpdateSchema(BaseModel):
 
 
 class AIConversationMessageSchema(BaseModel):
-    """Schema for messages in the 'messages' subcollection of an AIConversation."""
+    """Schema for messages in the 'messages' subcollection of an AIConversation.
+
+    ``expires_at`` mirrors the parent AIConversation TTL so that Firestore's TTL
+    policy can clean up orphaned message documents even if the parent document
+    was deleted by a separate process (e.g. a Cloud Function).
+    """
     model_config = ConfigDict(extra='ignore')
 
     conversation_id: str = Field(..., min_length=1)
@@ -541,4 +546,7 @@ class AIConversationMessageSchema(BaseModel):
     sequence: int = Field(..., ge=0)
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
+    )
+    expires_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc) + timedelta(days=_AI_CONV_TTL_DAYS)
     )
