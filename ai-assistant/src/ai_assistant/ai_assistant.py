@@ -162,18 +162,27 @@ class AIAssistant:
         ):
             yield chunk
     
-    async def get_greeting_audio(self, user_id: Optional[str] = None) -> Tuple[str, AsyncIterator[bytes]]:
+    async def get_greeting_audio(
+        self,
+        user_id: Optional[str] = None,
+        manage_stage: bool = True,
+    ) -> Tuple[str, AsyncIterator[bytes]]:
         """
         Generate a natural greeting and return both text and TTS audio.
         Delegates to GreetingService.
-        
+
         Args:
             user_id: Optional user ID to fetch user data from data provider
-        
+            manage_stage: When True (default, voice mode) the conversation stage
+                is cycled GREETING → TRIAGE as part of greeting generation.
+                Pass False for text mode where the stage is already at TRIAGE
+                and must not be reset.
+
         Returns:
             Tuple of (greeting_text, audio_iterator)
         """
         return await self.greeting_service.get_greeting_with_audio(
             session_id=self.session_id,
-            user_id=user_id
+            user_id=user_id,
+            manage_stage=manage_stage,
         )

@@ -158,6 +158,12 @@ class AudioProcessor:
         if not self._is_text_mode:
             # Voice mode: play greeting audio; greeting also advances stage to TRIAGE.
             asyncio.create_task(self._play_greeting())
+        else:
+            # Text mode: advance stage to TRIAGE immediately so any user message
+            # arriving before send_text_greeting() finishes is processed at the
+            # correct stage — not the initial GREETING stage whose prompt ignores
+            # actual user content.
+            self.ai_assistant.conversation_service.set_stage(ConversationStage.TRIAGE)
         # Text mode: send_text_greeting() is called from on_connectionstatechange
         # once the data channel is confirmed open.
     
@@ -201,7 +207,10 @@ class AudioProcessor:
         """Generate and send a text-only greeting for text-mode sessions.
 
         Polls until the data channel is open then generates the greeting
-        text (advancing the stage to TRIAGE) without producing TTS audio.
+        text without producing TTS audio.  Stage is advanced to TRIAGE
+        immediately (before any async work) so a first user message that
+        arrives during the polling window is always processed at TRIAGE,
+        never at the initial GREETING stage.
         """
         if self._greeting_sent:
             # Renegotiation caused connectionstatechange to fire again — skip.
@@ -211,6 +220,12 @@ class AudioProcessor:
 
         if not self.running:
             return
+
+        # CRITICAL: advance to TRIAGE immediately so any user message that
+        # arrives during data-channel polling is processed at the correct
+        # stage and not with the GREETING prompt that ignores user input.
+        self.ai_assistant.conversation_service.set_stage(ConversationStage.TRIAGE)
+
         # Wait up to 5 s for the data channel to open
         for _ in range(50):
             if self.data_channel and self.data_channel.readyState == 'open':
@@ -219,22 +234,32 @@ class AudioProcessor:
         else:
             logger.warning(
                 f"Data channel not open after 5 s for connection {self.connection_id} "
-                "— advancing stage without sending greeting"
+                "— skipping text greeting (stage already at TRIAGE)"
             )
-            self.ai_assistant.conversation_service.set_stage(ConversationStage.TRIAGE)
+            return
+
+        # If the user already sent their first message while we were polling,
+        # skip the auto-greeting — the ongoing TRIAGE response will naturally
+        # include a personalized greeting thanks to user_name in context.
+        if self._response_task and not self._response_task.done():
+            logger.info(
+                "Text mode: user already sent first message — skipping auto-greeting; "
+                "TRIAGE response will include personalized greeting"
+            )
             return
 
         try:
-            # get_greeting_audio: returns (text, lazy_audio_stream).
+            # get_greeting_audio with manage_stage=False: generates greeting text
+            # and stores user_name/has_open_request in conversation context WITHOUT
+            # resetting the stage back to GREETING.
             # We discard the audio stream — TTS synthesis is lazy and never called.
             greeting_text, _ = await self.ai_assistant.get_greeting_audio(
-                user_id=self.user_id
+                user_id=self.user_id, manage_stage=False
             )
             logger.info(f"Text greeting: {greeting_text}")
             self._send_chat_message(greeting_text, is_user=False, is_chunk=False)
         except Exception as e:
             logger.error(f"Error sending text greeting: {e}", exc_info=True)
-            self.ai_assistant.conversation_service.set_stage(ConversationStage.TRIAGE)
 
     async def enable_voice_mode(self, input_track: Optional[MediaStreamTrack] = None) -> 'AudioOutputTrack':
         """Resume or start voice mode.

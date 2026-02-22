@@ -47,26 +47,30 @@ class GreetingService:
     async def get_greeting_with_audio(
         self,
         session_id: str,
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
+        manage_stage: bool = True,
     ) -> Tuple[str, AsyncIterator[bytes]]:
         """
         Generate personalized greeting with audio.
-        
+
         This method:
         1. Fetches user data from data provider if user_id provided
         2. Generates personalized greeting text using LLM
         3. Adds greeting to conversation history
         4. Synthesizes audio from greeting text
-        
+
         Args:
             session_id: Session identifier
             user_id: Optional user ID to fetch user data
-            
+            manage_stage: Forwarded to generate_greeting(). Pass False when
+                the stage is already at TRIAGE (text mode) so it is not
+                reset back to GREETING during greeting generation.
+
         Returns:
             Tuple of (greeting_text, audio_iterator)
         """
         logger.info(f"🎯 get_greeting_with_audio called with user_id={user_id}")
-        
+
         # Fetch user data
         user_name, has_open_request = await self._fetch_user_data(user_id)
         logger.info(f"📝 Resolved user_name='{user_name}', has_open_request={has_open_request}")
@@ -79,7 +83,8 @@ class GreetingService:
         greeting_text = await self.conversation_service.generate_greeting(
             session_id=session_id,
             user_name=first_name,
-            has_open_request=has_open_request
+            has_open_request=has_open_request,
+            manage_stage=manage_stage,
         )
         
         # Add to conversation history
