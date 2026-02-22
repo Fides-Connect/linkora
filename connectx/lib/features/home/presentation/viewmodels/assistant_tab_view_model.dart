@@ -113,16 +113,18 @@ class AssistantTabViewModel extends ChangeNotifier {
           _chatMessages.add(ChatMessage(text: text, isUser: true));
         }
         _lastMessageWasUser = true;
+        // Keep processing state for optimistic UI — onRuntimeState(thinking) is
+        // the authoritative source of truth but arrives slightly after the echo.
         _conversationState = ConversationState.processing;
       } else {
         if (_lastMessageWasUser ||
             _chatMessages.isEmpty ||
             _chatMessages.last.isUser) {
-          // New AI response starting
+          // New AI response starting — let onRuntimeState drive _conversationState;
+          // only manage chat messages and mic state here.
           _currentMessage = text;
           _chatMessages.add(ChatMessage(text: text, isUser: false));
           _lastMessageWasUser = false;
-          _conversationState = ConversationState.listening;
           // Unmute mic only for voice sessions when AI responds
           if (_isVoiceMode) {
             _speechService.setMicrophoneMuted(false);

@@ -83,7 +83,10 @@ void main() {
          expect(viewModel.chatMessages.length, 2);
          expect(viewModel.chatMessages.last.text, 'Hi there');
          expect(viewModel.chatMessages.last.isUser, false);
-         expect(viewModel.conversationState, ConversationState.listening);
+         // onChatMessage no longer sets state to listening; only onRuntimeState
+         // is authoritative for state transitions after a user turn.
+         // State remains processing until the backend emits runtime-state:listening.
+         expect(viewModel.conversationState, ConversationState.processing);
       });
   });
 
