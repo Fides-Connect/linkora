@@ -326,11 +326,17 @@ async def update_my_competence(request: web.Request) -> web.Response:
         
         updated_competence = await firestore_service.update_competence(user_id, competence_id, body)
         if updated_competence:
-            # Sync to Weaviate
+            # Sync to Weaviate: remove old entry then re-create with updated data
             try:
                 competence_data = await firestore_service.get_competence(user_id, competence_id)
                 if competence_data:
-                    HubSpokeIngestion.update_competence(competence_data)
+                    HubSpokeIngestion.remove_competence_by_firestore_id(competence_id)
+                    title = competence_data.get("title", "")
+                    category = competence_data.get("category", "")
+                    if title:
+                        HubSpokeIngestion.create_competencies_by_user_id(
+                            user_id, [title], category=category
+                        )
             except Exception as e:
                 logger.error(f"Failed to sync competence {competence_id} update to Weaviate: {e}")
             

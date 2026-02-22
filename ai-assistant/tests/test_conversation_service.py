@@ -18,6 +18,7 @@ class TestConversationStageEnum:
         expected = {
             "GREETING", "TRIAGE", "CLARIFY", "TOOL_EXECUTION",
             "CONFIRMATION", "FINALIZE", "RECOVERY", "COMPLETED",
+            "PROVIDER_PITCH", "PROVIDER_ONBOARDING",
         }
         actual = {m.name for m in ConversationStage}
         assert actual == expected
@@ -49,15 +50,23 @@ class TestIsLegalTransition:
         (ConversationStage.FINALIZE,  ConversationStage.COMPLETED),
         (ConversationStage.FINALIZE,  ConversationStage.RECOVERY),
         (ConversationStage.RECOVERY,  ConversationStage.TRIAGE),
+        # Provider pitch + onboarding
+        (ConversationStage.COMPLETED,          ConversationStage.PROVIDER_PITCH),
+        (ConversationStage.PROVIDER_PITCH,     ConversationStage.PROVIDER_ONBOARDING),
+        (ConversationStage.PROVIDER_PITCH,     ConversationStage.COMPLETED),
+        (ConversationStage.PROVIDER_ONBOARDING, ConversationStage.COMPLETED),
+        # Direct onboarding from TRIAGE (existing providers managing skills)
+        (ConversationStage.TRIAGE,    ConversationStage.PROVIDER_ONBOARDING),
     ])
     def test_legal_pairs_return_true(self, from_s, to_s):
         assert is_legal_transition(from_s, to_s) is True
 
     @pytest.mark.parametrize("from_s,to_s", [
-        (ConversationStage.GREETING,  ConversationStage.COMPLETED),
-        (ConversationStage.COMPLETED, ConversationStage.TRIAGE),
-        (ConversationStage.TRIAGE,    ConversationStage.GREETING),
-        (ConversationStage.COMPLETED, ConversationStage.GREETING),
+        (ConversationStage.GREETING,       ConversationStage.COMPLETED),
+        (ConversationStage.COMPLETED,      ConversationStage.TRIAGE),
+        (ConversationStage.TRIAGE,         ConversationStage.GREETING),
+        (ConversationStage.COMPLETED,      ConversationStage.GREETING),
+        (ConversationStage.PROVIDER_PITCH, ConversationStage.TRIAGE),
     ])
     def test_illegal_pairs_return_false(self, from_s, to_s):
         assert is_legal_transition(from_s, to_s) is False

@@ -7,6 +7,12 @@ from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
+# Sentinel value for permanent opt-out of the provider pitch flow.
+# Stored as a far-future datetime so the field stays a single Optional[datetime]
+# type without needing a Union. Any value equal to this constant means the user
+# has permanently opted out and must never be pitched again.
+PROVIDER_PITCH_OPT_OUT_SENTINEL: datetime = datetime(9999, 1, 1)
+
 
 class UserSchema(BaseModel):
     """Schema for User documents in Firestore.
@@ -32,6 +38,9 @@ class UserSchema(BaseModel):
     feedback_negative: List[str] = Field(default_factory=list)
     location: str = Field(default="", max_length=200)
     user_app_settings: dict = Field(default_factory=dict)
+    # Provider pitch eligibility — None means never been set (new schema field);
+    # PROVIDER_PITCH_OPT_OUT_SENTINEL means permanent opt-out.
+    last_time_asked_being_provider: Optional[datetime] = None
     
     @field_validator('email')
     @classmethod
@@ -66,6 +75,7 @@ class UserUpdateSchema(BaseModel):
     feedback_negative: Optional[List[str]] = None
     location: Optional[str] = Field(None, max_length=200)
     user_app_settings: Optional[dict] = None
+    last_time_asked_being_provider: Optional[datetime] = None
     
     @field_validator('email')
     @classmethod

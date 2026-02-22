@@ -3,7 +3,7 @@
 Authentication and user session management endpoints.
 """
 import logging
-from datetime import datetime, UTC
+from datetime import datetime, timedelta, UTC
 from uuid import uuid4
 from aiohttp import web
 from pydantic import ValidationError
@@ -117,10 +117,13 @@ async def user_sync(request: web.Request) -> web.Response:
                 )
                 
                 # Only update FCM token and last_sign_in after seeding
-                # Don't overwrite template data with empty values
+                # Don't overwrite template data with empty values.
+                # Initialise last_time_asked_being_provider 60 days ago so
+                # the first completed conversation triggers the provider pitch.
                 update_data = {
                     "fcm_token": user_data["fcm_token"],
-                    "last_sign_in": user_data["last_sign_in"]
+                    "last_sign_in": user_data["last_sign_in"],
+                    "last_time_asked_being_provider": datetime.now(UTC) - timedelta(days=60),
                 }
                 await firestore_service.update_user(user_id, update_data)
                 

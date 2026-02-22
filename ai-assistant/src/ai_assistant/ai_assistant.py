@@ -96,9 +96,10 @@ class AIAssistant:
         
         # Build agentic runtime FSM and tool registry
         self.runtime_fsm = AgentRuntimeFSM()
+        self.firestore_service = None  # injected by PeerConnectionHandler after construction
         self.tool_registry = build_default_registry(
             data_provider=self.data_provider,
-            firestore_service=None,  # injected later by PeerConnectionHandler when available
+            firestore_service=None,  # placeholder — real value set via self.firestore_service
         )
 
         # Initialize orchestration services
@@ -134,6 +135,15 @@ class AIAssistant:
             Response chunks as strings
         """
         from .services.agent_tools import ToolCapability
+
+        # Fetch user_context for provider pitch eligibility check (best-effort)
+        user_ctx: dict = {}
+        if self.firestore_service and user_id:
+            try:
+                user_ctx = await self.firestore_service.get_user(user_id) or {}
+            except Exception:
+                pass
+
         context = {
             "user_id": user_id or "",
             "user_capabilities": [
@@ -141,9 +151,11 @@ class AIAssistant:
                 ToolCapability("favorites", "read"),
                 ToolCapability("service_requests", "read"),
                 ToolCapability("service_requests", "write"),
+                ToolCapability("provider_onboarding", "write"),
             ],
             "data_provider": self.data_provider,
-            "firestore_service": None,
+            "firestore_service": self.firestore_service,
+            "user_context": user_ctx,
         }
         async for chunk in self.response_orchestrator.generate_response_stream(
             prompt, self.session_id, context=context

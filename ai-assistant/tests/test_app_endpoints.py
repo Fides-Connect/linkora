@@ -2,9 +2,9 @@
 Unit tests for application endpoints.
 """
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch, AsyncMock, call
 from aiohttp import web
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from ai_assistant.api import deps
 from ai_assistant.api.v1.endpoints import me, service_requests
@@ -162,3 +162,88 @@ class TestAppEndpoints:
 
         response = await me.add_my_favorite(mock_request)
         assert response.status == 404
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auth endpoint — user_sync provider timestamp initialisation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUserSyncProviderTimestamp:
+    """Tests for last_time_asked_being_provider initialisation in user_sync."""
+
+    @pytest.fixture
+    def mock_firestore_auth(self):
+        with patch('ai_assistant.api.v1.endpoints.auth.firestore_service') as mock_fs:
+            yield mock_fs
+
+    @pytest.fixture
+    def mock_seeding_service(self):
+        with patch('ai_assistant.api.v1.endpoints.auth.seeding_service') as mock_seed:
+            mock_seed.seed_new_user = AsyncMock()
+            yield mock_seed
+
+    @pytest.fixture
+    def mock_request(self):
+        request = Mock(spec=web.Request)
+        request.json = AsyncMock(return_value={
+            "user_id": "new_user_123",
+            "name": "New User",
+            "email": "new@example.com",
+            "photo_url": "",
+            "fcm_token": "tok",
+        })
+        return request
+
+    async def test_new_user_gets_provider_timestamp_60_days_ago(
+        self, mock_request, mock_firestore_auth, mock_seeding_service
+    ):
+        """A brand-new user must receive last_time_asked_being_provider ~60 days ago."""
+        from ai_assistant.api.v1.endpoints import auth as auth_module
+
+        # No existing user → new user path
+        mock_firestore_auth.get_user = AsyncMock(return_value=None)
+        mock_firestore_auth.update_user = AsyncMock(return_value={"user_id": "new_user_123"})
+
+        response = await auth_module.user_sync(mock_request)
+        assert response.status == 200
+
+        # update_user should have been called (possibly multiple times); find the call
+        # that contains last_time_asked_being_provider
+        update_calls = mock_firestore_auth.update_user.call_args_list
+        assert update_calls, "update_user was never called"
+
+        # Gather all dicts passed as second positional or keyword arg
+        update_dicts = [c.args[1] if len(c.args) > 1 else c.kwargs.get("update_data", {})
+                        for c in update_calls]
+        matched = [d for d in update_dicts if "last_time_asked_being_provider" in d]
+        assert matched, "last_time_asked_being_provider not found in any update_user call"
+
+        ts = matched[0]["last_time_asked_being_provider"]
+        assert isinstance(ts, datetime)
+        now = datetime.now(timezone.utc)
+        # Should be approximately 60 days in the past (±1 minute tolerance)
+        expected = now - timedelta(days=60)
+        assert abs((ts.replace(tzinfo=timezone.utc) - expected).total_seconds()) < 60
+
+    async def test_existing_user_sync_does_not_set_provider_timestamp(
+        self, mock_request, mock_firestore_auth
+    ):
+        """Updating an existing user must NOT overwrite last_time_asked_being_provider."""
+        from ai_assistant.api.v1.endpoints import auth as auth_module
+
+        existing = {"user_id": "new_user_123", "name": "Old Name", "email": "new@example.com"}
+        mock_firestore_auth.get_user = AsyncMock(return_value=existing)
+        mock_firestore_auth.update_user = AsyncMock(return_value=existing)
+
+        with patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate:
+            mock_weaviate.get_user_by_id.return_value = existing
+            mock_weaviate.update_user.return_value = True
+            response = await auth_module.user_sync(mock_request)
+
+        assert response.status == 200
+        update_calls = mock_firestore_auth.update_user.call_args_list
+        for c in update_calls:
+            d = c.args[1] if len(c.args) > 1 else c.kwargs.get("update_data", {})
+            assert "last_time_asked_being_provider" not in d, (
+                "existing user update must not touch last_time_asked_being_provider"
+            )
