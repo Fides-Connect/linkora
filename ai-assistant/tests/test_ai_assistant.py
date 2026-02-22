@@ -79,6 +79,53 @@ class TestAIAssistantInitialization:
         assert ai_assistant.voice_name == 'de-DE-Chirp3-HD-Sulafat'
         assert ai_assistant.session_id == 'test-session'
 
+
+class TestAIAssistantCapabilityWiring:
+    """generate_llm_response_stream must include all 5 tool capability grants."""
+
+    async def test_provider_onboarding_capability_in_context(self, ai_assistant):
+        from ai_assistant.services.agent_tools import ToolCapability
+        captured_contexts = []
+
+        async def capture_context(user_input, session_id, context=None):
+            captured_contexts.append(context or {})
+            if False:
+                yield ""
+
+        ai_assistant.response_orchestrator.generate_response_stream = capture_context
+
+        async for _ in ai_assistant.generate_llm_response_stream("hi", user_id="u1"):
+            pass
+
+        assert captured_contexts, "generate_response_stream was not called"
+        caps = captured_contexts[0].get("user_capabilities", [])
+        assert ToolCapability("provider_onboarding", "write") in caps
+
+    async def test_all_five_capabilities_present(self, ai_assistant):
+        from ai_assistant.services.agent_tools import ToolCapability
+        captured_contexts = []
+
+        async def capture_context(user_input, session_id, context=None):
+            captured_contexts.append(context or {})
+            if False:
+                yield ""
+
+        ai_assistant.response_orchestrator.generate_response_stream = capture_context
+
+        async for _ in ai_assistant.generate_llm_response_stream("hi", user_id="u1"):
+            pass
+
+        caps = captured_contexts[0].get("user_capabilities", [])
+        expected = [
+            ToolCapability("providers", "read"),
+            ToolCapability("favorites", "read"),
+            ToolCapability("service_requests", "read"),
+            ToolCapability("service_requests", "write"),
+            ToolCapability("provider_onboarding", "write"),
+        ]
+        for cap in expected:
+            assert cap in caps, f"Missing capability: {cap}"
+
 class TestLLMResponseGeneration:
     """Test LLM response generation."""
     

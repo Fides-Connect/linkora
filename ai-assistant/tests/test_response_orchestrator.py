@@ -577,3 +577,179 @@ class TestAIConversationServiceIntegration:
         async for chunk in orch.generate_response_stream("hi", "sess"):
             chunks.append(chunk)
         assert len(chunks) > 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Provider pitch eligibility helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestShouldPitchProvider:
+    """Unit tests for the _should_pitch_provider static helper."""
+
+    def _ctx(self, is_provider=False, last_asked=None):
+        return {
+            "user_context": {
+                "is_service_provider": is_provider,
+                "last_time_asked_being_provider": last_asked,
+            }
+        }
+
+    def test_returns_false_when_no_user_context(self):
+        assert ResponseOrchestrator._should_pitch_provider({}) is False
+
+    def test_returns_false_when_already_provider(self):
+        from datetime import datetime, timezone, timedelta
+        last_asked = datetime.now(timezone.utc) - timedelta(days=60)
+        assert ResponseOrchestrator._should_pitch_provider(
+            self._ctx(is_provider=True, last_asked=last_asked)
+        ) is False
+
+    def test_returns_false_when_timestamp_is_none(self):
+        assert ResponseOrchestrator._should_pitch_provider(
+            self._ctx(is_provider=False, last_asked=None)
+        ) is False
+
+    def test_returns_false_when_opted_out(self):
+        from ai_assistant.firestore_schemas import PROVIDER_PITCH_OPT_OUT_SENTINEL
+        assert ResponseOrchestrator._should_pitch_provider(
+            self._ctx(is_provider=False, last_asked=PROVIDER_PITCH_OPT_OUT_SENTINEL)
+        ) is False
+
+    def test_returns_false_when_asked_recently(self):
+        from datetime import datetime, timezone, timedelta
+        last_asked = datetime.now(timezone.utc) - timedelta(days=10)
+        assert ResponseOrchestrator._should_pitch_provider(
+            self._ctx(is_provider=False, last_asked=last_asked)
+        ) is False
+
+    def test_returns_true_when_all_conditions_met(self):
+        from datetime import datetime, timezone, timedelta
+        last_asked = datetime.now(timezone.utc) - timedelta(days=60)
+        assert ResponseOrchestrator._should_pitch_provider(
+            self._ctx(is_provider=False, last_asked=last_asked)
+        ) is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Provider pitch fires after COMPLETED when eligible
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProviderPitchAfterCompleted:
+
+    def _eligible_ctx(self):
+        from datetime import datetime, timezone, timedelta
+        return {
+            "user_context": {
+                "is_service_provider": False,
+                "last_time_asked_being_provider": datetime.now(timezone.utc) - timedelta(days=60),
+            }
+        }
+
+    async def test_pitch_fires_when_eligible(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+
+        async def stream_with_completed(*args, **kwargs):
+            yield {"type": "function_call", "name": "signal_transition",
+                   "args": {"target_stage": "completed"}}
+
+        mock_llm_service.generate_stream = stream_with_completed
+
+        from unittest.mock import patch
+        with patch("ai_assistant.services.response_orchestrator.is_legal_transition", return_value=True):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("done", "sess", context=self._eligible_ctx()):
+                pass
+
+        set_stage_calls = [call[0][0] for call in mock_conversation_service.set_stage.call_args_list]
+        assert ConversationStage.PROVIDER_PITCH in set_stage_calls
+
+    async def test_pitch_skipped_when_already_provider(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+
+        async def stream_with_completed(*args, **kwargs):
+            yield {"type": "function_call", "name": "signal_transition",
+                   "args": {"target_stage": "completed"}}
+
+        mock_llm_service.generate_stream = stream_with_completed
+        ineligible_ctx = {"user_context": {"is_service_provider": True, "last_time_asked_being_provider": None}}
+
+        from unittest.mock import patch
+        with patch("ai_assistant.services.response_orchestrator.is_legal_transition", return_value=True):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("done", "sess", context=ineligible_ctx):
+                pass
+
+        set_stage_calls = [call[0][0] for call in mock_conversation_service.set_stage.call_args_list]
+        assert ConversationStage.PROVIDER_PITCH not in set_stage_calls
+
+    async def test_pitch_skipped_when_no_user_context(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+
+        async def stream_with_completed(*args, **kwargs):
+            yield {"type": "function_call", "name": "signal_transition",
+                   "args": {"target_stage": "completed"}}
+
+        mock_llm_service.generate_stream = stream_with_completed
+
+        from unittest.mock import patch
+        with patch("ai_assistant.services.response_orchestrator.is_legal_transition", return_value=True):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            # No user_context in the context dict
+            async for _ in orch.generate_response_stream("done", "sess", context={}):
+                pass
+
+        set_stage_calls = [call[0][0] for call in mock_conversation_service.set_stage.call_args_list]
+        assert ConversationStage.PROVIDER_PITCH not in set_stage_calls
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Tool result containing signal_transition key
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestToolResultSignalTransition:
+    """When a tool returns {"signal_transition": "stage"}, the orchestrator applies it."""
+
+    async def test_tool_result_signal_triggers_stage_change(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.PROVIDER_PITCH
+
+        async def stream_with_tool_call(*args, **kwargs):
+            yield {"type": "function_call", "name": "record_provider_interest",
+                   "args": {"decision": "accepted"}}
+
+        mock_llm_service.generate_stream = stream_with_tool_call
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"signal_transition": "provider_onboarding", "status": "accepted"}
+        )
+
+        from unittest.mock import patch
+        with patch("ai_assistant.services.response_orchestrator.is_legal_transition", return_value=True):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("yes", "sess"):
+                pass
+
+        set_stage_calls = [call[0][0] for call in mock_conversation_service.set_stage.call_args_list]
+        assert ConversationStage.PROVIDER_ONBOARDING in set_stage_calls
