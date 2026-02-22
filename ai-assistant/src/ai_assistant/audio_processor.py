@@ -10,10 +10,10 @@ import numpy as np
 from typing import Optional
 from aiortc import MediaStreamTrack
 from aiortc.mediastreams import MediaStreamError
-from av import AudioFrame
 
 from .ai_assistant import AIAssistant
 from .audio_track import AudioOutputTrack
+from .firestore_service import FirestoreService
 from .services.audio_frame_converter import AudioFrameConverter
 from .services.debug_recorder import DebugRecorder
 from .services.transcript_processor import TranscriptProcessor
@@ -21,6 +21,9 @@ from .services.tts_playback_manager import TTSPlaybackManager, SentenceParser
 from .services.conversation_service import ConversationStage
 from .services.agent_runtime_fsm import AgentRuntimeState
 from .services.ai_conversation_service import AIConversationService
+
+# Module-level FirestoreService instance (lazy-init on first use)
+_firestore_service = FirestoreService()
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +97,8 @@ class AudioProcessor:
         )
 
         # Wire AIConversationService so every session is persisted to Firestore.
-        # firestore_service is None here (injected later by PeerConnectionHandler
-        # if credentials are available); AIConversationService handles None safely.
-        ai_conv_service = AIConversationService(firestore_service=None)
+        # Uses the module-level FirestoreService singleton (lazy Firestore init).
+        ai_conv_service = AIConversationService(firestore_service=_firestore_service)
         assistant.response_orchestrator.ai_conversation_service = ai_conv_service
         
         logger.info(f"AI Assistant created with language '{language}': {assistant.language_code}, {assistant.voice_name}")
