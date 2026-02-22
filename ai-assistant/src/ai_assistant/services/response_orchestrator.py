@@ -230,6 +230,19 @@ class ResponseOrchestrator:
                                     and isinstance(tool_result, list)
                                 ):
                                     self.conversation_service.context["providers_found"] = tool_result
+                                # Link created service request to conversation
+                                if (
+                                    fn_name == "create_service_request"
+                                    and self.ai_conversation_service
+                                ):
+                                    req_id = (
+                                        tool_result.get("id")
+                                        or tool_result.get("service_request_id")
+                                        if isinstance(tool_result, dict)
+                                        else str(tool_result)
+                                    )
+                                    if req_id:
+                                        await self.ai_conversation_service.set_request_id(req_id)
                             else:
                                 logger.warning(
                                     "Tool %r returned error: %s", fn_name, tool_result

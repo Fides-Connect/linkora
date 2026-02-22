@@ -480,16 +480,18 @@ _AI_CONV_TTL_DAYS = 30
 
 
 class AIConversationSchema(BaseModel):
-    """Schema for AIConversation documents in the 'ai_conversations' collection.
+    """Schema for AIConversation documents stored as a subcollection under users.
 
-    TTL is enforced via the ``expires_at`` field (Firestore TTL policy).
-    The document ID is the WebRTC session_id.
+    Path: users/{user_id}/ai_conversations/{conversation_id}
+    TTL is enforced via the ``expires_at`` field (Firestore TTL policy targeting
+    the 'ai_conversations' collection group — covers both root and subcollection
+    paths because Firestore TTL policies match by collection group name).
     """
     model_config = ConfigDict(extra='ignore')
 
     user_id: str = Field(..., min_length=1)
-    session_id: str = Field(..., min_length=1)
     topic_title: str = Field(default="", max_length=300)
+    request_id: Optional[str] = Field(default=None)
     final_stage: Optional[str] = Field(default=None)
     first_message_at: Optional[datetime] = Field(default=None)
     last_message_at: Optional[datetime] = Field(default=None)
@@ -510,6 +512,7 @@ class AIConversationUpdateSchema(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
     topic_title: Optional[str] = Field(default=None, max_length=300)
+    request_id: Optional[str] = Field(default=None)
     final_stage: Optional[str] = Field(default=None)
     first_message_at: Optional[datetime] = Field(default=None)
     last_message_at: Optional[datetime] = Field(default=None)

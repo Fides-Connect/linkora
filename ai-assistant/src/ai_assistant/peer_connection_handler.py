@@ -310,12 +310,28 @@ class PeerConnectionHandler:
     async def close(self):
         """Close peer connection and cleanup resources."""
         logger.info(f"Closing connection {self.connection_id}")
-        
+
         # Cancel idle timer
         if self._idle_task and not self._idle_task.done():
             self._idle_task.cancel()
-        
+
         if self.audio_processor:
+            # Persist final conversation state before tearing down the processor.
+            try:
+                orchestrator = self.audio_processor.ai_assistant.response_orchestrator
+                ai_conv = orchestrator.ai_conversation_service
+                if ai_conv is not None:
+                    final_stage = (
+                        self.audio_processor.ai_assistant.conversation_service
+                        .get_current_stage()
+                    )
+                    await ai_conv.close_session(final_stage)
+                orchestrator.runtime_fsm.transition("terminate")
+            except Exception as exc:
+                logger.warning(
+                    "Could not persist conversation on close for %s: %s",
+                    self.connection_id, exc,
+                )
             await self.audio_processor.stop()
-        
+
         await self.pc.close()
