@@ -114,6 +114,22 @@ class TestStart:
         assert text_proc.stt_task is None
         mock_greet.assert_not_called()
 
+    async def test_text_mode_advances_stage_to_triage_immediately(self, text_proc):
+        """start() must advance stage to TRIAGE before any async work so that
+        a user message arriving before the greeting finishes is processed at
+        the correct stage (not GREETING)."""
+        with (
+            patch.object(text_proc, "_process_audio", new=AsyncMock()),
+            patch.object(text_proc, "_continuous_stt", new=AsyncMock()),
+            patch.object(text_proc, "_play_greeting", new=AsyncMock()),
+        ):
+            await text_proc.start()
+
+        assert (
+            text_proc.ai_assistant.conversation_service.get_current_stage()
+            == ConversationStage.TRIAGE
+        )
+
     async def test_text_mode_sets_running(self, text_proc):
         with (
             patch.object(text_proc, "_process_audio", new=AsyncMock()),
@@ -217,7 +233,9 @@ class TestSendTextGreeting:
         assert len(consumed) == 0
 
     async def test_timeout_advances_stage_without_sending(self, text_proc):
-        """When data channel never opens, stage should advance to TRIAGE anyway."""
+        """When data channel never opens, stage must be TRIAGE and no greeting
+        should be sent.  The stage is now advanced at the very start of
+        send_text_greeting() — before the poll — so it is set even on timeout."""
         text_proc.running = True
         # data_channel is None — channel never opens
 
@@ -241,6 +259,46 @@ class TestSendTextGreeting:
 
         # Nothing should have been called
         text_proc.ai_assistant.get_greeting_audio.assert_not_called()
+
+    async def test_skips_greeting_when_response_task_already_running(self, text_proc):
+        """If the user sends their first message before the data channel finishes
+        opening (race condition), _response_task is running and the auto-greeting
+        must be suppressed so the user doesn't receive a stale generic greeting
+        after their TRIAGE response."""
+        text_proc.running = True
+        text_proc.data_channel = _open_data_channel()
+        text_proc.ai_assistant.get_greeting_audio = AsyncMock(
+            return_value=("Hi!", _dummy_audio_gen())
+        )
+
+        # Simulate a response task already in flight
+        never_done: asyncio.Task = asyncio.create_task(asyncio.sleep(9999))
+        text_proc._response_task = never_done
+        try:
+            await text_proc.send_text_greeting()
+            # get_greeting_audio must NOT be called
+            text_proc.ai_assistant.get_greeting_audio.assert_not_called()
+        finally:
+            never_done.cancel()
+            try:
+                await never_done
+            except asyncio.CancelledError:
+                pass
+
+    async def test_greeting_called_with_manage_stage_false(self, text_proc):
+        """send_text_greeting must call get_greeting_audio with manage_stage=False
+        so the stage is never reset from TRIAGE back to GREETING."""
+        text_proc.running = True
+        text_proc.data_channel = _open_data_channel()
+        text_proc.ai_assistant.get_greeting_audio = AsyncMock(
+            return_value=("Hello!", _dummy_audio_gen())
+        )
+
+        await text_proc.send_text_greeting()
+
+        text_proc.ai_assistant.get_greeting_audio.assert_called_once_with(
+            user_id=text_proc.user_id, manage_stage=False
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
