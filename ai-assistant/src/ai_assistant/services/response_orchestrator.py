@@ -18,15 +18,23 @@ from .agent_tools import AgentToolRegistry, ToolPermissionError
 
 logger = logging.getLogger(__name__)
 
-# Matches any identifier(...) pattern — used to strip leaked tool-call text
-_TOOL_CALL_TEXT_RE = re.compile(r'\b[a-zA-Z_]\w*\s*\([^)]*\)')
+# Matches known tool-call names leaked as plain text — e.g. signal_transition(target_stage="finalize").
+# Intentionally restricted to tool names registered in build_default_registry so that
+# normal prose containing parentheses ("call me (555) 123-4567") is never stripped.
+_KNOWN_TOOL_NAMES_RE = re.compile(
+    r'\b(?:signal_transition|search_providers|get_favorites|get_open_requests'
+    r'|create_service_request|record_provider_interest|get_my_competencies'
+    r'|save_competence_batch|delete_competences)\s*\([^)]*\)'
+)
+_TOOL_CALL_TEXT_RE = _KNOWN_TOOL_NAMES_RE  # alias kept for backward compat with tests
 
 
 def _strip_tool_call_text(text: str) -> str:
-    """Remove identifier(...) patterns from a text chunk.
+    """Remove known tool-call name(...) patterns from a text chunk.
 
-    Does NOT strip surrounding whitespace so that inter-word spaces in normal
-    text are preserved (e.g. "Hello " + "world" stays "Hello world").
+    Only strips the specific tool names registered in the default registry —
+    not arbitrary identifiers — so normal prose with parentheses is preserved.
+    Does NOT strip surrounding whitespace so inter-word spaces remain intact.
     """
     return _TOOL_CALL_TEXT_RE.sub("", text)
 
@@ -309,7 +317,7 @@ class ResponseOrchestrator:
                     follow_up_stage
                 )
                 async for chunk in self.llm_service.generate_stream(
-                    "[Please give the user a helpful response based on the tool result above]",
+                    " ",
                     follow_up_template,
                     session_id,
                 ):
@@ -332,9 +340,7 @@ class ResponseOrchestrator:
 
             # Update topic title when entering FINALIZE
             if transitioned_to_finalize and self.ai_conversation_service:
-                summary = ""
-                if hasattr(self.conversation_service, '_get_problem_summary'):
-                    summary = self.conversation_service._get_problem_summary()
+                summary = self.conversation_service.get_problem_summary()
                 await self.ai_conversation_service.set_topic_title(summary)
 
             # Close session when entering COMPLETED

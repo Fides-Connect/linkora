@@ -408,13 +408,29 @@ class AudioProcessor:
                     
                     if is_final:
                         await self.audio_queue.put(None)
-                        # Interrupt any ongoing AI response before processing
-                        # the new transcript (handles the case where partial
-                        # speech wasn't enough to fire the interrupt but the
-                        # final transcript arrived while AI was still speaking).
-                        if self.is_ai_speaking:
-                            await self._trigger_interrupt()
                         if transcript and transcript.strip():
+                            # Guard: do not interrupt provider search in progress
+                            # (same guard as in process_text_input for text mode).
+                            if (
+                                self.ai_assistant.conversation_service.get_current_stage()
+                                == ConversationStage.FINALIZE
+                            ):
+                                busy_msg = (
+                                    "Ich suche noch nach passenden Anbietern – bitte noch einen Moment Geduld! "
+                                    "I'm still searching for providers – just a moment more, thank you!"
+                                )
+                                self._send_chat_message(busy_msg, is_user=False)
+                                logger.info(
+                                    "_continuous_stt: FINALIZE stage — voice input ignored "
+                                    "during provider search"
+                                )
+                                break
+                            # Interrupt any ongoing AI response before processing
+                            # the new transcript (handles the case where partial
+                            # speech wasn't enough to fire the interrupt but the
+                            # final transcript arrived while AI was still speaking).
+                            if self.is_ai_speaking:
+                                await self._trigger_interrupt()
                             # Start response as a background task so STT can
                             # immediately resume listening for the next interrupt.
                             # Use on_transcript_final hook if wired (e.g. to

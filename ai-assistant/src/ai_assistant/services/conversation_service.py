@@ -243,7 +243,7 @@ class ConversationService:
         """
         self.context["user_problem"].append(user_input)
     
-    def _get_problem_summary(self) -> str:
+    def get_problem_summary(self) -> str:
         """Extract problem summary from conversation context."""
         ai_responses = self.context.get("ai_responses", [])
         if len(ai_responses) >= 2:
@@ -303,7 +303,7 @@ class ConversationService:
         Called when entering FINALIZE stage.
         Generates a structured JSON query for hybrid search.
         """
-        problem_summary = self._get_problem_summary()
+        problem_summary = self.get_problem_summary()
         logger.info(f"Generating structured search query from summary: '{problem_summary[:100]}...'")
         
         # Generate structured query
