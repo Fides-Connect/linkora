@@ -742,3 +742,40 @@ class TestAIConversationUpdateSchema:
         schema = AIConversationUpdateSchema()
         result = schema.model_dump(exclude_unset=True)
         assert result == {}
+
+
+class TestAIConversationMessageSchema:
+    """AIConversationMessage must carry its own TTL so orphaned messages expire."""
+
+    def test_valid_message_has_expires_at(self):
+        from ai_assistant.firestore_schemas import AIConversationMessageSchema
+        msg = AIConversationMessageSchema(
+            conversation_id="c1", role="user", text="hello", sequence=0
+        )
+        assert msg.expires_at > msg.created_at
+
+    def test_expires_at_is_30_days_after_created_at(self):
+        from ai_assistant.firestore_schemas import AIConversationMessageSchema
+        from datetime import timedelta
+        msg = AIConversationMessageSchema(
+            conversation_id="c1", role="assistant", text="Hi!", sequence=1
+        )
+        delta = msg.expires_at - msg.created_at
+        # Allow ±1 second tolerance
+        assert abs(delta.total_seconds() - 30 * 86400) < 1
+
+    def test_role_validation_rejects_invalid(self):
+        from ai_assistant.firestore_schemas import AIConversationMessageSchema
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            AIConversationMessageSchema(
+                conversation_id="c1", role="system", text="bad", sequence=0
+            )
+
+    def test_sequence_cannot_be_negative(self):
+        from ai_assistant.firestore_schemas import AIConversationMessageSchema
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            AIConversationMessageSchema(
+                conversation_id="c1", role="user", text="hi", sequence=-1
+            )

@@ -276,7 +276,7 @@ class TestToolCallTextFilter:
     async def test_generic_tool_call_text_is_stripped(
         self, mock_llm_service, mock_conversation_service
     ):
-        """Any identifier(...) pattern must be stripped."""
+        """Known tool names leaked as plain text must be stripped."""
         async def leaky_stream(*args, **kwargs):
             yield "Calling search_providers(query='plumber') now."
 
@@ -290,6 +290,25 @@ class TestToolCallTextFilter:
             chunks.append(chunk)
         combined = "".join(chunks)
         assert "search_providers" not in combined
+
+    async def test_normal_text_with_parens_is_not_stripped(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """Normal prose containing parentheses must NOT be stripped."""
+        async def natural_stream(*args, **kwargs):
+            yield "I'll help you find(locate) the best providers in your area."
+
+        mock_llm_service.generate_stream = natural_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        combined = "".join(chunks)
+        # "find" is not a known tool name so its parenthesized form must survive
+        assert "find" in combined
 
     async def test_clean_text_passes_through(
         self, mock_llm_service, mock_conversation_service
@@ -517,7 +536,7 @@ class TestAIConversationServiceIntegration:
         self, mock_llm_service, mock_conversation_service
     ):
         mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
-        mock_conversation_service._get_problem_summary = Mock(return_value="Elektriker")
+        mock_conversation_service.get_problem_summary = Mock(return_value="Elektriker")
 
         ai_conv = self._make_ai_conv_svc()
 
