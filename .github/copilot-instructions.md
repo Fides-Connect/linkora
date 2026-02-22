@@ -1,14 +1,11 @@
-# Copilot Instructions — Linkora AI Voice/Chat Assistant Platform
+# Copilot Instructions — Fides
 
-## Project Identity
-- **Platform**: Linkora — AI-powered voice and chat assistant for service provider matching
-- **Company**: Allinked
-- **AI Agent persona**: "Elin" — hardcoded in `ai-assistant/src/ai_assistant/ai_assistant.py`
-- **Monorepo components**: `connectx/` (Flutter app), `ai-assistant/` (Python backend), `weaviate/` (vector DB)
+## Project Overview
+- **Platform**: Fides — AI voice/chat assistant matching users to service providers
+- **Stack**: `connectx/` (Flutter), `ai-assistant/` (Python/FastAPI), `weaviate/` (vector DB)
+- **AI persona**: "Elin" — `AGENT_NAME = "Elin"` in `ai_assistant.py`
 
-## High-Level Architecture
-
-The platform connects end-users (seeking services) with providers via an AI conversation that progressively gathers intent, searches Weaviate for matching providers, and creates a service request in Firestore.
+## Architecture
 
 ```
 ConnectX (Flutter) ──WS signaling──► SignalingServer
@@ -17,105 +14,151 @@ ConnectX (Flutter) ──WS signaling──► SignalingServer
                                PeerConnectionHandler  (per-connection state, 10-min idle timer)
                                         │
                                   AudioProcessor      (STT→LLM→TTS hot path)
-                                   ├── TranscriptProcessor  (gRPC streaming STT)
-                                   ├── ResponseOrchestrator (stage FSM + LLM streaming)
-                                   └── TtsPlaybackManager   (parallel sentence-level TTS)
+                                   ├── TranscriptProcessor   (gRPC streaming STT)
+                                   ├── ResponseOrchestrator  (ConversationStage FSM + LLM streaming)
+                                   │    ├── AgentRuntimeFSM  (deterministic 11-state runtime FSM)
+                                   │    └── AgentToolRegistry (tool dispatch + capability checks)
+                                   └── TtsPlaybackManager    (parallel sentence-level TTS)
 ```
 
-**Two session modes** are set at connect-time as a WebSocket query param (`?mode=voice|text`):
-- **voice**: mic audio is captured and sent; greeting is played on connection.
-- **text**: no audio track sent; greeting is skipped; stage starts at `TRIAGE` immediately (`skip_greeting=True` in `AudioProcessor`). Text input arrives over the DataChannel as `{"type": "text-input", "text": "..."}`.
+**Session modes** (WS query param `?mode=voice|text`):
+- `voice`: mic audio sent; greeting played on connect.
+- `text`: no audio; `skip_greeting=True`; starts at `TRIAGE`. Input via DataChannel `{"type": "text-input", "text": "..."}`.
 
-## Conversation Stage FSM — Critical Invariant
+## Critical Invariants
 
-Stages: `GREETING → TRIAGE → FINALIZE → COMPLETED`
+### Conversation Stage FSM
+**Stage transitions happen ONLY inside `ResponseOrchestrator.generate_response_stream()`** via `handle_signal_transition_async()`. Never set `conversation_service.current_stage` directly — it will desync prompt templates.
 
-**All stage transitions happen exclusively inside `ResponseOrchestrator.generate_response_stream()`** via `ConversationService.detect_stage_transition()`. Never set `conversation_service.current_stage` directly from outside the orchestrator — doing so will desync the prompt templates from the actual stage.
+| From | To (allowed) |
+|---|---|
+| `GREETING` | `TRIAGE` |
+| `TRIAGE` | `FINALIZE`, `CLARIFY`, `TOOL_EXECUTION`, `RECOVERY`, `PROVIDER_ONBOARDING` |
+| `CLARIFY` | `TRIAGE` |
+| `TOOL_EXECUTION` | `TRIAGE`, `CONFIRMATION`, `FINALIZE` |
+| `CONFIRMATION` | `FINALIZE`, `TRIAGE` |
+| `FINALIZE` | `COMPLETED`, `RECOVERY` |
+| `RECOVERY` | `TRIAGE` |
+| `COMPLETED` | `PROVIDER_PITCH` |
+| `PROVIDER_PITCH` | `PROVIDER_ONBOARDING`, `COMPLETED` |
+| `PROVIDER_ONBOARDING` | `COMPLETED` |
 
-The `TRIAGE → FINALIZE` transition auto-triggers: a Weaviate provider search + provider presentation generation within the same stream, without a new user message.
+Auto-triggers: `TRIAGE → FINALIZE` runs Weaviate search in the same stream; `COMPLETED → PROVIDER_PITCH` fires when user is eligible.
 
-## DataChannel Protocol (Flutter ↔ Backend)
+### Provider Pitch Eligibility
+All conditions must be true:
+1. `user.is_service_provider == False`
+2. `user.last_time_asked_being_provider` is not `None`
+3. Value ≠ `PROVIDER_PITCH_OPT_OUT_SENTINEL` (`datetime(9999,1,1)`, permanent opt-out — defined in `firestore_schemas.py`)
+4. `now() - last_time_asked_being_provider >= 30 days`
 
-| Direction | Message shape | Meaning |
-|---|---|---|
-| Client → Server | `{"type": "text-input", "text": "…"}` | User typed a message (text mode) |
-| Server → Client | `{"type": "chat", "text": "…", "isUser": bool, "isChunk": bool}` | Chat display update; `isChunk=true` = streaming fragment |
+New users get `last_time_asked_being_provider = now() - 60 days` via `auth/sync`, so the first eligible conversation triggers the pitch.
 
-`isChunk=true` fragments must be assembled by the Flutter side before treating them as a complete message.
+**`record_provider_interest` outcomes**: `"accepted"` → `is_service_provider=True` + `{"signal_transition": "provider_onboarding"}`; `"not_now"` → reset 30-day clock; `"never"` → set sentinel.
+
+**`PROVIDER_ONBOARDING`**: multi-turn skill collection (max 2 questions/turn). Draft in `ConversationService.context["onboarding_draft"]` (in-memory only — lost on session drop). Ends with Markdown summary + `save_competence_batch`. Existing providers can also enter from `TRIAGE`.
+
+## AgentRuntimeFSM
+Deterministic 11-state machine (no LLM). States: `BOOTSTRAP → DATA_CHANNEL_WAIT → LISTENING → THINKING → LLM_STREAMING → TOOL_EXECUTING → SPEAKING → INTERRUPTING → MODE_SWITCH → ERROR_RETRYABLE → TERMINATED`. Do not bypass or replicate this FSM.
+
+## Tool Registry & Capabilities
+`AgentToolRegistry.execute()` enforces `ToolCapability` before dispatch. Raises `ToolPermissionError` on missing cap. `signal_transition` is handled directly in the stream loop — never dispatched through the registry. A tool may also trigger a stage change by returning `{"signal_transition": "stage_name"}` in its result.
+
+| Tool | Capability |
+|---|---|
+| `search_providers` | `("providers", "read")` |
+| `get_favorites` | `("favorites", "read")` |
+| `get_open_requests` | `("service_requests", "read")` |
+| `create_service_request` | `("service_requests", "write")` |
+| `record_provider_interest` | `("provider_onboarding", "write")` |
+| `get_my_competencies` | `("provider_onboarding", "write")` |
+| `save_competence_batch` | `("provider_onboarding", "write")` |
+| `delete_competences` | `("provider_onboarding", "write")` |
+
+## DataChannel Protocol
+
+| Direction | Message |
+|---|---|
+| Client → Server | `{"type": "text-input", "text": "…"}` |
+| Server → Client | `{"type": "chat", "text": "…", "isUser": bool, "isChunk": bool}` |
+
+`isChunk=true` = streaming fragment; Flutter must assemble before display.
 
 ## Key Files
 
 | File | Role |
 |---|---|
-| `ai-assistant/src/ai_assistant/signaling_server.py` | WS entry — reads `user_id`, `language`, `mode` query params |
+| `ai-assistant/src/ai_assistant/signaling_server.py` | WS entry — reads `user_id`, `language`, `mode` |
 | `ai-assistant/src/ai_assistant/peer_connection_handler.py` | Per-connection lifecycle; idle timer; DataChannel wiring |
-| `ai-assistant/src/ai_assistant/audio_processor.py` | Owns the STT→LLM→TTS loop; interrupt detection via `is_ai_speaking` |
-| `ai-assistant/src/ai_assistant/services/conversation_service.py` | `ConversationStage` constants + prompt templates per stage |
-| `ai-assistant/src/ai_assistant/services/response_orchestrator.py` | Stage transitions + LLM streaming — **the only place stages advance** |
-| `ai-assistant/src/ai_assistant/services/llm_service.py` | Gemini streaming via LangChain; per-session in-memory chat history |
-| `ai-assistant/src/ai_assistant/data_provider.py` | `DataProvider` ABC; `get_data_provider()` always returns `WeaviateDataProvider` |
-| `ai-assistant/src/ai_assistant/api/v1/router.py` | REST API surface (auth, /me, users, service-requests, chats, reviews) |
-| `connectx/lib/services/webrtc_service.dart` | WebRTC + WS signaling client; mode-aware connect logic |
-| `connectx/lib/services/speech_service.dart` | Facade over `WebRTCService`; exposes callbacks to the ViewModel |
-| `connectx/lib/features/home/presentation/viewmodels/assistant_tab_view_model.dart` | All voice/chat UI state (`ConversationState`, message list, `_dataChannelReady` guard) |
-| `connectx/lib/models/app_types.dart` | Shared enums (`ConversationState`) and callback typedefs (`OnChatMessageCallback`) |
+| `ai-assistant/src/ai_assistant/audio_processor.py` | STT→LLM→TTS loop; interrupt gate via `is_ai_speaking` |
+| `ai-assistant/src/ai_assistant/ai_assistant.py` | Facade — wires all services; builds 8-tool registry |
+| `ai-assistant/src/ai_assistant/services/conversation_service.py` | `ConversationStage` enum, `_LEGAL_TRANSITIONS`, prompt dispatch |
+| `ai-assistant/src/ai_assistant/services/response_orchestrator.py` | **Only place stages advance** — FSM, tools, provider pitch |
+| `ai-assistant/src/ai_assistant/services/agent_runtime_fsm.py` | Deterministic `AgentRuntimeFSM` |
+| `ai-assistant/src/ai_assistant/services/agent_tools.py` | `AgentTool`, `AgentToolRegistry`, `ToolCapability` |
+| `ai-assistant/src/ai_assistant/services/llm_service.py` | Gemini streaming; in-memory chat history; tool-call assembly |
+| `ai-assistant/src/ai_assistant/services/ai_conversation_service.py` | AI conversation persistence; 30-day TTL |
+| `ai-assistant/src/ai_assistant/prompts_templates.py` | All LLM prompt strings |
+| `ai-assistant/src/ai_assistant/firestore_schemas.py` | Pydantic schemas; `PROVIDER_PITCH_OPT_OUT_SENTINEL` |
+| `ai-assistant/src/ai_assistant/hub_spoke_ingestion.py` | Weaviate write/ingest; `sanitize_input()` |
+| `ai-assistant/src/ai_assistant/api/v1/endpoints/auth.py` | `sign_in_google`, `user_sync`, `user_logout` |
+| `ai-assistant/src/ai_assistant/api/v1/endpoints/me.py` | `/me` get/patch; `/me/competencies` CRUD |
+| `connectx/lib/services/webrtc_service.dart` | WebRTC + WS signaling client |
+| `connectx/lib/services/speech_service.dart` | Facade over `WebRTCService`; exposes callbacks |
+| `connectx/lib/features/home/presentation/viewmodels/assistant_tab_view_model.dart` | Voice/chat UI state; `_dataChannelReady` guard |
+| `connectx/lib/models/app_types.dart` | `ConversationState` enum; `OnChatMessageCallback` typedef |
 
 ## Developer Workflows
 
 ### Backend
 ```bash
-cd ai-assistant && pip install -e ".[dev]"   # install into shared .venv at repo root
-python -m ai_assistant                        # start server on :8080
+cd ai-assistant && pip install -e ".[dev]"
+python -m ai_assistant          # starts on :8080
 python -m pytest tests/ -v --tb=short --cov=src/ai_assistant
-docker-compose up                             # full stack incl. Weaviate
+docker-compose up               # full stack incl. Weaviate
 ```
 Only `GEMINI_API_KEY` is required.
 
 ### Flutter
 ```bash
-cd connectx
-cp template.env .env   # set AI_ASSISTANT_SERVER_URL (use machine IP for Android emulator)
-flutter pub get
-flutter run
-flutter test           # unit tests — no emulator needed
+cd connectx && cp template.env .env   # set AI_ASSISTANT_SERVER_URL (machine IP for Android emulator)
+flutter pub get && flutter run
+flutter test                          # no emulator needed
 ```
-CI Flutter tests run inside a devcontainer (`.devcontainer/`) — don't use bare `flutter test` in CI.
+CI runs inside `.devcontainer/` — do not use bare `flutter test` in CI.
 
-## Project-Specific Conventions
+## Coding Conventions
 
 ### Python Backend
-- **Fully async** throughout — no blocking I/O in the hot path. Use `asyncio` primitives.
-- **Constructor injection** everywhere — services receive dependencies via `__init__`, not module-level singletons. Mock at the constructor boundary in tests.
-- **No `@pytest.mark.asyncio`** needed — `asyncio_mode = "auto"` is set in `pyproject.toml`.
-- **Weaviate auto-mocked in CI**: `conftest.py` detects Weaviate availability and patches `HubSpokeConnection.get_client` when offline. Tests pass in both environments.
-- **Language flows top-down**: WS query param → `PeerConnectionHandler.language` → `AIAssistant` constructor → all services. Never assume German (`'de'`) is the only language.
-- **LLM chat history** is in-memory per `session_id` inside `LLMService.session_store` — it is not persisted to Firestore. Clearing/resetting a session means removing from this dict.
-- **Interrupt handling**: `AudioProcessor.is_ai_speaking` gates whether an incoming transcript triggers a new LLM response or cancels the current one. Do not skip this flag when adding new response-generation paths.
-- **Text mode greeting skip**: `AudioProcessor(skip_greeting=True)` advances `ConversationService` to `TRIAGE` on `start()`. Without this, all text messages would be answered with the greeting prompt.
+- **Fully async** — no blocking I/O in the hot path. Use `asyncio` primitives.
+- **Constructor injection** — no module-level singletons. Mock at constructor boundary in tests.
+- **No `@pytest.mark.asyncio`** — `asyncio_mode = "auto"` in `pyproject.toml`.
+- **Weaviate auto-mocked in CI** — `conftest.py` patches `HubSpokeConnection.get_client` when offline.
+- **Language top-down**: WS param → `PeerConnectionHandler` → `AIAssistant` → all services. Never hardcode `'de'`.
+- **LLM history**: in-memory per `session_id` in `LLMService.session_store`. Not persisted. Reset = remove from dict.
+- **Interrupt gate**: `AudioProcessor.is_ai_speaking` must be checked on every new response-generation path.
+- **Text mode**: always construct `AudioProcessor(skip_greeting=True)` for text sessions.
+- **AI conversation TTL**: `expires_at = now() + 30 days` on Firestore docs; session reset only clears `LLMService.session_store`.
+- **TDD**: write tests first.
 
 ### Flutter
-- **MVVM**: Pages are stateless/minimal. `ViewModel` (`ChangeNotifier`) owns all mutable state. Never reach past the ViewModel to call services from a widget.
-- **Wrapper pattern**: Platform APIs (`FirebaseAuth`, microphone, WebRTC) are wrapped in `wrappers.dart`. Always inject wrappers — never call platform APIs directly — to keep services testable.
-- **DataChannel readiness guard**: `_dataChannelReady` in `AssistantTabViewModel` must be `true` before sending text. A message sent too early is stored in `_pendingTextMessage` and flushed on `onDataChannelOpen`. This guard must be preserved when adding new DataChannel send paths.
-- **Environment**: `flutter_dotenv` loads `.env` (copied from `template.env`). `AI_ASSISTANT_SERVER_URL` is the only required variable.
-- **`OnChatMessageCallback` signature**: `(String text, bool isUser, bool isChunk)` — `isChunk=true` is a streaming fragment, not a complete message. UI must handle partial assembly.
+- **MVVM**: Pages stateless. `ViewModel` (`ChangeNotifier`) owns all state. Never call services from widgets.
+- **Wrapper pattern**: Platform APIs (`FirebaseAuth`, mic, WebRTC) wrapped in `wrappers.dart` — always inject, never call directly.
+- **DataChannel guard**: `_dataChannelReady` must be `true` before sending. Early messages go to `_pendingTextMessage`, flushed on `onDataChannelOpen`. Preserve this guard on all new send paths.
+- **`OnChatMessageCallback`**: `(String text, bool isUser, bool isChunk)` — `isChunk=true` is a fragment, not a complete message.
 
-### Weaviate / Provider Data
-- Schema is **hub-spoke**: `Competence` is the hub; `User` (provider) objects are the spokes, linked bidirectionally.
-- `data_provider.py`: `search_providers()` auto-detects the query type — plain text → vector search; JSON string `{"available_time", "location", "criterions"}` → `HubSpokeSearch.hybrid_search_providers()`.
-- `hub_spoke_ingestion.py`: `sanitize_input()` enforces SEO spam defense (caps at 20 unique words) before any write to Weaviate.
-- Connection: `WEAVIATE_URL` (local) takes priority over `WEAVIATE_CLUSTER_URL` + `WEAVIATE_API_KEY` (cloud), resolved in `WeaviateConnection.get_client()`.
+### Weaviate
+- **Hub-spoke schema**: `User` (hub) ↔ `Competence` (spoke), linked bidirectionally.
+- `search_providers()`: plain text → vector search; JSON with `{available_time, location, criterions}` → hybrid search.
+- `sanitize_input()` caps at 20 unique words before any Weaviate write.
+- Priority: `WEAVIATE_URL` (local) > `WEAVIATE_CLUSTER_URL` + `WEAVIATE_API_KEY` (cloud).
 
-### REST API (Backend)
-All endpoints are under `/api/v1/` and require a Firebase Bearer token except health checks. Key groupings:
-- **Auth**: `/auth/sign-in-google`, `/auth/sync`, `/auth/logout`
-- **Profile**: `/me` (get/patch), `/me/competencies` (CRUD), `/me/favorites` (CRUD)
-- **Service flow**: `/service-requests` → `/service-requests/{id}/chats` → `/service-requests/{id}/chats/{chat_id}/messages`
-- **Reviews**: `/reviews` (CRUD)
+### REST API
+All under `/api/v1/`, Firebase Bearer token required. Routes: `/auth/*`, `/me`, `/me/competencies`, `/me/favorites`, `/service-requests`, `/reviews`, `/ai-conversations`.
 
 ## External Dependencies
 
-| Service | Used for | Key env var |
+| Service | Purpose | Env var |
 |---|---|---|
 | Google Gemini (`gemini-2.5-flash`) | LLM responses | `GEMINI_API_KEY` |
 | Google Cloud Speech-to-Text (gRPC) | Audio → text, 30–50% lower latency than REST | GCP credentials |
