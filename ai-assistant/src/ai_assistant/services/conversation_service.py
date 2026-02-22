@@ -155,9 +155,11 @@ class ConversationService:
             ])
         
         elif stage == ConversationStage.TRIAGE:
+            user_name = self.context.get("user_name", "")
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(TRIAGE_CONVERSATION_PROMPT).format(
                     agent_name=self.agent_name,
+                    user_name=user_name,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
@@ -193,9 +195,13 @@ class ConversationService:
                 ConversationStage.TOOL_EXECUTION: TRIAGE_CONVERSATION_PROMPT,
             }
             template = stage_prompt_map.get(stage, TRIAGE_CONVERSATION_PROMPT)
+            # TRIAGE_CONVERSATION_PROMPT requires user_name; others only need agent_name
+            fmt_kwargs: dict = {"agent_name": self.agent_name}
+            if template is TRIAGE_CONVERSATION_PROMPT:
+                fmt_kwargs["user_name"] = self.context.get("user_name", "")
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(template).format(
-                    agent_name=self.agent_name,
+                    **fmt_kwargs
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
@@ -319,32 +325,44 @@ class ConversationService:
         self.context["providers_found"] = providers
         logger.info(f"Found {len(providers)} matching providers")
     
-    async def generate_greeting(self, session_id: str, user_name: str = "",
-                               has_open_request: bool = False) -> str:
+    async def generate_greeting(
+        self,
+        session_id: str,
+        user_name: str = "",
+        has_open_request: bool = False,
+        manage_stage: bool = True,
+    ) -> str:
         """
         Generate a natural, friendly greeting.
-        
+
         Args:
             session_id: Session identifier
             user_name: User's name
             has_open_request: Whether user has an open request
-        
+            manage_stage: When True (default, voice mode) the stage is cycled
+                GREETING → TRIAGE around the LLM call.  Pass False for text
+                mode where the stage is already at TRIAGE and must not be reset.
+
         Returns:
             Greeting text
         """
         try:
-            logger.info(f"🤖 generate_greeting called with user_name='{user_name}', has_open_request={has_open_request}")
-            self.set_stage(ConversationStage.GREETING)
-            # Persist so create_prompt_for_stage can use them if needed
+            logger.info(
+                f"🤖 generate_greeting called with user_name='{user_name}', "
+                f"has_open_request={has_open_request}, manage_stage={manage_stage}"
+            )
+            if manage_stage:
+                self.set_stage(ConversationStage.GREETING)
+            # Always persist user context so TRIAGE prompt can reference name.
             self.context["user_name"] = user_name
             self.context["has_open_request"] = has_open_request
-            
+
             language_instruction = get_language_instruction(self.language)
             prompt_template = ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
                 HumanMessage(content=" ")
             ])
-            
+
             greeting_messages = prompt_template.format_messages(
                 agent_name=self.agent_name,
                 company_name=self.company_name,
@@ -352,18 +370,20 @@ class ConversationService:
                 has_open_request="Yes" if has_open_request else "No",
                 language_instruction=language_instruction
             )
-            
+
             logger.info(f"📨 Formatted prompt with user_name='{user_name}' for LLM")
-            
+
             greeting = await self.llm_service.generate(greeting_messages)
             logger.info(f"Generated greeting: '{greeting}'")
-            
-            # Transition to triage after greeting
-            self.set_stage(ConversationStage.TRIAGE)
-            
+
+            if manage_stage:
+                # Transition to triage after greeting
+                self.set_stage(ConversationStage.TRIAGE)
+
             return greeting
-            
+
         except Exception as e:
             logger.error(f"Error generating greeting: {e}", exc_info=True)
-            self.set_stage(ConversationStage.TRIAGE)
+            if manage_stage:
+                self.set_stage(ConversationStage.TRIAGE)
             return "Hallo! Wie kann ich dir heute helfen?"
