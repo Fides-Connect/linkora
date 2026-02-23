@@ -155,17 +155,12 @@ kill %1
 ```bash
 cd ../helm
 
-# Create secrets
-kubectl create secret generic ai-assistant-secrets \
-  --from-literal=gemini-api-key=$GEMINI_API_KEY \
-  --from-literal=google-service-account="$(cat ../ai-assistant/service-account.json)" \
-  --from-literal=oauth-client-id=$GOOGLE_OAUTH_CLIENT_ID
-
-# Install AI-Assistant
+# Install AI-Assistant (GKE Workload Identity handles GCP auth)
 helm install ai-assistant ./ai-assistant \
-  --namespace default \
+  --namespace production \
   --set image.repository=gcr.io/<project-id>/ai-assistant \
-  --set image.tag=latest
+  --set image.tag=latest \
+  --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"=linkora-rt-service-account-dev@<project-id>.iam.gserviceaccount.com
 
 # Verify deployment
 kubectl get pods -l app=ai-assistant
@@ -262,10 +257,14 @@ helm install ai-assistant ./ai-assistant \
 
 **Option 1: kubectl create secret**
 ```bash
-kubectl create secret generic ai-assistant-secrets \
+kubectl create secret generic ai-assistant \
   --from-literal=gemini-api-key=$GEMINI_API_KEY \
-  --from-file=google-service-account=./service-account.json
+  --from-literal=admin-secret-key=$ADMIN_SECRET_KEY
 ```
+
+> The secret must be named `ai-assistant` (matching `.Chart.Name`) and must contain both `gemini-api-key` and `admin-secret-key`.
+
+> GCP authentication (Cloud Speech, TTS, Firebase Admin) uses **GKE Workload Identity** — no JSON key file is needed in Kubernetes.
 
 **Option 2: External Secrets Operator (Recommended for Production)**
 ```yaml
@@ -304,10 +303,114 @@ The platform uses automated deployment via GitHub Actions:
 5. Run smoke tests
 
 **Required GitHub Secrets:**
-- `GOOGLE_SERVICE_ACCOUNT_JSON`: GCP credentials with GKE/GCR access
+- `WIF_PROVIDER`: Workload Identity Federation provider resource name
+- `WIF_CI_SERVICE_ACCOUNT`: GCP service account email for CI/CD WIF impersonation (`linkora-ci-service-account-dev@...`)
+- `WIF_RT_SERVICE_ACCOUNT`: Runtime GCP SA email (`linkora-rt-service-account-dev@<project>.iam.gserviceaccount.com`)
+- `GCP_PROJECT_ID`: The GCP project ID (e.g. `linkora-dev`)
 - `GEMINI_API_KEY`: Google Gemini API key
-- `GOOGLE_OAUTH_CLIENT_ID`: OAuth client ID
 - `ADMIN_SECRET_KEY`: Admin interface key
+
+### Workload Identity Federation Setup
+
+WIF must be configured in GCP **before** the first deployment. Run the following once per project:
+
+```bash
+PROJECT_ID="linkora-dev"
+GITHUB_ORG="Fides-Connect"
+GITHUB_REPO="Fides"
+POOL_ID="github-actions-pool"
+PROVIDER_ID="github-actions-provider"
+
+# Separate service accounts for CI/CD and GKE runtime (principle of least privilege)
+CI_SA_NAME="linkora-ci-service-account-dev"
+RUNTIME_SA_NAME="linkora-rt-service-account-dev"
+
+# Kubernetes namespace and service account name — must match your Helm release.
+# NOTE: If you deploy to a different namespace, update NAMESPACE accordingly.
+NAMESPACE="${NAMESPACE:-production}"
+KSA_NAME="ai-assistant"
+
+# 1. Create a Workload Identity Pool
+gcloud iam workload-identity-pools create "$POOL_ID" \
+  --project="$PROJECT_ID" \
+  --location="global" \
+  --display-name="GitHub Actions Pool"
+
+# 2. Create the OIDC provider for GitHub
+gcloud iam workload-identity-pools providers create-oidc "$PROVIDER_ID" \
+  --project="$PROJECT_ID" \
+  --location="global" \
+  --workload-identity-pool="$POOL_ID" \
+  --display-name="GitHub Actions Provider" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --issuer-uri="https://token.actions.githubusercontent.com"
+
+# 3. Create the two GCP service accounts
+gcloud iam service-accounts create "$CI_SA_NAME" \
+  --project="$PROJECT_ID" \
+  --display-name="AI Assistant CI/CD Service Account"
+
+gcloud iam service-accounts create "$RUNTIME_SA_NAME" \
+  --project="$PROJECT_ID" \
+  --display-name="AI Assistant Runtime Service Account"
+
+# 4a. Grant CI/CD-only roles to the CI service account
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$CI_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/container.developer"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$CI_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.admin"
+
+# 4b. Grant minimal runtime roles to the runtime service account used by GKE pods
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$RUNTIME_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/cloudspeech.client"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$RUNTIME_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/cloudtts.client"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$RUNTIME_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/datastore.user"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:$RUNTIME_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/firebase.admin"
+
+# 5. Allow GitHub Actions to impersonate ONLY the CI service account
+gcloud iam service-accounts add-iam-policy-binding \
+  "$CI_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --project="$PROJECT_ID" \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')/locations/global/workloadIdentityPools/$POOL_ID/attribute.repository/$GITHUB_ORG/$GITHUB_REPO"
+
+# 6. Bind the Kubernetes Service Account (KSA) to the runtime GCP SA for pod-level WIF.
+#    NAMESPACE must match the Kubernetes namespace where your Helm chart is deployed.
+gcloud iam service-accounts add-iam-policy-binding \
+  "$RUNTIME_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com" \
+  --project="$PROJECT_ID" \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="serviceAccount:$PROJECT_ID.svc.id.goog[${NAMESPACE}/${KSA_NAME}]"
+
+# 7. Retrieve the values for GitHub secrets
+echo "WIF_PROVIDER:"
+gcloud iam workload-identity-pools providers describe "$PROVIDER_ID" \
+  --project="$PROJECT_ID" \
+  --location="global" \
+  --workload-identity-pool="$POOL_ID" \
+  --format="value(name)"
+echo "WIF_CI_SERVICE_ACCOUNT: $CI_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
+echo "WIF_RT_SERVICE_ACCOUNT: $RUNTIME_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
+echo "GCP_PROJECT_ID: $PROJECT_ID"
+```
+
+Set all of the above as **GitHub Actions secrets** (Settings → Secrets and variables → Actions).
+
+> **Note:** Two service accounts are used. `linkora-ci-service-account-dev` is impersonated by GitHub Actions and holds deploy permissions only. `linkora-rt-service-account-dev` is bound to the GKE pod via Workload Identity and holds only the runtime permissions (Speech, TTS, Firestore, Firebase). If you deploy to a namespace other than `production`, re-run step 6 with `NAMESPACE=<your-namespace>`.
+>
+> **Secret values to set in GitHub:**
+> - `WIF_CI_SERVICE_ACCOUNT` → full email: `linkora-ci-service-account-dev@<GCP_PROJECT_ID>.iam.gserviceaccount.com`
+> - `WIF_RT_SERVICE_ACCOUNT` → full email: `linkora-rt-service-account-dev@<GCP_PROJECT_ID>.iam.gserviceaccount.com`
+> - `GCP_PROJECT_ID` → your GCP project ID (e.g. `linkora-dev`)
 
 ### Manual Deployment
 

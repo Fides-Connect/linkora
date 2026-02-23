@@ -16,8 +16,7 @@ class TextToSpeechService:
     
     def __init__(self, language_code: str = 'de-DE', 
                  voice_name: str = 'de-DE-Chirp3-HD-Sulafat',
-                 max_concurrent_requests: int = 5,
-                 credentials=None):
+                 max_concurrent_requests: int = 5):
         """
         Initialize Text-to-Speech service.
         
@@ -25,17 +24,10 @@ class TextToSpeechService:
             language_code: Language code for TTS
             voice_name: Voice name to use for synthesis
             max_concurrent_requests: Maximum concurrent API requests
-            credentials: Google Cloud credentials (optional)
         """
         self.language_code = language_code
         self.voice_name = voice_name
-        
-        if credentials:
-            self.client = TextToSpeechAsyncClient(credentials=credentials)
-            logger.info(f"TTS service initialized with provided credentials")
-        else:
-            self.client = TextToSpeechAsyncClient()
-            logger.info(f"TTS service initialized with default credentials")
+        self.client = TextToSpeechAsyncClient()
         
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
         logger.info(f"TTS service configured: language={language_code}, voice={voice_name}, "

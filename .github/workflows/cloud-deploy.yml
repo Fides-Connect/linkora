@@ -9,7 +9,7 @@ on:
       - main
 
 env:
-  PROJECT_ID: gen-lang-client-0859968110
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   GKE_CLUSTER: fides-production
   GKE_REGION: europe-west3
   IMAGE_NAME: ai-assistant
@@ -20,15 +20,19 @@ jobs:
     if: github.event.workflow_run.conclusion == 'success'
     name: Build and Deploy to GKE
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # Required for OIDC token generation (Workload Identity Federation)
+      contents: read
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Authenticate to GCP
-      uses: google-github-actions/auth@v1
+      uses: google-github-actions/auth@v2
       with:
-        credentials_json: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+        service_account: ${{ secrets.WIF_CI_SERVICE_ACCOUNT }}
     
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
@@ -79,26 +83,17 @@ jobs:
           --namespace ${{ env.NAMESPACE }} \
           --create-namespace
 
-    - name: Prepare service account file for AI Assistant
-      run: |
-        echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > /tmp/google-service-account.json
-    
     - name: Deploy AI Assistant to GKE
       run: |
         helm upgrade --install ai-assistant ./helm/ai-assistant \
           --namespace ${{ env.NAMESPACE }} \
           --create-namespace \
+          --set image.repository="gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}" \
           --set image.tag=${{ github.sha }} \
-          --set-file secrets.googleServiceAccountJson=/tmp/google-service-account.json \
           --set secrets.geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
-          --set secrets.googleOauthClientId="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
-          --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}"
+          --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}" \
+          --set "serviceAccount.annotations.iam\.gke\.io/gcp-service-account=${{ secrets.WIF_RT_SERVICE_ACCOUNT }}"
 
-    - name: Cleanup service account file
-      if: always()
-      run: |
-        rm -f /tmp/google-service-account.json
-        
     - name: Deployment Summary
       run: |
         echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY

@@ -29,7 +29,7 @@ The Linkora platform uses Terraform to provision and manage Google Cloud Platfor
 - GKE Autopilot Cluster: `fides-production`
 - VPC Network: Custom network with pod/service IP ranges
 - Firewall Rules: Health checks and load balancing
-- GCS State Backend: `gen-lang-client-0859968110-tfstate`
+- GCS State Backend: `<PROJECT_ID>-tfstate`
 
 ## 📋 Prerequisites
 
@@ -63,7 +63,7 @@ gcloud auth login
 gcloud auth application-default login
 
 # Set project
-gcloud config set project gen-lang-client-0859968110
+gcloud config set project <PROJECT_ID>
 
 # Enable required APIs
 gcloud services enable compute.googleapis.com
@@ -159,7 +159,7 @@ terraform plan
 ```
 
 **Resources to be created:**
-- GCS bucket: `gen-lang-client-0859968110-tfstate`
+- GCS bucket: `<PROJECT_ID>-tfstate`
 - Bucket versioning: Enabled
 - Bucket encryption: Google-managed
 
@@ -177,7 +177,7 @@ The output will provide backend configuration:
 
 ```hcl
 backend "gcs" {
-  bucket = "gen-lang-client-0859968110-tfstate"
+  bucket = "<PROJECT_ID>-tfstate"
   prefix = "terraform/state"
 }
 ```
@@ -191,7 +191,7 @@ Add to `terraform/main.tf` (if not present):
 ```hcl
 terraform {
   backend "gcs" {
-    bucket = "gen-lang-client-0859968110-tfstate"
+    bucket = "<PROJECT_ID>-tfstate"
     prefix = "terraform/state"
   }
 }
@@ -214,7 +214,7 @@ terraform init
 Create `terraform.tfvars`:
 
 ```hcl
-project_id   = "gen-lang-client-0859968110"
+project_id   = "<PROJECT_ID>"
 region       = "europe-west3"
 cluster_name = "fides-production"
 ```
@@ -264,7 +264,9 @@ kubectl get nodes
 variable "project_id" {
   description = "GCP Project ID"
   type        = string
-  default     = "gen-lang-client-0859968110"
+  # Required — no default. Set via terraform.tfvars or TF_VAR_project_id.
+  # Example terraform.tfvars:
+  #   project_id = "linkora-dev"
 }
 
 variable "region" {
@@ -385,7 +387,7 @@ terraform destroy -target=google_compute_firewall.health_check
 
 **Configuration:**
 - **Backend**: Google Cloud Storage (GCS)
-- **Bucket**: `gen-lang-client-0859968110-tfstate`
+- **Bucket**: `<PROJECT_ID>-tfstate`
 - **Prefix**: `terraform/state`
 - **Encryption**: Google-managed keys
 - **Versioning**: Enabled
@@ -421,7 +423,7 @@ terraform state rm google_compute_firewall.old_rule
 **Import existing resource:**
 ```bash
 terraform import google_container_cluster.primary \
-  projects/gen-lang-client-0859968110/locations/europe-west3/clusters/fides-production
+  projects/<PROJECT_ID>/locations/europe-west3/clusters/fides-production
 ```
 
 ### State Locking
@@ -452,12 +454,13 @@ terraform force-unlock <lock-id>
 **Never commit:**
 - `terraform.tfvars` (add to `.gitignore`)
 - `*.tfstate` files
-- Service account keys
+- Service account keys (use Workload Identity Federation instead)
 
 **Use environment variables:**
 ```bash
-export TF_VAR_project_id="gen-lang-client-0859968110"
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
+export TF_VAR_project_id="<PROJECT_ID>"
+# Authenticate via WIF or user ADC rather than a key file:
+gcloud auth application-default login
 ```
 
 ### Network Security
@@ -503,7 +506,7 @@ private_cluster_config {
 
 3. **Wrong project:**
    ```bash
-   gcloud config set project gen-lang-client-0859968110
+   gcloud config set project <PROJECT_ID>
    ```
 
 ### Apply Fails
@@ -521,7 +524,7 @@ private_cluster_config {
 2. **Quota exceeded:**
    ```bash
    # Check quotas
-   gcloud compute project-info describe --project=gen-lang-client-0859968110
+   gcloud compute project-info describe --project=<PROJECT_ID>
    
    # Request quota increase in GCP Console
    ```
@@ -541,13 +544,13 @@ private_cluster_config {
 
 ```bash
 # Check lock status
-gsutil ls -L gs://gen-lang-client-0859968110-tfstate/terraform/state/default.tflock
+gsutil ls -L gs://<PROJECT_ID>-tfstate/terraform/state/default.tflock
 
 # Force unlock (if safe)
 terraform force-unlock <lock-id>
 
 # Remove stale lock manually
-gsutil rm gs://gen-lang-client-0859968110-tfstate/terraform/state/default.tflock
+gsutil rm gs://<PROJECT_ID>-tfstate/terraform/state/default.tflock
 ```
 
 ### Cluster Access Issues
@@ -560,7 +563,7 @@ gsutil rm gs://gen-lang-client-0859968110-tfstate/terraform/state/default.tflock
 # Get credentials
 gcloud container clusters get-credentials fides-production \
   --region europe-west3 \
-  --project gen-lang-client-0859968110
+  --project <PROJECT_ID>
 
 # Verify kubectl config
 kubectl config current-context

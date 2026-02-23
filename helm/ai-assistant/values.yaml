@@ -2,7 +2,8 @@
 replicaCount: 1
 
 image:
-  repository: gcr.io/gen-lang-client-0859968110/ai-assistant
+  # Image repository; set at deploy time via --set image.repository=gcr.io/<PROJECT_ID>/ai-assistant
+  repository: ai-assistant
   pullPolicy: IfNotPresent
   tag: latest
 
@@ -21,9 +22,6 @@ resources:
     memory: 1Gi
 
 env:
-  # Google Cloud Configuration
-  googleApplicationCredentials: "/app/secrets/google-application-credentials.json"
-  
   # Language and Voice Configuration
   languageCodeDe: "de-DE"
   voiceNameDe: "de-DE-Chirp3-HD-Sulafat"
@@ -50,16 +48,26 @@ env:
   # Debug: Record received audio to WAV files
   debugRecordAudio: "false"
 
+  # Firestore database name; use "(default)" unless a named database is configured
+  firestoreDatabaseName: "(default)"
+
 # Secrets - these will be created from GitHub Actions
 secrets:
-  # GCP Service Account Key (JSON file content)
-  googleServiceAccountJson: ""
-  
   # Gemini API Key
   geminiApiKey: ""
   
-  # Google OAuth Client ID
-  googleOauthClientId: ""
-  
   # Admin Secret Key
   adminSecretKey: ""
+
+# Kubernetes Service Account for GKE Workload Identity Federation
+# Annotate with the GCP service account that has the required IAM roles.
+# Prerequisite: run `gcloud iam service-accounts add-iam-policy-binding` to bind
+# the KSA to the GCP SA before deploying.
+serviceAccount:
+  create: true
+  name: "ai-assistant"
+  # Workload Identity annotation — required for GCP API access at runtime.
+  # Must be set at deploy time:
+  #   --set "serviceAccount.annotations.iam\.gke\.io/gcp-service-account=ai-assistant@<PROJECT_ID>.iam.gserviceaccount.com"
+  # See docs/helm.md for full WIF setup instructions.
+  annotations: {}
