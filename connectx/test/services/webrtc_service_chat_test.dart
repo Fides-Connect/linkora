@@ -357,6 +357,54 @@ void main() {
       // A new audio stream must be acquired
       verify(mockWebRTCWrapper.getUserMedia(any)).called(1);
     });
+
+    // Regression: AudioRoutingService.initialize() may fire onInputDeviceChanged
+    // asynchronously (e.g. Android device callback) after _createLocalStream()
+    // has set _localStream.  If the callback was wired before initialize(),
+    // _recreateAudioTrack() would fire and send a SECOND renegotiation offer.
+    // The server's handle_offer() then waits for on_track that never comes
+    // (same track), times out after 5 s, and never sends the answer → Flutter
+    // hangs and all ICE candidate pairs fail.
+    //
+    // Fix: onInputDeviceChanged is wired AFTER _renegotiateConnection() so no
+    // spurious re-offer can be triggered during setup.
+    test(
+        'wires onInputDeviceChanged only after renegotiation completes '
+        '(no duplicate offer on first text→voice upgrade)',
+        () async {
+      final svc = _buildService();
+      addTearDown(svc.disconnect);
+
+      Function(RTCPeerConnectionState)? connStateCb;
+      when(mockPeerConnection.onConnectionState = any).thenAnswer((inv) {
+        connStateCb = inv.positionalArguments.first
+            as Function(RTCPeerConnectionState)?;
+      });
+
+      when(mockPeerConnection.getSenders())
+          .thenAnswer((_) async => <RTCRtpSender>[]);
+      when(mockDataChannel.state)
+          .thenReturn(RTCDataChannelState.RTCDataChannelConnecting);
+
+      await svc.connect(mode: 'text');
+      connStateCb
+          ?.call(RTCPeerConnectionState.RTCPeerConnectionStateConnected);
+
+      // Track how many renegotiation offers are sent
+      int offerCount = 0;
+      when(mockPeerConnection.createOffer(any)).thenAnswer((_) async {
+        offerCount++;
+        return RTCSessionDescription('offer_$offerCount', 'offer');
+      });
+
+      await svc.enableVoiceMode();
+
+      // Exactly one offer must have been sent — not two
+      expect(offerCount, 1,
+          reason:
+              'A spurious AudioRouting device-change callback must not send '
+              'a second renegotiation offer during enableVoiceMode()');
+    });
   });
 
   // ══════════════════════════════════════════════════════════════════════════

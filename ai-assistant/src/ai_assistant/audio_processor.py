@@ -84,6 +84,10 @@ class AudioProcessor:
         # interrupt.  Set by _continuous_stt and process_text_input.
         self._response_task: Optional[asyncio.Task] = None
 
+        # Serializes text-input handling from the DataChannel to avoid races
+        # between concurrent process_text_input() calls.
+        self._text_input_lock = asyncio.Lock()
+
     def _create_language_specific_assistant(self, language: str):
         """Create a language-specific AI assistant instance."""
         logger.info(f"Creating language-specific AI assistant for language: {language}")
@@ -238,13 +242,28 @@ class AudioProcessor:
             )
             return
 
+        # Yield to the event loop so any concurrently-scheduled
+        # process_text_input() task (whose on_message callback fires at
+        # virtually the same moment the data channel opens on the client) can
+        # execute its FSM transition (LISTENING → THINKING) before we inspect
+        # the state below.  Without this yield, send_text_greeting() sees
+        # LISTENING, starts get_greeting_audio(), and the user ends up with
+        # both a generic greeting AND a TRIAGE response.
+        await asyncio.sleep(0)
+
         # If the user already sent their first message while we were polling,
         # skip the auto-greeting — the ongoing TRIAGE response will naturally
         # include a personalized greeting thanks to user_name in context.
-        if self._response_task and not self._response_task.done():
+        # The AgentRuntimeFSM transitions from LISTENING → THINKING inside
+        # process_text_input(). If a user message has already started processing,
+        # the FSM state here will no longer be LISTENING and we suppress greeting.
+        from .services.agent_runtime_fsm import AgentRuntimeState
+        fsm = self.ai_assistant.response_orchestrator.runtime_fsm
+        if fsm.current_state != AgentRuntimeState.LISTENING:
             logger.info(
-                "Text mode: user already sent first message — skipping auto-greeting; "
-                "TRIAGE response will include personalized greeting"
+                "Text mode: FSM is in '%s' — user already sent first message; "
+                "skipping auto-greeting (TRIAGE response will include personalized greeting)",
+                fsm.current_state.value,
             )
             return
 
@@ -491,6 +510,12 @@ class AudioProcessor:
         if self._response_task and not self._response_task.done():
             self._response_task.cancel()
             self._response_task = None
+        # Bring the FSM back to LISTENING so the next final_transcript event
+        # is accepted. Without this the FSM stays stranded in LLM_STREAMING or
+        # THINKING and the second user message is silently dropped.
+        fsm = self.ai_assistant.response_orchestrator.runtime_fsm
+        fsm.transition("interrupt")
+        fsm.transition("interrupt_handled")
     
     async def process_text_input(self, text: str):
         """Public entry point for text-mode input from the data channel.
@@ -503,34 +528,44 @@ class AudioProcessor:
         searching for providers), interrupting would lose the search results.
         Instead, send a bilingual 'please wait' message and return early.
         """
-        text = text.strip()
-        if not text:
-            logger.warning("process_text_input called with empty text — ignoring")
-            return
+        async with self._text_input_lock:
+            text = text.strip()
+            if not text:
+                logger.warning("process_text_input called with empty text — ignoring")
+                return
 
-        # Guard: do not interrupt provider search in progress
-        if (
-            self.ai_assistant.conversation_service.get_current_stage()
-            == ConversationStage.FINALIZE
-        ):
-            busy_msg = (
-                "Ich suche noch nach passenden Anbietern – bitte noch einen Moment Geduld! "
-                "I'm still searching for providers – just a moment more, thank you!"
-            )
-            self._send_chat_message(busy_msg, is_user=False)
-            logger.info(
-                "process_text_input: FINALIZE stage — returning busy message, "
-                "not interrupting provider search"
-            )
-            return
+            # Guard: do not interrupt provider search in progress
+            if (
+                self.ai_assistant.conversation_service.get_current_stage()
+                == ConversationStage.FINALIZE
+            ):
+                busy_msg = (
+                    "Ich suche noch nach passenden Anbietern – bitte noch einen Moment Geduld! "
+                    "I'm still searching for providers – just a moment more, thank you!"
+                )
+                self._send_chat_message(busy_msg, is_user=False)
+                logger.info(
+                    "process_text_input: FINALIZE stage — returning busy message, "
+                    "not interrupting provider search"
+                )
+                return
 
-        # Interrupt any in-progress response before generating the new one so
-        # the user gets a fresh reply without the old stream still running.
-        if self.is_ai_speaking or (self._response_task and not self._response_task.done()):
-            await self._trigger_interrupt()
-        self._response_task = asyncio.create_task(
-            self._process_final_transcript(text)
-        )
+            # Interrupt any in-progress response before generating the new one so
+            # the user gets a fresh reply without the old stream still running.
+            if self.is_ai_speaking or (self._response_task and not self._response_task.done()):
+                await self._trigger_interrupt()
+
+            # Advance FSM LISTENING → THINKING if not already done.
+            # For text-mode input this is now the canonical firing point.
+            # For voice-mode STT transcripts this remains the same canonical point.
+            from .services.agent_runtime_fsm import AgentRuntimeState
+            fsm = self.ai_assistant.response_orchestrator.runtime_fsm
+            if fsm.current_state == AgentRuntimeState.LISTENING:
+                fsm.transition("final_transcript")
+
+            self._response_task = asyncio.create_task(
+                self._process_final_transcript(text)
+            )
 
     async def _process_final_transcript(self, transcript: str):
         """Process a final transcript through LLM -> TTS pipeline."""
@@ -549,10 +584,6 @@ class AudioProcessor:
                     session_id=self.connection_id,
                 )
 
-            # Advance the runtime FSM: LISTENING → THINKING
-            fsm = self.ai_assistant.response_orchestrator.runtime_fsm
-            fsm.transition("final_transcript")
-            
             # Send user transcript to client
             self._send_chat_message(transcript, is_user=True)
             

@@ -74,10 +74,15 @@ class AssistantTabViewModel extends ChangeNotifier {
       notifyListeners();
     };
 
-    // Fallback gate: if data channel was already open before onDataChannelOpen fired
+    // Update status text when the underlying RTC connection is established.
+    // Do NOT call _onDataChannelReady here — RTCPeerConnectionStateConnected
+    // fires when ICE+DTLS complete, but the SCTP association (data channel
+    // "open") happens slightly after.  Sending the pending text message at this
+    // point would reach a not-yet-open channel and be silently dropped by
+    // WebRTCService.sendTextMessage, permanently losing the message because
+    // _dataChannelReady would already be true when onDataChannelOpen fires.
     _speechService.onConnected = () {
       _statusText = '';
-      _onDataChannelReady(); // dedup-safe
       notifyListeners();
     };
 
