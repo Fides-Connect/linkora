@@ -191,9 +191,6 @@ nano .env
 # Local development (use your machine's IP for Android emulator):
 AI_ASSISTANT_SERVER_URL=192.168.1.100:8080
 
-# For physical devices on same network:
-# AI_ASSISTANT_SERVER_URL=192.168.1.100:8080
-
 # Production deployment:
 # AI_ASSISTANT_SERVER_URL=your-server-domain.com:8080
 

@@ -69,7 +69,7 @@ python -m ai_assistant                        # start server on :8080
 python -m pytest tests/ -v --tb=short --cov=src/ai_assistant
 docker-compose up                             # full stack incl. Weaviate
 ```
-Only `GEMINI_API_KEY` is required. `GOOGLE_SERVICE_ACCOUNT_JSON_PATH` is optional (falls back to ADC).
+Only `GEMINI_API_KEY` is required.
 
 ### Flutter
 ```bash
@@ -120,6 +120,6 @@ All endpoints are under `/api/v1/` and require a Firebase Bearer token except he
 | Google Gemini (`gemini-2.5-flash`) | LLM responses | `GEMINI_API_KEY` |
 | Google Cloud Speech-to-Text (gRPC) | Audio → text, 30–50% lower latency than REST | GCP credentials |
 | Google Cloud TTS (Chirp3-HD) | Text → audio; voice: `de-DE-Chirp3-HD-Sulafat` / `en-US-Chirp3-HD-Sulafat` | GCP credentials |
-| Firebase Auth | JWT verification on all REST endpoints | `GOOGLE_SERVICE_ACCOUNT_JSON_PATH` |
+| Firebase Auth | JWT verification on all REST endpoints | GKE Workload Identity / ADC |
 | Firestore | Users, service requests, chats, reviews | same credentials |
 | Weaviate | Provider vector/hybrid search | `WEAVIATE_URL` or `WEAVIATE_CLUSTER_URL` + `WEAVIATE_API_KEY` |

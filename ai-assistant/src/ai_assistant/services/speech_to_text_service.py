@@ -14,22 +14,15 @@ logger = logging.getLogger(__name__)
 class SpeechToTextService:
     """Service for speech-to-text conversion using Google Cloud Speech API."""
     
-    def __init__(self, language_code: str = 'de-DE', credentials=None):
+    def __init__(self, language_code: str = 'de-DE'):
         """
         Initialize Speech-to-Text service.
         
         Args:
             language_code: Language code for speech recognition
-            credentials: Google Cloud credentials (optional)
         """
         self.language_code = language_code
-        
-        if credentials:
-            self.client = SpeechAsyncClient(credentials=credentials)
-            logger.info(f"STT service initialized with provided credentials")
-        else:
-            self.client = SpeechAsyncClient()
-            logger.info(f"STT service initialized with default credentials")
+        self.client = SpeechAsyncClient()
         
         logger.info(f"STT service configured for language: {language_code}")
     

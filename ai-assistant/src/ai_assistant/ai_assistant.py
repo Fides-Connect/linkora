@@ -64,21 +64,16 @@ class AIAssistant:
         # Initialize data provider
         self.data_provider = get_data_provider()
         
-        # Initialize Google Cloud credentials
-        credentials = self._get_google_credentials()
-        
         # Initialize services
         self.stt_service = SpeechToTextService(
-            language_code=self.language_code,
-            credentials=credentials
+            language_code=self.language_code
         )
         
         max_concurrency = int(os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5'))
         self.tts_service = TextToSpeechService(
             language_code=self.language_code,
             voice_name=self.voice_name,
-            max_concurrent_requests=max_concurrency,
-            credentials=credentials
+            max_concurrent_requests=max_concurrency
         )
         
         self.llm_service = LLMService(
@@ -112,17 +107,6 @@ class AIAssistant:
         )
         
         logger.info("AI Assistant initialized with service-oriented architecture")
-    
-    def _get_google_credentials(self):
-        """Get Google Cloud credentials if available."""
-        credentials_path = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')
-        if credentials_path and os.path.exists(credentials_path):
-            logger.info(f"Using credentials from: {credentials_path}")
-            from google.oauth2 import service_account
-            return service_account.Credentials.from_service_account_file(credentials_path)
-        else:
-            logger.info("Using default credentials (Cloud Run environment)")
-            return None
     
     async def generate_llm_response_stream(self, prompt: str) -> AsyncIterator[str]:
         """

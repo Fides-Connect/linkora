@@ -256,20 +256,14 @@ nano .env
 **Required Environment Variables:**
 
 ```bash
-# Google Cloud Credentials
-GOOGLE_SERVICE_ACCOUNT_JSON_PATH=path/to/service-account.json
-
 # Gemini AI
 GEMINI_API_KEY=your_gemini_api_key_here
-
-# Authentication (for ConnectX integration)
-GOOGLE_OAUTH_CLIENT_ID=your-oauth-client-id.apps.googleusercontent.com
 
 # Firestore Database Configuration
 # Specify which Firestore database to use (e.g., "development", "production")
 # This database must be created in your Firestore instance beforehand
 # If not set, defaults to "(default)" database
-FIRESTORE_DATABASE_NAME=development
+FIRESTORE_DATABASE_NAME=(default)
 
 # Weaviate Configuration
 # Local Weaviate (self-hosted)
@@ -561,9 +555,9 @@ docker build -t ai-assistant:latest .
 ```bash
 docker run -d \
   -p 8080:8080 \
-  -e GOOGLE_SERVICE_ACCOUNT_JSON_PATH=/secrets/service-account.json \
   -e GEMINI_API_KEY=your_key \
-  -v $(pwd)/secrets:/secrets \
+  -e GOOGLE_APPLICATION_CREDENTIALS=/app/adc.json \
+  -v $HOME/.config/gcloud/application_default_credentials.json:/app/adc.json:ro \
   ai-assistant:latest
 ```
 
@@ -576,7 +570,7 @@ Uses Helm charts in `/helm/ai-assistant/`:
 helm install ai-assistant helm/ai-assistant \
   --set image.tag=latest \
   --set secrets.geminiApiKey=$GEMINI_API_KEY \
-  --set secrets.googleServiceAccount="$(cat service-account.json)"
+  --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"=ai-assistant@PROJECT_ID.iam.gserviceaccount.com
 ```
 
 See [Helm Documentation](helm.md) for detailed deployment instructions.
@@ -659,7 +653,6 @@ docker-compose logs ai-assistant
 
 # Common issues:
 # - Missing environment variables
-# - Invalid service account JSON
 # - Port 8080 already in use
 
 # Fix port conflict
@@ -672,15 +665,13 @@ kill -9 <PID>
 **Symptoms**: "403 Forbidden" or "401 Unauthorized"
 
 **Solution**:
-1. Verify service account has correct roles
+1. Verify the GKE service account has the correct IAM roles (Speech, TTS)
 2. Check APIs are enabled in GCP project
-3. Validate JSON file path in `.env`
-4. Ensure service account JSON is valid
+3. Confirm Workload Identity binding is configured
 
 ```bash
-# Test service account
-gcloud auth activate-service-account --key-file=service-account.json
-gcloud auth list
+# Test that ADC resolves correctly (on GKE the pod should get credentials automatically)
+gcloud auth application-default print-access-token
 ```
 
 #### WebRTC Connection Failed

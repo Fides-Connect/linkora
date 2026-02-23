@@ -31,14 +31,10 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
-# Map custom env var to standard GOOGLE_APPLICATION_CREDENTIALS if not set
-if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS") and os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON_PATH"):
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON_PATH")
-
 # Google Cloud / Firebase imports
 try:
     import firebase_admin
-    from firebase_admin import credentials, firestore
+    from firebase_admin import firestore
 except ImportError:
     print("Error: firebase-admin module not found. Install it with: pip install firebase-admin")
     sys.exit(1)
@@ -68,13 +64,17 @@ logger = logging.getLogger(__name__)
 # Initialize Firebase App
 if not firebase_admin._apps:
     try:
-        # Use default credentials (GOOGLE_APPLICATION_CREDENTIALS)
-        cred = credentials.ApplicationDefault()
-        firebase_admin.initialize_app(cred)
-    except Exception as e:
-        logger.warning(f"Could not initialize Firebase with ApplicationDefault: {e}")
-        logger.warning("Attempting to initialize without credentials (for emulators or pre-configured env)...")
         firebase_admin.initialize_app()
+    except Exception as e:
+        logger.error(
+            "Failed to initialize Firebase app. This script requires Firestore access.\n"
+            "Verify that one of the following is correctly configured:\n"
+            "  - Application Default Credentials are set up (run `gcloud auth application-default login`),\n"
+            "  - GOOGLE_APPLICATION_CREDENTIALS points to a valid service account JSON,\n"
+            "  - or FIRESTORE_EMULATOR_HOST is set if you are using the Firestore emulator.\n"
+            f"Underlying error: {e}"
+        )
+        raise SystemExit(1)
 
 try:
     # Use the database specified in FIRESTORE_DATABASE_NAME env var, or default

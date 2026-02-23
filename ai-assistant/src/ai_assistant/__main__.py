@@ -9,7 +9,6 @@ import os
 from aiohttp import web
 from dotenv import load_dotenv
 import firebase_admin
-from firebase_admin import credentials
 
 from .signaling_server import SignalingServer
 from .common_endpoints import setup_cors
@@ -46,24 +45,12 @@ async def main():
         logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
         return
     
-    # GOOGLE_SERVICE_ACCOUNT_JSON_PATH is optional in Cloud Run
-    credentials_path = os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')
-    if credentials_path and not os.path.exists(credentials_path):
-        logger.warning(f"Credentials file not found: {credentials_path}, will use default credentials")
-    
-    # Initialize Firebase Admin SDK
+    # Initialize Firebase Admin SDK using Application Default Credentials (WIF / Cloud Run ADC)
     logger.info("Initializing Firebase Admin SDK...")
     try:
         if not firebase_admin._apps:
-            # Use the same service account credentials for Firebase
-            if credentials_path and os.path.exists(credentials_path):
-                cred = credentials.Certificate(credentials_path)
-                firebase_admin.initialize_app(cred)
-                logger.info(f"Firebase Admin SDK initialized with credentials from {credentials_path}")
-            else:
-                # Use default credentials (works in Cloud Run)
-                firebase_admin.initialize_app()
-                logger.info("Firebase Admin SDK initialized with default credentials")
+            firebase_admin.initialize_app()
+            logger.info("Firebase Admin SDK initialized with Application Default Credentials")
         else:
             logger.info("Firebase Admin SDK already initialized")
     except Exception as e:
@@ -84,7 +71,6 @@ async def main():
     logger.info(f"  Google TTS API Concurrency: {os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5')}")
     logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
     logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}")
-    logger.debug(f"  Credentials: {os.getenv('GOOGLE_SERVICE_ACCOUNT_JSON_PATH')}")
     
     # Initialize signaling server
     logger.info("Initializing signaling server...")

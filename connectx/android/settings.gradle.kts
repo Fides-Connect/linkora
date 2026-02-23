@@ -20,9 +20,10 @@ pluginManagement {
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "8.9.1" apply false
-    // START: FlutterFire Configuration
-    id("com.google.gms.google-services") version("4.3.15") apply false
-    // END: FlutterFire Configuration
+    // Add the dependency for the Google services Gradle plugin.
+    // NOTE: Version 4.4.4 has been validated with the Firebase BoM 34.9.0 used in build.gradle.kts
+    //       and with the Firebase features used in this app (Auth, Messaging).
+    id("com.google.gms.google-services") version("4.4.4") apply false
     id("org.jetbrains.kotlin.android") version "2.1.0" apply false
 }
 
