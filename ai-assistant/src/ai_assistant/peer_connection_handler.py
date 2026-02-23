@@ -3,6 +3,7 @@ WebRTC Peer Connection Handler
 Manages individual WebRTC connections and media streams.
 """
 import asyncio
+import json
 import logging
 from aiortc import (
     RTCPeerConnection,
@@ -12,19 +13,29 @@ from aiortc.contrib.media import MediaRelay
 from aiortc.sdp import candidate_from_sdp
 
 from .audio_processor import AudioProcessor
+from .services.data_channel_message_router import DataChannelMessageRouter
+from .services.session_mode import SessionMode
 
 logger = logging.getLogger(__name__)
 
 
 class PeerConnectionHandler:
     """Handles WebRTC peer connection for a single client."""
-    
-    def __init__(self, connection_id: str, websocket, user_id: str = None, language: str = 'de', session_mode: str = 'voice'):
+
+    def __init__(
+        self,
+        connection_id: str,
+        websocket,
+        user_id: str = None,
+        language: str = 'de',
+        session_mode: str = 'voice',
+    ):
         self.connection_id = connection_id
         self.websocket = websocket
         self.user_id = user_id
         self.language = language
-        self.session_mode = session_mode  # 'voice' or 'text'
+        # Store as SessionMode enum; backward-compat: == "voice" still works.
+        self.session_mode = SessionMode(session_mode)
         self.pc = RTCPeerConnection()
         self.relay = MediaRelay()
         self.audio_processor = None
@@ -34,12 +45,20 @@ class PeerConnectionHandler:
         self.data_channel = None
         self._pending_text_inputs: list[str] = []
         self._idle_task: asyncio.Task = None  # 10-minute idle timeout task
-        
-        logger.info(f"PeerConnectionHandler created for connection {connection_id} with language: {language}, mode: {session_mode}")
-        
+
+        # DataChannel message dispatch table
+        self._dc_router = DataChannelMessageRouter()
+        self._dc_router.register("text-input", self._on_dc_text_input)
+        self._dc_router.register("mode-switch", self._on_dc_mode_switch)
+
+        logger.info(
+            "PeerConnectionHandler created for connection %s with language: %s, mode: %s",
+            connection_id, language, session_mode,
+        )
+
         # Set up event handlers
         self._setup_event_handlers()
-        
+
     # ── Idle timer ────────────────────────────────────────────────────────────
 
     def _reset_idle_timer(self):
@@ -75,7 +94,7 @@ class PeerConnectionHandler:
         """Close the connection after 10 minutes of inactivity."""
         try:
             await asyncio.sleep(600)  # 10 minutes
-            logger.info(f"Idle timeout reached for connection {self.connection_id} — closing")
+            logger.info("Idle timeout reached for connection %s — closing", self.connection_id)
             await self.close()
         except asyncio.CancelledError:
             pass  # Normal cancellation when activity is detected
@@ -121,10 +140,79 @@ class PeerConnectionHandler:
         else:
             asyncio.create_task(self.audio_processor.process_text_input(text))
 
+    # ── DataChannel message handlers ──────────────────────────────────────────
+
+    def _on_dc_text_input(self, data: dict) -> None:
+        """Handle a ``text-input`` DataChannel message."""
+        text = data.get('text', '').strip()
+        if not text:
+            logger.warning("Empty text input received — ignoring")
+            return
+        if len(text) > 10_000:
+            logger.warning(
+                "Text input too large (%d chars) from connection %s — rejecting",
+                len(text), self.connection_id,
+            )
+            return
+        self._dispatch_text_input(text)
+
+    def _on_dc_mode_switch(self, data: dict) -> None:
+        """Handle a ``mode-switch`` DataChannel message."""
+        mode = data.get('mode', '')
+        if not self.audio_processor:
+            logger.warning("mode-switch received but audio processor not ready")
+            return
+        self._reset_idle_timer()
+        if mode == 'text' and not self.audio_processor._is_text_mode:
+            logger.info("mode-switch → text: pausing voice pipeline")
+            asyncio.create_task(self.audio_processor.disable_voice_mode())
+        elif mode == 'voice' and self.audio_processor._is_text_mode:
+            logger.info("mode-switch → voice: resuming voice pipeline")
+            asyncio.create_task(self.audio_processor.enable_voice_mode())
+
+    # ── on_track helpers ──────────────────────────────────────────────────────
+
+    async def _on_first_voice_track(self, track) -> None:
+        """First audio track on a brand-new voice session."""
+        self.audio_processor = AudioProcessor(
+            connection_id=self.connection_id,
+            input_track=track,
+            user_id=self.user_id,
+            language=self.language,
+        )
+        # Wire activity hook so STT transcripts reset the idle timer
+        self.audio_processor.on_activity = self._reset_idle_timer
+        # Wire FSM state-change → DataChannel runtime-state events
+        self._wire_runtime_fsm(self.audio_processor)
+
+        if self.data_channel:
+            self.audio_processor.set_data_channel(self.data_channel)
+            self._flush_pending_text_inputs()
+
+        self.track_ready.set()
+        asyncio.create_task(self.audio_processor.start())
+        self._reset_idle_timer()
+
+    async def _on_text_to_voice_upgrade(self, track) -> None:
+        """Existing text-only session upgrading to voice."""
+        logger.info("Text → voice upgrade detected")
+        output_track = await self.audio_processor.enable_voice_mode(track)
+        self.pc.addTrack(output_track)
+        self.audio_processor.on_activity = self._reset_idle_timer
+        self._reset_idle_timer()
+        self._flush_pending_text_inputs()
+        self.track_update_ready.set()
+
+    async def _on_track_replacement(self, track) -> None:
+        """Track replacement during renegotiation (e.g. Bluetooth change)."""
+        logger.info("Track replacement detected (renegotiation)")
+        await self.audio_processor.replace_input_track(track)
+        self.track_update_ready.set()
+
     # ── Event handlers ────────────────────────────────────────────────────────
 
     def _setup_event_handlers(self):
-        
+
         @self.pc.on("icecandidate")
         async def on_icecandidate(candidate):
             """Send ICE candidates to client."""
@@ -137,107 +225,49 @@ class PeerConnectionHandler:
                         'sdpMLineIndex': candidate.sdpMLineIndex
                     }
                 })
-        
+
         @self.pc.on("track")
         async def on_track(track):
-            """Handle incoming media track from client."""
-            logger.info(f"Received {track.kind} track: {track.id}")
-            
-            if track.kind == "audio":
-                if self.audio_processor is not None and self.audio_processor._is_text_mode:
-                    # Text → voice upgrade: enable audio pipeline and add output track
-                    logger.info("Text → voice upgrade detected")
-                    output_track = await self.audio_processor.enable_voice_mode(track)
-                    self.pc.addTrack(output_track)
-                    self.audio_processor.on_activity = self._reset_idle_timer
-                    self._reset_idle_timer()
-                    self._flush_pending_text_inputs()
-                    self.track_update_ready.set()
-                elif self.audio_processor is not None:
-                    logger.info("Track replacement detected (renegotiation)")
-                    # Event was already cleared in handle_offer before setRemoteDescription
-                    await self.audio_processor.replace_input_track(track)
-                    self.track_update_ready.set()
-                else:
-                    self.audio_processor = AudioProcessor(
-                        connection_id=self.connection_id,
-                        input_track=track,
-                        user_id=self.user_id,
-                        language=self.language,
-                    )
-                    # Wire activity hook so STT transcripts reset the idle timer
-                    self.audio_processor.on_activity = self._reset_idle_timer
-                    # Wire FSM state-change → DataChannel runtime-state events
-                    self._wire_runtime_fsm(self.audio_processor)
-                    
-                    if hasattr(self, 'data_channel') and self.data_channel:
-                        self.audio_processor.set_data_channel(self.data_channel)
-                        self._flush_pending_text_inputs()
+            """Route incoming media track to the correct handler."""
+            logger.info("Received %s track: %s", track.kind, track.id)
+            if track.kind != "audio":
+                return
 
-                    self.track_ready.set()
-                    asyncio.create_task(self.audio_processor.start())
-                    # Start idle timer once the audio processor is up
-                    self._reset_idle_timer()
-        
+            if self.audio_processor is not None and self.audio_processor._is_text_mode:
+                await self._on_text_to_voice_upgrade(track)
+            elif self.audio_processor is not None:
+                await self._on_track_replacement(track)
+            else:
+                await self._on_first_voice_track(track)
+
         @self.pc.on("datachannel")
         def on_datachannel(channel):
             """Handle incoming data channel."""
-            logger.info(f"Data channel received: {channel.label}")
+            logger.info("Data channel received: %s", channel.label)
             self.data_channel = channel
-            
+
             if self.audio_processor:
                 self.audio_processor.set_data_channel(channel)
             self._flush_pending_text_inputs()
-            
+
             @channel.on("message")
             def on_message(message):
-                """Handle incoming data channel messages."""
+                """Dispatch DataChannel messages via the router."""
                 try:
-                    import json
                     data = json.loads(message)
-                    logger.info(f"Data channel message received: {data.get('type')}")
-                    
-                    if data.get('type') == 'text-input':
-                        # Handle text input from client
-                        text = data.get('text', '').strip()
-                        if not text:
-                            logger.warning("Empty text input received — ignoring")
-                        elif len(text) > 10_000:
-                            logger.warning(
-                                f"Text input too large ({len(text)} chars) from connection "
-                                f"{self.connection_id} — rejecting"
-                            )
-                        else:
-                            self._dispatch_text_input(text)
+                    logger.info("Data channel message received: %s", data.get('type'))
+                    self._dc_router.dispatch(data)
+                except Exception as exc:
+                    logger.error("Error handling data channel message: %s", exc, exc_info=True)
 
-                    elif data.get('type') == 'mode-switch':
-                        # Flutter explicitly switched mode without sending a message.
-                        # 'text': pause TTS immediately.
-                        # 'voice': resume TTS/STT (tasks already alive from prior voice session).
-                        mode = data.get('mode', '')
-                        if self.audio_processor:
-                            self._reset_idle_timer()
-                            if mode == 'text' and not self.audio_processor._is_text_mode:
-                                logger.info("mode-switch → text: pausing voice pipeline")
-                                asyncio.create_task(self.audio_processor.disable_voice_mode())
-                            elif mode == 'voice' and self.audio_processor._is_text_mode:
-                                logger.info("mode-switch → voice: resuming voice pipeline")
-                                asyncio.create_task(self.audio_processor.enable_voice_mode())
-                        else:
-                            logger.warning("mode-switch received but audio processor not ready")
-                except Exception as e:
-                    logger.error(f"Error handling data channel message: {e}", exc_info=True)
-                
         @self.pc.on("connectionstatechange")
         async def on_connectionstatechange():
             """Handle connection state changes."""
-            logger.info(f"Connection state: {self.pc.connectionState}")
+            logger.info("Connection state: %s", self.pc.connectionState)
             if self.pc.connectionState == "connected":
                 # For text-mode sessions, send the greeting now that the data
-                # channel is open. The greeting also advances stage to TRIAGE.
-                # Guard with _greeting_sent so renegotiation (text→voice
-                # upgrade) does not trigger a second greeting when
-                # connectionstatechange fires "connected" again.
+                # channel is open. Guard with _greeting_sent so renegotiation
+                # (text→voice upgrade) does not trigger a second greeting.
                 if (
                     self.audio_processor
                     and self.audio_processor._is_text_mode
@@ -246,93 +276,110 @@ class PeerConnectionHandler:
                     asyncio.create_task(self.audio_processor.send_text_greeting())
             elif self.pc.connectionState == "failed":
                 await self.close()
-    
-    async def handle_offer(self, offer: RTCSessionDescription):
-        """Handle WebRTC offer from client."""
-        try:
-            # Use AudioProcessor presence as renegotiation indicator.
-            # getSenders() is 0 in text mode (server never sends audio there),
-            # so the old len(getSenders()) check was wrong for text→voice upgrades.
-            is_renegotiation = self.audio_processor is not None
-            is_text_to_voice_upgrade = (
-                is_renegotiation and self.audio_processor._is_text_mode
+
+    # ── handle_offer helpers ──────────────────────────────────────────────────
+
+    async def _await_track_update(self, timeout: float, hard: bool) -> None:
+        """Wait for :attr:`track_update_ready` to be set.
+
+        Parameters
+        ----------
+        timeout:
+            Seconds to wait.
+        hard:
+            If ``True`` propagate :exc:`asyncio.TimeoutError`; if ``False``
+            log and continue so SDP-only renegotiations don't fail.
+        """
+        if hard:
+            await asyncio.wait_for(self.track_update_ready.wait(), timeout=timeout)
+        else:
+            try:
+                await asyncio.wait_for(self.track_update_ready.wait(), timeout=timeout)
+            except asyncio.TimeoutError:
+                logger.debug(
+                    "Renegotiation for connection %s: no new track within %.1f s "
+                    "— SDP-only renegotiation, continuing without track_update_ready",
+                    self.connection_id, timeout,
+                )
+
+    async def _handle_initial_voice_offer(self) -> None:
+        """Complete initial voice offer: wait for track, add output, send answer."""
+        await asyncio.wait_for(self.track_ready.wait(), timeout=5.0)
+        if self.audio_processor:
+            output_track = self.audio_processor.get_output_track()
+            logger.info("Adding output track: %s", output_track.id)
+            self.pc.addTrack(output_track)
+        else:
+            logger.error("Audio processor not ready after track_ready signal")
+        answer = await self.pc.createAnswer()
+        await self.pc.setLocalDescription(answer)
+        await self._send_message({'type': 'answer', 'sdp': self.pc.localDescription.sdp})
+
+    async def _handle_initial_text_offer(self) -> None:
+        """Create a text-mode AudioProcessor and send answer (no audio track)."""
+        if self.audio_processor is None:
+            self.audio_processor = AudioProcessor(
+                connection_id=self.connection_id,
+                input_track=None,
+                user_id=self.user_id,
+                language=self.language,
             )
+            self.audio_processor.on_activity = self._reset_idle_timer
+            self._wire_runtime_fsm(self.audio_processor)
+            if self.data_channel:
+                self.audio_processor.set_data_channel(self.data_channel)
+                self._flush_pending_text_inputs()
+            asyncio.create_task(self.audio_processor.start())
+            self._reset_idle_timer()
+            logger.info("Text-mode AudioProcessor created without audio track")
+        answer = await self.pc.createAnswer()
+        await self.pc.setLocalDescription(answer)
+        await self._send_message({'type': 'answer', 'sdp': self.pc.localDescription.sdp})
+
+    async def _handle_renegotiation_offer(self) -> None:
+        """Handle renegotiation: text→voice upgrade (hard wait) or track swap (soft wait)."""
+        is_text_to_voice_upgrade = (
+            self.audio_processor is not None and self.audio_processor._is_text_mode
+        )
+        if is_text_to_voice_upgrade:
+            # Hard wait: on_track MUST fire to add the TTS output track before answer.
+            await self._await_track_update(timeout=5.0, hard=True)
+        else:
+            # Soft wait: SDP-only renegotiations never fire on_track; continue on timeout.
+            await self._await_track_update(timeout=2.0, hard=False)
+        answer = await self.pc.createAnswer()
+        await self.pc.setLocalDescription(answer)
+        await self._send_message({'type': 'answer', 'sdp': self.pc.localDescription.sdp})
+
+    async def handle_offer(self, offer: RTCSessionDescription):
+        """Handle WebRTC offer from client — route to the correct helper."""
+        try:
+            is_renegotiation = self.audio_processor is not None
             logger.info(
-                f"Handling {'renegotiation' if is_renegotiation else 'initial'} offer"
-                + (" (text→voice upgrade)" if is_text_to_voice_upgrade else "")
+                "Handling %s offer%s",
+                "renegotiation" if is_renegotiation else "initial",
+                " (text→voice upgrade)" if (
+                    is_renegotiation and self.audio_processor._is_text_mode
+                ) else "",
             )
 
-            # For renegotiation, clear the event before setRemoteDescription
-            # This ensures we wait for the track replacement/upgrade to complete
+            # Clear the event before setRemoteDescription so on_track is
+            # guaranteed to set it *after* our await below.
             if is_renegotiation:
                 self.track_update_ready.clear()
 
             await self.pc.setRemoteDescription(offer)
 
             if is_renegotiation:
-                if is_text_to_voice_upgrade:
-                    # Hard wait: on_track MUST fire to add the TTS output track
-                    # before we can send the answer.
-                    await asyncio.wait_for(self.track_update_ready.wait(), timeout=5.0)
-                else:
-                    # Soft wait: for device-change renegotiations on_track fires
-                    # with the new track; for SDP-only renegotiations (e.g., a
-                    # duplicate offer caused by a spurious AudioRouting event) it
-                    # never fires.  Continue gracefully on timeout rather than
-                    # propagating the error and silently dropping the answer.
-                    try:
-                        await asyncio.wait_for(
-                            self.track_update_ready.wait(), timeout=2.0
-                        )
-                    except asyncio.TimeoutError:
-                        logger.debug(
-                            "Renegotiation for connection %s: no new track within 2 s "
-                            "— SDP-only renegotiation, continuing without track_update_ready",
-                            self.connection_id,
-                        )
-            elif self.session_mode == 'text':
-                # Initial text mode: no audio track will arrive — create AudioProcessor directly
-                if self.audio_processor is None:
-                    self.audio_processor = AudioProcessor(
-                        connection_id=self.connection_id,
-                        input_track=None,
-                        user_id=self.user_id,
-                        language=self.language,
-                    )
-                    self.audio_processor.on_activity = self._reset_idle_timer
-                    # Wire FSM state-change → DataChannel runtime-state events
-                    self._wire_runtime_fsm(self.audio_processor)
-                    if hasattr(self, 'data_channel') and self.data_channel:
-                        self.audio_processor.set_data_channel(self.data_channel)
-                        self._flush_pending_text_inputs()
-                    asyncio.create_task(self.audio_processor.start())
-                    self._reset_idle_timer()
-                    logger.info("Text-mode AudioProcessor created without audio track")
+                await self._handle_renegotiation_offer()
+            elif self.session_mode == SessionMode.TEXT:
+                await self._handle_initial_text_offer()
             else:
-                await asyncio.wait_for(self.track_ready.wait(), timeout=5.0)
+                await self._handle_initial_voice_offer()
 
-            # Add output track for initial voice sessions.
-            # For text→voice upgrades the output track is added inside on_track
-            # (via enable_voice_mode) before this point.
-            if not is_renegotiation and self.session_mode != 'text':
-                if self.audio_processor:
-                    output_track = self.audio_processor.get_output_track()
-                    logger.info(f"Adding output track: {output_track.id}")
-                    self.pc.addTrack(output_track)
-                else:
-                    logger.error("Audio processor not ready")
-            
-            answer = await self.pc.createAnswer()
-            await self.pc.setLocalDescription(answer)
-            
-            await self._send_message({
-                'type': 'answer',
-                'sdp': self.pc.localDescription.sdp
-            })
-            
-        except Exception as e:
-            logger.error(f"Error handling offer: {e}", exc_info=True)
-    
+        except Exception as exc:
+            logger.error("Error handling offer: %s", exc, exc_info=True)
+
     async def _handle_voice_to_text_switch(self, text: str):
         """Disable voice pipeline then process the incoming text message."""
         await self.audio_processor.disable_voice_mode()
@@ -347,19 +394,19 @@ class PeerConnectionHandler:
                 candidate.sdpMid = candidate_data.get('sdpMid')
                 candidate.sdpMLineIndex = candidate_data.get('sdpMLineIndex')
                 await self.pc.addIceCandidate(candidate)
-        except Exception as e:
-            logger.error(f"Error adding ICE candidate: {e}", exc_info=True)
-    
+        except Exception as exc:
+            logger.error("Error adding ICE candidate: %s", exc, exc_info=True)
+
     async def _send_message(self, message: dict):
         """Send message to client via WebSocket."""
         try:
             await self.websocket.send_json(message)
-        except Exception as e:
-            logger.error(f"Error sending message: {e}", exc_info=True)
-    
+        except Exception as exc:
+            logger.error("Error sending message: %s", exc, exc_info=True)
+
     async def close(self):
         """Close peer connection and cleanup resources."""
-        logger.info(f"Closing connection {self.connection_id}")
+        logger.info("Closing connection %s", self.connection_id)
 
         # Cancel idle timer
         if self._idle_task and not self._idle_task.done():
