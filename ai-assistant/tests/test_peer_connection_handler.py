@@ -273,6 +273,51 @@ class TestRenegotiation:
         # Verify addTrack WAS called for output track during initial connection
         peer_handler.pc.addTrack.assert_called_once_with(mock_output_track)
 
+    @pytest.mark.asyncio
+    async def test_duplicate_offer_no_track_completes_gracefully(self, peer_handler):
+        """Regression: a duplicate renegotiation offer (same track, on_track never fires)
+        must NOT cause handle_offer() to raise; it must still send an answer.
+
+        This reproduces the text→voice upgrade failure where Flutter's
+        AudioRoutingService fires onInputDeviceChanged during enableVoiceMode()
+        setup (after _createLocalStream sets _localStream but before
+        onInputDeviceChanged is wired post-renegotiation), triggering a second
+        _renegotiateConnection().  The server receives offer #2, clears
+        track_update_ready, calls setRemoteDescription — but on_track never
+        fires because the SDP is for the same track.  The old 5-second wait
+        would timeout and propagate, dropping the answer; the fix must fall
+        back gracefully within ≤ 2 seconds and still send an answer.
+        """
+        offer = RTCSessionDescription(sdp="dup-sdp", type="offer")
+
+        mock_answer = Mock()
+        mock_answer.sdp = "answer-sdp"
+        mock_answer.type = "answer"
+        peer_handler.pc.localDescription = mock_answer
+        peer_handler.pc.createAnswer.return_value = mock_answer
+
+        # Already in voice mode (audio_processor present, _is_text_mode=False)
+        mock_audio_processor = Mock()
+        mock_audio_processor._is_text_mode = False
+        peer_handler.audio_processor = mock_audio_processor
+
+        # track_update_ready starts set (default); handle_offer will clear it
+        # before setRemoteDescription.  on_track never fires (same SDP track),
+        # so it stays cleared — this is what we're testing.
+
+        sent_messages = []
+        with patch.object(
+            peer_handler, "_send_message", new=AsyncMock(side_effect=lambda m: sent_messages.append(m))
+        ):
+            # Must complete within 3 seconds (2-second soft timeout + margin)
+            await asyncio.wait_for(peer_handler.handle_offer(offer), timeout=3.0)
+
+        # An answer must have been sent despite on_track never firing
+        assert any(m.get("type") == "answer" for m in sent_messages), (
+            "handle_offer must send an answer even when on_track never fires "
+            "during a duplicate/SDP-only renegotiation"
+        )
+
 
 class TestRuntimeStateFSMWiring:
     """Test that FSM on_state_change is wired to _emit_runtime_state."""

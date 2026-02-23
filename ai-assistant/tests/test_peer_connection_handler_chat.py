@@ -349,6 +349,60 @@ class TestDataChannelTextInput:
 
         ap.process_text_input.assert_called_once_with("hello")
 
+    async def test_text_input_buffered_when_audio_processor_not_ready(self):
+        handler = _make_handler(session_mode="text")
+        assert handler.audio_processor is None
+
+        on_message, _ = self._get_on_message(handler)
+        if on_message is None:
+            pytest.skip("on_message handler not captured")
+
+        on_message(json.dumps({"type": "text-input", "text": "hello later"}))
+        await asyncio.sleep(0)
+
+        assert handler._pending_text_inputs == ["hello later"]
+
+    async def test_flushes_buffered_text_when_audio_processor_becomes_ready(self):
+        handler = _make_handler(session_mode="text")
+
+        on_message, _ = self._get_on_message(handler)
+        if on_message is None:
+            pytest.skip("on_message handler not captured")
+
+        on_message(json.dumps({"type": "text-input", "text": "first"}))
+        on_message(json.dumps({"type": "text-input", "text": "second"}))
+
+        ap = _mock_audio_processor(is_text_mode=True)
+        handler.audio_processor = ap
+        handler._flush_pending_text_inputs()
+        await asyncio.sleep(0)
+
+        assert handler._pending_text_inputs == []
+        assert ap.process_text_input.call_args_list == [
+            (("first",),),
+            (("second",),),
+        ]
+
+    async def test_on_message_does_not_transition_runtime_fsm_synchronously(self):
+        handler = _make_handler(session_mode="text")
+        ap = _mock_audio_processor(is_text_mode=True)
+        ap.ai_assistant = Mock()
+        ap.ai_assistant.response_orchestrator = Mock()
+        ap.ai_assistant.response_orchestrator.runtime_fsm = Mock()
+        ap.ai_assistant.response_orchestrator.runtime_fsm.transition = Mock(
+            side_effect=AssertionError("on_message must not call runtime_fsm.transition")
+        )
+        handler.audio_processor = ap
+
+        on_message, _ = self._get_on_message(handler)
+        if on_message is None:
+            pytest.skip("on_message handler not captured")
+
+        on_message(json.dumps({"type": "text-input", "text": "hello"}))
+        await asyncio.sleep(0)
+
+        ap.process_text_input.assert_called_once_with("hello")
+
     async def test_empty_text_input_ignored(self):
         handler = _make_handler(session_mode="text")
         ap = _mock_audio_processor(is_text_mode=True)
