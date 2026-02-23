@@ -7,7 +7,7 @@ import logging
 import json
 import os
 import numpy as np
-from typing import Optional
+from typing import AsyncGenerator, Optional
 from aiortc import MediaStreamTrack
 from aiortc.mediastreams import MediaStreamError
 
@@ -15,7 +15,10 @@ from .ai_assistant import AIAssistant
 from .audio_track import AudioOutputTrack
 from .firestore_service import FirestoreService
 from .services.audio_frame_converter import AudioFrameConverter
+from .services.data_channel_bridge import DataChannelBridge
 from .services.debug_recorder import DebugRecorder
+from .services.greeting_coordinator import GreetingCoordinator
+from .services.session_mode import SessionMode
 from .services.transcript_processor import TranscriptProcessor
 from .services.tts_playback_manager import TTSPlaybackManager, SentenceParser
 from .services.conversation_service import ConversationStage
@@ -27,11 +30,27 @@ _firestore_service = FirestoreService()
 
 logger = logging.getLogger(__name__)
 
+# FSM states that mean the AI is actively generating or playing a response.
+_ACTIVE_RESPONSE_STATES = frozenset(
+    {
+        AgentRuntimeState.THINKING,
+        AgentRuntimeState.LLM_STREAMING,
+        AgentRuntimeState.TOOL_EXECUTING,
+        AgentRuntimeState.SPEAKING,
+    }
+)
+
 
 class AudioProcessor:
     """Processes audio through the STT -> LLM -> TTS pipeline."""
-    
-    def __init__(self, connection_id: str, input_track: Optional[MediaStreamTrack] = None, user_id: Optional[str] = None, language: str = 'de'):
+
+    def __init__(
+        self,
+        connection_id: str,
+        input_track: Optional[MediaStreamTrack] = None,
+        user_id: Optional[str] = None,
+        language: str = "de",
+    ):
         self.connection_id = connection_id
         self.input_track = input_track
         self.user_id = user_id
@@ -40,59 +59,108 @@ class AudioProcessor:
         self.running = False
         self.processing_task = None
         self.stt_task = None
-        
-        # Activity hook: called on every _process_final_transcript invocation
+
+        # Session mode — derived from whether an audio track is provided.
+        # The ``_is_text_mode`` property below provides backward compat.
+        self.session_mode: SessionMode = (
+            SessionMode.TEXT if input_track is None else SessionMode.VOICE
+        )
+
+        # Activity hook: called on every _process_final_transcript invocation.
         # Used by PeerConnectionHandler to reset the idle timer.
         self.on_activity = None
 
         # Composability hook: when set, _continuous_stt calls this instead of
-        # _process_final_transcript directly.  PeerConnectionHandler wires this
-        # to the ResponseOrchestrator in Phase 8.
+        # _process_final_transcript directly.
         self.on_transcript_final = None
-        
+
         # Create language-specific AI assistant for this connection
         self.ai_assistant = self._create_language_specific_assistant(language)
-        
-        logger.info(f"AudioProcessor created for connection {connection_id} with language: {language}")
-        
+
+        logger.info(
+            "AudioProcessor created for connection %s with language: %s",
+            connection_id,
+            language,
+        )
+
         # Audio streaming for continuous STT
-        self.audio_queue = asyncio.Queue()
+        self.audio_queue: asyncio.Queue = asyncio.Queue()
         self.sample_rate = 48000  # WebRTC sends 48kHz
-        
-        # Services
+
+        # ── Phase-1 services ──────────────────────────────────────────────────
+        self._dc_bridge = DataChannelBridge()
+
+        # ── Legacy services ───────────────────────────────────────────────────
         self.frame_converter = AudioFrameConverter(self.sample_rate)
         self.debug_recorder = DebugRecorder(connection_id, self.sample_rate)
         self.transcript_processor = TranscriptProcessor(self.ai_assistant.stt_service)
         self.tts_manager = TTSPlaybackManager(
             self.ai_assistant.tts_service,
-            self._queue_audio_for_playback
+            self._queue_audio_for_playback,
         )
-        
+
         # Interrupt handling
         self.is_ai_speaking = False  # True when generating OR playing AI response
         self.interrupt_event = asyncio.Event()
-        self.data_channel = None
-
-        # True when session has no audio pipeline (text-only)
-        self._is_text_mode = (input_track is None)
-
-        # True once greeting has been sent (text or voice); prevents duplicate
-        # greetings when connectionstatechange fires on renegotiation.
-        self._greeting_sent = False
+        # data_channel exposed as property so assignment auto-wires _dc_bridge.
+        self._data_channel = None
 
         # Tracks the current LLM+TTS response task so it can be cancelled on
-        # interrupt.  Set by _continuous_stt and process_text_input.
+        # interrupt.
         self._response_task: Optional[asyncio.Task] = None
 
         # Serializes text-input handling from the DataChannel to avoid races
         # between concurrent process_text_input() calls.
         self._text_input_lock = asyncio.Lock()
 
+        # ── Greeting coordinator (wired after all other deps exist) ───────────
+        self._greeting_coordinator = GreetingCoordinator(
+            ai_assistant=self.ai_assistant,
+            dc_bridge=self._dc_bridge,
+            fsm=self.ai_assistant.response_orchestrator.runtime_fsm,
+            output_track=self.output_track,
+            user_id=self.user_id,
+            connection_id=self.connection_id,
+            interrupt_event=self.interrupt_event,
+            on_speaking_change=lambda speaking: setattr(
+                self, "is_ai_speaking", speaking
+            ),
+        )
+
+    # ── Backward-compat properties ────────────────────────────────────────────
+
+    @property
+    def _is_text_mode(self) -> bool:
+        return self.session_mode == SessionMode.TEXT
+
+    @_is_text_mode.setter
+    def _is_text_mode(self, value: bool) -> None:
+        self.session_mode = SessionMode.TEXT if value else SessionMode.VOICE
+
+    @property
+    def _greeting_sent(self) -> bool:
+        return self._greeting_coordinator.greeting_sent
+
+    @_greeting_sent.setter
+    def _greeting_sent(self, value: bool) -> None:
+        self._greeting_coordinator.greeting_sent = value
+
+    @property
+    def data_channel(self):
+        """The active DataChannel (or ``None``).  Setting it also wires ``_dc_bridge``."""
+        return self._data_channel
+
+    @data_channel.setter
+    def data_channel(self, channel) -> None:
+        self._data_channel = channel
+        self._dc_bridge.attach(channel)
+
+    # ── Factory ───────────────────────────────────────────────────────────────
+
     def _create_language_specific_assistant(self, language: str):
         """Create a language-specific AI assistant instance."""
-        logger.info(f"Creating language-specific AI assistant for language: {language}")
-        
-        # Create new AI assistant with language-specific configuration
+        logger.info("Creating language-specific AI assistant for language: %s", language)
+
         assistant = AIAssistant(
             gemini_api_key=os.getenv('GEMINI_API_KEY'),
             language=language,
@@ -101,289 +169,157 @@ class AudioProcessor:
         )
 
         # Wire AIConversationService so every session is persisted to Firestore.
-        # Uses the module-level FirestoreService singleton (lazy Firestore init).
         ai_conv_service = AIConversationService(firestore_service=_firestore_service)
         assistant.response_orchestrator.ai_conversation_service = ai_conv_service
-        
-        logger.info(f"AI Assistant created with language '{language}': {assistant.language_code}, {assistant.voice_name}")
-        
+
+        logger.info(
+            "AI Assistant created with language '%s': %s, %s",
+            language, assistant.language_code, assistant.voice_name,
+        )
         return assistant
 
-    def set_data_channel(self, channel):
-        """Set the data channel for sending text messages."""
-        self.data_channel = channel
+    # ── DataChannel wiring ────────────────────────────────────────────────────
+
+    def set_data_channel(self, channel) -> None:
+        """Attach the DataChannel for outbound messages."""
+        self.data_channel = channel  # property setter also wires _dc_bridge
         logger.info("Data channel set in AudioProcessor")
 
-    def _send_chat_message(self, text: str, is_user: bool, is_chunk: bool = False):
-        """Send chat message to client via data channel."""
-        if self.data_channel and self.data_channel.readyState == "open":
-            try:
-                message = json.dumps({
-                    "type": "chat",
-                    "text": text,
-                    "isUser": is_user,
-                    "isChunk": is_chunk
-                })
-                self.data_channel.send(message)
-            except Exception as e:
-                logger.error(f"Error sending chat message: {e}")
+    # ── DataChannel send helpers (thin wrappers over DataChannelBridge) ───────
 
-    def _emit_runtime_state(self, state: AgentRuntimeState):
-        """Broadcast the current AgentRuntimeState to the Flutter client.
+    def _send_chat_message(self, text: str, is_user: bool, is_chunk: bool = False) -> None:
+        """Send a chat message to the client via DataChannel."""
+        self._dc_bridge.send_chat(text, is_user=is_user, is_chunk=is_chunk)
 
-        Sends a DataChannel JSON message of the form:
-            {"type": "runtime-state", "runtimeState": "<state.value>"}
-        Does nothing if the data channel is not open yet.
-        """
-        if self.data_channel and self.data_channel.readyState == "open":
-            try:
-                message = json.dumps({
-                    "type": "runtime-state",
-                    "runtimeState": state.value,
-                })
-                self.data_channel.send(message)
-            except Exception as e:
-                logger.error("Error emitting runtime state %s: %s", state, e)
-        
+    def _emit_runtime_state(self, state: AgentRuntimeState) -> None:
+        """Broadcast the current AgentRuntimeState to the Flutter client."""
+        self._dc_bridge.send_runtime_state(state)
+
     def get_output_track(self) -> MediaStreamTrack:
         """Get the output audio track."""
         return self.output_track
-    
-    async def start(self):
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    async def start(self) -> None:
         """Start processing audio."""
         self.running = True
         if self.input_track is not None:
             self.processing_task = asyncio.create_task(self._process_audio())
             self.stt_task = asyncio.create_task(self._continuous_stt())
         else:
-            logger.info(f"Text-only mode — skipping audio processing tasks for connection {self.connection_id}")
-        logger.info(f"Audio processor started for connection {self.connection_id}")
+            logger.info(
+                "Text-only mode — skipping audio tasks for connection %s",
+                self.connection_id,
+            )
+        logger.info("Audio processor started for connection %s", self.connection_id)
 
         if not self._is_text_mode:
-            # Voice mode: play greeting audio; greeting also advances stage to TRIAGE.
             asyncio.create_task(self._play_greeting())
         else:
-            # Text mode: advance stage to TRIAGE immediately so any user message
-            # arriving before send_text_greeting() finishes is processed at the
-            # correct stage — not the initial GREETING stage whose prompt ignores
-            # actual user content.
+            # Advance stage immediately so user messages arriving before the
+            # text greeting are processed at TRIAGE, not GREETING.
             self.ai_assistant.conversation_service.set_stage(ConversationStage.TRIAGE)
-        # Text mode: send_text_greeting() is called from on_connectionstatechange
-        # once the data channel is confirmed open.
-    
-    async def replace_input_track(self, new_track: MediaStreamTrack):
-        """Replace the input track during renegotiation (e.g., when Bluetooth device changes)."""
-        logger.info(f"Replacing input track: {self.input_track.id if self.input_track else 'None'} -> {new_track.id}")
-        
+
+    async def replace_input_track(self, new_track: MediaStreamTrack) -> None:
+        """Replace input track during renegotiation (e.g. Bluetooth change)."""
+        logger.info(
+            "Replacing input track: %s -> %s",
+            self.input_track.id if self.input_track else "None",
+            new_track.id,
+        )
         try:
-            # Cancel existing processing task
-            if self.processing_task and not self.processing_task.done():
-                self.processing_task.cancel()
-                try:
-                    await self.processing_task
-                except asyncio.CancelledError:
-                    pass  # Expected when cancelling the task
-            
-            # Cancel existing STT task to ensure clean state
-            if self.stt_task and not self.stt_task.done():
-                self.stt_task.cancel()
-                try:
-                    await self.stt_task
-                except asyncio.CancelledError:
-                    pass  # Expected when cancelling the task
-            
-            # Don't clear the queue - let STT drain buffered audio naturally
-            # This prevents audio loss during device transitions
-            
-            # Update to new track
+            for task_attr in ("processing_task", "stt_task"):
+                task = getattr(self, task_attr)
+                if task and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
             self.input_track = new_track
-            
-            # Restart both tasks if processor is still running
+
             if self.running:
                 self.processing_task = asyncio.create_task(self._process_audio())
                 self.stt_task = asyncio.create_task(self._continuous_stt())
                 logger.info("Audio processing restarted with new input track")
-            
-        except Exception as e:
-            logger.error(f"Error replacing input track: {e}", exc_info=True)
-    
-    async def send_text_greeting(self):
-        """Generate and send a text-only greeting for text-mode sessions.
 
-        Polls until the data channel is open then generates the greeting
-        text without producing TTS audio.  Stage is advanced to TRIAGE
-        immediately (before any async work) so a first user message that
-        arrives during the polling window is always processed at TRIAGE,
-        never at the initial GREETING stage.
+        except Exception as exc:
+            logger.error("Error replacing input track: %s", exc, exc_info=True)
+
+    async def stop(self) -> None:
+        """Stop processing audio."""
+        self.running = False
+        await self.audio_queue.put(None)
+
+        for task_attr in ("stt_task", "processing_task"):
+            task = getattr(self, task_attr)
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        self.debug_recorder.save()
+        logger.info("Audio processor stopped for connection %s", self.connection_id)
+
+    # ── Greeting (delegates to GreetingCoordinator) ───────────────────────────
+
+    async def _play_greeting(self) -> None:
+        """Play the AI greeting — delegates to GreetingCoordinator (voice mode)."""
+        await self._greeting_coordinator.send(SessionMode.VOICE)
+
+    async def send_text_greeting(self) -> None:
+        """Send text greeting — delegates to GreetingCoordinator (text mode).
+
+        Called from PeerConnectionHandler.on_connectionstatechange once the
+        DataChannel is confirmed open.
         """
-        if self._greeting_sent:
-            # Renegotiation caused connectionstatechange to fire again — skip.
-            logger.info("Text greeting already sent — ignoring duplicate call")
-            return
-        self._greeting_sent = True
-
         if not self.running:
             return
+        await self._greeting_coordinator.send(SessionMode.TEXT)
 
-        # CRITICAL: advance to TRIAGE immediately so any user message that
-        # arrives during data-channel polling is processed at the correct
-        # stage and not with the GREETING prompt that ignores user input.
-        self.ai_assistant.conversation_service.set_stage(ConversationStage.TRIAGE)
-
-        # Wait up to 5 s for the data channel to open
-        for _ in range(50):
-            if self.data_channel and self.data_channel.readyState == 'open':
-                break
-            await asyncio.sleep(0.1)
-        else:
-            logger.warning(
-                f"Data channel not open after 5 s for connection {self.connection_id} "
-                "— skipping text greeting (stage already at TRIAGE)"
-            )
-            return
-
-        # Yield to the event loop so any concurrently-scheduled
-        # process_text_input() task (whose on_message callback fires at
-        # virtually the same moment the data channel opens on the client) can
-        # execute its FSM transition (LISTENING → THINKING) before we inspect
-        # the state below.  Without this yield, send_text_greeting() sees
-        # LISTENING, starts get_greeting_audio(), and the user ends up with
-        # both a generic greeting AND a TRIAGE response.
-        await asyncio.sleep(0)
-
-        # If the user already sent their first message while we were polling,
-        # skip the auto-greeting — the ongoing TRIAGE response will naturally
-        # include a personalized greeting thanks to user_name in context.
-        # The AgentRuntimeFSM transitions from LISTENING → THINKING inside
-        # process_text_input(). If a user message has already started processing,
-        # the FSM state here will no longer be LISTENING and we suppress greeting.
-        from .services.agent_runtime_fsm import AgentRuntimeState
-        fsm = self.ai_assistant.response_orchestrator.runtime_fsm
-        if fsm.current_state != AgentRuntimeState.LISTENING:
-            logger.info(
-                "Text mode: FSM is in '%s' — user already sent first message; "
-                "skipping auto-greeting (TRIAGE response will include personalized greeting)",
-                fsm.current_state.value,
-            )
-            return
-
-        try:
-            # get_greeting_audio with manage_stage=False: generates greeting text
-            # and stores user_name/has_open_request in conversation context WITHOUT
-            # resetting the stage back to GREETING.
-            # We discard the audio stream — TTS synthesis is lazy and never called.
-            greeting_text, _ = await self.ai_assistant.get_greeting_audio(
-                user_id=self.user_id, manage_stage=False
-            )
-            logger.info(f"Text greeting: {greeting_text}")
-            self._send_chat_message(greeting_text, is_user=False, is_chunk=False)
-        except Exception as e:
-            logger.error(f"Error sending text greeting: {e}", exc_info=True)
+    # ── Voice mode toggle ─────────────────────────────────────────────────────
 
     async def enable_voice_mode(self, input_track: Optional[MediaStreamTrack] = None) -> 'AudioOutputTrack':
-        """Resume or start voice mode.
-
-        Two cases:
-        - input_track provided and self.input_track is None: fresh text→voice
-          upgrade (pure text session).  Starts STT and audio-frame tasks.
-        - input_track is None (or tasks already running): resuming a previously
-          paused voice session.  Only flips the mode flag — tasks keep running.
-        """
-        logger.info(f"Enabling voice mode for connection {self.connection_id}")
+        """Resume or start voice mode."""
+        logger.info("Enabling voice mode for connection %s", self.connection_id)
         self._is_text_mode = False
 
         if input_track is not None and self.input_track is None:
-            # Pure-text session upgrading to voice: wire up new track, start tasks
             self.input_track = input_track
             if self.running:
                 self.processing_task = asyncio.create_task(self._process_audio())
                 self.stt_task = asyncio.create_task(self._continuous_stt())
             logger.info("Voice tasks started for text→voice upgrade")
         elif input_track is not None and self.input_track is not None:
-            # Track replacement (e.g. Bluetooth change during resume)
             await self.replace_input_track(input_track)
         else:
-            logger.info("Voice mode resumed — existing STT/audio tasks kept as-is")
+            logger.info("Voice mode resumed — existing tasks kept as-is")
 
         self._reset_idle_timer_if_available()
         return self.output_track
 
-    def _reset_idle_timer_if_available(self):
-        """Reset idle timer if the hook is wired."""
+    def _reset_idle_timer_if_available(self) -> None:
         if self.on_activity:
             self.on_activity()
 
-    async def disable_voice_mode(self):
+    async def disable_voice_mode(self) -> None:
         """Pause TTS output and mark session as text-only.
 
-        Keeps the STT / audio-frame tasks alive so switching back to voice
-        is instant — no WebRTC renegotiation or task restart required.
+        Keeps STT / audio-frame tasks alive for fast resume.
         """
         if self._is_text_mode:
-            return  # Already paused
-        logger.info(f"Pausing voice mode for connection {self.connection_id}")
+            return
+        logger.info("Pausing voice mode for connection %s", self.connection_id)
         self._is_text_mode = True
-        # Stop any TTS that is currently playing / being generated
         await self._trigger_interrupt()
-        logger.info("Voice mode paused — STT/audio tasks remain alive for fast resume")
+        logger.info("Voice mode paused — STT/audio tasks remain alive")
 
-    async def stop(self):
-        """Stop processing audio."""
-        self.running = False
-        
-        # Signal end of audio stream
-        await self.audio_queue.put(None)
-        
-        if self.stt_task:
-            self.stt_task.cancel()
-            try:
-                await self.stt_task
-            except asyncio.CancelledError:
-                pass  # Expected when cancelling the task
-        
-        if self.processing_task:
-            self.processing_task.cancel()
-            try:
-                await self.processing_task
-            except asyncio.CancelledError:
-                pass  # Expected when cancelling the task
-        
-        # Save debug recording if enabled
-        self.debug_recorder.save()
-        
-        logger.info(f"Audio processor stopped for connection {self.connection_id}")
-    
-    async def _play_greeting(self):
-        """Play the AI greeting message when connection starts."""
-        # Mark as sent immediately to prevent any duplicate greeting trigger
-        # from connectionstatechange firing again during renegotiation.
-        self._greeting_sent = True
-        try:
-            # Set speaking flag to prevent interruption during greeting
-            self.is_ai_speaking = True
-            
-            # Generate greeting text and audio (pass user_id if available)
-            greeting_text, audio_stream = await self.ai_assistant.get_greeting_audio(user_id=self.user_id)
-            logger.info(f"Greeting: {greeting_text}")
-            
-            # Send greeting text to client via data channel
-            self._send_chat_message(greeting_text, is_user=False, is_chunk=False)
-            
-            # Queue greeting audio for playback; stop early if interrupted
-            async for audio_chunk in audio_stream:
-                if audio_chunk:
-                    if self.interrupt_event.is_set():
-                        logger.info("Greeting interrupted by user speech")
-                        break
-                    await self.output_track.queue_audio(audio_chunk)
-            
-            # Clear speaking flag after greeting completes
-            self.is_ai_speaking = False
-            
-        except Exception as e:
-            logger.error(f"Error playing greeting: {e}", exc_info=True)
-            self.is_ai_speaking = False
-    
+    # ── Audio processing ───────────────────────────────────────────────────────
+
     async def _process_audio(self):
         """Main audio processing loop - receives frames and queues them for STT."""
         try:
@@ -419,84 +355,95 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Error in audio processing: {e}", exc_info=True)
     
-    async def _continuous_stt(self):
-        """Continuously stream audio to STT and process final transcripts."""
+    # ── STT pipeline (decomposed) ──────────────────────────────────────────────
+
+    async def _make_audio_chunks(self) -> AsyncGenerator[bytes, None]:
+        """Async generator that yields raw PCM bytes from the audio queue.
+
+        Terminates when the queue delivers ``None`` (sentinel from :meth:`stop`
+        or :meth:`_continuous_stt`) or when :attr:`running` becomes ``False``.
+        """
+        while self.running:
+            try:
+                chunk = await asyncio.wait_for(self.audio_queue.get(), timeout=1.0)
+                if chunk is None:
+                    break
+                yield chunk
+            except asyncio.TimeoutError:
+                continue
+            except Exception as exc:
+                logger.error("Audio generator error: %s", exc, exc_info=True)
+                break
+
+    async def _handle_final_transcript(self, transcript: str) -> None:
+        """Guard and dispatch a confirmed-final STT transcript.
+
+        Handles:
+        - FINALIZE busy guard (provider search in progress)
+        - Interrupt-while-speaking before dispatch
+        - ``on_transcript_final`` hook or ``_process_final_transcript`` fallback
+        """
+        if not transcript.strip():
+            return
+
+        if (
+            self.ai_assistant.conversation_service.get_current_stage()
+            == ConversationStage.FINALIZE
+        ):
+            busy_msg = (
+                "Ich suche noch nach passenden Anbietern – bitte noch einen Moment Geduld! "
+                "I'm still searching for providers – just a moment more, thank you!"
+            )
+            self._send_chat_message(busy_msg, is_user=False)
+            logger.info(
+                "_handle_final_transcript: FINALIZE stage — voice input ignored "
+                "during provider search"
+            )
+            return
+
+        if self.is_ai_speaking:
+            await self._trigger_interrupt()
+
+        handler = (
+            self.on_transcript_final
+            if self.on_transcript_final is not None
+            else self._process_final_transcript
+        )
+        self._response_task = asyncio.create_task(handler(transcript))
+
+    async def _stt_session(self) -> None:
+        """Run one STT streaming session from :meth:`_make_audio_chunks`.
+
+        Fires partial-transcript interrupt checks inline, delegates final
+        transcripts to :meth:`_handle_final_transcript`, then refills the
+        queue sentinel so the next session starts cleanly.
+        """
+        async for transcript, is_final in self.transcript_processor.process_audio_stream(
+            self._make_audio_chunks()
+        ):
+            if transcript and self.is_ai_speaking and len(transcript.strip()) > 0:
+                logger.info("Interrupt detected: '%s'", transcript)
+                await self._trigger_interrupt()
+                await asyncio.sleep(0.05)
+
+            if is_final:
+                # Reset the queue so the *next* _stt_session starts from an
+                # empty FIFO rather than a stale sentinel.
+                await self.audio_queue.put(None)
+                await self._handle_final_transcript(transcript)
+                break
+
+    async def _continuous_stt(self) -> None:
+        """Outer loop — restarts :meth:`_stt_session` after each final transcript."""
         try:
             while self.running:
-                async def audio_generator():
-                    chunk_count = 0
-                    while self.running:
-                        try:
-                            audio_chunk = await asyncio.wait_for(
-                                self.audio_queue.get(),
-                                timeout=1.0
-                            )
-                            if audio_chunk is None:
-                                break
-                            chunk_count += 1
-                            yield audio_chunk
-                        except asyncio.TimeoutError:
-                            continue
-                        except Exception as e:
-                            logger.error(f"Audio generator error: {e}", exc_info=True)
-                            break
-                
-                audio_generator_instance = audio_generator()
-                async for transcript, is_final in self.transcript_processor.process_audio_stream(
-                    audio_generator_instance
-                ):
-                    if transcript and self.is_ai_speaking and len(transcript.strip()) > 0:
-                        logger.info(f"Interrupt detected: '{transcript}'")
-                        await self._trigger_interrupt()
-                        await asyncio.sleep(0.05)
-                    
-                    if is_final:
-                        await self.audio_queue.put(None)
-                        if transcript and transcript.strip():
-                            # Guard: do not interrupt provider search in progress
-                            # (same guard as in process_text_input for text mode).
-                            if (
-                                self.ai_assistant.conversation_service.get_current_stage()
-                                == ConversationStage.FINALIZE
-                            ):
-                                busy_msg = (
-                                    "Ich suche noch nach passenden Anbietern – bitte noch einen Moment Geduld! "
-                                    "I'm still searching for providers – just a moment more, thank you!"
-                                )
-                                self._send_chat_message(busy_msg, is_user=False)
-                                logger.info(
-                                    "_continuous_stt: FINALIZE stage — voice input ignored "
-                                    "during provider search"
-                                )
-                                break
-                            # Interrupt any ongoing AI response before processing
-                            # the new transcript (handles the case where partial
-                            # speech wasn't enough to fire the interrupt but the
-                            # final transcript arrived while AI was still speaking).
-                            if self.is_ai_speaking:
-                                await self._trigger_interrupt()
-                            # Start response as a background task so STT can
-                            # immediately resume listening for the next interrupt.
-                            # Use on_transcript_final hook if wired (e.g. to
-                            # ResponseOrchestrator in Phase 8), otherwise fall
-                            # back to _process_final_transcript.
-                            handler = (
-                                self.on_transcript_final
-                                if self.on_transcript_final is not None
-                                else self._process_final_transcript
-                            )
-                            self._response_task = asyncio.create_task(
-                                handler(transcript)
-                            )
-                        break
-                
+                await self._stt_session()
                 await asyncio.sleep(0.1)
-            
         except asyncio.CancelledError:
             logger.info("Continuous STT cancelled")
-        except Exception as e:
-            logger.error(f"Error in continuous STT: {e}", exc_info=True)
-    
+        except Exception as exc:
+            logger.error("Error in continuous STT: %s", exc, exc_info=True)
+
     async def _trigger_interrupt(self):
         """Trigger an interrupt to stop ongoing AI speech."""
         logger.info("Triggering interrupt")
