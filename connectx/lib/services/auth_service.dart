@@ -43,8 +43,8 @@ class AuthService {
   Future<void> initialize() async {
     if (_initialized) return;
 
-    // Initialize FCM for push notifications
-    await _userService.initializeFCM();
+    // Initialize FCM in the background — do not block app startup on a network call.
+    unawaited(_userService.initializeFCM());
 
     // Initialize GoogleSignIn with proper configuration
     final bool isAndroid =
@@ -81,7 +81,7 @@ class AuthService {
         await _webrtcService!.connect();
       }
 
-      // Validate with backend if configured
+      // Validate with backend if configured — soft failure only, never sign out.
       final String? serverUrl = dotenv.env['AI_ASSISTANT_SERVER_URL'];
       if (serverUrl != null &&
           serverUrl.isNotEmpty &&
@@ -90,9 +90,11 @@ class AuthService {
         if (idToken != null) {
           final bool valid = await _signInBackend(idToken);
           if (!valid) {
-            debugPrint('Backend validation failed - signing out');
-            await signOut();
-            return;
+            debugPrint(
+              'Backend validation failed or backend unreachable — continuing as authenticated.',
+            );
+            // Do not sign out: a missing or unreachable backend must not
+            // prevent the user from using the app.
           }
         }
       }
@@ -122,8 +124,8 @@ class AuthService {
       );
 
       // Obtain the auth details from the request
-      final GoogleSignInAuthentication googleAuth =
-          await googleUser.authentication;
+        final GoogleSignInAuthentication googleAuth =
+          googleUser.authentication;
 
       // Create a new credential with just the idToken
       // Note: google_sign_in 7.2.0+ no longer provides accessToken separately
