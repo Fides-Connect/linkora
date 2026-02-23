@@ -31,6 +31,8 @@ class PeerConnectionHandler:
         self.track_ready = asyncio.Event()
         self.track_update_ready = asyncio.Event()
         self.track_update_ready.set()  # Initially set - no update pending
+        self.data_channel = None
+        self._pending_text_inputs: list[str] = []
         self._idle_task: asyncio.Task = None  # 10-minute idle timeout task
         
         logger.info(f"PeerConnectionHandler created for connection {connection_id} with language: {language}, mode: {session_mode}")
@@ -78,6 +80,47 @@ class PeerConnectionHandler:
         except asyncio.CancelledError:
             pass  # Normal cancellation when activity is detected
 
+    def _flush_pending_text_inputs(self) -> None:
+        """Flush queued text-input messages once the processor/channel are ready."""
+        if not self._pending_text_inputs:
+            return
+        if self.audio_processor is None:
+            return
+        if self.data_channel is None or self.data_channel.readyState != "open":
+            return
+
+        pending = self._pending_text_inputs.copy()
+        self._pending_text_inputs.clear()
+        logger.info(
+            "Flushing %d buffered text-input message(s) for connection %s",
+            len(pending),
+            self.connection_id,
+        )
+        for text in pending:
+            self._dispatch_text_input(text)
+
+    def _dispatch_text_input(self, text: str) -> None:
+        """Dispatch a validated text-input to the audio processor."""
+        if self.audio_processor is None:
+            self._pending_text_inputs.append(text)
+            logger.info(
+                "Audio processor not ready; buffered text-input for connection %s",
+                self.connection_id,
+            )
+            return
+
+        preview = text[:50] + '…' if len(text) > 50 else text
+        logger.debug("Processing text input (%d chars): %s", len(text), preview)
+        # Reset idle timer on any user activity
+        self._reset_idle_timer()
+
+        if not self.audio_processor._is_text_mode:
+            # Voice → text: stop STT/TTS then process as text
+            logger.info("Voice → text switch triggered by text-input")
+            asyncio.create_task(self._handle_voice_to_text_switch(text))
+        else:
+            asyncio.create_task(self.audio_processor.process_text_input(text))
+
     # ── Event handlers ────────────────────────────────────────────────────────
 
     def _setup_event_handlers(self):
@@ -108,6 +151,7 @@ class PeerConnectionHandler:
                     self.pc.addTrack(output_track)
                     self.audio_processor.on_activity = self._reset_idle_timer
                     self._reset_idle_timer()
+                    self._flush_pending_text_inputs()
                     self.track_update_ready.set()
                 elif self.audio_processor is not None:
                     logger.info("Track replacement detected (renegotiation)")
@@ -128,6 +172,7 @@ class PeerConnectionHandler:
                     
                     if hasattr(self, 'data_channel') and self.data_channel:
                         self.audio_processor.set_data_channel(self.data_channel)
+                        self._flush_pending_text_inputs()
 
                     self.track_ready.set()
                     asyncio.create_task(self.audio_processor.start())
@@ -142,6 +187,7 @@ class PeerConnectionHandler:
             
             if self.audio_processor:
                 self.audio_processor.set_data_channel(channel)
+            self._flush_pending_text_inputs()
             
             @channel.on("message")
             def on_message(message):
@@ -161,23 +207,8 @@ class PeerConnectionHandler:
                                 f"Text input too large ({len(text)} chars) from connection "
                                 f"{self.connection_id} — rejecting"
                             )
-                        elif self.audio_processor:
-                            preview = text[:50] + '…' if len(text) > 50 else text
-                            logger.debug(f"Processing text input ({len(text)} chars): {preview}")
-                            # Reset idle timer on any user activity
-                            self._reset_idle_timer()
-                            if not self.audio_processor._is_text_mode:
-                                # Voice → text: stop STT/TTS then process as text
-                                logger.info("Voice → text switch triggered by text-input")
-                                asyncio.create_task(
-                                    self._handle_voice_to_text_switch(text)
-                                )
-                            else:
-                                asyncio.create_task(
-                                    self.audio_processor.process_text_input(text)
-                                )
                         else:
-                            logger.warning("Audio processor not ready — cannot process text input")
+                            self._dispatch_text_input(text)
 
                     elif data.get('type') == 'mode-switch':
                         # Flutter explicitly switched mode without sending a message.
@@ -239,8 +270,26 @@ class PeerConnectionHandler:
             await self.pc.setRemoteDescription(offer)
 
             if is_renegotiation:
-                # Wait for track update to complete (will be set by on_track handler)
-                await asyncio.wait_for(self.track_update_ready.wait(), timeout=5.0)
+                if is_text_to_voice_upgrade:
+                    # Hard wait: on_track MUST fire to add the TTS output track
+                    # before we can send the answer.
+                    await asyncio.wait_for(self.track_update_ready.wait(), timeout=5.0)
+                else:
+                    # Soft wait: for device-change renegotiations on_track fires
+                    # with the new track; for SDP-only renegotiations (e.g., a
+                    # duplicate offer caused by a spurious AudioRouting event) it
+                    # never fires.  Continue gracefully on timeout rather than
+                    # propagating the error and silently dropping the answer.
+                    try:
+                        await asyncio.wait_for(
+                            self.track_update_ready.wait(), timeout=2.0
+                        )
+                    except asyncio.TimeoutError:
+                        logger.debug(
+                            "Renegotiation for connection %s: no new track within 2 s "
+                            "— SDP-only renegotiation, continuing without track_update_ready",
+                            self.connection_id,
+                        )
             elif self.session_mode == 'text':
                 # Initial text mode: no audio track will arrive — create AudioProcessor directly
                 if self.audio_processor is None:
@@ -255,6 +304,7 @@ class PeerConnectionHandler:
                     self._wire_runtime_fsm(self.audio_processor)
                     if hasattr(self, 'data_channel') and self.data_channel:
                         self.audio_processor.set_data_channel(self.data_channel)
+                        self._flush_pending_text_inputs()
                     asyncio.create_task(self.audio_processor.start())
                     self._reset_idle_timer()
                     logger.info("Text-mode AudioProcessor created without audio track")

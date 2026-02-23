@@ -44,6 +44,18 @@ def _open_data_channel():
     return dc
 
 
+def _advance_fsm_to_listening(proc) -> None:
+    """Advance the AgentRuntimeFSM from BOOTSTRAP to LISTENING.
+
+    In production this happens inside PeerConnectionHandler._wire_runtime_fsm().
+    Tests that want send_text_greeting() to reach the greeting code must call
+    this first, otherwise the FSM guard fires at BOOTSTRAP and skips the greeting.
+    """
+    fsm = proc.ai_assistant.response_orchestrator.runtime_fsm
+    fsm.transition("data_channel_wait")   # BOOTSTRAP → DATA_CHANNEL_WAIT
+    fsm.transition("data_channel_opened") # DATA_CHANNEL_WAIT → LISTENING
+
+
 async def _dummy_audio_gen():
     """Async generator yielding two fake audio chunks."""
     yield b"chunk1"
@@ -93,6 +105,9 @@ class TestTextModeInitialisation:
 
     def test_on_activity_hook_initialises_none(self, text_proc):
         assert text_proc.on_activity is None
+
+    def test_text_input_lock_initialised(self, text_proc):
+        assert isinstance(text_proc._text_input_lock, asyncio.Lock)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -175,6 +190,7 @@ class TestSendTextGreeting:
     async def test_sends_greeting_text_via_data_channel(self, text_proc):
         text_proc.running = True
         text_proc.data_channel = _open_data_channel()
+        _advance_fsm_to_listening(text_proc)
         text_proc.ai_assistant.get_greeting_audio = AsyncMock(
             return_value=("Hallo!", _dummy_audio_gen())
         )
@@ -188,6 +204,7 @@ class TestSendTextGreeting:
     async def test_dedup_guard_prevents_second_call(self, text_proc):
         text_proc.running = True
         text_proc.data_channel = _open_data_channel()
+        _advance_fsm_to_listening(text_proc)
         text_proc.ai_assistant.get_greeting_audio = AsyncMock(
             return_value=("Hi", _dummy_audio_gen())
         )
@@ -204,6 +221,7 @@ class TestSendTextGreeting:
     async def test_sets_greeting_sent_flag(self, text_proc):
         text_proc.running = True
         text_proc.data_channel = _open_data_channel()
+        _advance_fsm_to_listening(text_proc)
         text_proc.ai_assistant.get_greeting_audio = AsyncMock(
             return_value=("Hi", _dummy_audio_gen())
         )
@@ -216,6 +234,7 @@ class TestSendTextGreeting:
         """Audio stream returned by get_greeting_audio must never be consumed."""
         text_proc.running = True
         text_proc.data_channel = _open_data_channel()
+        _advance_fsm_to_listening(text_proc)
 
         consumed = []
 
@@ -261,35 +280,50 @@ class TestSendTextGreeting:
         text_proc.ai_assistant.get_greeting_audio.assert_not_called()
 
     async def test_skips_greeting_when_response_task_already_running(self, text_proc):
-        """If the user sends their first message before the data channel finishes
-        opening (race condition), _response_task is running and the auto-greeting
-        must be suppressed so the user doesn't receive a stale generic greeting
-        after their TRIAGE response."""
+        """The FSM guard is the real race-free signal. Even if _response_task
+        happens to be set, the FSM in THINKING state is what actually suppresses
+        the greeting. Advance FSM to THINKING to simulate process_text_input()
+        having fired its synchronous transition."""
         text_proc.running = True
         text_proc.data_channel = _open_data_channel()
         text_proc.ai_assistant.get_greeting_audio = AsyncMock(
             return_value=("Hi!", _dummy_audio_gen())
         )
 
-        # Simulate a response task already in flight
-        never_done: asyncio.Task = asyncio.create_task(asyncio.sleep(9999))
-        text_proc._response_task = never_done
-        try:
-            await text_proc.send_text_greeting()
-            # get_greeting_audio must NOT be called
-            text_proc.ai_assistant.get_greeting_audio.assert_not_called()
-        finally:
-            never_done.cancel()
-            try:
-                await never_done
-            except asyncio.CancelledError:
-                pass
+        # Simulate process_text_input() synchronous FSM transition: LISTENING → THINKING
+        _advance_fsm_to_listening(text_proc)
+        text_proc.ai_assistant.response_orchestrator.runtime_fsm.transition("final_transcript")
+
+        await text_proc.send_text_greeting()
+
+        text_proc.ai_assistant.get_greeting_audio.assert_not_called()
+
+    async def test_skips_greeting_when_fsm_not_listening(self, text_proc):
+        """If the FSM has advanced beyond LISTENING (i.e. to THINKING) by the
+        time send_text_greeting() checks, the auto-greeting must be suppressed.
+        This is the race-free guard: process_text_input() transitions the FSM
+        synchronously before asyncio.create_task() is called, so the FSM state
+        is always visible here without any async gap."""
+        text_proc.running = True
+        text_proc.data_channel = _open_data_channel()
+        text_proc.ai_assistant.get_greeting_audio = AsyncMock()
+
+        # Simulate process_text_input() having fired its synchronous FSM transition
+        fsm = text_proc.ai_assistant.response_orchestrator.runtime_fsm
+        fsm.transition("data_channel_wait")   # BOOTSTRAP → DATA_CHANNEL_WAIT
+        fsm.transition("data_channel_opened") # DATA_CHANNEL_WAIT → LISTENING
+        fsm.transition("final_transcript")    # LISTENING → THINKING
+
+        await text_proc.send_text_greeting()
+
+        text_proc.ai_assistant.get_greeting_audio.assert_not_called()
 
     async def test_greeting_called_with_manage_stage_false(self, text_proc):
         """send_text_greeting must call get_greeting_audio with manage_stage=False
         so the stage is never reset from TRIAGE back to GREETING."""
         text_proc.running = True
         text_proc.data_channel = _open_data_channel()
+        _advance_fsm_to_listening(text_proc)
         text_proc.ai_assistant.get_greeting_audio = AsyncMock(
             return_value=("Hello!", _dummy_audio_gen())
         )
@@ -558,6 +592,31 @@ class TestProcessTextInput:
         # _trigger_interrupt must have been called because in_flight was running
         interrupt_mock.assert_called_once()
         in_flight.cancel()  # clean up the dangling task
+
+    async def test_concurrent_inputs_are_serialized_by_lock(self, text_proc):
+        """Second process_text_input call must wait until first leaves the critical section."""
+        gate = asyncio.Event()
+        interrupt_calls: list[str] = []
+
+        async def blocking_interrupt():
+            interrupt_calls.append("interrupt")
+            await gate.wait()
+
+        text_proc.is_ai_speaking = True
+        with (
+            patch.object(text_proc, "_trigger_interrupt", side_effect=blocking_interrupt),
+            patch.object(text_proc, "_process_final_transcript", new=AsyncMock()),
+        ):
+            first = asyncio.create_task(text_proc.process_text_input("first"))
+            await asyncio.sleep(0)
+            second = asyncio.create_task(text_proc.process_text_input("second"))
+            await asyncio.sleep(0)
+
+            # Without the lock, both calls could enter and block in interrupt.
+            assert interrupt_calls == ["interrupt"]
+
+            gate.set()
+            await asyncio.gather(first, second)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -154,6 +154,26 @@ void main() {
       verify(mockSpeech.sendTextMessage('flush me')).called(1);
     });
 
+    // Regression test: onConnected fires when RTCPeerConnectionStateConnected is
+    // reached, which is BEFORE the SCTP data channel is "open".  Calling
+    // _onDataChannelReady() there used to drop the pending message (channel not
+    // open) and set _dataChannelReady=true so the real onDataChannelOpen was
+    // ignored.  The correct gate is onDataChannelOpen only.
+    test(
+        'onConnected alone does NOT flush pending message '
+        '(channel may not be open yet — real race on device)',
+        () async {
+      final cbs = _init();
+      await vm.startChat(voiceMode: false, pendingText: 'not yet');
+      // Only onConnected fires (data channel still connecting)
+      (cbs['connected'] as Function())();
+      verifyNever(mockSpeech.sendTextMessage(any));
+
+      // Now the data channel truly opens — message must be sent exactly once
+      (cbs['dataChannelOpen'] as Function())();
+      verify(mockSpeech.sendTextMessage('not yet')).called(1);
+    });
+
     test('dedup: onConnected + onDataChannelOpen together flush exactly once',
         () async {
       final cbs = _init();
