@@ -358,16 +358,115 @@ void main() {
       verify(mockWebRTCWrapper.getUserMedia(any)).called(1);
     });
 
-    // Regression: AudioRoutingService.initialize() may fire onInputDeviceChanged
-    // asynchronously (e.g. Android device callback) after _createLocalStream()
-    // has set _localStream.  If the callback was wired before initialize(),
-    // _recreateAudioTrack() would fire and send a SECOND renegotiation offer.
-    // The server's handle_offer() then waits for on_track that never comes
-    // (same track), times out after 5 s, and never sends the answer → Flutter
-    // hangs and all ICE candidate pairs fail.
-    //
-    // Fix: onInputDeviceChanged is wired AFTER _renegotiateConnection() so no
-    // spurious re-offer can be triggered during setup.
+    // Regression: AudioRoutingService's periodic device-check timer fires after
+    // enableVoiceMode() wires onInputDeviceChanged but BEFORE the server answer
+    // arrives.  Without _isRenegotiating, _recreateAudioTrack() would send a
+    // second offer, the server would answer it, and Flutter would fail with
+    // "setRemoteDescription: Called in wrong state: stable".
+    test(
+        'device change fired mid-renegotiation is suppressed — no second offer',
+        () async {
+      final svc = _buildService();
+      addTearDown(svc.disconnect);
+
+      Function(RTCPeerConnectionState)? connStateCb;
+      when(mockPeerConnection.onConnectionState = any).thenAnswer((inv) {
+        connStateCb = inv.positionalArguments.first
+            as Function(RTCPeerConnectionState)?;
+      });
+
+      when(mockPeerConnection.getSenders())
+          .thenAnswer((_) async => <RTCRtpSender>[]);
+      when(mockDataChannel.state)
+          .thenReturn(RTCDataChannelState.RTCDataChannelConnecting);
+
+      await svc.connect(mode: 'text');
+      connStateCb
+          ?.call(RTCPeerConnectionState.RTCPeerConnectionStateConnected);
+
+      int offerCount = 0;
+      when(mockPeerConnection.createOffer(any)).thenAnswer((_) async {
+        offerCount++;
+        return RTCSessionDescription('offer_$offerCount', 'offer');
+      });
+
+      await svc.enableVoiceMode();
+      // Offer #1 is now sent, _isRenegotiating = true, callback wired.
+      // Answer has NOT arrived yet (no _handleAnswer call).
+
+      expect(offerCount, 1); // sanity check
+
+      // Simulate AudioRoutingService timer detecting a device change while the
+      // renegotiation round-trip is still pending.
+      svc.audioRouting?.onInputDeviceChanged?.call();
+      // Let any enqueued microtasks run.
+      await Future.delayed(const Duration(milliseconds: 20));
+
+      // _recreateAudioTrack must have returned early at the _isRenegotiating
+      // guard — no second offer must have been sent.
+      expect(
+        offerCount,
+        1,
+        reason:
+            'A device-change callback fired while a renegotiation is in flight '
+            'must not trigger a second offer (causes "wrong state: stable" error)',
+      );
+    });
+
+    // Regression: once the answer arrives, device changes must be allowed again.
+    test('device change is allowed after renegotiation answer is processed',
+        () async {
+      final svc = _buildService();
+      addTearDown(svc.disconnect);
+
+      Function(RTCPeerConnectionState)? connStateCb;
+      when(mockPeerConnection.onConnectionState = any).thenAnswer((inv) {
+        connStateCb = inv.positionalArguments.first
+            as Function(RTCPeerConnectionState)?;
+      });
+
+      when(mockPeerConnection.getSenders())
+          .thenAnswer((_) async => <RTCRtpSender>[]);
+      when(mockDataChannel.state)
+          .thenReturn(RTCDataChannelState.RTCDataChannelConnecting);
+
+      await svc.connect(mode: 'text');
+      connStateCb
+          ?.call(RTCPeerConnectionState.RTCPeerConnectionStateConnected);
+
+      int offerCount = 0;
+      when(mockPeerConnection.createOffer(any)).thenAnswer((_) async {
+        offerCount++;
+        return RTCSessionDescription('offer_$offerCount', 'offer');
+      });
+
+      await svc.enableVoiceMode();
+      expect(offerCount, 1);
+
+      // Simulate the server's answer arriving — clears _isRenegotiating.
+      streamController.add(
+        '{"type":"answer","sdp":"answer_sdp"}',
+      );
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      // Now a device change should go through normally.
+      // Stub the enabled getter so _recreateAudioTrack's isMicrophoneMuted
+      // check doesn't throw a MissingStubError (track is unmuted).
+      when(mockAudioTrack.enabled).thenReturn(true);
+      svc.audioRouting?.onInputDeviceChanged?.call();
+      await Future.delayed(const Duration(milliseconds: 20));
+
+      expect(
+        offerCount,
+        greaterThan(1),
+        reason:
+            'After the answer is processed, device changes must trigger a new '
+            'renegotiation offer',
+      );
+    });
+
+    // Regression: wires onInputDeviceChanged only after renegotiation completes
+    // (no duplicate offer on first text→voice upgrade)
     test(
         'wires onInputDeviceChanged only after renegotiation completes '
         '(no duplicate offer on first text→voice upgrade)',

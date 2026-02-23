@@ -35,6 +35,12 @@ class WebRTCService {
   // Track recreation flag to prevent concurrent calls
   bool _isRecreatingTrack = false;
 
+  // True from the moment we send a renegotiation offer until we process the
+  // matching answer.  Guards _recreateAudioTrack from firing a second offer
+  // while the first renegotiation round-trip is still in flight (e.g., the
+  // AudioRoutingService timer detects a device change mid-renegotiation).
+  bool _isRenegotiating = false;
+
   // Session mode ('voice' or 'text')
   String _sessionMode = 'voice';
 
@@ -176,6 +182,8 @@ class WebRTCService {
     _isConnecting = false;
     _remoteDescriptionSet = false;
     _dataChannelOpenFired = false;
+    _isRenegotiating = false;
+    _isRecreatingTrack = false;
     _iceCandidatesQueue.clear();
 
     await _signaling?.sink.close();
@@ -247,7 +255,11 @@ class WebRTCService {
   ///
   /// Strategy: Keep old track running until new track is ready to minimize audio gap
   Future<void> _recreateAudioTrack() async {
-    if (_peerConnection == null || _localStream == null || _isRecreatingTrack) {
+    if (_peerConnection == null || _localStream == null || _isRecreatingTrack ||
+        _isRenegotiating) {
+      // Suppress device-change renegotiations while one is already in flight.
+      // AudioRoutingService will re-detect the change on its next timer tick
+      // once the current renegotiation completes.
       return;
     }
 
@@ -316,6 +328,9 @@ class WebRTCService {
   Future<void> _renegotiateConnection() async {
     if (_peerConnection == null) return;
 
+    // Mark renegotiation as in-flight so _recreateAudioTrack is suppressed
+    // until the answer arrives and _handleAnswer clears this flag.
+    _isRenegotiating = true;
     try {
       final RTCSessionDescription offer = await _peerConnection!.createOffer({
         'offerToReceiveAudio': true,
@@ -325,6 +340,7 @@ class WebRTCService {
       await _peerConnection!.setLocalDescription(offer);
       _sendSignalingMessage({'type': 'offer', 'sdp': offer.sdp});
     } catch (e) {
+      _isRenegotiating = false; // allow retry if offer creation itself failed
       debugPrint('WebRTC: Renegotiation error: $e');
     }
   }
@@ -504,6 +520,9 @@ class WebRTCService {
       final RTCSessionDescription answer = RTCSessionDescription(sdp, 'answer');
       await _peerConnection!.setRemoteDescription(answer);
       _remoteDescriptionSet = true;
+      // Peer connection is now in 'stable' state — device-change renegotiations
+      // are safe again.
+      _isRenegotiating = false;
 
       if (_iceCandidatesQueue.isNotEmpty) {
         for (final candidate in _iceCandidatesQueue) {
@@ -512,6 +531,9 @@ class WebRTCService {
         _iceCandidatesQueue.clear();
       }
     } catch (e) {
+      // Also clear on error (e.g., "wrong state: stable" for a duplicate answer)
+      // so future renegotiations are not permanently blocked.
+      _isRenegotiating = false;
       debugPrint('WebRTC: Answer handling error: $e');
     }
   }
