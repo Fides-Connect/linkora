@@ -14,7 +14,7 @@ from ai_assistant.services.conversation_service import ConversationService, Conv
 
 class TestConversationStageEnum:
 
-    def test_all_8_members_exist(self):
+    def test_all_10_members_exist(self):
         expected = {
             "GREETING", "TRIAGE", "CLARIFY", "TOOL_EXECUTION",
             "CONFIRMATION", "FINALIZE", "RECOVERY", "COMPLETED",

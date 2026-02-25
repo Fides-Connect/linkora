@@ -97,10 +97,7 @@ class AIAssistant:
         # Build agentic runtime FSM and tool registry
         self.runtime_fsm = AgentRuntimeFSM()
         self.firestore_service = None  # injected by PeerConnectionHandler after construction
-        self.tool_registry = build_default_registry(
-            data_provider=self.data_provider,
-            firestore_service=None,  # placeholder — real value set via self.firestore_service
-        )
+        self.tool_registry = build_default_registry()
 
         # Initialize orchestration services
         self.response_orchestrator = ResponseOrchestrator(
