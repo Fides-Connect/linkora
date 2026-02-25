@@ -133,12 +133,7 @@ class PeerConnectionHandler:
         # Reset idle timer on any user activity
         self._reset_idle_timer()
 
-        if not self.audio_processor._is_text_mode:
-            # Voice → text: stop STT/TTS then process as text
-            logger.info("Voice → text switch triggered by text-input")
-            asyncio.create_task(self._handle_voice_to_text_switch(text))
-        else:
-            asyncio.create_task(self.audio_processor.process_text_input(text))
+        asyncio.create_task(self.audio_processor.receive_text_input(text))
 
     # ── DataChannel message handlers ──────────────────────────────────────────
 
@@ -264,17 +259,7 @@ class PeerConnectionHandler:
         async def on_connectionstatechange():
             """Handle connection state changes."""
             logger.info("Connection state: %s", self.pc.connectionState)
-            if self.pc.connectionState == "connected":
-                # For text-mode sessions, send the greeting now that the data
-                # channel is open. Guard with _greeting_sent so renegotiation
-                # (text→voice upgrade) does not trigger a second greeting.
-                if (
-                    self.audio_processor
-                    and self.audio_processor._is_text_mode
-                    and not self.audio_processor._greeting_sent
-                ):
-                    asyncio.create_task(self.audio_processor.send_text_greeting())
-            elif self.pc.connectionState == "failed":
+            if self.pc.connectionState == "failed":
                 await self.close()
 
     # ── handle_offer helpers ──────────────────────────────────────────────────
@@ -379,11 +364,6 @@ class PeerConnectionHandler:
 
         except Exception as exc:
             logger.error("Error handling offer: %s", exc, exc_info=True)
-
-    async def _handle_voice_to_text_switch(self, text: str):
-        """Disable voice pipeline then process the incoming text message."""
-        await self.audio_processor.disable_voice_mode()
-        await self.audio_processor.process_text_input(text)
 
     async def handle_ice_candidate(self, candidate_data: dict):
         """Handle ICE candidate from client."""

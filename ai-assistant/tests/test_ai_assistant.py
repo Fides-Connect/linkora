@@ -149,26 +149,3 @@ class TestLLMResponseGeneration:
         
         assert len(response_chunks) == 2
         assert ''.join(response_chunks) == "Hello world"
-
-class TestGreetingGeneration:
-    """Test greeting generation."""
-    
-    @pytest.mark.asyncio
-    async def test_get_greeting_audio(self, ai_assistant, mock_data_provider):
-        """Test getting greeting with audio."""
-        # Mock conversation service
-        ai_assistant.conversation_service.generate_greeting = AsyncMock(return_value="Hallo!")
-        
-        # Mock TTS service - must accept chunk_size parameter
-        async def mock_tts_stream(*args, **kwargs):
-            yield b'audio_data'
-        
-        ai_assistant.tts_service.synthesize_stream = mock_tts_stream
-        
-        greeting_text, audio_stream = await ai_assistant.get_greeting_audio(user_id='test123')
-        
-        assert greeting_text == "Hallo!"
-        assert audio_stream is not None
-        
-        # Verify user data was fetched
-        mock_data_provider.get_user_by_id.assert_called_once_with('test123')

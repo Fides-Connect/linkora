@@ -358,7 +358,41 @@ void main() {
       verify(mockWebRTCWrapper.getUserMedia(any)).called(1);
     });
 
-    // Regression: AudioRoutingService's periodic device-check timer fires after
+    // Regression: text→voice upgrade was silently muted because _desiredMuteState
+    // defaulted to true and _createLocalStream() ignored the startMuted: false
+    // argument.  After the fix, _createLocalStream syncs _desiredMuteState from
+    // startMuted, so the track is created with enabled=true.
+    test('fresh-path: audio track is created UNMUTED (enabled=true)', () async {
+      final svc = buildService();
+      addTearDown(svc.disconnect);
+
+      Function(RTCPeerConnectionState)? connStateCb;
+      when(mockPeerConnection.onConnectionState = any).thenAnswer((inv) {
+        connStateCb = inv.positionalArguments.first
+            as Function(RTCPeerConnectionState)?;
+      });
+
+      when(mockPeerConnection.getSenders())
+          .thenAnswer((_) async => <RTCRtpSender>[]);
+      when(mockDataChannel.state)
+          .thenReturn(RTCDataChannelState.RTCDataChannelConnecting);
+
+      await svc.connect(mode: 'text');
+      connStateCb
+          ?.call(RTCPeerConnectionState.RTCPeerConnectionStateConnected);
+
+      when(mockPeerConnection.createOffer(any))
+          .thenAnswer((_) async => RTCSessionDescription('offer2', 'offer'));
+
+      clearInteractions(mockAudioTrack);
+      await svc.enableVoiceMode();
+
+      // The track must be enabled (unmuted) — NOT left at the muted default.
+      verify(mockAudioTrack.enabled = true).called(greaterThanOrEqualTo(1));
+      verifyNever(mockAudioTrack.enabled = false);
+    });
+
+
     // enableVoiceMode() wires onInputDeviceChanged but BEFORE the server answer
     // arrives.  Without _isRenegotiating, _recreateAudioTrack() would send a
     // second offer, the server would answer it, and Flutter would fail with
