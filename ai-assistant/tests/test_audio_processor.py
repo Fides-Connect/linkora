@@ -105,7 +105,7 @@ class TestAudioProcessing:
         """Test starting audio processing."""
         with patch.object(audio_processor, '_process_audio', new=AsyncMock()), \
              patch.object(audio_processor, '_continuous_stt', new=AsyncMock()), \
-             patch.object(audio_processor, '_play_greeting', new=AsyncMock()):
+             patch.object(audio_processor._session_starter, 'initialize', new=AsyncMock()):
             
             await audio_processor.start()
             
@@ -363,31 +363,6 @@ class TestAudioQueue:
         result = await audio_processor.audio_queue.get()
         assert result == test_audio
 
-
-class TestGreetingPlayback:
-    """Test greeting playback functionality — kept for backward compat until Phase 8."""
-
-    @pytest.mark.asyncio
-    async def test_play_greeting(self, audio_processor, mock_ai_assistant):
-        """Test playing greeting message."""
-        audio_processor.output_track.queue_audio = AsyncMock()
-        audio_processor.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hello!", async_audio_generator())
-        )
-
-        await audio_processor._play_greeting()
-
-        audio_processor.ai_assistant.get_greeting_audio.assert_called_once()
-        assert audio_processor.output_track.queue_audio.call_count > 0
-
-    @pytest.mark.asyncio
-    async def test_play_greeting_sets_speaking_flag(self, audio_processor, mock_ai_assistant):
-        """Test that greeting playback clears the speaking flag on completion."""
-        audio_processor.output_track.queue_audio = AsyncMock()
-
-        await audio_processor._play_greeting()
-
-        assert audio_processor.is_ai_speaking is False
 
 
 class TestTranscriptCallback:

@@ -67,7 +67,7 @@ def _mock_audio_processor(is_text_mode: bool = False) -> Mock:
     ap.set_data_channel = Mock()
     ap.enable_voice_mode = AsyncMock(return_value=Mock(id="out-track"))
     ap.disable_voice_mode = AsyncMock()
-    ap.send_text_greeting = AsyncMock()
+    ap.receive_text_input = AsyncMock()
     ap.process_text_input = AsyncMock()
     ap.replace_input_track = AsyncMock()
     return ap
@@ -347,7 +347,7 @@ class TestDataChannelTextInput:
         on_message(json.dumps({"type": "text-input", "text": "hello"}))
         await asyncio.sleep(0)  # let create_task run
 
-        ap.process_text_input.assert_called_once_with("hello")
+        ap.receive_text_input.assert_called_once_with("hello")
 
     async def test_text_input_buffered_when_audio_processor_not_ready(self):
         handler = _make_handler(session_mode="text")
@@ -378,7 +378,7 @@ class TestDataChannelTextInput:
         await asyncio.sleep(0)
 
         assert handler._pending_text_inputs == []
-        assert ap.process_text_input.call_args_list == [
+        assert ap.receive_text_input.call_args_list == [
             (("first",),),
             (("second",),),
         ]
@@ -401,7 +401,7 @@ class TestDataChannelTextInput:
         on_message(json.dumps({"type": "text-input", "text": "hello"}))
         await asyncio.sleep(0)
 
-        ap.process_text_input.assert_called_once_with("hello")
+        ap.receive_text_input.assert_called_once_with("hello")
 
     async def test_empty_text_input_ignored(self):
         handler = _make_handler(session_mode="text")
@@ -415,7 +415,7 @@ class TestDataChannelTextInput:
         on_message(json.dumps({"type": "text-input", "text": "   "}))
         await asyncio.sleep(0)
 
-        ap.process_text_input.assert_not_called()
+        ap.receive_text_input.assert_not_called()
 
     async def test_oversized_text_input_rejected(self):
         handler = _make_handler(session_mode="text")
@@ -429,16 +429,13 @@ class TestDataChannelTextInput:
         on_message(json.dumps({"type": "text-input", "text": "x" * 10_001}))
         await asyncio.sleep(0)
 
-        ap.process_text_input.assert_not_called()
+        ap.receive_text_input.assert_not_called()
 
     async def test_voice_to_text_auto_switch(self):
-        """text-input while in voice mode should trigger voice→text switch."""
+        """text-input while in voice mode should call receive_text_input (mode switch handled internally)."""
         handler = _make_handler(session_mode="voice")
         ap = _mock_audio_processor(is_text_mode=False)
         handler.audio_processor = ap
-
-        handle_switch = AsyncMock()
-        handler._handle_voice_to_text_switch = handle_switch
 
         on_message, _ = self._get_on_message(handler)
         if on_message is None:
@@ -447,7 +444,7 @@ class TestDataChannelTextInput:
         on_message(json.dumps({"type": "text-input", "text": "switch me"}))
         await asyncio.sleep(0)
 
-        handle_switch.assert_called_once_with("switch me")
+        ap.receive_text_input.assert_called_once_with("switch me")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -540,88 +537,4 @@ class TestDataChannelModeSwitch:
         ap.enable_voice_mode.assert_not_called()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# on_connectionstatechange — text greeting
-# ══════════════════════════════════════════════════════════════════════════════
 
-class TestConnectionStateChangeGreeting:
-
-    def _fire_connected(self, handler: PeerConnectionHandler):
-        """Capture and invoke the connectionstatechange handler for 'connected'."""
-        callbacks = {}
-
-        def pc_on(event):
-            def decorator(fn):
-                callbacks[event] = fn
-                return fn
-            return decorator
-
-        handler.pc.on = pc_on
-        handler._setup_event_handlers()
-
-        handler.pc.connectionState = "connected"
-        cb = callbacks.get("connectionstatechange")
-        return cb
-
-    async def test_sends_text_greeting_on_connect_in_text_mode(self):
-        handler = _make_handler(session_mode="text")
-        ap = _mock_audio_processor(is_text_mode=True)
-        ap._greeting_sent = False
-        handler.audio_processor = ap
-
-        cb = self._fire_connected(handler)
-        if cb:
-            await cb()
-            await asyncio.sleep(0)
-            ap.send_text_greeting.assert_called_once()
-
-    async def test_no_duplicate_greeting_when_already_sent(self):
-        handler = _make_handler(session_mode="text")
-        ap = _mock_audio_processor(is_text_mode=True)
-        ap._greeting_sent = True  # already sent
-        handler.audio_processor = ap
-
-        cb = self._fire_connected(handler)
-        if cb:
-            await cb()
-            await asyncio.sleep(0)
-            ap.send_text_greeting.assert_not_called()
-
-    async def test_no_greeting_in_voice_mode(self):
-        handler = _make_handler(session_mode="voice")
-        ap = _mock_audio_processor(is_text_mode=False)
-        ap._greeting_sent = False
-        handler.audio_processor = ap
-
-        cb = self._fire_connected(handler)
-        if cb:
-            await cb()
-            await asyncio.sleep(0)
-            ap.send_text_greeting.assert_not_called()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# _handle_voice_to_text_switch
-# ══════════════════════════════════════════════════════════════════════════════
-
-class TestHandleVoiceToTextSwitch:
-
-    async def test_disables_voice_then_processes_text(self):
-        handler = _make_handler(session_mode="voice")
-        ap = _mock_audio_processor(is_text_mode=False)
-        handler.audio_processor = ap
-
-        call_order: list[str] = []
-        ap.disable_voice_mode = AsyncMock(
-            side_effect=lambda: call_order.append("disable")
-        )
-        ap.process_text_input = AsyncMock(
-            side_effect=lambda _: call_order.append("process")
-        )
-
-        await handler._handle_voice_to_text_switch("turn it off")
-
-        assert call_order == ["disable", "process"], (
-            "disable_voice_mode must be called before process_text_input"
-        )
-        ap.process_text_input.assert_called_once_with("turn it off")

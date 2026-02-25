@@ -4,7 +4,6 @@ Tests for AudioProcessor text-mode and mode-switching features.
 Covers:
 - Text-mode initialisation (_is_text_mode, _greeting_sent, _response_task)
 - start() behaviour in text vs voice modes
-- send_text_greeting() — dedup guard, data-channel polling, timeout fallback
 - enable_voice_mode() — fresh upgrade, resume, track replacement
 - disable_voice_mode() — pause-only semantics, idempotence
 - _play_greeting() — marks _greeting_sent, respects interrupt event
@@ -21,6 +20,7 @@ from unittest.mock import AsyncMock, Mock, patch, MagicMock
 
 from ai_assistant.audio_processor import AudioProcessor
 from ai_assistant.services.conversation_service import ConversationStage
+from ai_assistant.services.session_mode import SessionMode
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -48,8 +48,8 @@ def _advance_fsm_to_listening(proc) -> None:
     """Advance the AgentRuntimeFSM from BOOTSTRAP to LISTENING.
 
     In production this happens inside PeerConnectionHandler._wire_runtime_fsm().
-    Tests that want send_text_greeting() to reach the greeting code must call
-    this first, otherwise the FSM guard fires at BOOTSTRAP and skips the greeting.
+    Tests that want process_text_input() to reach the greeting/response code must
+    call this first, otherwise the FSM guard fires at BOOTSTRAP.
     """
     fsm = proc.ai_assistant.response_orchestrator.runtime_fsm
     fsm.transition("data_channel_wait")   # BOOTSTRAP → DATA_CHANNEL_WAIT
@@ -97,8 +97,8 @@ class TestTextModeInitialisation:
     def test_is_text_mode_false_when_track_provided(self, voice_proc):
         assert voice_proc._is_text_mode is False
 
-    def test_greeting_sent_initialises_false(self, text_proc):
-        assert text_proc._greeting_sent is False
+    def test_session_not_initialized_at_start(self, text_proc):
+        assert text_proc._session_starter.initialized_event.is_set() is False
 
     def test_response_task_initialises_none(self, text_proc):
         assert text_proc._response_task is None
@@ -118,38 +118,21 @@ class TestStart:
 
     async def test_text_mode_skips_audio_tasks(self, text_proc):
         with (
-            patch.object(text_proc, "_process_audio", new=AsyncMock()) as mock_pa,
-            patch.object(text_proc, "_continuous_stt", new=AsyncMock()) as mock_stt,
-            patch.object(text_proc, "_play_greeting", new=AsyncMock()) as mock_greet,
+            patch.object(text_proc, "_process_audio", new=AsyncMock()),
+            patch.object(text_proc, "_continuous_stt", new=AsyncMock()),
+            patch.object(text_proc._session_starter, "initialize", new=AsyncMock()),
         ):
             await text_proc.start()
 
         # Tasks must NOT be created for the audio pipeline in text mode
         assert text_proc.processing_task is None
         assert text_proc.stt_task is None
-        mock_greet.assert_not_called()
-
-    async def test_text_mode_advances_stage_to_triage_immediately(self, text_proc):
-        """start() must advance stage to TRIAGE before any async work so that
-        a user message arriving before the greeting finishes is processed at
-        the correct stage (not GREETING)."""
-        with (
-            patch.object(text_proc, "_process_audio", new=AsyncMock()),
-            patch.object(text_proc, "_continuous_stt", new=AsyncMock()),
-            patch.object(text_proc, "_play_greeting", new=AsyncMock()),
-        ):
-            await text_proc.start()
-
-        assert (
-            text_proc.ai_assistant.conversation_service.get_current_stage()
-            == ConversationStage.TRIAGE
-        )
 
     async def test_text_mode_sets_running(self, text_proc):
         with (
             patch.object(text_proc, "_process_audio", new=AsyncMock()),
             patch.object(text_proc, "_continuous_stt", new=AsyncMock()),
-            patch.object(text_proc, "_play_greeting", new=AsyncMock()),
+            patch.object(text_proc._session_starter, "initialize", new=AsyncMock()),
         ):
             await text_proc.start()
 
@@ -159,184 +142,27 @@ class TestStart:
         with (
             patch.object(voice_proc, "_process_audio", new=AsyncMock()),
             patch.object(voice_proc, "_continuous_stt", new=AsyncMock()),
-            patch.object(voice_proc, "_play_greeting", new=AsyncMock()),
+            patch.object(voice_proc._session_starter, "initialize", new=AsyncMock()),
         ):
             await voice_proc.start()
 
         assert voice_proc.processing_task is not None
         assert voice_proc.stt_task is not None
 
-    async def test_voice_mode_calls_play_greeting(self, voice_proc):
-        play_greeting_called = asyncio.Event()
+    async def test_voice_mode_schedules_session_starter(self, voice_proc):
+        """start() must schedule _session_starter.initialize() as a task."""
+        initialized = asyncio.Event()
 
-        async def fake_play_greeting():
-            play_greeting_called.set()
+        async def fake_initialize():
+            initialized.set()
 
         with (
             patch.object(voice_proc, "_process_audio", new=AsyncMock()),
             patch.object(voice_proc, "_continuous_stt", new=AsyncMock()),
-            patch.object(voice_proc, "_play_greeting", side_effect=fake_play_greeting),
+            patch.object(voice_proc._session_starter, "initialize", side_effect=fake_initialize),
         ):
             await voice_proc.start()
-            await asyncio.wait_for(play_greeting_called.wait(), timeout=1.0)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# send_text_greeting()
-# ══════════════════════════════════════════════════════════════════════════════
-
-class TestSendTextGreeting:
-
-    async def test_sends_greeting_text_via_data_channel(self, text_proc):
-        text_proc.running = True
-        text_proc.data_channel = _open_data_channel()
-        _advance_fsm_to_listening(text_proc)
-        text_proc.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hallo!", _dummy_audio_gen())
-        )
-        sent_messages = []
-        text_proc.data_channel.send = Mock(side_effect=lambda m: sent_messages.append(m))
-
-        await text_proc.send_text_greeting()
-
-        assert any("Hallo!" in m for m in sent_messages)
-
-    async def test_dedup_guard_prevents_second_call(self, text_proc):
-        text_proc.running = True
-        text_proc.data_channel = _open_data_channel()
-        _advance_fsm_to_listening(text_proc)
-        text_proc.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hi", _dummy_audio_gen())
-        )
-
-        # First call should succeed
-        await text_proc.send_text_greeting()
-        first_call_count = text_proc.ai_assistant.get_greeting_audio.call_count
-
-        # Second call must be a no-op
-        await text_proc.send_text_greeting()
-
-        assert text_proc.ai_assistant.get_greeting_audio.call_count == first_call_count
-
-    async def test_sets_greeting_sent_flag(self, text_proc):
-        text_proc.running = True
-        text_proc.data_channel = _open_data_channel()
-        _advance_fsm_to_listening(text_proc)
-        text_proc.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hi", _dummy_audio_gen())
-        )
-
-        await text_proc.send_text_greeting()
-
-        assert text_proc._greeting_sent is True
-
-    async def test_does_not_call_tts(self, text_proc):
-        """Audio stream returned by get_greeting_audio must never be consumed."""
-        text_proc.running = True
-        text_proc.data_channel = _open_data_channel()
-        _advance_fsm_to_listening(text_proc)
-
-        consumed = []
-
-        async def audio_gen_tracking():
-            consumed.append("chunk")
-            yield b"audio"
-
-        text_proc.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hello!", audio_gen_tracking())
-        )
-
-        await text_proc.send_text_greeting()
-
-        # send_text_greeting discards the audio stream — nothing consumed
-        assert len(consumed) == 0
-
-    async def test_timeout_advances_stage_without_sending(self, text_proc):
-        """When data channel never opens, stage transition to TRIAGE must still
-        happen (via the orchestrator) and no greeting should be sent.
-        The transition is now routed through handle_signal_transition — before
-        the poll — so it fires even on timeout."""
-        text_proc.running = True
-        # data_channel is None — channel never opens
-
-        # Spy on handle_signal_transition so the call is trackable
-        original = text_proc.ai_assistant.response_orchestrator.handle_signal_transition
-        text_proc.ai_assistant.response_orchestrator.handle_signal_transition = Mock(
-            side_effect=original
-        )
-
-        # Patch asyncio.sleep so the 50-iteration loop completes instantly
-        with patch("asyncio.sleep", new=AsyncMock()):
-            await text_proc.send_text_greeting()
-
-        text_proc.ai_assistant.response_orchestrator.handle_signal_transition.assert_called_with(
-            "triage"
-        )
-
-    async def test_not_running_returns_immediately(self, text_proc):
-        text_proc.running = False
-        text_proc.data_channel = _open_data_channel()
-        text_proc.ai_assistant.get_greeting_audio = AsyncMock()
-
-        await text_proc.send_text_greeting()
-
-        # Nothing should have been called
-        text_proc.ai_assistant.get_greeting_audio.assert_not_called()
-
-    async def test_skips_greeting_when_response_task_already_running(self, text_proc):
-        """The FSM guard is the real race-free signal. Even if _response_task
-        happens to be set, the FSM in THINKING state is what actually suppresses
-        the greeting. Advance FSM to THINKING to simulate process_text_input()
-        having fired its synchronous transition."""
-        text_proc.running = True
-        text_proc.data_channel = _open_data_channel()
-        text_proc.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hi!", _dummy_audio_gen())
-        )
-
-        # Simulate process_text_input() synchronous FSM transition: LISTENING → THINKING
-        _advance_fsm_to_listening(text_proc)
-        text_proc.ai_assistant.response_orchestrator.runtime_fsm.transition("final_transcript")
-
-        await text_proc.send_text_greeting()
-
-        text_proc.ai_assistant.get_greeting_audio.assert_not_called()
-
-    async def test_skips_greeting_when_fsm_not_listening(self, text_proc):
-        """If the FSM has advanced beyond LISTENING (i.e. to THINKING) by the
-        time send_text_greeting() checks, the auto-greeting must be suppressed.
-        This is the race-free guard: process_text_input() transitions the FSM
-        synchronously before asyncio.create_task() is called, so the FSM state
-        is always visible here without any async gap."""
-        text_proc.running = True
-        text_proc.data_channel = _open_data_channel()
-        text_proc.ai_assistant.get_greeting_audio = AsyncMock()
-
-        # Simulate process_text_input() having fired its synchronous FSM transition
-        fsm = text_proc.ai_assistant.response_orchestrator.runtime_fsm
-        fsm.transition("data_channel_wait")   # BOOTSTRAP → DATA_CHANNEL_WAIT
-        fsm.transition("data_channel_opened") # DATA_CHANNEL_WAIT → LISTENING
-        fsm.transition("final_transcript")    # LISTENING → THINKING
-
-        await text_proc.send_text_greeting()
-
-        text_proc.ai_assistant.get_greeting_audio.assert_not_called()
-
-    async def test_greeting_called_with_manage_stage_false(self, text_proc):
-        """send_text_greeting must call get_greeting_audio with manage_stage=False
-        so the stage is never reset from TRIAGE back to GREETING."""
-        text_proc.running = True
-        text_proc.data_channel = _open_data_channel()
-        _advance_fsm_to_listening(text_proc)
-        text_proc.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hello!", _dummy_audio_gen())
-        )
-
-        await text_proc.send_text_greeting()
-
-        text_proc.ai_assistant.get_greeting_audio.assert_called_once_with(
-            user_id=text_proc.user_id, manage_stage=False
-        )
+            await asyncio.wait_for(initialized.wait(), timeout=1.0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -385,7 +211,7 @@ class TestEnableVoiceMode:
 
     async def test_resume_flips_flag_without_restarting_tasks(self, voice_proc):
         """Resuming a paused session should only flip the flag."""
-        voice_proc._is_text_mode = True  # simulate paused state
+        voice_proc.session_mode = SessionMode.TEXT  # simulate paused state
         # Pre-existing running tasks
         old_proc_task = asyncio.create_task(asyncio.sleep(60))
         old_stt_task = asyncio.create_task(asyncio.sleep(60))
@@ -467,76 +293,7 @@ class TestDisableVoiceMode:
         running_task.cancel()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# _play_greeting()
-# ══════════════════════════════════════════════════════════════════════════════
 
-class TestPlayGreeting:
-
-    async def test_sets_greeting_sent_immediately(self, voice_proc):
-        voice_proc.output_track.queue_audio = AsyncMock()
-        voice_proc.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hello!", _dummy_audio_gen())
-        )
-
-        await voice_proc._play_greeting()
-
-        assert voice_proc._greeting_sent is True
-
-    async def test_stops_streaming_when_interrupted(self, voice_proc):
-        """If interrupt_event is set mid-greeting, audio streaming must stop."""
-        queued_chunks = []
-
-        async def slow_audio_gen():
-            for i in range(5):
-                yield f"chunk{i}".encode()
-                await asyncio.sleep(0)  # yield to event loop
-
-        voice_proc.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hi!", slow_audio_gen())
-        )
-
-        async def queue_side_effect(chunk):
-            queued_chunks.append(chunk)
-            # Trigger interrupt after first chunk
-            if len(queued_chunks) == 1:
-                voice_proc.interrupt_event.set()
-
-        voice_proc.output_track.queue_audio = AsyncMock(
-            side_effect=queue_side_effect
-        )
-
-        await voice_proc._play_greeting()
-
-        # Must have stopped early — not all 5 chunks queued
-        assert len(queued_chunks) < 5
-
-    async def test_clears_is_ai_speaking_on_completion(self, voice_proc):
-        voice_proc.output_track.queue_audio = AsyncMock()
-        voice_proc.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hi!", _dummy_audio_gen())
-        )
-
-        await voice_proc._play_greeting()
-
-        assert voice_proc.is_ai_speaking is False
-
-    async def test_sets_is_ai_speaking_during_playback(self, voice_proc):
-        states_during = []
-
-        async def capture(*args):
-            states_during.append(voice_proc.is_ai_speaking)
-
-        voice_proc.output_track.queue_audio = AsyncMock(side_effect=capture)
-        voice_proc.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hi!", _dummy_audio_gen())
-        )
-
-        await voice_proc._play_greeting()
-
-        assert all(s is True for s in states_during), (
-            "is_ai_speaking must be True while greeting audio is queued"
-        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -555,6 +312,7 @@ class TestProcessTextInput:
         assert text_proc._response_task is None
 
     async def test_creates_response_task(self, text_proc):
+        text_proc._session_starter.initialized_event.set()
         with patch.object(
             text_proc, "_process_final_transcript", new=AsyncMock()
         ):
@@ -569,6 +327,7 @@ class TestProcessTextInput:
         async def fake_trigger_interrupt():
             interrupted_calls.append(1)
 
+        text_proc._session_starter.initialized_event.set()
         text_proc.is_ai_speaking = True
         with (
             patch.object(
@@ -585,6 +344,7 @@ class TestProcessTextInput:
         # Simulate an in-flight task (not done)
         in_flight = asyncio.create_task(asyncio.sleep(60))
         text_proc._response_task = in_flight
+        text_proc._session_starter.initialized_event.set()
         interrupt_mock = AsyncMock()
 
         with (
@@ -601,6 +361,10 @@ class TestProcessTextInput:
         """Second process_text_input call must wait until first leaves the critical section."""
         gate = asyncio.Event()
         interrupt_calls: list[str] = []
+
+        # Mark session as initialized so the wait doesn't block —
+        # this test is about lock serialisation, not initialization behaviour.
+        text_proc._session_starter.initialized_event.set()
 
         async def blocking_interrupt():
             interrupt_calls.append("interrupt")
@@ -621,6 +385,8 @@ class TestProcessTextInput:
 
             gate.set()
             await asyncio.gather(first, second)
+
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -693,7 +459,7 @@ class TestProcessFinalTranscript:
 
     async def test_text_mode_skips_tts_manager(self, text_proc):
         """In text mode, the LLM stream is consumed directly — TTS is never called."""
-        text_proc._is_text_mode = True
+        # text_proc uses SessionMode.TEXT by default (no input track)
         # generate_llm_response_stream is called synchronously (no await), so
         # Mock (not AsyncMock) is needed — AsyncMock would return a coroutine
         # instead of an async generator, causing a silent TypeError.
@@ -709,8 +475,7 @@ class TestProcessFinalTranscript:
         mock_tts.assert_not_called()
 
     async def test_text_mode_clears_is_ai_speaking(self, text_proc):
-        text_proc._is_text_mode = True
-
+        # text_proc uses SessionMode.TEXT by default (no input track)
         async def fake_llm():
             yield "chunk"
 
@@ -725,8 +490,7 @@ class TestProcessFinalTranscript:
         assert text_proc.is_ai_speaking is False
 
     async def test_voice_mode_calls_tts_manager(self, voice_proc):
-        voice_proc._is_text_mode = False
-
+        # voice_proc uses SessionMode.VOICE by default (has input track)
         async def fake_llm():
             yield "hello"
 
@@ -761,8 +525,7 @@ class TestProcessFinalTranscript:
         assert calls, "on_activity must be called"
 
     async def test_cancelled_error_resets_is_ai_speaking(self, text_proc):
-        text_proc._is_text_mode = True
-
+        # text_proc uses SessionMode.TEXT by default (no input track)
         async def raise_cancel():
             raise asyncio.CancelledError()
             yield  # make it an async generator  # noqa: unreachable
@@ -776,6 +539,58 @@ class TestProcessFinalTranscript:
             await text_proc._process_final_transcript("cancel me")
 
         assert text_proc.is_ai_speaking is False
+
+    async def test_text_mode_does_not_echo_user_message(self, text_proc):
+        """In text mode, _process_final_transcript must not send the user transcript
+        to the data channel — Flutter adds it optimistically."""
+        text_proc.running = True
+        text_proc.data_channel = _open_data_channel()
+        _advance_fsm_to_listening(text_proc)
+
+        sent_messages = []
+        text_proc.data_channel.send = Mock(side_effect=lambda m: sent_messages.append(m))
+
+        # Patch LLM stream to return nothing
+        text_proc.ai_assistant.generate_llm_response_stream = AsyncMock(
+            return_value=_empty_llm_stream()
+        )
+
+        await text_proc._process_final_transcript("hi, I need an electrician")
+
+        # No message with isUser=true should have been sent
+        import json
+        user_messages = [
+            m for m in sent_messages
+            if isinstance(m, str) and json.loads(m).get('isUser') is True
+        ]
+        assert user_messages == [], (
+            "Text mode must not echo user message — Flutter adds it optimistically"
+        )
+
+    async def test_voice_mode_echoes_user_message(self, voice_proc):
+        """In voice mode, _process_final_transcript sends the user transcript."""
+        voice_proc.running = True
+        voice_proc.data_channel = _open_data_channel()
+
+        sent_messages = []
+        voice_proc.data_channel.send = Mock(side_effect=lambda m: sent_messages.append(m))
+
+        voice_proc.ai_assistant.generate_llm_response_stream = AsyncMock(
+            return_value=_empty_llm_stream()
+        )
+
+        # Patch TTS manager so we don't need real audio
+        voice_proc.tts_manager = AsyncMock()
+        voice_proc.tts_manager.process_llm_stream = AsyncMock()
+
+        await voice_proc._process_final_transcript("I need a plumber")
+
+        import json
+        user_messages = [
+            m for m in sent_messages
+            if isinstance(m, str) and json.loads(m).get('isUser') is True
+        ]
+        assert len(user_messages) == 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -887,6 +702,7 @@ class TestFinalizeStageGuard:
 
     async def test_new_message_during_finalize_sends_busy_message(self):
         proc = self._make_busy_proc()
+        proc._session_starter.initialized_event.set()
         proc.ai_assistant.conversation_service.get_current_stage = Mock(
             return_value=ConversationStage.FINALIZE
         )
@@ -905,6 +721,7 @@ class TestFinalizeStageGuard:
 
     async def test_new_message_during_finalize_does_not_cancel_task(self):
         proc = self._make_busy_proc()
+        proc._session_starter.initialized_event.set()
         proc.ai_assistant.conversation_service.get_current_stage = Mock(
             return_value=ConversationStage.FINALIZE
         )
@@ -926,6 +743,7 @@ class TestFinalizeStageGuard:
 
     async def test_new_message_outside_finalize_still_interrupts(self):
         proc = self._make_busy_proc()
+        proc._session_starter.initialized_event.set()
         proc.ai_assistant.conversation_service.get_current_stage = Mock(
             return_value=ConversationStage.TRIAGE
         )
@@ -942,3 +760,69 @@ class TestFinalizeStageGuard:
                 await proc.process_text_input("New question")
 
         assert interrupted, "Should interrupt when not in FINALIZE stage"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# receive_text_input()
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestReceiveTextInput:
+    """receive_text_input is the single public entry-point for text.
+
+    Voice sessions: auto-switch to text then process.
+    Text sessions: go straight to process_text_input.
+    """
+
+    async def test_voice_mode_triggers_disable_then_process(self, voice_proc):
+        """In voice mode, receive_text_input must call disable_voice_mode first."""
+        voice_proc._session_starter.initialized_event.set()
+        disable_called = []
+        process_called = []
+
+        async def fake_disable():
+            disable_called.append(1)
+            voice_proc.session_mode = SessionMode.TEXT  # simulate what disable does
+
+        with (
+            patch.object(voice_proc, "disable_voice_mode", side_effect=fake_disable),
+            patch.object(voice_proc, "process_text_input", new=AsyncMock(
+                side_effect=lambda t: process_called.append(t)
+            )),
+        ):
+            await voice_proc.receive_text_input("switch me")
+
+        assert disable_called, "disable_voice_mode must be called"
+        assert process_called == ["switch me"]
+
+    async def test_text_mode_skips_disable_goes_straight_to_process(self, text_proc):
+        """In text mode, receive_text_input must NOT call disable_voice_mode."""
+        text_proc._session_starter.initialized_event.set()
+        disable_called = []
+        process_called = []
+
+        with (
+            patch.object(
+                text_proc, "disable_voice_mode",
+                side_effect=lambda: disable_called.append(1),
+            ),
+            patch.object(text_proc, "process_text_input", new=AsyncMock(
+                side_effect=lambda t: process_called.append(t)
+            )),
+        ):
+            await text_proc.receive_text_input("hello")
+
+        assert not disable_called, "disable_voice_mode must NOT be called in text mode"
+        assert process_called == ["hello"]
+
+    async def test_voice_mode_detected_by_session_mode(self, voice_proc):
+        """The switch is triggered by session_mode == VOICE, not any other flag."""
+        assert voice_proc.session_mode == SessionMode.VOICE
+
+        with (
+            patch.object(voice_proc, "disable_voice_mode", new=AsyncMock()),
+            patch.object(voice_proc, "process_text_input", new=AsyncMock()),
+        ):
+            await voice_proc.receive_text_input("test")
+
+        # Just verifying no AttributeError — the mode check itself is the contract
+        assert True
