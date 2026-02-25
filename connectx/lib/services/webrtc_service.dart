@@ -66,7 +66,7 @@ class WebRTCService {
   bool _remoteDescriptionSet = false;
 
   // Language configuration
-  String _languageCode = 'de'; // Default to German
+  final String _languageCode;
 
   // Dependencies
   final WebRTCWrapper _webRTCWrapper;
@@ -135,9 +135,9 @@ class WebRTCService {
   Future<void> connect({String mode = 'voice'}) async {
     if (_isConnected || _isConnecting) return;
 
-    const _validModes = {'voice', 'text'};
+    const validModes = {'voice', 'text'};
     final String validatedMode;
-    if (_validModes.contains(mode)) {
+    if (validModes.contains(mode)) {
       validatedMode = mode;
     } else {
       debugPrint(

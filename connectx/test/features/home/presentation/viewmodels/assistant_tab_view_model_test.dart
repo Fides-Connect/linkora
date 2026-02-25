@@ -22,7 +22,7 @@ void main() {
   // ── helpers ────────────────────────────────────────────────────────────────
 
   /// Call initialize() and return all captured callbacks by name.
-  Map<String, dynamic> _init({String status = 'Ready', String lang = 'en'}) {
+  Map<String, dynamic> init({String status = 'Ready', String lang = 'en'}) {
     vm.initialize(status, lang);
     final speechStartCb = verify(
       mockSpeech.onSpeechStart = captureAny,
@@ -148,7 +148,7 @@ void main() {
     });
 
     test('flushes pending text message when onDataChannelOpen fires', () async {
-      final cbs = _init();
+      final cbs = init();
       await vm.startChat(voiceMode: false, pendingText: 'flush me');
       (cbs['dataChannelOpen'] as Function())();
       verify(mockSpeech.sendTextMessage('flush me')).called(1);
@@ -163,7 +163,7 @@ void main() {
         'onConnected alone does NOT flush pending message '
         '(channel may not be open yet — real race on device)',
         () async {
-      final cbs = _init();
+      final cbs = init();
       await vm.startChat(voiceMode: false, pendingText: 'not yet');
       // Only onConnected fires (data channel still connecting)
       (cbs['connected'] as Function())();
@@ -176,7 +176,7 @@ void main() {
 
     test('dedup: onConnected + onDataChannelOpen together flush exactly once',
         () async {
-      final cbs = _init();
+      final cbs = init();
       await vm.startChat(voiceMode: false, pendingText: 'once');
       (cbs['connected'] as Function())();
       (cbs['dataChannelOpen'] as Function())();
@@ -185,7 +185,7 @@ void main() {
 
     test('no pending message → sendTextMessage not called on channel open',
         () async {
-      final cbs = _init();
+      final cbs = init();
       await vm.startChat(voiceMode: false);
       (cbs['dataChannelOpen'] as Function())();
       verifyNever(mockSpeech.sendTextMessage(any));
@@ -199,7 +199,7 @@ void main() {
     });
 
     test('unmutes mic for voice sessions when channel opens', () async {
-      final cbs = _init();
+      final cbs = init();
       await vm.startChat(voiceMode: true);
       clearInteractions(mockSpeech);
       (cbs['dataChannelOpen'] as Function())();
@@ -207,7 +207,7 @@ void main() {
     });
 
     test('does not unmute mic for text sessions when channel opens', () async {
-      final cbs = _init();
+      final cbs = init();
       await vm.startChat(voiceMode: false);
       clearInteractions(mockSpeech);
       (cbs['dataChannelOpen'] as Function())();
@@ -226,7 +226,7 @@ void main() {
       when(mockSpeech.startSpeech(mode: anyNamed('mode')))
           .thenAnswer((_) async {});
       when(mockSpeech.sendTextMessage(any)).thenReturn(true);
-      cbs = _init();
+      cbs = init();
       await vm.startChat(voiceMode: false);
       (cbs['dataChannelOpen'] as Function())(); // channel is ready
     });
@@ -262,7 +262,7 @@ void main() {
     test('sets error and does not send', () async {
       when(mockSpeech.startSpeech(mode: anyNamed('mode')))
           .thenAnswer((_) async {});
-      _init();
+      init();
       // channel never opened
       vm.sendTextMessage('too early');
       expect(vm.error, isNotNull);
@@ -282,7 +282,7 @@ void main() {
       when(mockSpeech.startSpeech(mode: anyNamed('mode')))
           .thenAnswer((_) async {});
       when(mockSpeech.sendTextMessage(any)).thenReturn(true);
-      cbs = _init();
+      cbs = init();
       await vm.startChat(voiceMode: false);
       (cbs['dataChannelOpen'] as Function())();
     });
@@ -315,7 +315,7 @@ void main() {
     });
 
     test('isChunk=true fragments are appended to the last AI message', () async {
-      final cbs = _init();
+      final cbs = init();
       await vm.startChat();
       (cbs['connected'] as Function())();
 
@@ -328,7 +328,7 @@ void main() {
     });
 
     test('new user message starts a fresh AI bubble', () async {
-      final cbs = _init();
+      final cbs = init();
       await vm.startChat();
       (cbs['connected'] as Function())();
 
@@ -429,7 +429,7 @@ void main() {
     test('resets isVoiceMode and dataChannelReady', () async {
       when(mockSpeech.startSpeech(mode: anyNamed('mode')))
           .thenAnswer((_) async {});
-      final cbs = _init();
+      final cbs = init();
       await vm.startChat(voiceMode: true);
       (cbs['dataChannelOpen'] as Function())();
 
@@ -463,56 +463,56 @@ void main() {
 
   group('onRuntimeState callback', () {
     test('thinking → processing', () {
-      final cbs = _init();
+      final cbs = init();
       final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
       rsCb(AgentRuntimeState.thinking);
       expect(vm.conversationState, ConversationState.processing);
     });
 
     test('llmStreaming → processing', () {
-      final cbs = _init();
+      final cbs = init();
       final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
       rsCb(AgentRuntimeState.llmStreaming);
       expect(vm.conversationState, ConversationState.processing);
     });
 
     test('toolExecuting → processing', () {
-      final cbs = _init();
+      final cbs = init();
       final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
       rsCb(AgentRuntimeState.toolExecuting);
       expect(vm.conversationState, ConversationState.processing);
     });
 
     test('listening → listening', () {
-      final cbs = _init();
+      final cbs = init();
       final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
       rsCb(AgentRuntimeState.listening);
       expect(vm.conversationState, ConversationState.listening);
     });
 
     test('speaking → listening', () {
-      final cbs = _init();
+      final cbs = init();
       final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
       rsCb(AgentRuntimeState.speaking);
       expect(vm.conversationState, ConversationState.listening);
     });
 
     test('bootstrap → connecting', () {
-      final cbs = _init();
+      final cbs = init();
       final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
       rsCb(AgentRuntimeState.bootstrap);
       expect(vm.conversationState, ConversationState.connecting);
     });
 
     test('terminated → idle', () {
-      final cbs = _init();
+      final cbs = init();
       final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
       rsCb(AgentRuntimeState.terminated);
       expect(vm.conversationState, ConversationState.idle);
     });
 
     test('calls notifyListeners on every runtime state change', () {
-      final cbs = _init();
+      final cbs = init();
       final rsCb = cbs['runtimeState'] as OnRuntimeStateCallback;
       int notifyCount = 0;
       vm.addListener(() => notifyCount++);
