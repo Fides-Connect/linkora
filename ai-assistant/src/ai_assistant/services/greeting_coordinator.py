@@ -10,7 +10,6 @@ from typing import Callable, Optional
 
 from .session_mode import SessionMode
 from .agent_runtime_fsm import AgentRuntimeState
-from .conversation_service import ConversationStage
 
 logger = logging.getLogger(__name__)
 
@@ -114,10 +113,11 @@ class GreetingCoordinator:
     # ── Text mode ─────────────────────────────────────────────────────────────
 
     async def _send_text_greeting(self) -> None:
-        """Set stage → TRIAGE, poll for DataChannel, then send greeting text."""
-        # Advance stage immediately so user messages arriving during the
-        # polling window are handled at TRIAGE, not GREETING.
-        self._ai.conversation_service.set_stage(ConversationStage.TRIAGE)
+        """Set stage → TRIAGE via the orchestrator, poll for DataChannel, then send greeting text."""
+        # Advance stage via the orchestrator (single source of truth for transitions)
+        # so GREETING → TRIAGE is consistent with all other stage transitions.
+        # No LLM stream is active here so handle_signal_transition (sync) is sufficient.
+        self._ai.response_orchestrator.handle_signal_transition("triage")
 
         if not await self._wait_for_dc_open():
             return

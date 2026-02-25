@@ -19,7 +19,6 @@ from unittest.mock import AsyncMock, Mock, patch
 from ai_assistant.services.greeting_coordinator import GreetingCoordinator
 from ai_assistant.services.session_mode import SessionMode
 from ai_assistant.services.agent_runtime_fsm import AgentRuntimeState
-from ai_assistant.services.conversation_service import ConversationStage
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -37,6 +36,8 @@ def _make_coordinator(
     ai = Mock()
     ai.get_greeting_audio = AsyncMock(return_value=("Hello!", _two_chunks()))
     ai.conversation_service = Mock()
+    ai.response_orchestrator = Mock()
+    ai.response_orchestrator.handle_signal_transition = Mock(return_value=True)
 
     dc = Mock()
     dc.is_open = dc_open
@@ -185,7 +186,7 @@ class TestGreetingCoordinatorText:
         coord, ai, dc, *_ = _make_coordinator()
         coord._wait_for_dc_open = AsyncMock(return_value=True)
         await coord.send(SessionMode.TEXT)
-        ai.conversation_service.set_stage.assert_called_with(ConversationStage.TRIAGE)
+        ai.response_orchestrator.handle_signal_transition.assert_called_with("triage")
 
     async def test_calls_get_greeting_audio_with_manage_stage_false(self):
         coord, ai, dc, *_ = _make_coordinator(fsm_state=AgentRuntimeState.LISTENING)

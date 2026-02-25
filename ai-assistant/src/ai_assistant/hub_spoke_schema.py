@@ -97,56 +97,62 @@ def init_hub_spoke_schema():
         
         # Step 1: Create Competence FIRST (without owned_by reference initially)
         if not client.collections.exists(COMPETENCE_COLLECTION):
-            client.collections.create(
-                name=COMPETENCE_COLLECTION,
-                vector_config=Configure.Vectors.text2vec_model2vec(),
-                properties=[
-                    Property(name="competence_id", data_type=DataType.TEXT),  # Link to Firestore ID
-                    Property(name="title", data_type=DataType.TEXT),
-                    Property(
-                        name="description", 
-                        data_type=DataType.TEXT,
-                        vectorize_property_name=True,  # Vectorize for semantic search
-                        skip_vectorization=False
-                    ),
-                    Property(name="category", data_type=DataType.TEXT),
-                    Property(name="price_range", data_type=DataType.TEXT),
-                    Property(name="availability", data_type=DataType.TEXT),  # When service is available
-                ],
-            )
-            logger.info(f"Created collection with vectorization: {COMPETENCE_COLLECTION}")
+            try:
+                client.collections.create(
+                    name=COMPETENCE_COLLECTION,
+                    vector_config=Configure.Vectors.text2vec_model2vec(),
+                    properties=[
+                        Property(name="competence_id", data_type=DataType.TEXT),  # Link to Firestore ID
+                        Property(name="title", data_type=DataType.TEXT),
+                        Property(
+                            name="description",
+                            data_type=DataType.TEXT,
+                            vectorize_property_name=True,  # Vectorize for semantic search
+                            skip_vectorization=False
+                        ),
+                        Property(name="category", data_type=DataType.TEXT),
+                        Property(name="price_range", data_type=DataType.TEXT),
+                        Property(name="availability", data_type=DataType.TEXT),  # When service is available
+                    ],
+                )
+                logger.info(f"Created collection with vectorization: {COMPETENCE_COLLECTION}")
+            except weaviate.exceptions.ObjectAlreadyExistsError:
+                logger.warning(f"Collection {COMPETENCE_COLLECTION} already exists — skipping creation")
         else:
             logger.info(f"Collection already exists: {COMPETENCE_COLLECTION}")
         
         # Step 2: Create User SECOND (now it can reference existing Competence)
         if not client.collections.exists(USER_COLLECTION):
-            client.collections.create(
-                name=USER_COLLECTION,
-                properties=[
-                    Property(name="user_id", data_type=DataType.TEXT),  # External ID (e.g. Firebase UID)
-                    Property(name="name", data_type=DataType.TEXT),
-                    Property(name="email", data_type=DataType.TEXT),
-                    Property(name="location", data_type=DataType.TEXT),
-                    Property(name="self_introduction", data_type=DataType.TEXT),
-                    Property(name="is_service_provider", data_type=DataType.BOOL),  # True if user offers services
-                    Property(name="photo_url", data_type=DataType.TEXT),
-                    Property(name="fcm_token", data_type=DataType.TEXT),
-                    Property(name="created_at", data_type=DataType.DATE),
-                    Property(name="last_sign_in", data_type=DataType.DATE),
-                    Property(name="has_open_request", data_type=DataType.BOOL),
-                    Property(name="feedback_positive", data_type=DataType.TEXT_ARRAY),
-                    Property(name="feedback_negative", data_type=DataType.TEXT_ARRAY),
-                    Property(name="average_rating", data_type=DataType.NUMBER),
-                    Property(name="review_count", data_type=DataType.INT),
-                ],
-                references=[
-                    ReferenceProperty(
-                        name="has_competencies",
-                        target_collection=COMPETENCE_COLLECTION
-                    )
-                ]
-            )
-            logger.info(f"Created collection: {USER_COLLECTION}")
+            try:
+                client.collections.create(
+                    name=USER_COLLECTION,
+                    properties=[
+                        Property(name="user_id", data_type=DataType.TEXT),  # External ID (e.g. Firebase UID)
+                        Property(name="name", data_type=DataType.TEXT),
+                        Property(name="email", data_type=DataType.TEXT),
+                        Property(name="location", data_type=DataType.TEXT),
+                        Property(name="self_introduction", data_type=DataType.TEXT),
+                        Property(name="is_service_provider", data_type=DataType.BOOL),  # True if user offers services
+                        Property(name="photo_url", data_type=DataType.TEXT),
+                        Property(name="fcm_token", data_type=DataType.TEXT),
+                        Property(name="created_at", data_type=DataType.DATE),
+                        Property(name="last_sign_in", data_type=DataType.DATE),
+                        Property(name="has_open_request", data_type=DataType.BOOL),
+                        Property(name="feedback_positive", data_type=DataType.TEXT_ARRAY),
+                        Property(name="feedback_negative", data_type=DataType.TEXT_ARRAY),
+                        Property(name="average_rating", data_type=DataType.NUMBER),
+                        Property(name="review_count", data_type=DataType.INT),
+                    ],
+                    references=[
+                        ReferenceProperty(
+                            name="has_competencies",
+                            target_collection=COMPETENCE_COLLECTION
+                        )
+                    ]
+                )
+                logger.info(f"Created collection: {USER_COLLECTION}")
+            except weaviate.exceptions.ObjectAlreadyExistsError:
+                logger.warning(f"Collection {USER_COLLECTION} already exists — skipping creation")
         else:
             logger.info(f"Collection already exists: {USER_COLLECTION}")
         
@@ -159,14 +165,16 @@ def init_hub_spoke_schema():
         has_owned_by = any(ref.name == "owned_by" for ref in (config.references or []))
         
         if not has_owned_by:
-            # Add the owned_by reference property
-            competence_collection.config.add_reference(
-                ref=ReferenceProperty(
-                    name="owned_by",
-                    target_collection=USER_COLLECTION
+            try:
+                competence_collection.config.add_reference(
+                    ref=ReferenceProperty(
+                        name="owned_by",
+                        target_collection=USER_COLLECTION
+                    )
                 )
-            )
-            logger.info(f"Added 'owned_by' reference to {COMPETENCE_COLLECTION}")
+                logger.info(f"Added 'owned_by' reference to {COMPETENCE_COLLECTION}")
+            except weaviate.exceptions.ObjectAlreadyExistsError:
+                logger.warning(f"'owned_by' reference in {COMPETENCE_COLLECTION} already exists — skipping")
         else:
             logger.info(f"'owned_by' reference already exists in {COMPETENCE_COLLECTION}")
         

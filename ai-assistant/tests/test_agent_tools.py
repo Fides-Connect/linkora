@@ -70,9 +70,7 @@ class TestAgentToolStructure:
 
     @pytest.fixture
     def registry(self):
-        dp = Mock()
-        fs = Mock()
-        return build_default_registry(dp, fs)
+        return build_default_registry()
 
     @pytest.mark.parametrize("tool_name,expected_cap", [
         ("search_providers",     ToolCapability("providers", "read")),
@@ -125,8 +123,8 @@ class TestAgentToolRegistry:
         return fs
 
     @pytest.fixture
-    def registry(self, mock_data_provider, mock_firestore):
-        return build_default_registry(mock_data_provider, mock_firestore)
+    def registry(self):
+        return build_default_registry()
 
     @pytest.fixture
     def full_context(self, mock_data_provider, mock_firestore):
@@ -201,8 +199,8 @@ class TestToolExecuteContracts:
         return fs
 
     @pytest.fixture
-    def registry(self, mock_data_provider, mock_firestore):
-        return build_default_registry(mock_data_provider, mock_firestore)
+    def registry(self):
+        return build_default_registry()
 
     def _ctx(self, dp, fs):
         return {
@@ -272,9 +270,8 @@ class TestProviderOnboardingTools:
         return fs
 
     @pytest.fixture
-    def registry(self, mock_firestore):
-        dp = Mock()
-        return build_default_registry(dp, mock_firestore)
+    def registry(self):
+        return build_default_registry()
 
     def _ctx(self, fs):
         return {
