@@ -216,6 +216,10 @@ class WebRTCService {
 
   /// Create local audio stream from microphone
   Future<void> _createLocalStream({bool startMuted = true}) async {
+    // Sync _desiredMuteState so the caller's intent is authoritative.
+    // This is critical for enableVoiceMode(), which passes startMuted: false
+    // but _desiredMuteState still holds its default (true) at that point.
+    _desiredMuteState = startMuted;
     try {
       final Map<String, dynamic> mediaConstraints = {
         'audio': {

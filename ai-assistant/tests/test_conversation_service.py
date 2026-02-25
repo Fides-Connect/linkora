@@ -297,20 +297,19 @@ class TestConversationFlow:
     
     @pytest.mark.asyncio
     async def test_greeting_generation(self, conversation_service, mock_llm_service):
-        """Test greeting generation."""
-        # Execute
-        greeting = await conversation_service.generate_greeting(
-            session_id="test-session",
+        """Test greeting generation returns text without managing stage."""
+        # Execute — new signature: no session_id, no manage_stage
+        greeting = await conversation_service.generate_greeting_text(
             user_name="Max",
-            has_open_request=False
+            has_open_request=False,
         )
-        
+
         # Verify: greeting was generated
         assert greeting is not None
         assert len(greeting) > 0
-        
-        # Verify: stage transitioned to TRIAGE after greeting
-        assert conversation_service.get_current_stage() == ConversationStage.TRIAGE
+
+        # Stage is NOT advanced by generate_greeting_text — still GREETING
+        assert conversation_service.get_current_stage() == ConversationStage.GREETING
 
 
 # ─────────────────────────────────────────────────────────────────────────────

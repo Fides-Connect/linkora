@@ -325,38 +325,28 @@ class ConversationService:
         self.context["providers_found"] = providers
         logger.info(f"Found {len(providers)} matching providers")
     
-    async def generate_greeting(
+    async def generate_greeting_text(
         self,
-        session_id: str,
         user_name: str = "",
         has_open_request: bool = False,
-        manage_stage: bool = True,
     ) -> str:
-        """
-        Generate a natural, friendly greeting.
+        """Generate a natural, friendly greeting text via LLM.
+
+        Pure LLM call — stage management and context seeding are the
+        responsibility of the caller (SessionStarter).
 
         Args:
-            session_id: Session identifier
-            user_name: User's name
-            has_open_request: Whether user has an open request
-            manage_stage: When True (default, voice mode) the stage is cycled
-                GREETING → TRIAGE around the LLM call.  Pass False for text
-                mode where the stage is already at TRIAGE and must not be reset.
+            user_name: User's first name
+            has_open_request: Whether user has an open service request
 
         Returns:
             Greeting text
         """
         try:
             logger.info(
-                f"🤖 generate_greeting called with user_name='{user_name}', "
-                f"has_open_request={has_open_request}, manage_stage={manage_stage}"
+                f"🤖 generate_greeting_text called with user_name='{user_name}', "
+                f"has_open_request={has_open_request}"
             )
-            if manage_stage:
-                self.set_stage(ConversationStage.GREETING)
-            # Always persist user context so TRIAGE prompt can reference name.
-            self.context["user_name"] = user_name
-            self.context["has_open_request"] = has_open_request
-
             language_instruction = get_language_instruction(self.language)
             prompt_template = ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
@@ -375,15 +365,8 @@ class ConversationService:
 
             greeting = await self.llm_service.generate(greeting_messages)
             logger.info(f"Generated greeting: '{greeting}'")
-
-            if manage_stage:
-                # Transition to triage after greeting
-                self.set_stage(ConversationStage.TRIAGE)
-
             return greeting
 
         except Exception as e:
-            logger.error(f"Error generating greeting: {e}", exc_info=True)
-            if manage_stage:
-                self.set_stage(ConversationStage.TRIAGE)
+            logger.error(f"Error generating greeting text: {e}", exc_info=True)
             return "Hallo! Wie kann ich dir heute helfen?"
