@@ -14,10 +14,17 @@ Collections initialized:
 
 Usage:
     python scripts/init_database.py [--load-test-data]
+    python scripts/init_database.py --sync-to-weaviate [--force]
     
 Options:
-    --load-test-data    Load test personas after initialization
-    --clean-only        Only clean up databases without creating new data
+    --load-test-data      Wipe and replace all data with test personas
+    --clean-only          Delete all data from Firestore and Weaviate
+    --sync-to-weaviate    Read all users + competencies from Firestore and
+                          rebuild the Weaviate index from scratch.
+                          Target instance is controlled by env vars:
+                            Local:  WEAVIATE_URL (default http://localhost:8090)
+                            Cloud:  WEAVIATE_CLUSTER_URL + WEAVIATE_API_KEY
+    --force               Skip confirmation prompts for any destructive operation
 """
 import os
 import sys
@@ -388,6 +395,136 @@ def load_weaviate_data(test_personas):
             logger.error(f"    ✗ Failed to create {persona_name}")
 
 
+def _confirm(prompt: str, force: bool) -> bool:
+    """Print *prompt* and return True if the user confirms (or force=True)."""
+    if force:
+        return True
+    try:
+        answer = input(f"\n{prompt} [y/N] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        answer = "n"
+    return answer in ("y", "yes")
+
+
+async def sync_firestore_to_weaviate(force: bool = False) -> int:
+    """Read all users and competencies from Firestore and rebuild Weaviate from scratch.
+
+    Args:
+        force: If True, skip the interactive confirmation prompt.
+
+    Returns:
+        0 on success, 1 on failure.
+    """
+    if not db or not firestore_service:
+        logger.error("Firestore client is not active. Cannot run sync.")
+        return 1
+
+    # Determine and display the target Weaviate instance so the user knows
+    # exactly what will be wiped.
+    cluster_url = os.getenv('WEAVIATE_CLUSTER_URL')
+    weaviate_target = (
+        f"Weaviate Cloud: {cluster_url}"
+        if cluster_url
+        else f"Local Weaviate: {os.getenv('WEAVIATE_URL', 'http://localhost:8090')}"
+    )
+
+    logger.info("=" * 80)
+    logger.info("Firestore → Weaviate Sync")
+    logger.info("=" * 80)
+    logger.info(f"  Target : {weaviate_target}")
+    logger.info("  Action : ALL existing Weaviate data will be deleted and replaced")
+    logger.info("           with the current users/competencies from Firestore.")
+
+    if not _confirm(
+        "ALL existing Weaviate data will be deleted and replaced with Firestore data. Continue?",
+        force=force,
+    ):
+        logger.info("Sync cancelled.")
+        return 0
+
+    # ── Step 1: Read all users from Firestore ─────────────────────────────────
+    logger.info("\n[Step 1] Reading users from Firestore...")
+    try:
+        users_ref = db.collection('users')
+        user_docs = list(users_ref.stream())
+    except Exception as e:
+        logger.error(f"Failed to read users collection: {e}")
+        return 1
+
+    if not user_docs:
+        logger.warning("No users found in Firestore. Weaviate will be wiped but left empty.")
+
+    logger.info(f"  Found {len(user_docs)} user document(s) in Firestore.")
+
+    # Build a list of (user_data, competencies) tuples
+    users_payload = []
+    for doc in user_docs:
+        user_data = doc.to_dict()
+        user_data['user_id'] = doc.id
+        competencies = await firestore_service.get_competencies(doc.id)
+        users_payload.append((user_data, competencies))
+        logger.debug(
+            f"  Loaded user {doc.id!r} with {len(competencies)} competence(s)."
+        )
+
+    total_competencies = sum(len(c) for _, c in users_payload)
+    logger.info(
+        f"  Total: {len(users_payload)} user(s), {total_competencies} competence(s) to sync."
+    )
+
+    # ── Step 2: Wipe & reinitialise Weaviate ──────────────────────────────────
+    logger.info("\n[Step 2] Rebuilding Weaviate schema (wipe + init)...")
+    try:
+        cleanup_hub_spoke_schema()
+        logger.info("  ✓ Weaviate data cleared.")
+        init_hub_spoke_schema()
+        logger.info("  ✓ Weaviate schema initialised (Hub & Spoke).")
+    except Exception as e:
+        logger.error(f"  ✗ Weaviate schema rebuild failed: {e}")
+        return 1
+
+    # ── Step 3: Ingest ────────────────────────────────────────────────────────
+    logger.info("\n[Step 3] Ingesting users and competencies into Weaviate...")
+    success_count = 0
+    failure_count = 0
+
+    for user_data, competencies in users_payload:
+        user_id = user_data.get('user_id', '<unknown>')
+        try:
+            result = HubSpokeIngestion.create_user_with_competencies(
+                user_data=user_data,
+                competencies_data=competencies,
+                apply_sanitization=True,
+                apply_enrichment=True,
+            )
+            if result:
+                success_count += 1
+                logger.info(
+                    f"  ✓ {user_data.get('name', user_id)!r} "
+                    f"({len(competencies)} competence(s))"
+                )
+            else:
+                failure_count += 1
+                logger.warning(f"  ✗ Failed to ingest user {user_id!r} (returned falsy).")
+        except Exception as e:
+            failure_count += 1
+            logger.error(f"  ✗ Exception ingesting user {user_id!r}: {e}")
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    logger.info("\n" + "=" * 80)
+    logger.info("Sync Summary")
+    logger.info("=" * 80)
+    logger.info(f"  Target        : {weaviate_target}")
+    logger.info(f"  Users synced  : {success_count} / {len(users_payload)}")
+    logger.info(f"  Failures      : {failure_count}")
+    if failure_count == 0:
+        logger.info("  ✓ Sync completed successfully.")
+    else:
+        logger.warning("  ⚠ Sync completed with errors — check logs above.")
+
+    return 0 if failure_count == 0 else 1
+
+
 async def main():
     parser = argparse.ArgumentParser(
         description='Initialize Fides Database (Firestore + Weaviate)'
@@ -402,8 +539,48 @@ async def main():
         action='store_true',
         help='Only clean up existing collections without creating new ones'
     )
+    parser.add_argument(
+        '--sync-to-weaviate',
+        action='store_true',
+        help=(
+            'Read all users and competencies from Firestore and rebuild the '
+            'Weaviate index from scratch. Target instance is controlled by '
+            'WEAVIATE_URL (local) or WEAVIATE_CLUSTER_URL + WEAVIATE_API_KEY (cloud).'
+        )
+    )
+    parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Skip confirmation prompts for any destructive operation (--clean-only, --load-test-data, --sync-to-weaviate)'
+    )
     
     args = parser.parse_args()
+
+    # ── Sync path: independent of the normal init flow ─────────────────────
+    if args.sync_to_weaviate:
+        try:
+            return await sync_firestore_to_weaviate(force=args.force)
+        finally:
+            HubSpokeConnection.close()
+
+    # ── Confirmation prompts for destructive init operations ─────────────────
+    if args.clean_only:
+        if not _confirm(
+            "--clean-only will DELETE all data from Firestore and Weaviate. Continue?",
+            force=args.force,
+        ):
+            logger.info("Aborted.")
+            return 0
+
+    if args.load_test_data:
+        if not _confirm(
+            "--load-test-data will WIPE and REPLACE all Firestore + Weaviate data "
+            "with test personas. Continue?",
+            force=args.force,
+        ):
+            logger.info("Aborted.")
+            return 0
+
     test_data = get_test_data()
     test_personas = test_data.get('personas', [])
     
