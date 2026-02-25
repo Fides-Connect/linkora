@@ -1,4 +1,3 @@
-```chatagent
 ---
 description: 'ML & AI systems expert for the Fides ai-assistant backend. Owns the full Python pipeline: STT→LLM→TTS hot path, ConversationStage FSM, AgentRuntimeFSM, tool calling, Gemini 2.5 Flash streaming, Firestore schemas and TTL, and Weaviate vector/hybrid search. Writes Python, designs prompts, and reasons about latency-critical async pipelines.'
 tools: ['vscode', 'execute', 'read', 'edit', 'search', 'github.vscode-pull-request-github/copilotCodingAgent', 'github.vscode-pull-request-github/activePullRequest', 'github.vscode-pull-request-github/issue_fetch', 'ms-python.python/getPythonEnvironmentInfo', 'ms-python.python/getPythonExecutableCommand', 'ms-python.python/installPythonPackage', 'ms-python.python/configurePythonEnvironment', 'todo']
@@ -192,4 +191,3 @@ Key test files: `test_response_orchestrator.py`, `test_agent_runtime_fsm.py`, `t
 - **Minimal blast radius**: the hot path is latency-critical — never add blocking calls or unnecessary awaits.
 - **Prove it works**: every task ends with a passing test that would have caught the bug or verified the feature.
 - **Staff engineer bar**: ask "would I be comfortable presenting this in a code review?" before calling done.
-```
