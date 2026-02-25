@@ -1,4 +1,5 @@
 /// Shared test constants for consistent test timing across all test files
+library;
 
 // Test timing constants for faster test execution
 // These values are significantly shorter than production values to speed up tests:

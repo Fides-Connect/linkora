@@ -180,8 +180,8 @@ class AudioRoutingService {
         // Switch if we are not already connected OR if we are forcing an update
         if (!_isBluetoothSpeakerConnected || !_isBluetoothMicrophoneConnected || forceUpdate) {
           await _setBluetoothAudio(
-            outputDeviceId: bluetoothOutputDevice?.deviceId,
-            inputDeviceId: bluetoothInputDevice?.deviceId,
+            outputDeviceId: bluetoothOutputDevice.deviceId,
+            inputDeviceId: bluetoothInputDevice.deviceId,
           );
           
           // Notify if input device changed (may need to recreate audio track)
