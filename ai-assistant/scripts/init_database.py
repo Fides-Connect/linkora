@@ -444,12 +444,17 @@ async def sync_firestore_to_weaviate(force: bool = False) -> int:
     logger.info(f"  Target        : {weaviate_target}")
     logger.info(f"  Users synced  : {result.success_count} / {result.total_users}")
     logger.info(f"  Failures      : {result.failure_count}")
-    if result.failure_count == 0:
+    success = result.failure_count == 0 and result.total_users > 0
+    if result.total_users == 0 and result.failure_count > 0:
+        logger.warning("  ⚠ Firestore could not be read. No data was synced to Weaviate.")
+    elif result.total_users == 0:
+        logger.warning("  ⚠ No users found in Firestore. No data was synced to Weaviate.")
+    elif result.failure_count == 0:
         logger.info("  ✓ Sync completed successfully.")
     else:
         logger.warning("  ⚠ Sync completed with errors — check logs above.")
 
-    return 0 if result.failure_count == 0 else 1
+    return 0 if success else 1
 
 
 async def main():

@@ -3,8 +3,7 @@ Weaviate Sync Utilities
 =======================
 
 Provides reusable building blocks for synchronising Firestore data into the
-Weaviate vector index:
-
+Weaviate vector index.
 """
 import logging
 import os
@@ -95,44 +94,41 @@ def ingest_users_into_weaviate(
 
 
 async def rebuild_weaviate_from_firestore() -> SyncResult:
-    """Full sync: wipe Weaviate, reinitialise schema, read Firestore, ingest.
+    """Full sync: read Firestore, wipe Weaviate, reinitialise schema, ingest.
 
-    Cleans Weaviate *first* so the index is always left in a consistent state
-    even if a later step fails.
+    Reads Firestore *first* so that a transient Firestore outage does not
+    leave the Weaviate index in an empty/broken state.
 
     Returns:
-        :class:`SyncResult` with ingestion counts.
+        :class:`SyncResult` with ingestion counts.  A Firestore read failure
+        is reported as ``failure_count=1`` so callers can distinguish it from
+        a successful (but empty) sync.
 
     Raises:
-        Exception: if the Weaviate schema rebuild fails (Firestore errors are
-            caught internally and result in a zero-ingestion :class:`SyncResult`).
+        Exception: if the Weaviate schema rebuild fails.
     """
-    # ── Step 1: wipe and reinitialise Weaviate ────────────────────────────────
-    logger.info("[Sync 1/3] Rebuilding Weaviate schema...")
+    # ── Step 1: read users from Firestore ─────────────────────────────────────
+    logger.info("[Sync 1/3] Reading users and competencies from Firestore...")
+    try:
+        users_payload = await load_users_from_firestore()
+    except Exception as exc:
+        logger.error(f"Could not read Firestore: {exc}. Weaviate was not modified.")
+        return SyncResult(0, 1, 0, 0)
+
+    total_users = len(users_payload)
+    total_competencies = sum(len(c) for _, c in users_payload)
+    logger.info(f"  Found {total_users} user(s) and {total_competencies} competence(s) to sync.")
+
+    # ── Step 2: wipe and reinitialise Weaviate ────────────────────────────────
+    logger.info("[Sync 2/3] Rebuilding Weaviate schema...")
     cleanup_hub_spoke_schema()
     logger.info("  ✓ Weaviate data cleared.")
     init_hub_spoke_schema()
     logger.info("  ✓ Weaviate schema initialised.")
 
-    # ── Step 2: read users from Firestore ─────────────────────────────────────
-    logger.info("[Sync 2/3] Reading users and competencies from Firestore...")
-    try:
-        users_payload = await load_users_from_firestore()
-    except Exception as exc:
-        logger.error(
-            f"Could not read Firestore: {exc}. "
-            "Weaviate schema was reset but no data was ingested."
-        )
-        return SyncResult(0, 0, 0, 0)
-
-    total_users = len(users_payload)
-    total_competencies = sum(len(c) for _, c in users_payload)
-
     if not users_payload:
         logger.warning("No users found in Firestore; Weaviate schema reset but left empty.")
         return SyncResult(0, 0, 0, 0)
-
-    logger.info(f"  Found {total_users} user(s) and {total_competencies} competence(s) to sync.")
 
     # ── Step 3: ingest ────────────────────────────────────────────────────────
     logger.info("[Sync 3/3] Ingesting users and competencies...")
@@ -167,7 +163,17 @@ async def run_startup_sync() -> None:
         return
 
     logger.info("=" * 60)
-    if result.failure_count == 0:
+    if result.failure_count > 0 and result.total_users == 0:
+        logger.warning(
+            "Weaviate Startup Sync — Firestore could not be read. "
+            "Weaviate was not modified."
+        )
+    elif result.total_users == 0:
+        logger.warning(
+            "Weaviate Startup Sync — no users found in Firestore. "
+            "Weaviate schema was reset but left empty."
+        )
+    elif result.failure_count == 0:
         logger.info(
             f"Weaviate Startup Sync — completed successfully "
             f"({result.success_count} user(s), {result.total_competencies} competence(s))."
