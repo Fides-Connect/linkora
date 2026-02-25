@@ -55,8 +55,8 @@ from ai_assistant.hub_spoke_schema import (
     cleanup_hub_spoke_schema,
     HubSpokeConnection
 )
-from ai_assistant.hub_spoke_ingestion import HubSpokeIngestion
 from ai_assistant.firestore_service import FirestoreService
+from ai_assistant.weaviate_sync import ingest_users_into_weaviate, rebuild_weaviate_from_firestore
 
 # Configure logging
 logging.basicConfig(
@@ -355,44 +355,34 @@ async def init_firestore(test_data):
 
 def load_weaviate_data(test_personas):
     """Load test personas into Weaviate.
-    
+
+    Builds a ``(user_data, competencies)`` payload from *test_personas* and
+    delegates to :func:`~ai_assistant.weaviate_sync.ingest_users_into_weaviate`.
+
     Args:
-        test_personas: List of persona dictionaries
+        test_personas: List of persona dictionaries (as returned by
+            :func:`get_test_data`).
     """
     logger.info("Loading Weaviate data...")
-    
+
+    users_payload = []
     for i, persona in enumerate(test_personas):
         persona_name = persona.get('name', f'Persona {i}')
-        logger.info(f"  Processing {persona_name}")
-        
-        # Get user_id from persona data
         user_id = persona['user'].get('user_id')
         if not user_id:
             logger.warning(f"Skipping Weaviate ingestion for {persona_name}: missing 'user_id' field")
             continue
-            
+
         competencies_data = persona['competencies']
-        
-        # We must iterate to inject IDs, replicating init_firestore logic:
-        # comp_id = f"competence_{user_id}_{i+1}"
+        # Inject document IDs to match the IDs written by init_firestore.
         for j, comp in enumerate(competencies_data):
-            # Check if updated in place or if we need copy - safe to update in place for script
-            comp['competence_id'] = f"competence_{user_id}_{j+1}"
-        
-        # HubSpokeIngestion expects 'user_id' field
+            comp['competence_id'] = f"competence_{user_id}_{j + 1}"
+
         user_data_for_weaviate = {**persona['user'], 'user_id': user_id}
-        
-        result = HubSpokeIngestion.create_user_with_competencies(
-            user_data=user_data_for_weaviate,
-            competencies_data=competencies_data,
-            apply_sanitization=True,
-            apply_enrichment=True
-        )
-        if result:
-            logger.info(f"    ✓ User UUID: {result['user_uuid']}")
-            logger.info(f"    ✓ Competencies: {len(result['competence_uuids'])}")
-        else:
-            logger.error(f"    ✗ Failed to create {persona_name}")
+        users_payload.append((user_data_for_weaviate, competencies_data))
+
+    success_count, failure_count = ingest_users_into_weaviate(users_payload)
+    logger.info(f"  ✓ {success_count} user(s) ingested, {failure_count} failure(s).")
 
 
 def _confirm(prompt: str, force: bool) -> bool:
@@ -442,87 +432,24 @@ async def sync_firestore_to_weaviate(force: bool = False) -> int:
         logger.info("Sync cancelled.")
         return 0
 
-    # ── Step 1: Read all users from Firestore ─────────────────────────────────
-    logger.info("\n[Step 1] Reading users from Firestore...")
     try:
-        users_ref = db.collection('users')
-        user_docs = list(users_ref.stream())
-    except Exception as e:
-        logger.error(f"Failed to read users collection: {e}")
-        return 1
-
-    if not user_docs:
-        logger.warning("No users found in Firestore. Weaviate will be wiped but left empty.")
-
-    logger.info(f"  Found {len(user_docs)} user document(s) in Firestore.")
-
-    # Build a list of (user_data, competencies) tuples
-    users_payload = []
-    for doc in user_docs:
-        user_data = doc.to_dict()
-        user_data['user_id'] = doc.id
-        competencies = await firestore_service.get_competencies(doc.id)
-        users_payload.append((user_data, competencies))
-        logger.debug(
-            f"  Loaded user {doc.id!r} with {len(competencies)} competence(s)."
-        )
-
-    total_competencies = sum(len(c) for _, c in users_payload)
-    logger.info(
-        f"  Total: {len(users_payload)} user(s), {total_competencies} competence(s) to sync."
-    )
-
-    # ── Step 2: Wipe & reinitialise Weaviate ──────────────────────────────────
-    logger.info("\n[Step 2] Rebuilding Weaviate schema (wipe + init)...")
-    try:
-        cleanup_hub_spoke_schema()
-        logger.info("  ✓ Weaviate data cleared.")
-        init_hub_spoke_schema()
-        logger.info("  ✓ Weaviate schema initialised (Hub & Spoke).")
+        result = await rebuild_weaviate_from_firestore()
     except Exception as e:
         logger.error(f"  ✗ Weaviate schema rebuild failed: {e}")
         return 1
 
-    # ── Step 3: Ingest ────────────────────────────────────────────────────────
-    logger.info("\n[Step 3] Ingesting users and competencies into Weaviate...")
-    success_count = 0
-    failure_count = 0
-
-    for user_data, competencies in users_payload:
-        user_id = user_data.get('user_id', '<unknown>')
-        try:
-            result = HubSpokeIngestion.create_user_with_competencies(
-                user_data=user_data,
-                competencies_data=competencies,
-                apply_sanitization=True,
-                apply_enrichment=True,
-            )
-            if result:
-                success_count += 1
-                logger.info(
-                    f"  ✓ {user_data.get('name', user_id)!r} "
-                    f"({len(competencies)} competence(s))"
-                )
-            else:
-                failure_count += 1
-                logger.warning(f"  ✗ Failed to ingest user {user_id!r} (returned falsy).")
-        except Exception as e:
-            failure_count += 1
-            logger.error(f"  ✗ Exception ingesting user {user_id!r}: {e}")
-
-    # ── Summary ───────────────────────────────────────────────────────────────
     logger.info("\n" + "=" * 80)
     logger.info("Sync Summary")
     logger.info("=" * 80)
     logger.info(f"  Target        : {weaviate_target}")
-    logger.info(f"  Users synced  : {success_count} / {len(users_payload)}")
-    logger.info(f"  Failures      : {failure_count}")
-    if failure_count == 0:
+    logger.info(f"  Users synced  : {result.success_count} / {result.total_users}")
+    logger.info(f"  Failures      : {result.failure_count}")
+    if result.failure_count == 0:
         logger.info("  ✓ Sync completed successfully.")
     else:
         logger.warning("  ⚠ Sync completed with errors — check logs above.")
 
-    return 0 if failure_count == 0 else 1
+    return 0 if result.failure_count == 0 else 1
 
 
 async def main():

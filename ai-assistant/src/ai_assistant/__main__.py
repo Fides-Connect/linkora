@@ -14,6 +14,7 @@ from .signaling_server import SignalingServer
 from .common_endpoints import setup_cors
 from .services.admin_service import AdminService
 from .api.v1.router import register_v1_routes
+from .weaviate_sync import run_startup_sync
 
 # Configure logging
 logging.basicConfig(
@@ -72,6 +73,9 @@ async def main():
     logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
     logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}")
     
+    # Sync Firestore → Weaviate (opt-in via WEAVIATE_SYNC_ON_STARTUP=true)
+    await run_startup_sync()
+
     # Initialize signaling server
     logger.info("Initializing signaling server...")
     signaling_server = SignalingServer()
