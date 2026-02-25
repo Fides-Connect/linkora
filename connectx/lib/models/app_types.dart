@@ -1,4 +1,5 @@
 /// Core type definitions for the application
+library;
 
 // ============================================================================
 // Enums
@@ -13,7 +14,7 @@ enum ConversationState {
 }
 
 /// Agent runtime state — mirrors the backend AgentRuntimeState enum.
-/// Sent over the DataChannel as {"type": "runtime-state", "runtimeState": "<value>"}.
+/// Sent over the DataChannel as `{"type": "runtime-state", "runtimeState": "<value>"}`.
 enum AgentRuntimeState {
   bootstrap,
   dataChannelWait,

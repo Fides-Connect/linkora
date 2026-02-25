@@ -114,8 +114,9 @@ class RequestDetailPage extends StatelessWidget {
                           otherUserId = request.selectedProviderUserId;
                         } else {
                           // Handle unknown request type (e.g. ID mismatch)
-                          if (context.mounted)
+                          if (context.mounted) {
                             Navigator.pop(context); // Close loading
+                          }
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
@@ -130,8 +131,9 @@ class RequestDetailPage extends StatelessWidget {
                         }
 
                         if (otherUserId.isEmpty) {
-                          if (context.mounted)
+                          if (context.mounted) {
                             Navigator.pop(context); // Close loading
+                          }
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(

@@ -5,7 +5,6 @@ import 'package:connectx/services/audio_hardware_controller.dart';
 class MockAudioHardwareController implements AudioHardwareController {
   bool _speakerphoneOn = false;
   List<MediaDeviceInfo> _audioDevices = [];
-  Function(dynamic)? _onDeviceChange;
   final List<String> _enumerateTypes = [];
   String? _selectedAudioOutputId;
   String? _selectedAudioInputId;
@@ -65,6 +64,6 @@ class MockAudioHardwareController implements AudioHardwareController {
 
   @override
   set onDeviceChange(Function(dynamic)? callback) {
-    _onDeviceChange = callback;
+    // Not stored — device-change callbacks are triggered manually in tests
   }
 }
