@@ -252,21 +252,25 @@ class TestSendTextGreeting:
         assert len(consumed) == 0
 
     async def test_timeout_advances_stage_without_sending(self, text_proc):
-        """When data channel never opens, stage must be TRIAGE and no greeting
-        should be sent.  The stage is now advanced at the very start of
-        send_text_greeting() — before the poll — so it is set even on timeout."""
+        """When data channel never opens, stage transition to TRIAGE must still
+        happen (via the orchestrator) and no greeting should be sent.
+        The transition is now routed through handle_signal_transition — before
+        the poll — so it fires even on timeout."""
         text_proc.running = True
         # data_channel is None — channel never opens
 
-        # Replace conversation_service with a mock so set_stage is trackable
-        text_proc.ai_assistant.conversation_service = Mock()
+        # Spy on handle_signal_transition so the call is trackable
+        original = text_proc.ai_assistant.response_orchestrator.handle_signal_transition
+        text_proc.ai_assistant.response_orchestrator.handle_signal_transition = Mock(
+            side_effect=original
+        )
 
         # Patch asyncio.sleep so the 50-iteration loop completes instantly
         with patch("asyncio.sleep", new=AsyncMock()):
             await text_proc.send_text_greeting()
 
-        text_proc.ai_assistant.conversation_service.set_stage.assert_called_with(
-            ConversationStage.TRIAGE
+        text_proc.ai_assistant.response_orchestrator.handle_signal_transition.assert_called_with(
+            "triage"
         )
 
     async def test_not_running_returns_immediately(self, text_proc):

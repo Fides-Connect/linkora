@@ -55,8 +55,4 @@ class TestDataChannelMessageRouter:
         """A misbehaving handler must not bring down the event loop."""
         router = DataChannelMessageRouter()
         router.register("bad", lambda d: (_ for _ in ()).throw(RuntimeError("boom")))
-        # Should not raise (router swallows handler errors)
-        try:
-            router.dispatch({"type": "bad"})
-        except Exception:
-            pass  # acceptable if router does NOT swallow — noted for implementation
+        router.dispatch({"type": "bad"})  # must not raise

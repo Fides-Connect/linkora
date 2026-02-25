@@ -128,7 +128,7 @@ class ConversationService:
         logger.info(f"Stage transition: {self.current_stage} -> {stage}")
         self.current_stage = stage
     
-    def create_prompt_for_stage(self, stage: str) -> ChatPromptTemplate:
+    def create_prompt_for_stage(self, stage: ConversationStage) -> ChatPromptTemplate:
         """
         Create appropriate prompt template based on conversation stage.
         
