@@ -10,7 +10,7 @@ import os
 from typing import List, Tuple, Dict, Any, NamedTuple
 
 from .hub_spoke_ingestion import HubSpokeIngestion
-from .hub_spoke_schema import HubSpokeConnection, init_hub_spoke_schema, cleanup_hub_spoke_schema
+from .hub_spoke_schema import init_hub_spoke_schema, cleanup_hub_spoke_schema
 from .firestore_service import FirestoreService
 
 logger = logging.getLogger(__name__)
@@ -159,7 +159,6 @@ async def run_startup_sync() -> None:
         result = await rebuild_weaviate_from_firestore()
     except Exception as exc:
         logger.error(f"Weaviate sync aborted — schema rebuild failed: {exc}")
-        HubSpokeConnection.close()
         return
 
     logger.info("=" * 60)
