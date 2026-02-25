@@ -5,22 +5,6 @@ Weaviate Sync Utilities
 Provides reusable building blocks for synchronising Firestore data into the
 Weaviate vector index:
 
-  ``load_users_from_firestore()``
-      Async — reads every user and their competency sub-collection from
-      Firestore and returns a list of ``(user_data, competencies)`` tuples.
-
-  ``ingest_users_into_weaviate(users_payload)``
-      Synchronous — ingests the payload returned by the function above into
-      Weaviate.  Returns ``(success_count, failure_count)``.
-
-  ``rebuild_weaviate_from_firestore()``
-      Async — full sync: wipe Weaviate, reinitialise schema, read Firestore,
-      ingest.  Returns a :class:`SyncResult` with counts.  Used by both
-      ``run_startup_sync()`` and ``init_database.py``.
-
-  ``run_startup_sync()``
-      Async convenience wrapper used by ``__main__.py``.  Opt-in via the
-      ``WEAVIATE_SYNC_ON_STARTUP=true`` environment variable.
 """
 import logging
 import os
