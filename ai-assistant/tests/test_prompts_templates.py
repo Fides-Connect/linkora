@@ -73,3 +73,35 @@ class TestTriagePromptOnboardingEntry:
     def test_provider_onboarding_transition_in_triage_contract(self):
         """TRIAGE State Contract must allow entering PROVIDER_ONBOARDING stage."""
         assert "provider_onboarding" in TRIAGE_CONVERSATION_PROMPT
+
+    def test_triage_prompt_has_no_re_greet_rule(self):
+        """TRIAGE must tell the LLM not to re-greet — fixes text-mode double-greeting bug."""
+        prompt_lower = TRIAGE_CONVERSATION_PROMPT.lower()
+        assert "never re-greet" in prompt_lower or "do not" in prompt_lower, (
+            "TRIAGE_CONVERSATION_PROMPT must contain an explicit no-re-greet instruction"
+        )
+
+    def test_triage_no_re_greet_rule_mentions_hello(self):
+        """The no-re-greet rule must explicitly name greeting words so the LLM obeys."""
+        assert "Hello" in TRIAGE_CONVERSATION_PROMPT or "hello" in TRIAGE_CONVERSATION_PROMPT.lower()
+
+
+class TestProviderOnboardingSaveResultConfirmation:
+
+    def test_prompt_instructs_llm_to_confirm_success(self):
+        """After save_competence_batch succeeds the LLM must tell the user — not stay silent."""
+        prompt_lower = PROVIDER_ONBOARDING_PROMPT.lower()
+        assert "success" in prompt_lower or "saved successfully" in prompt_lower, (
+            "PROVIDER_ONBOARDING_PROMPT must instruct the LLM to confirm a successful save"
+        )
+
+    def test_prompt_instructs_llm_to_report_error(self):
+        """After save_competence_batch fails the LLM must tell the user about the error."""
+        prompt_lower = PROVIDER_ONBOARDING_PROMPT.lower()
+        assert "error" in prompt_lower or "went wrong" in prompt_lower, (
+            "PROVIDER_ONBOARDING_PROMPT must instruct the LLM to report a save error"
+        )
+
+    def test_prompt_references_signal_transition_to_completed(self):
+        """Signal transition to completed must be documented in the onboarding prompt."""
+        assert 'signal_transition(target_stage="completed")' in PROVIDER_ONBOARDING_PROMPT

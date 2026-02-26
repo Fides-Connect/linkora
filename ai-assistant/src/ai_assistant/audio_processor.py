@@ -153,6 +153,10 @@ class AudioProcessor:
         ai_conv_service = AIConversationService(firestore_service=_firestore_service)
         assistant.response_orchestrator.ai_conversation_service = ai_conv_service
 
+        # Inject the same FirestoreService so the tool-context has a live client.
+        # Without this, all Firestore-dependent tools receive None and crash.
+        assistant.firestore_service = _firestore_service
+
         logger.info(
             "AI Assistant created with language '%s': %s, %s",
             language, assistant.language_code, assistant.voice_name,
