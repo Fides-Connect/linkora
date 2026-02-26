@@ -96,6 +96,15 @@ class TestAudioProcessorInitialization:
         output_track = audio_processor.get_output_track()
         assert output_track is not None
 
+    def test_firestore_service_injected_into_ai_assistant(self, audio_processor):
+        """Regression: firestore_service must be non-None so Firestore tools can run.
+
+        Covers the bug where _create_language_specific_assistant wired AIConversationService
+        but forgot to set assistant.firestore_service, causing all Firestore-dependent tools
+        to crash with AttributeError: 'NoneType' object has no attribute 'update_user'.
+        """
+        assert audio_processor.ai_assistant.firestore_service is not None
+
 
 class TestAudioProcessing:
     """Test audio processing functionality."""

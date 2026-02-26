@@ -12,6 +12,7 @@ from ai_assistant.services.agent_tools import (
     ToolPermissionError,
     check_capability,
     build_default_registry,
+    _require_fs,
 )
 from ai_assistant.firestore_schemas import PROVIDER_PITCH_OPT_OUT_SENTINEL
 
@@ -417,9 +418,51 @@ class TestProviderOnboardingTools:
         mock_hub.remove_competence_by_firestore_id.assert_any_call("c2")
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
-    async def test_save_competence_batch_weaviate_failure_propagates(
+    async def test_save_competence_batch_self_heals_when_weaviate_user_missing(
         self, mock_hub, registry, mock_firestore
     ):
+        """When Weaviate reports 'User not found', the tool must create the Weaviate user
+        from Firestore data and retry with create_competencies_by_user_id.
+
+        Regression for: 'No user found with user_id' logged during save_competence_batch
+        when the user exists in Firestore but is absent from Weaviate.
+        """
+        mock_hub.update_competencies_by_user_id.return_value = {
+            "success": False,
+            "error": "User not found",
+            "updated_uuids": [],
+        }
+        mock_firestore.get_user = AsyncMock(return_value={
+            "user_id": "user-x",
+            "name": "Vinh",
+            "email": "vinh@example.com",
+        })
+        ctx = self._ctx(mock_firestore)
+        skills = [{"title": "Machine Learning"}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+
+        # Must attempt create_user to establish the Weaviate hub row
+        mock_hub.create_user.assert_called_once()
+        # Must then sync competencies via create_competencies_by_user_id
+        mock_hub.create_competencies_by_user_id.assert_called_once()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_self_heal_failure_propagates(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """If the self-heal itself fails, the error must propagate — not be swallowed."""
+        mock_hub.update_competencies_by_user_id.return_value = {
+            "success": False,
+            "error": "User not found",
+            "updated_uuids": [],
+        }
+        mock_firestore.get_user = AsyncMock(return_value={"user_id": "user-x"})
+        mock_hub.create_user.side_effect = Exception("Weaviate unavailable")
+        ctx = self._ctx(mock_firestore)
+        with pytest.raises(Exception, match="Weaviate unavailable"):
+            await registry.execute("save_competence_batch", {"skills": [{"title": "Plumbing"}]}, ctx)
+
+
         """Weaviate sync failure must propagate — not be silently swallowed."""
         mock_hub.update_competencies_by_user_id.side_effect = Exception("Weaviate unavailable")
         ctx = self._ctx(mock_firestore)
@@ -512,3 +555,64 @@ class TestCancelServiceRequestTool:
         err = exc_info.value
         assert err.tool_name == "cancel_service_request"
         assert err.required_capability == ToolCapability("service_requests", "write")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _require_fs — fail-fast guard
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRequireFs:
+    """Tests for the _require_fs context-validation helper."""
+
+    def test_returns_fs_when_present(self):
+        fs = Mock()
+        ctx = {"firestore_service": fs}
+        assert _require_fs(ctx) is fs
+
+    def test_raises_runtime_error_when_none(self):
+        ctx = {"firestore_service": None}
+        with pytest.raises(RuntimeError, match="firestore_service not injected"):
+            _require_fs(ctx)
+
+    def test_raises_runtime_error_when_key_missing(self):
+        ctx = {}
+        with pytest.raises(RuntimeError, match="firestore_service not injected"):
+            _require_fs(ctx)
+
+    @pytest.mark.parametrize("tool_name", [
+        "get_favorites",
+        "get_open_requests",
+        "create_service_request",
+        "record_provider_interest",
+        "get_my_competencies",
+        "save_competence_batch",
+        "delete_competences",
+    ])
+    async def test_all_firestore_tools_raise_runtime_error_when_fs_is_none(
+        self, tool_name
+    ):
+        """Every Firestore-dependent tool must raise RuntimeError (not AttributeError)
+        when firestore_service is missing from context."""
+        registry = build_default_registry()
+        all_caps = [
+            ToolCapability("favorites", "read"),
+            ToolCapability("service_requests", "read"),
+            ToolCapability("service_requests", "write"),
+            ToolCapability("provider_onboarding", "write"),
+        ]
+        ctx = {
+            "user_id": "u1",
+            "user_capabilities": all_caps,
+            "data_provider": Mock(),
+            "firestore_service": None,  # ← the misconfiguration
+        }
+        params: dict = {}
+        if tool_name == "record_provider_interest":
+            params = {"decision": "accepted"}
+        elif tool_name == "save_competence_batch":
+            params = {"skills": [{"title": "Plumbing"}]}
+        elif tool_name == "delete_competences":
+            params = {"competence_ids": ["c1"]}
+
+        with pytest.raises(RuntimeError, match="firestore_service not injected"):
+            await registry.execute(tool_name, params, ctx)

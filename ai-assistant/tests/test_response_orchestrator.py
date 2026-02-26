@@ -850,3 +850,96 @@ class TestToolResultSignalTransition:
 
         set_stage_calls = [call[0][0] for call in mock_conversation_service.set_stage.call_args_list]
         assert ConversationStage.PROVIDER_ONBOARDING in set_stage_calls
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Follow-up stream signal_transition handling
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFollowUpStreamSignalTransition:
+    """When a tool is called in the main stream, the follow-up stream may emit a
+    signal_transition function call.  The orchestrator must handle it — not drop it.
+
+    Regression for bug: follow-up stream only processed str chunks, so
+    signal_transition("completed") from PROVIDER_ONBOARDING was silently discarded,
+    leaving the user with no response and no loop-back.
+    """
+
+    async def test_signal_transition_in_follow_up_stream_advances_stage(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """signal_transition("completed") emitted in the follow-up stream must be applied."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.PROVIDER_ONBOARDING
+
+        call_count = 0
+
+        async def multi_stream(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Main stream: LLM calls save_competence_batch
+                yield {"type": "function_call", "name": "save_competence_batch",
+                       "args": {"skills": [{"title": "Plumbing"}]}}
+            else:
+                # Follow-up stream: LLM first confirms success in text, then transitions
+                yield "Your skills have been saved successfully!"
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "completed"}}
+
+        mock_llm_service.generate_stream = multi_stream
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"saved": [{"competence_id": "c1"}], "count": 1}
+        )
+
+        from unittest.mock import patch
+        with patch("ai_assistant.services.response_orchestrator.is_legal_transition", return_value=True):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            chunks = []
+            async for chunk in orch.generate_response_stream("yes", "sess"):
+                chunks.append(chunk)
+
+        set_stage_calls = [call[0][0] for call in mock_conversation_service.set_stage.call_args_list]
+        assert ConversationStage.COMPLETED in set_stage_calls, (
+            "signal_transition('completed') in the follow-up stream must advance the stage"
+        )
+
+    async def test_text_from_follow_up_stream_is_yielded(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Text chunks yielded by the follow-up stream must reach the caller."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.PROVIDER_ONBOARDING
+
+        call_count = 0
+
+        async def multi_stream(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "save_competence_batch",
+                       "args": {"skills": [{"title": "Gardening"}]}}
+            else:
+                yield "Your competencies are live on your profile!"
+
+        mock_llm_service.generate_stream = multi_stream
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"saved": [{"competence_id": "c2"}], "count": 1}
+        )
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("yes", "sess"):
+            if isinstance(chunk, str):
+                chunks.append(chunk)
+
+        combined = "".join(chunks)
+        assert "competencies are live" in combined, (
+            "Confirmation text from the follow-up stream must reach the caller"
+        )
