@@ -157,11 +157,12 @@ class VoiceSessionStarter(SessionStarter):
 
 
 class TextSessionStarter(SessionStarter):
-    """Text-mode initializer: greeting bubble → seed history → GREETING→TRIAGE.
+    """Text-mode initializer: seed history → GREETING→TRIAGE (no bubble/TTS).
 
-    Generates the same personalised greeting text as VoiceSessionStarter,
-    adds it to LLM history (so TRIAGE prompt never re-greets), and pushes a
-    DataChannel chat bubble — but skips TTS entirely.
+    Generates the same personalised greeting text as VoiceSessionStarter and
+    adds it to LLM history so that the TRIAGE prompt never re-greets, then
+    advances the conversation stage from GREETING to TRIAGE. In text mode it
+    deliberately does NOT push a DataChannel greeting chat bubble and skips TTS.
     """
 
     def __init__(
