@@ -16,7 +16,7 @@ def _make_fs(conv_id="conv_abc"):
     """Return a mock FirestoreService with the AI-conversation methods wired."""
     fs = Mock()
     fs.create_ai_conversation = AsyncMock(return_value=conv_id)
-    fs.save_ai_conversation_message = AsyncMock(return_value="msg_1")
+    fs.create_ai_conversation_message = AsyncMock(return_value="msg_1")
     fs.update_ai_conversation = AsyncMock(return_value=True)
     fs.get_ai_conversations = AsyncMock(return_value=[])
     fs.get_ai_conversation_messages = AsyncMock(return_value=[])
@@ -81,14 +81,14 @@ class TestSaveMessage:
         fs = _make_fs()
         svc = AIConversationService(firestore_service=fs)
         await svc.save_message(role="user", text="hello", stage=ConversationStage.TRIAGE)
-        fs.save_ai_conversation_message.assert_not_called()
+        fs.create_ai_conversation_message.assert_not_called()
 
     async def test_save_message_calls_firestore(self):
         fs = _make_fs("conv_1")
         svc = AIConversationService(firestore_service=fs)
         await svc.open_session(user_id="u1", session_id="s1")
         await svc.save_message(role="user", text="hello", stage=ConversationStage.TRIAGE)
-        fs.save_ai_conversation_message.assert_called_once_with(
+        fs.create_ai_conversation_message.assert_called_once_with(
             "u1", "conv_1", "user", "hello", ConversationStage.TRIAGE, 0
         )
 
@@ -99,7 +99,7 @@ class TestSaveMessage:
         await svc.save_message(role="user", text="a", stage=ConversationStage.TRIAGE)
         await svc.save_message(role="assistant", text="b", stage=ConversationStage.TRIAGE)
         await svc.save_message(role="user", text="c", stage=ConversationStage.FINALIZE)
-        calls = fs.save_ai_conversation_message.call_args_list
+        calls = fs.create_ai_conversation_message.call_args_list
         assert calls[0][0][5] == 0
         assert calls[1][0][5] == 1
         assert calls[2][0][5] == 2
@@ -109,7 +109,7 @@ class TestSaveMessage:
         svc = AIConversationService(firestore_service=fs)
         await svc.open_session(user_id="u1", session_id="s1")
         await svc.save_message(role="assistant", text="Hallo!", stage=ConversationStage.GREETING)
-        call_args = fs.save_ai_conversation_message.call_args[0]
+        call_args = fs.create_ai_conversation_message.call_args[0]
         assert call_args[2] == "assistant"
         assert call_args[3] == "Hallo!"
         assert call_args[4] == ConversationStage.GREETING

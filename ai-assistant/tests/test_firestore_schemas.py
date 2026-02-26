@@ -121,7 +121,7 @@ class TestProviderPitchTimestamp:
     """Tests for last_time_asked_being_provider field and opt-out sentinel."""
 
     def test_sentinel_constant_is_far_future(self):
-        assert PROVIDER_PITCH_OPT_OUT_SENTINEL == datetime(9999, 1, 1)
+        assert PROVIDER_PITCH_OPT_OUT_SENTINEL == datetime(9999, 1, 1, tzinfo=UTC)
 
     def test_user_schema_defaults_to_none(self):
         user = UserSchema(name="A", email="a@b.com")
@@ -137,7 +137,7 @@ class TestProviderPitchTimestamp:
             name="A", email="a@b.com",
             last_time_asked_being_provider=PROVIDER_PITCH_OPT_OUT_SENTINEL,
         )
-        assert user.last_time_asked_being_provider == datetime(9999, 1, 1)
+        assert user.last_time_asked_being_provider == datetime(9999, 1, 1, tzinfo=UTC)
 
     def test_user_update_schema_defaults_to_none(self):
         update = UserUpdateSchema()
@@ -152,7 +152,7 @@ class TestProviderPitchTimestamp:
         update = UserUpdateSchema(
             last_time_asked_being_provider=PROVIDER_PITCH_OPT_OUT_SENTINEL
         )
-        assert update.last_time_asked_being_provider == datetime(9999, 1, 1)
+        assert update.last_time_asked_being_provider == datetime(9999, 1, 1, tzinfo=UTC)
 
     def test_user_schema_dumps_timestamp_field(self):
         ts = datetime(2026, 2, 22, 10, 0, 0)

@@ -14,7 +14,7 @@ from ai_assistant.services.conversation_service import ConversationService, Conv
 
 class TestConversationStageEnum:
 
-    def test_all_8_members_exist(self):
+    def test_all_10_members_exist(self):
         expected = {
             "GREETING", "TRIAGE", "CLARIFY", "TOOL_EXECUTION",
             "CONFIRMATION", "FINALIZE", "RECOVERY", "COMPLETED",
@@ -52,6 +52,7 @@ class TestIsLegalTransition:
         (ConversationStage.RECOVERY,  ConversationStage.TRIAGE),
         # Provider pitch + onboarding
         (ConversationStage.COMPLETED,          ConversationStage.PROVIDER_PITCH),
+        (ConversationStage.COMPLETED,          ConversationStage.TRIAGE),
         (ConversationStage.PROVIDER_PITCH,     ConversationStage.PROVIDER_ONBOARDING),
         (ConversationStage.PROVIDER_PITCH,     ConversationStage.COMPLETED),
         (ConversationStage.PROVIDER_ONBOARDING, ConversationStage.COMPLETED),
@@ -63,7 +64,6 @@ class TestIsLegalTransition:
 
     @pytest.mark.parametrize("from_s,to_s", [
         (ConversationStage.GREETING,       ConversationStage.COMPLETED),
-        (ConversationStage.COMPLETED,      ConversationStage.TRIAGE),
         (ConversationStage.TRIAGE,         ConversationStage.GREETING),
         (ConversationStage.COMPLETED,      ConversationStage.GREETING),
         (ConversationStage.PROVIDER_PITCH, ConversationStage.TRIAGE),
@@ -80,10 +80,27 @@ def mock_llm_service():
     """Mock LLM service."""
     service = Mock()
     service.generate = AsyncMock(return_value="Hallo! Wie kann ich helfen?")
-    
+
+    # In-memory histories keyed by session_id — mirrors the real LLMService.
+    _histories: dict = {}
+
+    class _FakeHistory:
+        def __init__(self):
+            self.messages = []
+
+        def add_message(self, msg):
+            self.messages.append(msg)
+
+    def _get_history(sid: str) -> _FakeHistory:
+        if sid not in _histories:
+            _histories[sid] = _FakeHistory()
+        return _histories[sid]
+
+    service.get_session_history = Mock(side_effect=_get_history)
+
     async def mock_generate_stream(*args, **kwargs):
         yield "Test response"
-    
+
     service.generate_stream = mock_generate_stream
     return service
 
@@ -124,72 +141,82 @@ def conversation_service(mock_llm_service, mock_data_provider):
 
 class TestProviderSearchMethod:
     """Test the search_providers_for_request method."""
-    
-    @pytest.mark.asyncio
-    async def test_search_providers_for_request_basic(self, conversation_service, mock_data_provider):
-        """Test basic provider search functionality."""
-        # Setup: simulate the agent's conversational summary (captured during triage)
-        conversation_service.context["user_problem"] = ["Ich brauche einen Klempner für mein Badezimmer"]
-        conversation_service.context["ai_responses"] = ["User needs a plumber for bathroom repair", "Latest message"]
-        
-        # Execute
+
+    async def test_search_triggers_data_provider_call(
+        self, conversation_service, mock_data_provider
+    ):
+        """search_providers_for_request always calls the data provider."""
+        conversation_service.context["user_problem"] = ["Ich brauche einen Klempner"]
         await conversation_service.search_providers_for_request()
-        
-        # Verify: search was called with the agent's conversational summary
-        mock_data_provider.search_providers.assert_called_once_with(
-            query_text="User needs a plumber for bathroom repair",
-            limit=3
-        )
-        
-        # Verify: providers were stored in context
+        mock_data_provider.search_providers.assert_called_once()
+
+    async def test_uses_recorded_ai_response_as_summary(
+        self, conversation_service, mock_data_provider, mock_llm_service
+    ):
+        """_generate_structured_query receives the last recorded AI response."""
+        conversation_service.record_ai_response("Klempner für Badezimmer, dringend")
+        await conversation_service.search_providers_for_request()
+        # The extraction prompt must contain the recorded summary
+        generate_call = mock_llm_service.generate.call_args
+        assert generate_call is not None
+        prompt_text = generate_call[0][0][0].content
+        assert "Klempner für Badezimmer" in prompt_text
+
+    async def test_falls_back_to_user_problem_when_no_ai_response(
+        self, conversation_service, mock_data_provider, mock_llm_service
+    ):
+        """Falls back to joined user inputs when no AI response has been recorded."""
+        conversation_service.context["user_problem"] = ["Ich brauche einen Elektriker"]
+        await conversation_service.search_providers_for_request()
+        generate_call = mock_llm_service.generate.call_args
+        assert generate_call is not None
+        prompt_text = generate_call[0][0][0].content
+        assert "Elektriker" in prompt_text
+
+    async def test_providers_stored_in_context(
+        self, conversation_service, mock_data_provider
+    ):
+        """Found providers are stored in context['providers_found']."""
+        conversation_service.context["user_problem"] = ["need plumber"]
+        await conversation_service.search_providers_for_request()
         assert len(conversation_service.context["providers_found"]) == 2
         assert conversation_service.context["providers_found"][0]["provider_id"] == "p1"
-    
-    @pytest.mark.asyncio
-    async def test_search_providers_with_no_category(self, conversation_service, mock_data_provider):
-        """Test provider search when no category is detected."""
-        # Setup: agent's conversational summary without detected category
-        conversation_service.context["user_problem"] = ["I need help with something"]
-        conversation_service.context["ai_responses"] = ["User needs general assistance", "Latest message"]
-        
-        # Execute
-        await conversation_service.search_providers_for_request()
-        
-        # Verify: search was called with conversational summary and None category
-        mock_data_provider.search_providers.assert_called_once_with(
-            query_text="User needs general assistance",
-            limit=3
-        )
-    
-    @pytest.mark.asyncio
-    async def test_search_providers_empty_results(self, conversation_service, mock_data_provider):
-        """Test provider search when no providers are found."""
-        # Setup: mock empty results
+
+    async def test_empty_results_stored_in_context(
+        self, conversation_service, mock_data_provider
+    ):
+        """Empty provider list stored in context when search returns nothing."""
         mock_data_provider.search_providers.return_value = []
-        conversation_service.context["user_problem"] = ["Very specific request"]
-        conversation_service.context["ai_responses"] = ["Specific service needed", "Latest message"]
-        
-        # Execute
+        conversation_service.context["user_problem"] = ["very specific"]
         await conversation_service.search_providers_for_request()
-        
-        # Verify: providers_found is empty list
         assert conversation_service.context["providers_found"] == []
-    
-    @pytest.mark.asyncio
-    async def test_search_providers_respects_max_limit(self, conversation_service, mock_data_provider):
-        """Test that search respects the max_providers limit."""
-        # Setup
+
+    async def test_respects_max_providers_limit(
+        self, conversation_service, mock_data_provider
+    ):
+        """The search limit matches max_providers."""
         conversation_service.max_providers = 5
-        conversation_service.context["user_problem"] = ["Need electrician"]
-        conversation_service.context["ai_responses"] = ["Electrician needed urgently", "Latest message"]
-        
-        # Execute
+        conversation_service.context["user_problem"] = ["need electrician"]
         await conversation_service.search_providers_for_request()
-        
-        # Verify: limit parameter matches max_providers
-        mock_data_provider.search_providers.assert_called_once()
         call_kwargs = mock_data_provider.search_providers.call_args[1]
         assert call_kwargs["limit"] == 5
+
+    async def test_history_excerpt_included_when_session_id_provided(
+        self, conversation_service, mock_data_provider, mock_llm_service
+    ):
+        """Last 3 history messages appear in the extraction prompt when session_id given."""
+        from langchain_core.messages import HumanMessage as HM, AIMessage as AM
+        history = mock_llm_service.get_session_history("sess-x")
+        history.add_message(HM(content="I need a plumber"))
+        history.add_message(AM(content="Sure! Is it urgent?"))
+        history.add_message(HM(content="Yes, today please"))
+        conversation_service.context["user_problem"] = ["plumber"]
+        await conversation_service.search_providers_for_request(session_id="sess-x")
+        generate_call = mock_llm_service.generate.call_args
+        assert generate_call is not None
+        prompt_text = generate_call[0][0][0].content
+        assert "Yes, today please" in prompt_text
+        assert "Is it urgent?" in prompt_text
 
 
 class TestAccumulateProblemDescription:
@@ -229,6 +256,47 @@ class TestAccumulateProblemDescription:
         
         # Verify: search was NOT called
         mock_data_provider.search_providers.assert_not_called()
+
+
+class TestRecordAiResponse:
+    """Unit tests for ConversationService.record_ai_response()."""
+
+    def test_non_empty_text_is_appended(self, conversation_service):
+        conversation_service.record_ai_response("Sounds like you need a plumber.")
+        assert conversation_service.context["ai_responses"] == ["Sounds like you need a plumber."]
+
+    def test_empty_string_is_ignored(self, conversation_service):
+        conversation_service.record_ai_response("")
+        assert conversation_service.context["ai_responses"] == []
+
+    def test_whitespace_only_is_ignored(self, conversation_service):
+        conversation_service.record_ai_response("   \n  ")
+        assert conversation_service.context["ai_responses"] == []
+
+    def test_multiple_calls_accumulate(self, conversation_service):
+        conversation_service.record_ai_response("First response")
+        conversation_service.record_ai_response("Second response")
+        assert len(conversation_service.context["ai_responses"]) == 2
+        assert conversation_service.context["ai_responses"][-1] == "Second response"
+
+
+class TestGetProblemSummary:
+    """Unit tests for ConversationService.get_problem_summary()."""
+
+    def test_returns_last_ai_response_when_present(self, conversation_service):
+        conversation_service.record_ai_response("First AI turn")
+        conversation_service.record_ai_response("Confirmed: plumber needed urgently")
+        assert conversation_service.get_problem_summary() == "Confirmed: plumber needed urgently"
+
+    def test_falls_back_to_user_problem_when_no_ai_response(self, conversation_service):
+        conversation_service.context["user_problem"] = ["I need", "a plumber"]
+        summary = conversation_service.get_problem_summary()
+        assert summary == "I need a plumber"
+
+    def test_returns_empty_string_when_both_empty(self, conversation_service):
+        # ai_responses is [] and user_problem is [] → join([]) == ""
+        summary = conversation_service.get_problem_summary()
+        assert summary == ""
 
 
 class TestStageManagement:
@@ -297,20 +365,19 @@ class TestConversationFlow:
     
     @pytest.mark.asyncio
     async def test_greeting_generation(self, conversation_service, mock_llm_service):
-        """Test greeting generation."""
-        # Execute
-        greeting = await conversation_service.generate_greeting(
-            session_id="test-session",
+        """Test greeting generation returns text without managing stage."""
+        # Execute — new signature: no session_id, no manage_stage
+        greeting = await conversation_service.generate_greeting_text(
             user_name="Max",
-            has_open_request=False
+            has_open_request=False,
         )
-        
+
         # Verify: greeting was generated
         assert greeting is not None
         assert len(greeting) > 0
-        
-        # Verify: stage transitioned to TRIAGE after greeting
-        assert conversation_service.get_current_stage() == ConversationStage.TRIAGE
+
+        # Stage is NOT advanced by generate_greeting_text — still GREETING
+        assert conversation_service.get_current_stage() == ConversationStage.GREETING
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -1,9 +1,4 @@
-"""DataChannelBridge — typed DataChannel send helper.
-
-Collapses the repeated ``if channel and channel.readyState == "open"`` guard
-that was duplicated across ``AudioProcessor._send_chat_message`` and
-``_emit_runtime_state``.
-"""
+"""DataChannelBridge — typed DataChannel send helper."""
 import json
 import logging
 from typing import Optional

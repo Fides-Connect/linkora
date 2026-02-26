@@ -32,6 +32,7 @@ def mock_conversation_service():
     service.get_current_stage = Mock(return_value=ConversationStage.TRIAGE)
     service.accumulate_problem_description = AsyncMock()
     service.search_providers_for_request = AsyncMock()
+    service.record_ai_response = Mock()
     service.set_stage = Mock()
     service.create_prompt_for_stage = Mock(return_value="prompt")
     service.context = {
@@ -117,6 +118,14 @@ class TestHandleSignalTransition:
         mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
         await orchestrator.handle_signal_transition_async("clarify")
         mock_conversation_service.search_providers_for_request.assert_not_called()
+
+    async def test_finalize_target_forwards_session_id_to_search(
+        self, orchestrator, mock_conversation_service
+    ):
+        """session_id is forwarded to search_providers_for_request on FINALIZE."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        await orchestrator.handle_signal_transition_async("finalize", session_id="sess-42")
+        mock_conversation_service.search_providers_for_request.assert_called_once_with("sess-42")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -245,6 +254,37 @@ class TestProviderSearchTiming:
         async for _ in orchestrator.generate_response_stream("Ja bitte", "test-session"):
             pass
         mock_conversation_service.accumulate_problem_description.assert_not_called()
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# record_ai_response called after every stream
+# ───────────────────────────────────────────────────────────────────────────────
+
+class TestRecordAiResponseInOrchestrator:
+    """record_ai_response must be called after every generate_response_stream."""
+
+    async def test_record_ai_response_called_with_assembled_text(
+        self, orchestrator, mock_conversation_service
+    ):
+        """Assembled LLM text is forwarded to conversation context after stream."""
+        async for _ in orchestrator.generate_response_stream("hi", "sess"):
+            pass
+        # Default mock yields "Test " + "response"
+        mock_conversation_service.record_ai_response.assert_called_once_with("Test response")
+
+    async def test_record_ai_response_called_even_when_only_tool_calls(
+        self, orchestrator, mock_conversation_service, mock_llm_service
+    ):
+        """record_ai_response is called with empty string when stream has no text chunks."""
+        async def tool_only_stream(*args, **kwargs):
+            yield {"type": "function_call", "name": "signal_transition",
+                   "args": {"target_stage": "clarify"}}
+
+        mock_llm_service.generate_stream = tool_only_stream
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        async for _ in orchestrator.generate_response_stream("hi", "sess"):
+            pass
+        mock_conversation_service.record_ai_response.assert_called_once_with("")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -555,9 +595,10 @@ class TestAIConversationServiceIntegration:
 
         ai_conv.set_topic_title.assert_called_once()
 
-    async def test_close_session_called_on_completed_stage(
+    async def test_close_session_not_called_on_completed_stage(
         self, mock_llm_service, mock_conversation_service
     ):
+        """Session must stay open when COMPLETED so the loop-back can continue."""
         mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
 
         ai_conv = self._make_ai_conv_svc()
@@ -582,7 +623,7 @@ class TestAIConversationServiceIntegration:
             async for _ in orch.generate_response_stream("done", "sess"):
                 pass
 
-        ai_conv.close_session.assert_called_once()
+        ai_conv.close_session.assert_not_called()
 
     async def test_no_error_when_ai_conversation_service_is_none(
         self, mock_llm_service, mock_conversation_service
@@ -596,6 +637,43 @@ class TestAIConversationServiceIntegration:
         async for chunk in orch.generate_response_stream("hi", "sess"):
             chunks.append(chunk)
         assert len(chunks) > 0
+
+    async def test_finalize_presentation_persisted_to_firestore(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """Provider presentation text generated after FINALIZE must be saved."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        ai_conv = self._make_ai_conv_svc()
+
+        call_count = 0
+
+        async def multi_stream(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Main stream: trigger the stage transition
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "finalize"}}
+            else:
+                # Finalize presentation stream
+                yield "Here are 3 providers for you..."
+
+        mock_llm_service.generate_stream = multi_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            ai_conversation_service=ai_conv,
+        )
+        async for _ in orch.generate_response_stream("ready", "sess"):
+            pass
+
+        # A save_message call with stage=FINALIZE must exist for the presentation
+        finalize_saves = [
+            c for c in ai_conv.save_message.call_args_list
+            if c[1].get("stage") == ConversationStage.FINALIZE
+        ]
+        assert len(finalize_saves) == 1
+        assert "providers" in finalize_saves[0][1]["text"].lower()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

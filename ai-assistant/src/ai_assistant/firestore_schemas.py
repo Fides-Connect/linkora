@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator, model_valida
 # Stored as a far-future datetime so the field stays a single Optional[datetime]
 # type without needing a Union. Any value equal to this constant means the user
 # has permanently opted out and must never be pitched again.
-PROVIDER_PITCH_OPT_OUT_SENTINEL: datetime = datetime(9999, 1, 1)
+PROVIDER_PITCH_OPT_OUT_SENTINEL: datetime = datetime(9999, 1, 1, tzinfo=timezone.utc)
 
 
 class UserSchema(BaseModel):

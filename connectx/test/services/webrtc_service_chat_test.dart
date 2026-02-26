@@ -28,7 +28,7 @@ void main() {
   late MockAudioHardwareController mockAudioHardwareController;
   late StreamController<dynamic> streamController;
 
-  WebRTCService _buildService() => WebRTCService(
+  WebRTCService buildService() => WebRTCService(
         webRTCWrapper: mockWebRTCWrapper,
         webSocketFactory: (uri) => mockWebSocketChannel,
         audioRoutingServiceFactory: () => AudioRoutingService(
@@ -111,7 +111,7 @@ void main() {
 
   group('WebRTCService connect() mode parameter', () {
     test('voice mode creates local audio stream', () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       await svc.connect(mode: 'voice');
@@ -120,7 +120,7 @@ void main() {
     });
 
     test('text mode skips local audio stream creation', () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       await svc.connect(mode: 'text');
@@ -129,7 +129,7 @@ void main() {
     });
 
     test('text mode does not add local audio track to peer connection', () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       await svc.connect(mode: 'text');
@@ -138,7 +138,7 @@ void main() {
     });
 
     test('invalid mode defaults to voice', () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       // 'invalid' is not in {'voice','text'} — should fall back to voice
@@ -149,7 +149,7 @@ void main() {
     });
 
     test('mode is passed as query parameter in the signaling WS URI', () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       final capturedUris = <Uri>[];
@@ -183,7 +183,7 @@ void main() {
 
   group('WebRTCService onDataChannelOpen', () {
     test('fires when data channel state transitions to open', () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       bool fired = false;
@@ -204,7 +204,7 @@ void main() {
     });
 
     test('fires only once even if state fires twice', () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       int count = 0;
@@ -230,7 +230,7 @@ void main() {
 
   group('WebRTCService sendModeSwitch', () {
     test('sends JSON mode-switch message on open channel', () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       when(mockDataChannel.state)
@@ -249,7 +249,7 @@ void main() {
     });
 
     test('is silent when data channel is not open', () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       when(mockDataChannel.state)
@@ -263,7 +263,7 @@ void main() {
     });
 
     test('is silent when data channel is null (no connect)', () async {
-      final svc = _buildService();
+      final svc = buildService();
       // No connect() call — should not throw
       expect(() => svc.sendModeSwitch('text'), returnsNormally);
       // No resources to clean up (never connected).
@@ -276,7 +276,7 @@ void main() {
 
   group('WebRTCService enableVoiceMode', () {
     test('no-op when not connected', () async {
-      final svc = _buildService();
+      final svc = buildService();
       // No connect() call — should return immediately without throwing
       await svc.enableVoiceMode();
       verifyNever(mockWebRTCWrapper.getUserMedia(any));
@@ -285,7 +285,7 @@ void main() {
 
     test('fast-path: unmutes track and sends mode-switch when track exists',
         () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       // Must be set up BEFORE connect() so the setter assignment is captured
@@ -325,7 +325,7 @@ void main() {
 
     test('fresh-path: creates audio stream when no existing track', () async {
       // Connect in text mode so no audio track is created
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       // Must be set up BEFORE connect() so the setter assignment is captured
@@ -358,7 +358,41 @@ void main() {
       verify(mockWebRTCWrapper.getUserMedia(any)).called(1);
     });
 
-    // Regression: AudioRoutingService's periodic device-check timer fires after
+    // Regression: text→voice upgrade was silently muted because _desiredMuteState
+    // defaulted to true and _createLocalStream() ignored the startMuted: false
+    // argument.  After the fix, _createLocalStream syncs _desiredMuteState from
+    // startMuted, so the track is created with enabled=true.
+    test('fresh-path: audio track is created UNMUTED (enabled=true)', () async {
+      final svc = buildService();
+      addTearDown(svc.disconnect);
+
+      Function(RTCPeerConnectionState)? connStateCb;
+      when(mockPeerConnection.onConnectionState = any).thenAnswer((inv) {
+        connStateCb = inv.positionalArguments.first
+            as Function(RTCPeerConnectionState)?;
+      });
+
+      when(mockPeerConnection.getSenders())
+          .thenAnswer((_) async => <RTCRtpSender>[]);
+      when(mockDataChannel.state)
+          .thenReturn(RTCDataChannelState.RTCDataChannelConnecting);
+
+      await svc.connect(mode: 'text');
+      connStateCb
+          ?.call(RTCPeerConnectionState.RTCPeerConnectionStateConnected);
+
+      when(mockPeerConnection.createOffer(any))
+          .thenAnswer((_) async => RTCSessionDescription('offer2', 'offer'));
+
+      clearInteractions(mockAudioTrack);
+      await svc.enableVoiceMode();
+
+      // The track must be enabled (unmuted) — NOT left at the muted default.
+      verify(mockAudioTrack.enabled = true).called(greaterThanOrEqualTo(1));
+      verifyNever(mockAudioTrack.enabled = false);
+    });
+
+
     // enableVoiceMode() wires onInputDeviceChanged but BEFORE the server answer
     // arrives.  Without _isRenegotiating, _recreateAudioTrack() would send a
     // second offer, the server would answer it, and Flutter would fail with
@@ -366,7 +400,7 @@ void main() {
     test(
         'device change fired mid-renegotiation is suppressed — no second offer',
         () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       Function(RTCPeerConnectionState)? connStateCb;
@@ -416,7 +450,7 @@ void main() {
     // Regression: once the answer arrives, device changes must be allowed again.
     test('device change is allowed after renegotiation answer is processed',
         () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       Function(RTCPeerConnectionState)? connStateCb;
@@ -471,7 +505,7 @@ void main() {
         'wires onInputDeviceChanged only after renegotiation completes '
         '(no duplicate offer on first text→voice upgrade)',
         () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       Function(RTCPeerConnectionState)? connStateCb;
@@ -513,7 +547,7 @@ void main() {
   group('WebRTCService onRuntimeState', () {
     test('fires onRuntimeState with parsed state for runtime-state message',
         () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       Function(RTCDataChannelMessage)? msgHandler;
@@ -536,7 +570,7 @@ void main() {
 
     test('does not fire onRuntimeState for unknown runtimeState values',
         () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       Function(RTCDataChannelMessage)? msgHandler;
@@ -557,7 +591,7 @@ void main() {
     });
 
     test('does not fire onRuntimeState for chat messages', () async {
-      final svc = _buildService();
+      final svc = buildService();
       addTearDown(svc.disconnect);
 
       Function(RTCDataChannelMessage)? msgHandler;

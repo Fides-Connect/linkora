@@ -105,7 +105,7 @@ class TestAudioProcessing:
         """Test starting audio processing."""
         with patch.object(audio_processor, '_process_audio', new=AsyncMock()), \
              patch.object(audio_processor, '_continuous_stt', new=AsyncMock()), \
-             patch.object(audio_processor, '_play_greeting', new=AsyncMock()):
+             patch.object(audio_processor._session_starter, 'initialize', new=AsyncMock()):
             
             await audio_processor.start()
             
@@ -364,31 +364,6 @@ class TestAudioQueue:
         assert result == test_audio
 
 
-class TestGreetingPlayback:
-    """Test greeting playback functionality — kept for backward compat until Phase 8."""
-
-    @pytest.mark.asyncio
-    async def test_play_greeting(self, audio_processor, mock_ai_assistant):
-        """Test playing greeting message."""
-        audio_processor.output_track.queue_audio = AsyncMock()
-        audio_processor.ai_assistant.get_greeting_audio = AsyncMock(
-            return_value=("Hello!", async_audio_generator())
-        )
-
-        await audio_processor._play_greeting()
-
-        audio_processor.ai_assistant.get_greeting_audio.assert_called_once()
-        assert audio_processor.output_track.queue_audio.call_count > 0
-
-    @pytest.mark.asyncio
-    async def test_play_greeting_sets_speaking_flag(self, audio_processor, mock_ai_assistant):
-        """Test that greeting playback clears the speaking flag on completion."""
-        audio_processor.output_track.queue_audio = AsyncMock()
-
-        await audio_processor._play_greeting()
-
-        assert audio_processor.is_ai_speaking is False
-
 
 class TestTranscriptCallback:
     """Test on_transcript_final composability hook."""
@@ -510,6 +485,9 @@ class TestVoiceFinalizeGuard:
         audio_processor.ai_assistant.conversation_service.get_current_stage = Mock(
             return_value=ConversationStage.FINALIZE
         )
+        # Guard fires only while the search/presentation task is still running.
+        running_task = asyncio.create_task(asyncio.sleep(999))
+        audio_processor._response_task = running_task
 
         sent_messages = []
 
@@ -533,6 +511,12 @@ class TestVoiceFinalizeGuard:
                 await stt_task
             except asyncio.CancelledError:
                 pass
+
+        running_task.cancel()
+        try:
+            await running_task
+        except asyncio.CancelledError:
+            pass
 
         assert any(
             "such" in m.lower() or "search" in m.lower() or "moment" in m.lower()

@@ -258,10 +258,10 @@ async def _delete_competences(params: dict, context: dict) -> Any:
 # Factory
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_default_registry(data_provider: Any, firestore_service: Any) -> AgentToolRegistry:
+def build_default_registry() -> AgentToolRegistry:
     """
-    Build the default registry wiring all 8 built-in tools to the given
-    data_provider and firestore_service instances.
+    Build the default registry wiring all 8 built-in tools.
+    Dependencies are injected per-call via the `context` dict passed to execute().
     """
     registry = AgentToolRegistry()
 

@@ -37,6 +37,7 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await PermissionHelper.requestMicrophonePermission(context);
+      if (!mounted) return;
       await PermissionHelper.requestNotificationPermission(context);
 
       if (mounted) {

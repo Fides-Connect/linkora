@@ -66,7 +66,7 @@ class AIConversationService:
         try:
             sequence = self._sequence
             self._sequence += 1
-            await self._firestore.save_ai_conversation_message(
+            await self._firestore.create_ai_conversation_message(
                 self._user_id, self._conversation_id, role, text, stage, sequence
             )
         except Exception as exc:

@@ -17,8 +17,8 @@ from .firestore_service import FirestoreService
 from .services.audio_frame_converter import AudioFrameConverter
 from .services.data_channel_bridge import DataChannelBridge
 from .services.debug_recorder import DebugRecorder
-from .services.greeting_coordinator import GreetingCoordinator
-from .services.session_mode import SessionMode
+from .services.response_delivery import ResponseDelivery, ResponseDeliveryFactory
+from .services.session_starter import SessionStarter, SessionStarterFactory
 from .services.transcript_processor import TranscriptProcessor
 from .services.tts_playback_manager import TTSPlaybackManager, SentenceParser
 from .services.conversation_service import ConversationStage
@@ -62,8 +62,8 @@ class AudioProcessor:
 
         # Session mode — derived from whether an audio track is provided.
         # The ``_is_text_mode`` property below provides backward compat.
-        self.session_mode: SessionMode = (
-            SessionMode.TEXT if input_track is None else SessionMode.VOICE
+        self.session_mode: str = (
+            "text" if input_track is None else "voice"
         )
 
         # Activity hook: called on every _process_final_transcript invocation.
@@ -113,37 +113,17 @@ class AudioProcessor:
         # between concurrent process_text_input() calls.
         self._text_input_lock = asyncio.Lock()
 
-        # ── Greeting coordinator (wired after all other deps exist) ───────────
-        self._greeting_coordinator = GreetingCoordinator(
-            ai_assistant=self.ai_assistant,
-            dc_bridge=self._dc_bridge,
-            fsm=self.ai_assistant.response_orchestrator.runtime_fsm,
-            output_track=self.output_track,
-            user_id=self.user_id,
-            connection_id=self.connection_id,
-            interrupt_event=self.interrupt_event,
-            on_speaking_change=lambda speaking: setattr(
-                self, "is_ai_speaking", speaking
-            ),
-        )
+        # ── Response delivery strategy & session starter ─────────────────────
+        # Swapped on mode switch via _make_delivery() / _make_session_starter().
+        self._delivery: ResponseDelivery = self._make_delivery(self.session_mode)
+        self._session_starter: SessionStarter = self._make_session_starter(self.session_mode)
 
     # ── Backward-compat properties ────────────────────────────────────────────
 
     @property
     def _is_text_mode(self) -> bool:
-        return self.session_mode == SessionMode.TEXT
-
-    @_is_text_mode.setter
-    def _is_text_mode(self, value: bool) -> None:
-        self.session_mode = SessionMode.TEXT if value else SessionMode.VOICE
-
-    @property
-    def _greeting_sent(self) -> bool:
-        return self._greeting_coordinator.greeting_sent
-
-    @_greeting_sent.setter
-    def _greeting_sent(self, value: bool) -> None:
-        self._greeting_coordinator.greeting_sent = value
+        """Read-only compat view of session_mode."""
+        return self.session_mode == "text"
 
     @property
     def data_channel(self):
@@ -185,6 +165,35 @@ class AudioProcessor:
         self.data_channel = channel  # property setter also wires _dc_bridge
         logger.info("Data channel set in AudioProcessor")
 
+    # ── Strategy factories ────────────────────────────────────────────────────
+
+    def _make_delivery(self, mode: str) -> ResponseDelivery:
+        """Create a ResponseDelivery strategy for the given mode."""
+        return ResponseDeliveryFactory.create(
+            mode,
+            tts_manager=self.tts_manager,
+            dc_bridge=self._dc_bridge,
+            on_speaking_change=lambda speaking: setattr(self, "is_ai_speaking", speaking),
+            monitor_playback_fn=self._monitor_playback_completion,
+        )
+
+    def _make_session_starter(self, mode: str) -> SessionStarter:
+        """Create a SessionStarter strategy for the given mode."""
+        return SessionStarterFactory.create(
+            mode,
+            conversation_service=self.ai_assistant.conversation_service,
+            response_orchestrator=self.ai_assistant.response_orchestrator,
+            data_provider=self.ai_assistant.data_provider,
+            tts_service=self.ai_assistant.tts_service,
+            llm_service=self.ai_assistant.llm_service,
+            dc_bridge=self._dc_bridge,
+            output_track=self.output_track,
+            user_id=self.user_id,
+            connection_id=self.connection_id,
+            interrupt_event=self.interrupt_event,
+            on_speaking_change=lambda speaking: setattr(self, "is_ai_speaking", speaking),
+        )
+
     # ── DataChannel send helpers (thin wrappers over DataChannelBridge) ───────
 
     def _send_chat_message(self, text: str, is_user: bool, is_chunk: bool = False) -> None:
@@ -212,14 +221,8 @@ class AudioProcessor:
                 "Text-only mode — skipping audio tasks for connection %s",
                 self.connection_id,
             )
+        asyncio.create_task(self._session_starter.initialize())
         logger.info("Audio processor started for connection %s", self.connection_id)
-
-        if not self._is_text_mode:
-            asyncio.create_task(self._play_greeting())
-        else:
-            # Advance stage immediately so user messages arriving before the
-            # text greeting are processed at TRIAGE, not GREETING.
-            self.ai_assistant.conversation_service.set_stage(ConversationStage.TRIAGE)
 
     async def replace_input_track(self, new_track: MediaStreamTrack) -> None:
         """Replace input track during renegotiation (e.g. Bluetooth change)."""
@@ -265,28 +268,13 @@ class AudioProcessor:
         self.debug_recorder.save()
         logger.info("Audio processor stopped for connection %s", self.connection_id)
 
-    # ── Greeting (delegates to GreetingCoordinator) ───────────────────────────
-
-    async def _play_greeting(self) -> None:
-        """Play the AI greeting — delegates to GreetingCoordinator (voice mode)."""
-        await self._greeting_coordinator.send(SessionMode.VOICE)
-
-    async def send_text_greeting(self) -> None:
-        """Send text greeting — delegates to GreetingCoordinator (text mode).
-
-        Called from PeerConnectionHandler.on_connectionstatechange once the
-        DataChannel is confirmed open.
-        """
-        if not self.running:
-            return
-        await self._greeting_coordinator.send(SessionMode.TEXT)
-
     # ── Voice mode toggle ─────────────────────────────────────────────────────
 
     async def enable_voice_mode(self, input_track: Optional[MediaStreamTrack] = None) -> 'AudioOutputTrack':
         """Resume or start voice mode."""
         logger.info("Enabling voice mode for connection %s", self.connection_id)
-        self._is_text_mode = False
+        self.session_mode = "voice"
+        self._delivery = self._make_delivery("voice")
 
         if input_track is not None and self.input_track is None:
             self.input_track = input_track
@@ -311,12 +299,25 @@ class AudioProcessor:
 
         Keeps STT / audio-frame tasks alive for fast resume.
         """
-        if self._is_text_mode:
+        if self.session_mode == "text":
             return
         logger.info("Pausing voice mode for connection %s", self.connection_id)
-        self._is_text_mode = True
+        self.session_mode = "text"
         await self._trigger_interrupt()
+        self._delivery = self._make_delivery("text")
         logger.info("Voice mode paused — STT/audio tasks remain alive")
+
+    async def receive_text_input(self, text: str) -> None:
+        """Single public entry point for all incoming text.
+
+        Automatically handles voice → text mode switch when the current
+        session is in voice mode, then delegates to process_text_input.
+        Callers (e.g. PeerConnectionHandler) never need mode-check logic.
+        """
+        if self.session_mode == "voice":
+            logger.info("Voice → text switch triggered by receive_text_input")
+            await self.disable_voice_mode()
+        await self.process_text_input(text)
 
     # ── Audio processing ───────────────────────────────────────────────────────
 
@@ -389,6 +390,8 @@ class AudioProcessor:
         if (
             self.ai_assistant.conversation_service.get_current_stage()
             == ConversationStage.FINALIZE
+            and self._response_task is not None
+            and not self._response_task.done()
         ):
             busy_msg = (
                 "Ich suche noch nach passenden Anbietern – bitte noch einen Moment Geduld! "
@@ -465,15 +468,11 @@ class AudioProcessor:
         fsm.transition("interrupt_handled")
     
     async def process_text_input(self, text: str):
-        """Public entry point for text-mode input from the data channel.
+        """Process a text message through the LLM pipeline.
 
-        Validates the input, interrupts any ongoing response, and starts a new
-        response task.  Use this instead of calling _process_final_transcript
-        directly.
-
-        Special case: when the conversation is in FINALIZE stage (actively
-        searching for providers), interrupting would lose the search results.
-        Instead, send a bilingual 'please wait' message and return early.
+        Awaits session initialization (handles race on very first message),
+        guards against provider search in progress, interrupts any in-flight
+        response, then dispatches to _process_final_transcript.
         """
         async with self._text_input_lock:
             text = text.strip()
@@ -481,10 +480,30 @@ class AudioProcessor:
                 logger.warning("process_text_input called with empty text — ignoring")
                 return
 
-            # Guard: do not interrupt provider search in progress
+            # Await session initialization so the first message has user context.
+            # Fast-path: skip wait_for entirely when already set — asyncio.wait_for
+            # creates an internal Task even for immediately-resolved awaitables,
+            # which costs extra event-loop ticks in Python ≤ 3.11 and breaks
+            # concurrency tests that rely on exact yield counts.
+            if not self._session_starter.initialized_event.is_set():
+                try:
+                    await asyncio.wait_for(
+                        self._session_starter.initialized_event.wait(), timeout=2.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Session initialization timeout for %s — proceeding without user context",
+                        self.connection_id,
+                    )
+
+            # Guard: block text input while the provider search + initial
+            # presentation task is still running.  Once the task completes,
+            # the user's accept/decline replies must flow normally.
             if (
                 self.ai_assistant.conversation_service.get_current_stage()
                 == ConversationStage.FINALIZE
+                and self._response_task is not None
+                and not self._response_task.done()
             ):
                 busy_msg = (
                     "Ich suche noch nach passenden Anbietern – bitte noch einen Moment Geduld! "
@@ -497,14 +516,11 @@ class AudioProcessor:
                 )
                 return
 
-            # Interrupt any in-progress response before generating the new one so
-            # the user gets a fresh reply without the old stream still running.
+            # Interrupt any in-progress response before generating the new one.
             if self.is_ai_speaking or (self._response_task and not self._response_task.done()):
                 await self._trigger_interrupt()
 
             # Advance FSM LISTENING → THINKING if not already done.
-            # For text-mode input this is now the canonical firing point.
-            # For voice-mode STT transcripts this remains the same canonical point.
             from .services.agent_runtime_fsm import AgentRuntimeState
             fsm = self.ai_assistant.response_orchestrator.runtime_fsm
             if fsm.current_state == AgentRuntimeState.LISTENING:
@@ -531,8 +547,8 @@ class AudioProcessor:
                     session_id=self.connection_id,
                 )
 
-            # Send user transcript to client
-            self._send_chat_message(transcript, is_user=True)
+            # Echo transcript to client — delivery strategy decides whether to send it.
+            self._delivery.echo_user_transcript(transcript)
             
             start_time = asyncio.get_event_loop().time()
             
@@ -543,7 +559,7 @@ class AudioProcessor:
             # Performance tracking
             perf_times = {
                 'start': start_time,
-                'llm_first_token': None,
+                 'llm_first_token': None,
                 'tts_first_audio': None,
             }
             
@@ -559,28 +575,27 @@ class AudioProcessor:
             async def tracked_llm_stream():
                 first_chunk = True
                 async for chunk in llm_stream:
+                    # The orchestrator emits a sentinel dict before each
+                    # autonomous sub-stream (finalize presentation, provider
+                    # pitch).  Consume it silently and reset first_chunk so
+                    # the next text chunk opens a new Flutter bubble.
+                    if isinstance(chunk, dict) and chunk.get("type") == "new_bubble":
+                        first_chunk = True
+                        continue
+
                     if chunk:
-                        # Send AI chunk to client
-                        self._send_chat_message(chunk, is_user=False, is_chunk=True)
-                        
+                        # First chunk of each turn → is_chunk=False → new bubble.
+                        # Remaining chunks → is_chunk=True → append.
+                        self._send_chat_message(chunk, is_user=False, is_chunk=not first_chunk)
+
                     if first_chunk and chunk:
                         perf_times['llm_first_token'] = asyncio.get_event_loop().time()
                         logger.info(f"⚡ Time to first LLM token: {perf_times['llm_first_token'] - llm_start:.3f}s")
                         first_chunk = False
                     yield chunk
             
-            if self._is_text_mode:
-                # Text mode: consume the LLM stream (chunks already sent via
-                # data channel inside tracked_llm_stream) without TTS.
-                async for _ in tracked_llm_stream():
-                    pass
-                self.is_ai_speaking = False
-            else:
-                # Voice mode: process through TTS manager
-                await self.tts_manager.process_llm_stream(tracked_llm_stream())
-                # Monitor playback completion in background; it will clear
-                # is_ai_speaking once the audio queue drains.
-                asyncio.create_task(self._monitor_playback_completion())
+            # Delegate output to the active delivery strategy.
+            await self._delivery.stream_response(tracked_llm_stream())
 
             total_time = asyncio.get_event_loop().time() - start_time
             logger.info(f"✅ Pipeline complete in {total_time:.3f}s")

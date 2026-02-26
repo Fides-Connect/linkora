@@ -2,7 +2,7 @@
 
 ## Project Overview
 - **Platform**: Fides — AI voice/chat assistant matching users to service providers
-- **Stack**: `connectx/` (Flutter), `ai-assistant/` (Python/FastAPI), `weaviate/` (vector DB)
+- **Stack**: `connectx/` (Flutter), `ai-assistant/` (Python/aiohttp), `weaviate/` (vector DB)
 - **AI persona**: "Elin" — `AGENT_NAME = "Elin"` in `ai_assistant.py`
 
 ## Architecture

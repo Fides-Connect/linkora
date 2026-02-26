@@ -4,7 +4,7 @@ Core orchestration layer that coordinates services.
 """
 import logging
 import os
-from typing import AsyncIterator, Optional, Tuple
+from typing import AsyncIterator, Optional
 
 from .services import (
     SpeechToTextService,
@@ -15,7 +15,6 @@ from .services import (
     build_default_registry,
 )
 from .services.response_orchestrator import ResponseOrchestrator
-from .services.greeting_service import GreetingService
 from .data_provider import get_data_provider
 
 logger = logging.getLogger(__name__)
@@ -97,10 +96,7 @@ class AIAssistant:
         # Build agentic runtime FSM and tool registry
         self.runtime_fsm = AgentRuntimeFSM()
         self.firestore_service = None  # injected by PeerConnectionHandler after construction
-        self.tool_registry = build_default_registry(
-            data_provider=self.data_provider,
-            firestore_service=None,  # placeholder — real value set via self.firestore_service
-        )
+        self.tool_registry = build_default_registry()
 
         # Initialize orchestration services
         self.response_orchestrator = ResponseOrchestrator(
@@ -108,14 +104,6 @@ class AIAssistant:
             conversation_service=self.conversation_service,
             runtime_fsm=self.runtime_fsm,
             tool_registry=self.tool_registry,
-        )
-        
-        self.greeting_service = GreetingService(
-            conversation_service=self.conversation_service,
-            tts_service=self.tts_service,
-            llm_service=self.llm_service,
-            data_provider=self.data_provider,
-            default_user_name=USER_NAME_PLACEHOLDER
         )
         
         logger.info("AI Assistant initialized with service-oriented architecture")
@@ -162,27 +150,4 @@ class AIAssistant:
         ):
             yield chunk
     
-    async def get_greeting_audio(
-        self,
-        user_id: Optional[str] = None,
-        manage_stage: bool = True,
-    ) -> Tuple[str, AsyncIterator[bytes]]:
-        """
-        Generate a natural greeting and return both text and TTS audio.
-        Delegates to GreetingService.
 
-        Args:
-            user_id: Optional user ID to fetch user data from data provider
-            manage_stage: When True (default, voice mode) the conversation stage
-                is cycled GREETING → TRIAGE as part of greeting generation.
-                Pass False for text mode where the stage is already at TRIAGE
-                and must not be reset.
-
-        Returns:
-            Tuple of (greeting_text, audio_iterator)
-        """
-        return await self.greeting_service.get_greeting_with_audio(
-            session_id=self.session_id,
-            user_id=user_id,
-            manage_stage=manage_stage,
-        )

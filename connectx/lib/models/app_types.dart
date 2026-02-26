@@ -1,4 +1,5 @@
 /// Core type definitions for the application
+library;
 
 // ============================================================================
 // Enums
@@ -13,7 +14,7 @@ enum ConversationState {
 }
 
 /// Agent runtime state — mirrors the backend AgentRuntimeState enum.
-/// Sent over the DataChannel as {"type": "runtime-state", "runtimeState": "<value>"}.
+/// Sent over the DataChannel as `{"type": "runtime-state", "runtimeState": "<value>"}`.
 enum AgentRuntimeState {
   bootstrap,
   dataChannelWait,
@@ -27,7 +28,7 @@ enum AgentRuntimeState {
   errorRetryable,
   terminated;
 
-  /// Parse a snake_case / kebab-case string from the backend into the enum value.
+  /// Parse a snake_case string from the backend into the enum value.
   /// Returns null for unknown values so callers can decide how to handle them.
   static AgentRuntimeState? tryParse(String raw) {
     const map = {
