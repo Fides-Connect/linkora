@@ -334,7 +334,26 @@ class ResponseOrchestrator:
                     follow_up_template,
                     session_id,
                 ):
-                    if isinstance(chunk, str):
+                    if isinstance(chunk, dict) and chunk.get("type") == "function_call":
+                        fu_name = chunk.get("name", "")
+                        fu_args = chunk.get("args", {})
+                        if fu_name == "signal_transition":
+                            target = fu_args.get("target_stage", "")
+                            applied = await self.handle_signal_transition_async(target, session_id)
+                            if applied:
+                                try:
+                                    if ConversationStage(target) == ConversationStage.COMPLETED:
+                                        transitioned_to_completed = True
+                                    elif ConversationStage(target) == ConversationStage.FINALIZE:
+                                        transitioned_to_finalize = True
+                                    elif (
+                                        ConversationStage(target) == ConversationStage.TRIAGE
+                                        and current_stage == ConversationStage.COMPLETED
+                                    ):
+                                        transitioned_to_triage_from_completed = True
+                                except ValueError:
+                                    pass
+                    elif isinstance(chunk, str):
                         filtered = _strip_tool_call_text(chunk)
                         if filtered.strip():
                             ai_response_parts.append(filtered)
