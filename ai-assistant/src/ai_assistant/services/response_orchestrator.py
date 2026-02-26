@@ -344,8 +344,9 @@ class ResponseOrchestrator:
             ai_text = "".join(ai_response_parts)
             self.conversation_service.record_ai_response(ai_text)
 
-            # Persist the assembled AI response
-            if self.ai_conversation_service:
+            # Persist the assembled AI response (skip if empty — e.g. the LLM
+            # emitted only a function call with no accompanying text)
+            if self.ai_conversation_service and ai_text.strip():
                 final_stage = self.conversation_service.get_current_stage()
                 await self.ai_conversation_service.save_message(
                     role="assistant", text=ai_text, stage=final_stage
@@ -426,11 +427,57 @@ class ResponseOrchestrator:
         The LLM uses LOOP_BACK_PROMPT which instructs it to call
         signal_transition(target_stage="triage") if the user wants more help,
         or give a short farewell otherwise.
+
+        IMPORTANT: The LLM may skip the warm-up sentence entirely and emit
+        only a signal_transition("triage") function call (e.g. when the user
+        already indicated they want more help in the same turn).  This helper
+        handles that case by processing the tool call instead of silently
+        dropping it.
         """
         logger.info("Auto-generating loop-back question in COMPLETED stage")
         prompt_template = self.conversation_service.create_prompt_for_stage(
             ConversationStage.COMPLETED
         )
+        pending_tool_results: list[tuple[str, object]] = []
         async for chunk in self.llm_service.generate_stream(" ", prompt_template, session_id):
-            if isinstance(chunk, str):
-                yield chunk
+            if isinstance(chunk, dict) and chunk.get("type") == "function_call":
+                fn_name = chunk.get("name", "")
+                fn_args = chunk.get("args", {})
+                if fn_name == "signal_transition":
+                    target = fn_args.get("target_stage", "")
+                    await self.handle_signal_transition_async(target, session_id)
+                else:
+                    # Other tools are unlikely here but handle gracefully
+                    tool_result = None
+                    async for tool_chunk in self.dispatch_tool(fn_name, fn_args, {}):
+                        tool_result = tool_chunk
+                    if tool_result is not None and not (
+                        isinstance(tool_result, dict) and tool_result.get("error")
+                    ):
+                        pending_tool_results.append((fn_name, tool_result))
+            elif isinstance(chunk, str):
+                filtered = _strip_tool_call_text(chunk)
+                if filtered.strip():
+                    yield filtered
+
+        # If there were tool results, feed them back and generate a follow-up
+        if pending_tool_results:
+            import json
+            from langchain_core.messages import AIMessage as _AIMessage
+            for fn_name, result in pending_tool_results:
+                result_str = (
+                    json.dumps(result, ensure_ascii=False, default=str)
+                    if isinstance(result, (dict, list))
+                    else str(result)
+                )
+                self.llm_service.add_message_to_history(
+                    session_id,
+                    _AIMessage(content=f"[Tool {fn_name} returned: {result_str}]"),
+                )
+            follow_up_stage = self.conversation_service.get_current_stage()
+            follow_up_template = self.conversation_service.create_prompt_for_stage(follow_up_stage)
+            async for chunk in self.llm_service.generate_stream(" ", follow_up_template, session_id):
+                if isinstance(chunk, str):
+                    filtered = _strip_tool_call_text(chunk)
+                    if filtered.strip():
+                        yield filtered
