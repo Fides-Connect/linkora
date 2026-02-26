@@ -202,8 +202,9 @@ class TextSessionStarter(SessionStarter):
             history = self._llm.get_session_history(self._connection_id)
             history.add_message(AIMessage(content=greeting_text))
 
-            # Push greeting bubble to Flutter (no TTS).
-            self._dc.send_chat(greeting_text, is_user=False, is_chunk=False)
+            # Do NOT push a greeting bubble in text mode — the user already
+            # typed their request and the TRIAGE response is the natural first
+            # reply.  The LLM history seed above is enough for coherence.
 
             # Advance stage GREETING → TRIAGE.
             self._orchestrator.handle_signal_transition("triage")

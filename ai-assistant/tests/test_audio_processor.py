@@ -485,6 +485,9 @@ class TestVoiceFinalizeGuard:
         audio_processor.ai_assistant.conversation_service.get_current_stage = Mock(
             return_value=ConversationStage.FINALIZE
         )
+        # Guard fires only while the search/presentation task is still running.
+        running_task = asyncio.create_task(asyncio.sleep(999))
+        audio_processor._response_task = running_task
 
         sent_messages = []
 
@@ -508,6 +511,12 @@ class TestVoiceFinalizeGuard:
                 await stt_task
             except asyncio.CancelledError:
                 pass
+
+        running_task.cancel()
+        try:
+            await running_task
+        except asyncio.CancelledError:
+            pass
 
         assert any(
             "such" in m.lower() or "search" in m.lower() or "moment" in m.lower()
