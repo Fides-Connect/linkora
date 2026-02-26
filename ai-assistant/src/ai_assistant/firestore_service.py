@@ -1834,7 +1834,7 @@ class FirestoreService:
         """Append a message to the ai_conversation's messages subcollection.
 
         Also updates first_message_at / last_message_at / message_count on the
-        parent document atomically.
+        parent document (as a separate Firestore write — not in a transaction).
 
         Args:
             user_id:         The owner of the conversation.
