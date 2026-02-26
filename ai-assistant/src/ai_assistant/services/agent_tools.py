@@ -131,6 +131,21 @@ class AgentToolRegistry:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Context helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _require_fs(context: dict):
+    """Extract firestore_service from context, raising a clear error if absent."""
+    fs = context.get("firestore_service")
+    if fs is None:
+        raise RuntimeError(
+            "firestore_service not injected into tool context — "
+            "ensure _create_language_specific_assistant sets assistant.firestore_service"
+        )
+    return fs
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Built-in tool implementations — service request / search
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -142,17 +157,17 @@ async def _search_providers(params: dict, context: dict) -> Any:
 
 
 async def _get_favorites(params: dict, context: dict) -> Any:
-    fs = context["firestore_service"]
+    fs = _require_fs(context)
     return await fs.get_user_favorites(context["user_id"])
 
 
 async def _get_open_requests(params: dict, context: dict) -> Any:
-    fs = context["firestore_service"]
+    fs = _require_fs(context)
     return await fs.get_service_requests(user_id=context["user_id"])
 
 
 async def _create_service_request(params: dict, context: dict) -> Any:
-    fs = context["firestore_service"]
+    fs = _require_fs(context)
     return await fs.create_service_request(
         user_id=context["user_id"],
         title=params.get("title", ""),
@@ -185,7 +200,7 @@ async def _record_provider_interest(params: dict, context: dict) -> Any:
     """
     from ..firestore_schemas import PROVIDER_PITCH_OPT_OUT_SENTINEL
 
-    fs = context["firestore_service"]
+    fs = _require_fs(context)
     user_id = context["user_id"]
     decision = params.get("decision", "not_now")
     now = datetime.now(timezone.utc)
@@ -210,7 +225,8 @@ async def _record_provider_interest(params: dict, context: dict) -> Any:
 
 async def _get_my_competencies(params: dict, context: dict) -> Any:
     """Fetch the current user's competency list from Firestore."""
-    return await context["firestore_service"].get_competencies(context["user_id"])
+    fs = _require_fs(context)
+    return await fs.get_competencies(context["user_id"])
 
 
 async def _save_competence_batch(params: dict, context: dict) -> Any:
@@ -221,7 +237,7 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
     "competence_id" to signal an update; otherwise a new entry is created.
     After saving, marks the user as a service provider and syncs to Weaviate.
     """
-    fs = context["firestore_service"]
+    fs = _require_fs(context)
     user_id = context["user_id"]
     skills: List[dict] = params.get("skills", [])
     saved = []
@@ -237,17 +253,36 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
 
     await fs.update_user(user_id, {"is_service_provider": True})
 
-    # Weaviate re-sync using skill titles (required — errors propagate)
+    # Weaviate re-sync using skill titles.
+    # Self-heals if the user row is missing in Weaviate (e.g. after a schema reset)
+    # by creating the hub row from Firestore data before retrying.
     titles = [s.get("title", "") for s in skills if s.get("title")]
     if titles:
-        HubSpokeIngestion.update_competencies_by_user_id(user_id, titles)
+        result = HubSpokeIngestion.update_competencies_by_user_id(user_id, titles)
+        if isinstance(result, dict) and not result.get("success") and result.get("error") == "User not found":
+            logger.warning(
+                "Weaviate user not found for %s — self-healing by creating from Firestore",
+                user_id,
+            )
+            try:
+                user_data = await fs.get_user(user_id) or {}
+                user_data.setdefault("user_id", user_id)
+                HubSpokeIngestion.create_user(user_data)
+                HubSpokeIngestion.create_competencies_by_user_id(user_id, titles)
+                logger.info("Weaviate self-heal complete for user %s", user_id)
+            except Exception as heal_exc:
+                logger.error(
+                    "Weaviate self-heal failed for user %s: %s", user_id, heal_exc,
+                    exc_info=True,
+                )
+                raise
 
     return {"saved": saved, "count": len(saved)}
 
 
 async def _delete_competences(params: dict, context: dict) -> Any:
     """Delete competencies by their IDs and sync to Weaviate."""
-    fs = context["firestore_service"]
+    fs = _require_fs(context)
     user_id = context["user_id"]
     ids: List[str] = params.get("competence_ids", [])
     deleted = []
