@@ -436,3 +436,79 @@ class TestProviderOnboardingTools:
         ctx = self._ctx(mock_firestore)
         with pytest.raises(Exception, match="Weaviate unavailable"):
             await registry.execute("delete_competences", {"competence_ids": ["c1"]}, ctx)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# cancel_service_request tool
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCancelServiceRequestTool:
+    """Tests for the cancel_service_request agent tool."""
+
+    @pytest.fixture
+    def mock_firestore(self):
+        fs = Mock()
+        fs.update_service_request = AsyncMock(return_value={"id": "sr-99", "status": "cancelled"})
+        return fs
+
+    @pytest.fixture
+    def registry(self):
+        return build_default_registry()
+
+    def _ctx(self, fs, *, has_cap=True):
+        caps = [ToolCapability("service_requests", "write")] if has_cap else []
+        return {
+            "user_id": "user-abc",
+            "user_capabilities": caps,
+            "data_provider": Mock(),
+            "firestore_service": fs,
+        }
+
+    # ── Registration ──────────────────────────────────────────────────────────
+
+    def test_tool_is_registered(self, registry):
+        tool = registry.get("cancel_service_request")
+        assert tool is not None
+
+    def test_requires_service_requests_write_capability(self, registry):
+        tool = registry.get("cancel_service_request")
+        assert tool.required_capability == ToolCapability("service_requests", "write")
+
+    def test_schema_has_required_request_id_param(self, registry):
+        schema = registry.get("cancel_service_request").schema
+        assert "request_id" in schema["parameters"]["properties"]
+        assert "request_id" in schema["parameters"]["required"]
+
+    # ── Happy path ────────────────────────────────────────────────────────────
+
+    async def test_calls_update_service_request_with_cancelled_status(
+        self, registry, mock_firestore
+    ):
+        ctx = self._ctx(mock_firestore)
+        await registry.execute("cancel_service_request", {"request_id": "sr-99"}, ctx)
+        mock_firestore.update_service_request.assert_called_once_with(
+            "sr-99", {"status": "cancelled"}
+        )
+
+    async def test_returns_cancelled_true_and_request_id(self, registry, mock_firestore):
+        ctx = self._ctx(mock_firestore)
+        result = await registry.execute(
+            "cancel_service_request", {"request_id": "sr-99"}, ctx
+        )
+        assert result == {"cancelled": True, "request_id": "sr-99"}
+
+    # ── Error cases ───────────────────────────────────────────────────────────
+
+    async def test_returns_error_when_request_id_missing(self, registry, mock_firestore):
+        ctx = self._ctx(mock_firestore)
+        result = await registry.execute("cancel_service_request", {}, ctx)
+        assert "error" in result
+        mock_firestore.update_service_request.assert_not_called()
+
+    async def test_raises_permission_error_without_write_cap(self, registry, mock_firestore):
+        ctx = self._ctx(mock_firestore, has_cap=False)
+        with pytest.raises(ToolPermissionError) as exc_info:
+            await registry.execute("cancel_service_request", {"request_id": "sr-1"}, ctx)
+        err = exc_info.value
+        assert err.tool_name == "cancel_service_request"
+        assert err.required_capability == ToolCapability("service_requests", "write")

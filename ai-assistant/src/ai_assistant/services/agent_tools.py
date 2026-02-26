@@ -160,6 +160,16 @@ async def _create_service_request(params: dict, context: dict) -> Any:
     )
 
 
+async def _cancel_service_request(params: dict, context: dict) -> Any:
+    """Set a service request's status to 'cancelled'."""
+    fs = context["firestore_service"]
+    request_id = params.get("request_id", "")
+    if not request_id:
+        return {"error": "request_id is required"}
+    await fs.update_service_request(request_id, {"status": "cancelled"})
+    return {"cancelled": True, "request_id": request_id}
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Provider onboarding tool implementations
 # ─────────────────────────────────────────────────────────────────────────────
@@ -345,6 +355,27 @@ def build_default_registry() -> AgentToolRegistry:
         },
         required_capability=ToolCapability("service_requests", "write"),
         _execute=_create_service_request,
+    ))
+
+    registry.register(AgentTool(
+        name="cancel_service_request",
+        description="Cancel an existing service request that was previously created.",
+        schema={
+            "name": "cancel_service_request",
+            "description": "Cancel an existing service request that was previously created.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "request_id": {
+                        "type": "string",
+                        "description": "The ID of the service request to cancel.",
+                    },
+                },
+                "required": ["request_id"],
+            },
+        },
+        required_capability=ToolCapability("service_requests", "write"),
+        _execute=_cancel_service_request,
     ))
 
     # ── Provider onboarding tools ────────────────────────────────────────────

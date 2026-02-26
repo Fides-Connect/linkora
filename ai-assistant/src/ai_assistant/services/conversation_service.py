@@ -59,7 +59,7 @@ _LEGAL_TRANSITIONS: Dict["ConversationStage", List["ConversationStage"]] = {
     ConversationStage.TOOL_EXECUTION: [ConversationStage.TRIAGE, ConversationStage.CONFIRMATION,
                                        ConversationStage.FINALIZE],
     ConversationStage.CONFIRMATION:   [ConversationStage.FINALIZE, ConversationStage.TRIAGE],
-    ConversationStage.FINALIZE:       [ConversationStage.COMPLETED, ConversationStage.RECOVERY],
+    ConversationStage.FINALIZE:       [ConversationStage.COMPLETED, ConversationStage.RECOVERY, ConversationStage.TRIAGE],
     ConversationStage.RECOVERY:       [ConversationStage.TRIAGE],
     ConversationStage.COMPLETED:      [ConversationStage.PROVIDER_PITCH, ConversationStage.TRIAGE],
     ConversationStage.PROVIDER_PITCH: [ConversationStage.PROVIDER_ONBOARDING, ConversationStage.COMPLETED],
