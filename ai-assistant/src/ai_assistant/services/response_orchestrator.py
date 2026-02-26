@@ -26,8 +26,6 @@ _KNOWN_TOOL_NAMES_RE = re.compile(
     r'|create_service_request|record_provider_interest|get_my_competencies'
     r'|save_competence_batch|delete_competences)\s*\([^)]*\)'
 )
-_TOOL_CALL_TEXT_RE = _KNOWN_TOOL_NAMES_RE  # alias kept for backward compat with tests
-
 
 def _strip_tool_call_text(text: str) -> str:
     """Remove known tool-call name(...) patterns from a text chunk.
@@ -36,7 +34,7 @@ def _strip_tool_call_text(text: str) -> str:
     not arbitrary identifiers — so normal prose with parentheses is preserved.
     Does NOT strip surrounding whitespace so inter-word spaces remain intact.
     """
-    return _TOOL_CALL_TEXT_RE.sub("", text)
+    return _KNOWN_TOOL_NAMES_RE.sub("", text)
 
 
 class ResponseOrchestrator:

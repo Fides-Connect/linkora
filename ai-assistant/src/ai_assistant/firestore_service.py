@@ -1822,7 +1822,7 @@ class FirestoreService:
             logger.error("Error creating ai_conversation: %s", exc)
             return None
 
-    async def save_ai_conversation_message(
+    async def create_ai_conversation_message(
         self,
         user_id: str,
         conversation_id: str,
