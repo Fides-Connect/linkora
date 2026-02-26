@@ -229,6 +229,7 @@ class ResponseOrchestrator:
             # Stream LLM — chunks are either plain strings or function-call dicts
             transitioned_to_finalize = False
             transitioned_to_completed = False
+            transitioned_to_triage_from_completed = False
             first_chunk = True
             ai_response_parts: list[str] = []
             pending_tool_results: list[tuple[str, object]] = []
@@ -255,6 +256,11 @@ class ResponseOrchestrator:
                                     transitioned_to_finalize = True
                                 elif ConversationStage(target) == ConversationStage.COMPLETED:
                                     transitioned_to_completed = True
+                                elif (
+                                    ConversationStage(target) == ConversationStage.TRIAGE
+                                    and current_stage == ConversationStage.COMPLETED
+                                ):
+                                    transitioned_to_triage_from_completed = True
                             except ValueError:
                                 pass
                         self.runtime_fsm.transition("tool_done")
@@ -385,8 +391,39 @@ class ResponseOrchestrator:
 
                 if not pitch_launched:
                     yield {"type": "new_bubble"}
+                    loop_back_triggered_triage = False
                     async for chunk in self._generate_loop_back_stream(session_id):
-                        yield chunk
+                        if isinstance(chunk, dict) and chunk.get("type") == "triage_triggered":
+                            loop_back_triggered_triage = True
+                        else:
+                            yield chunk
+                    if loop_back_triggered_triage:
+                        yield {"type": "new_bubble"}
+                        triage_parts: list[str] = []
+                        async for chunk in self._generate_triage_opener_stream(user_input, session_id):
+                            triage_parts.append(chunk)
+                            yield chunk
+                        if triage_parts and self.ai_conversation_service:
+                            await self.ai_conversation_service.save_message(
+                                role="assistant",
+                                text="".join(triage_parts),
+                                stage=ConversationStage.TRIAGE,
+                            )
+
+            # Auto-start TRIAGE scoping when the user replied in COMPLETED with a new
+            # request and the main stream (not the loop-back) triggered the transition.
+            if transitioned_to_triage_from_completed:
+                yield {"type": "new_bubble"}
+                triage_parts_main: list[str] = []
+                async for chunk in self._generate_triage_opener_stream(user_input, session_id):
+                    triage_parts_main.append(chunk)
+                    yield chunk
+                if triage_parts_main and self.ai_conversation_service:
+                    await self.ai_conversation_service.save_message(
+                        role="assistant",
+                        text="".join(triage_parts_main),
+                        stage=ConversationStage.TRIAGE,
+                    )
 
         except Exception as exc:
             logger.error("Error in response orchestration: %s", exc, exc_info=True)
@@ -445,7 +482,12 @@ class ResponseOrchestrator:
                 fn_args = chunk.get("args", {})
                 if fn_name == "signal_transition":
                     target = fn_args.get("target_stage", "")
-                    await self.handle_signal_transition_async(target, session_id)
+                    applied = await self.handle_signal_transition_async(target, session_id)
+                    if applied and target == "triage":
+                        # Signal to the caller that a TRIAGE opener should be generated.
+                        # We yield a sentinel rather than generating inline so the caller
+                        # can pass the user's original input to the TRIAGE stream.
+                        yield {"type": "triage_triggered"}
                 else:
                     # Other tools are unlikely here but handle gracefully
                     tool_result = None
@@ -481,3 +523,22 @@ class ResponseOrchestrator:
                     filtered = _strip_tool_call_text(chunk)
                     if filtered.strip():
                         yield filtered
+
+    async def _generate_triage_opener_stream(
+        self, user_input: str, session_id: str
+    ) -> AsyncIterator[str]:
+        """Auto-generate the first TRIAGE response after looping back from COMPLETED.
+
+        Passes the user's original input (which already describes the new topic)
+        directly to the TRIAGE LLM so it can start scoping immediately without
+        requiring an extra round-trip from the user.
+        """
+        logger.info("Auto-generating TRIAGE opener after COMPLETED→TRIAGE loop-back")
+        prompt_template = self.conversation_service.create_prompt_for_stage(
+            ConversationStage.TRIAGE
+        )
+        async for chunk in self.llm_service.generate_stream(user_input, prompt_template, session_id):
+            if isinstance(chunk, str):
+                filtered = _strip_tool_call_text(chunk)
+                if filtered.strip():
+                    yield filtered
