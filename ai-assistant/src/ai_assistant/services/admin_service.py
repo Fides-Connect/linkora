@@ -7,6 +7,8 @@ Security:
 - All admin endpoints require valid authentication
 - Logs all admin actions for audit trail
 """
+from __future__ import annotations
+
 import logging
 import os
 import secrets
