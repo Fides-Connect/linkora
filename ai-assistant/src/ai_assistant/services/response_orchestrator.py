@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # normal prose containing parentheses ("call me (555) 123-4567") is never stripped.
 _KNOWN_TOOL_NAMES_RE = re.compile(
     r'\b(?:signal_transition|search_providers|get_favorites|get_open_requests'
-    r'|create_service_request|record_provider_interest|get_my_competencies'
+    r'|create_service_request|cancel_service_request|record_provider_interest|get_my_competencies'
     r'|save_competence_batch|delete_competences)\s*\([^)]*\)'
 )
 
@@ -101,9 +101,9 @@ class ResponseOrchestrator:
                 target_stage = ConversationStage(target_str)
                 if target_stage == ConversationStage.FINALIZE:
                     await self.conversation_service.search_providers_for_request(session_id)
-                elif (
-                    target_stage == ConversationStage.TRIAGE
-                    and previous_stage == ConversationStage.COMPLETED
+                elif target_stage == ConversationStage.TRIAGE and previous_stage in (
+                    ConversationStage.COMPLETED,
+                    ConversationStage.FINALIZE,
                 ):
                     self.conversation_service.reset_request_context()
             except ValueError:
