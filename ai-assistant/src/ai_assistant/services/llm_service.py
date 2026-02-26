@@ -7,6 +7,7 @@ import logging
 from typing import AsyncIterator, Optional, Dict, Any, List
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import BaseMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
@@ -88,7 +89,7 @@ class LLMService:
             logger.debug(f"Created new chat history for session: {session_id}")
         return self.session_store[session_id]
     
-    def add_message_to_history(self, session_id: str, message):
+    def add_message_to_history(self, session_id: str, message: BaseMessage) -> None:
         """
         Add a message to session history.
         

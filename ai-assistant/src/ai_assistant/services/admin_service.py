@@ -12,7 +12,7 @@ import os
 import secrets
 from datetime import datetime, UTC
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from aiohttp import web
 from weaviate.classes.query import QueryReference
@@ -24,6 +24,9 @@ from ai_assistant.weaviate_models import (
     ProviderModelWeaviate, 
     UserModelWeaviate
 )
+
+if TYPE_CHECKING:
+    from ai_assistant.signaling_server import SignalingServer
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +110,7 @@ class AdminService:
     Admin service providing system information and administrative actions.
     """
     
-    def __init__(self, signaling_server=None):
+    def __init__(self, signaling_server: Optional[SignalingServer] = None):
         """
         Initialize admin service.
         
@@ -557,7 +560,7 @@ class AdminService:
                 "message": str(e)
             }, status=500)
     
-    def register_routes(self, app: web.Application):
+    def register_routes(self, app: web.Application) -> None:
         """
         Register all admin routes to the application.
         

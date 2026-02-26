@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 class SignalingServer:
     """Manages WebSocket connections and WebRTC signaling."""
     
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialise the signaling server with an empty connection registry."""
         self.active_connections: Dict[str, PeerConnectionHandler] = {}
         
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:

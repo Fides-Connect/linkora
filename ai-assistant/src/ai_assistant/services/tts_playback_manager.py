@@ -193,7 +193,7 @@ class TTSPlaybackManager:
         finally:
             self._processing = False
     
-    async def _synthesize_and_queue(self, text: str, order: int):
+    async def _synthesize_and_queue(self, text: str, order: int) -> None:
         """
         Synthesize text to audio and queue for playback.
         
@@ -211,7 +211,7 @@ class TTSPlaybackManager:
         # Start synthesis task
         asyncio.create_task(self._synthesize_chunk(order, text))
     
-    async def _synthesize_chunk(self, order: int, text: str):
+    async def _synthesize_chunk(self, order: int, text: str) -> None:
         """
         Synthesize audio for a chunk and mark it ready.
         
@@ -240,7 +240,7 @@ class TTSPlaybackManager:
         except Exception as e:
             logger.error(f"Error synthesizing chunk {order}: {e}", exc_info=True)
     
-    async def _play_ready_chunks(self):
+    async def _play_ready_chunks(self) -> None:
         """Play chunks in order if they're ready."""
         async with self._lock:
             while self._next_to_play in self._chunks:
@@ -257,7 +257,7 @@ class TTSPlaybackManager:
                 del self._chunks[self._next_to_play]
                 self._next_to_play += 1
     
-    async def _wait_for_completion(self):
+    async def _wait_for_completion(self) -> None:
         """Wait for all chunks to be played."""
         max_wait = 30  # Maximum wait time in seconds
         wait_interval = 0.1
@@ -287,8 +287,8 @@ class TTSPlaybackManager:
         """Check if playback was interrupted."""
         return self._interrupted
     
-    async def clear(self):
-        """Clear all pending chunks."""
+    async def clear(self) -> None:
+        """Clear all pending chunks and reset playback position."""
         async with self._lock:
             self._chunks.clear()
             self._next_to_play = 0

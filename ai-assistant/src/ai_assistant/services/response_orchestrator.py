@@ -15,6 +15,7 @@ from .conversation_service import ConversationService, ConversationStage, is_leg
 from .llm_service import LLMService, SIGNAL_TRANSITION_SCHEMA
 from .agent_runtime_fsm import AgentRuntimeFSM
 from .agent_tools import AgentToolRegistry, ToolPermissionError
+from .ai_conversation_service import AIConversationService
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class ResponseOrchestrator:
         conversation_service: ConversationService,
         runtime_fsm: Optional[AgentRuntimeFSM] = None,
         tool_registry: Optional[AgentToolRegistry] = None,
-        ai_conversation_service=None,
+        ai_conversation_service: Optional[AIConversationService] = None,
     ):
         self.llm_service = llm_service
         self.conversation_service = conversation_service

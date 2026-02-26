@@ -138,7 +138,7 @@ class AudioProcessor:
 
     # ── Factory ───────────────────────────────────────────────────────────────
 
-    def _create_language_specific_assistant(self, language: str):
+    def _create_language_specific_assistant(self, language: str) -> "AIAssistant":
         """Create a language-specific AI assistant instance."""
         logger.info("Creating language-specific AI assistant for language: %s", language)
 
@@ -326,7 +326,7 @@ class AudioProcessor:
 
     # ── Audio processing ───────────────────────────────────────────────────────
 
-    async def _process_audio(self):
+    async def _process_audio(self) -> None:
         """Main audio processing loop - receives frames and queues them for STT."""
         try:
             frame_count = 0

@@ -2,10 +2,15 @@
 AI Conversation Service
 Manages the lifecycle of one AI conversation session in Firestore.
 """
+from __future__ import annotations
+
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .conversation_service import ConversationStage
+
+if TYPE_CHECKING:
+    from ..firestore_service import FirestoreService
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +26,14 @@ class AIConversationService:
     - Is safe to use with firestore_service=None (all methods become no-ops)
     """
 
-    def __init__(self, firestore_service) -> None:
+    def __init__(self, firestore_service: Optional[FirestoreService]) -> None:
+        """Create a conversation-session manager backed by *firestore_service*.
+
+        Args:
+            firestore_service: Live :class:`~ai_assistant.firestore_service.
+                FirestoreService` instance, or ``None`` to run without
+                persistence (all methods become no-ops).
+        """
         self._firestore = firestore_service
         self._conversation_id: Optional[str] = None
         self._user_id: Optional[str] = None

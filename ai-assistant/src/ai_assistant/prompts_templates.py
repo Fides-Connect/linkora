@@ -1,3 +1,11 @@
+"""LLM prompt templates for every conversation stage.
+
+All stage-specific prompts are defined as module-level string constants.
+Use :func:`get_language_instruction` to inject the correct language
+instruction into any prompt that references ``{language_instruction}``.
+"""
+
+
 def get_language_instruction(language: str = 'de') -> str:
     """
     Get the language instruction for prompts based on the selected language.

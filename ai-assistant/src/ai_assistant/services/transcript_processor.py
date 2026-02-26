@@ -82,7 +82,7 @@ class TranscriptProcessor:
         """Get the current transcript text."""
         return self._current_transcript
     
-    def reset(self):
+    def reset(self) -> None:
         """Reset processor state."""
         self._processing = False
         self._current_transcript = ""
@@ -96,7 +96,7 @@ class TranscriptAccumulator:
         self._accumulated = ""
         self._lock = asyncio.Lock()
     
-    async def add(self, text: str, separator: str = " "):
+    async def add(self, text: str, separator: str = " ") -> None:
         """
         Add text to accumulated transcript.
         
@@ -114,12 +114,12 @@ class TranscriptAccumulator:
         async with self._lock:
             return self._accumulated
     
-    async def clear(self):
+    async def clear(self) -> None:
         """Clear accumulated transcript."""
         async with self._lock:
             self._accumulated = ""
     
-    async def replace(self, text: str):
+    async def replace(self, text: str) -> None:
         """
         Replace accumulated transcript with new text.
         

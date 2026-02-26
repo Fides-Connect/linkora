@@ -5,6 +5,9 @@ Manages individual WebRTC connections and media streams.
 import asyncio
 import json
 import logging
+from typing import Optional
+
+from aiohttp import web
 from aiortc import (
     RTCPeerConnection,
     RTCSessionDescription,
@@ -25,8 +28,8 @@ class PeerConnectionHandler:
     def __init__(
         self,
         connection_id: str,
-        websocket,
-        user_id: str = None,
+        websocket: web.WebSocketResponse,
+        user_id: Optional[str] = None,
         language: str = 'de',
         session_mode: str = 'voice',
     ):
@@ -61,7 +64,7 @@ class PeerConnectionHandler:
 
     # ── Idle timer ────────────────────────────────────────────────────────────
 
-    def _reset_idle_timer(self):
+    def _reset_idle_timer(self) -> None:
         """Cancel existing idle task and start a fresh 10-minute countdown."""
         if self._idle_task and not self._idle_task.done():
             self._idle_task.cancel()
@@ -206,7 +209,7 @@ class PeerConnectionHandler:
 
     # ── Event handlers ────────────────────────────────────────────────────────
 
-    def _setup_event_handlers(self):
+    def _setup_event_handlers(self) -> None:
 
         @self.pc.on("icecandidate")
         async def on_icecandidate(candidate):

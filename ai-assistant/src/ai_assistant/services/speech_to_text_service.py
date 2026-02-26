@@ -26,7 +26,7 @@ class SpeechToTextService:
         
         logger.info(f"STT service configured for language: {language_code}")
     
-    async def continuous_stream(self, audio_generator) -> AsyncIterator[Tuple[str, bool]]:
+    async def continuous_stream(self, audio_generator: AsyncIterator[bytes]) -> AsyncIterator[Tuple[str, bool]]:
         """
         Continuously stream audio to STT using async gRPC.
         
@@ -91,7 +91,11 @@ class SpeechToTextService:
             use_enhanced=True
         )
     
-    async def _create_request_generator(self, streaming_config, audio_generator):
+    async def _create_request_generator(
+        self,
+        streaming_config: speech.StreamingRecognitionConfig,
+        audio_generator: AsyncIterator[bytes],
+    ) -> AsyncIterator[speech.StreamingRecognizeRequest]:
         """
         Generate streaming recognition requests.
         

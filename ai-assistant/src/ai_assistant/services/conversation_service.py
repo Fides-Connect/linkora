@@ -2,11 +2,13 @@
 Conversation Service
 Handles conversation flow, stage management, and orchestration.
 """
+from __future__ import annotations
+
 import logging
 import json
 from enum import Enum
 from datetime import datetime
-from typing import Optional, AsyncIterator, Dict, Any, List
+from typing import TYPE_CHECKING, Optional, AsyncIterator, Dict, Any, List
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -23,6 +25,9 @@ from ..prompts_templates import (
     PROVIDER_ONBOARDING_PROMPT,
     get_language_instruction
 )
+
+if TYPE_CHECKING:
+    from .llm_service import LLMService
 
 
 logger = logging.getLogger(__name__)
@@ -78,7 +83,7 @@ def is_legal_transition(from_stage: ConversationStage, to_stage: ConversationSta
 class ConversationService:
     """Service for managing conversation flow and state."""
     
-    def __init__(self, llm_service, data_provider: DataProvider,
+    def __init__(self, llm_service: LLMService, data_provider: DataProvider,
                  agent_name: str = "Elin", company_name: str = "Linkora",
                  max_providers: int = 3, language: str = 'de'):
         """

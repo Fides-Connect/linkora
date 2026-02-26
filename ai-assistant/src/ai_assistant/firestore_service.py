@@ -1,3 +1,12 @@
+"""FirestoreService — thin async wrapper over Google Cloud Firestore.
+
+Provides CRUD helpers for every collection used by the platform:
+users, competencies, service requests, reviews, chats, chat messages,
+provider candidates, availability times, and AI conversation sessions.
+
+All write paths validate data through the corresponding Pydantic schema
+before touching Firestore, raising ``pydantic.ValidationError`` on bad input.
+"""
 import logging
 import os
 from typing import Dict, List, Optional, Any
