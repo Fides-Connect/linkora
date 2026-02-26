@@ -482,15 +482,20 @@ class AudioProcessor:
                 return
 
             # Await session initialization so the first message has user context.
-            try:
-                await asyncio.wait_for(
-                    self._session_starter.initialized_event.wait(), timeout=2.0
-                )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "Session initialization timeout for %s — proceeding without user context",
-                    self.connection_id,
-                )
+            # Fast-path: skip wait_for entirely when already set — asyncio.wait_for
+            # creates an internal Task even for immediately-resolved awaitables,
+            # which costs extra event-loop ticks in Python ≤ 3.11 and breaks
+            # concurrency tests that rely on exact yield counts.
+            if not self._session_starter.initialized_event.is_set():
+                try:
+                    await asyncio.wait_for(
+                        self._session_starter.initialized_event.wait(), timeout=2.0
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Session initialization timeout for %s — proceeding without user context",
+                        self.connection_id,
+                    )
 
             # Guard: block text input while the provider search + initial
             # presentation task is still running.  Once the task completes,
