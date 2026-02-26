@@ -253,12 +253,14 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
 
     await fs.update_user(user_id, {"is_service_provider": True})
 
-    # Weaviate re-sync using skill titles.
+    # Weaviate full re-sync: read ALL competencies from Firestore (ground truth) so
+    # that skills saved in earlier sessions are preserved in Weaviate.
     # Self-heals if the user row is missing in Weaviate (e.g. after a schema reset)
     # by creating the hub row from Firestore data before retrying.
-    titles = [s.get("title", "") for s in skills if s.get("title")]
-    if titles:
-        result = HubSpokeIngestion.update_competencies_by_user_id(user_id, titles)
+    all_competencies = await fs.get_competencies(user_id)
+    all_titles = [c.get("title", "") for c in all_competencies if c.get("title")]
+    if all_titles:
+        result = HubSpokeIngestion.update_competencies_by_user_id(user_id, all_titles)
         if isinstance(result, dict) and not result.get("success") and result.get("error") == "User not found":
             logger.warning(
                 "Weaviate user not found for %s — self-healing by creating from Firestore",
@@ -268,7 +270,7 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
                 user_data = await fs.get_user(user_id) or {}
                 user_data.setdefault("user_id", user_id)
                 HubSpokeIngestion.create_user(user_data)
-                HubSpokeIngestion.create_competencies_by_user_id(user_id, titles)
+                HubSpokeIngestion.create_competencies_by_user_id(user_id, all_titles)
                 logger.info("Weaviate self-heal complete for user %s", user_id)
             except Exception as heal_exc:
                 logger.error(
