@@ -378,8 +378,28 @@ class TestProviderOnboardingTools:
         ]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         assert mock_firestore.create_competence.call_count == 2
+        # Must sync ALL competencies from Firestore (not just the current batch)
         mock_hub.update_competencies_by_user_id.assert_called_once_with(
-            "user-x", ["Gardening", "Painting"]
+            "user-x", ["Plumbing", "Electrical"]
+        )
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_syncs_all_firestore_competencies_not_just_batch(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """Weaviate must reflect ALL competencies from Firestore, not just the current batch.
+
+        Regression: previously only the batch titles were synced, so adding competencies
+        across multiple sessions would overwrite earlier ones in Weaviate.
+        """
+        ctx = self._ctx(mock_firestore)
+        # Only 1 new skill in this batch — but Firestore already has "Plumbing" and "Electrical"
+        skills = [{"title": "Painting", "description": "Interior painting"}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+
+        # Weaviate sync must use ALL titles returned by get_competencies, not just "Painting"
+        mock_hub.update_competencies_by_user_id.assert_called_once_with(
+            "user-x", ["Plumbing", "Electrical"]
         )
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
@@ -399,7 +419,8 @@ class TestProviderOnboardingTools:
         skills = [{"competence_id": "c1", "title": "Plumbing Pro"}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         mock_firestore.update_competence.assert_called_once()
-        mock_hub.update_competencies_by_user_id.assert_called_once_with("user-x", ["Plumbing Pro"])
+        # Weaviate sync must use ALL competencies from Firestore, not just the updated title
+        mock_hub.update_competencies_by_user_id.assert_called_once_with("user-x", ["Plumbing", "Electrical"])
 
     # ── delete_competences ───────────────────────────────────────────────────
 
