@@ -19,7 +19,6 @@ from .services.data_channel_bridge import DataChannelBridge
 from .services.debug_recorder import DebugRecorder
 from .services.response_delivery import ResponseDelivery, ResponseDeliveryFactory
 from .services.session_starter import SessionStarter, SessionStarterFactory
-from .services.session_mode import SessionMode
 from .services.transcript_processor import TranscriptProcessor
 from .services.tts_playback_manager import TTSPlaybackManager, SentenceParser
 from .services.conversation_service import ConversationStage
@@ -63,8 +62,8 @@ class AudioProcessor:
 
         # Session mode — derived from whether an audio track is provided.
         # The ``_is_text_mode`` property below provides backward compat.
-        self.session_mode: SessionMode = (
-            SessionMode.TEXT if input_track is None else SessionMode.VOICE
+        self.session_mode: str = (
+            "text" if input_track is None else "voice"
         )
 
         # Activity hook: called on every _process_final_transcript invocation.
@@ -124,7 +123,7 @@ class AudioProcessor:
     @property
     def _is_text_mode(self) -> bool:
         """Read-only compat view of session_mode."""
-        return self.session_mode == SessionMode.TEXT
+        return self.session_mode == "text"
 
     @property
     def data_channel(self):
@@ -168,7 +167,7 @@ class AudioProcessor:
 
     # ── Strategy factories ────────────────────────────────────────────────────
 
-    def _make_delivery(self, mode: SessionMode) -> ResponseDelivery:
+    def _make_delivery(self, mode: str) -> ResponseDelivery:
         """Create a ResponseDelivery strategy for the given mode."""
         return ResponseDeliveryFactory.create(
             mode,
@@ -178,7 +177,7 @@ class AudioProcessor:
             monitor_playback_fn=self._monitor_playback_completion,
         )
 
-    def _make_session_starter(self, mode: SessionMode) -> SessionStarter:
+    def _make_session_starter(self, mode: str) -> SessionStarter:
         """Create a SessionStarter strategy for the given mode."""
         return SessionStarterFactory.create(
             mode,
@@ -274,8 +273,8 @@ class AudioProcessor:
     async def enable_voice_mode(self, input_track: Optional[MediaStreamTrack] = None) -> 'AudioOutputTrack':
         """Resume or start voice mode."""
         logger.info("Enabling voice mode for connection %s", self.connection_id)
-        self.session_mode = SessionMode.VOICE
-        self._delivery = self._make_delivery(SessionMode.VOICE)
+        self.session_mode = "voice"
+        self._delivery = self._make_delivery("voice")
 
         if input_track is not None and self.input_track is None:
             self.input_track = input_track
@@ -300,12 +299,12 @@ class AudioProcessor:
 
         Keeps STT / audio-frame tasks alive for fast resume.
         """
-        if self.session_mode == SessionMode.TEXT:
+        if self.session_mode == "text":
             return
         logger.info("Pausing voice mode for connection %s", self.connection_id)
-        self.session_mode = SessionMode.TEXT
+        self.session_mode = "text"
         await self._trigger_interrupt()
-        self._delivery = self._make_delivery(SessionMode.TEXT)
+        self._delivery = self._make_delivery("text")
         logger.info("Voice mode paused — STT/audio tasks remain alive")
 
     async def receive_text_input(self, text: str) -> None:
@@ -315,7 +314,7 @@ class AudioProcessor:
         session is in voice mode, then delegates to process_text_input.
         Callers (e.g. PeerConnectionHandler) never need mode-check logic.
         """
-        if self.session_mode == SessionMode.VOICE:
+        if self.session_mode == "voice":
             logger.info("Voice → text switch triggered by receive_text_input")
             await self.disable_voice_mode()
         await self.process_text_input(text)
