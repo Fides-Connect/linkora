@@ -122,7 +122,8 @@ class AssistantTabViewModel extends ChangeNotifier {
         // the authoritative source of truth but arrives slightly after the echo.
         _conversationState = ConversationState.processing;
       } else {
-        if (_lastMessageWasUser ||
+        if (!isChunk ||
+            _lastMessageWasUser ||
             _chatMessages.isEmpty ||
             _chatMessages.last.isUser) {
           // New AI response starting — let onRuntimeState drive _conversationState;

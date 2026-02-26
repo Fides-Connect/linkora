@@ -87,18 +87,27 @@ class ResponseOrchestrator:
         logger.info("Stage transition applied: %s → %s", current, target)
         return True
 
-    async def handle_signal_transition_async(self, target_str: str) -> bool:
-        """
-        Async variant of handle_signal_transition.
+    async def handle_signal_transition_async(
+        self, target_str: str, session_id: str = ""
+    ) -> bool:
+        """Async variant of handle_signal_transition.
 
         In addition to applying the stage, triggers a Weaviate provider search
-        when the target stage is FINALIZE.
+        when the target stage is FINALIZE, forwarding the active session so the
+        extractor can include the last 3 history messages.
         """
+        previous_stage = self.conversation_service.get_current_stage()
         applied = self.handle_signal_transition(target_str)
         if applied:
             try:
-                if ConversationStage(target_str) == ConversationStage.FINALIZE:
-                    await self.conversation_service.search_providers_for_request()
+                target_stage = ConversationStage(target_str)
+                if target_stage == ConversationStage.FINALIZE:
+                    await self.conversation_service.search_providers_for_request(session_id)
+                elif (
+                    target_stage == ConversationStage.TRIAGE
+                    and previous_stage == ConversationStage.COMPLETED
+                ):
+                    self.conversation_service.reset_request_context()
             except ValueError:
                 pass  # already caught above; can't happen here
         return applied
@@ -239,7 +248,7 @@ class ResponseOrchestrator:
                     if fn_name == "signal_transition":
                         self.runtime_fsm.transition("tool_call")
                         target = fn_args.get("target_stage", "")
-                        applied = await self.handle_signal_transition_async(target)
+                        applied = await self.handle_signal_transition_async(target, session_id)
                         if applied:
                             try:
                                 if ConversationStage(target) == ConversationStage.FINALIZE:
@@ -330,10 +339,14 @@ class ResponseOrchestrator:
             # Stream complete — advance FSM back to LISTENING
             self.runtime_fsm.transition("stream_complete_text")
 
+            # Assemble and record the AI response so get_problem_summary()
+            # returns the LLM's confirmed job summary on subsequent calls.
+            ai_text = "".join(ai_response_parts)
+            self.conversation_service.record_ai_response(ai_text)
+
             # Persist the assembled AI response
             if self.ai_conversation_service:
                 final_stage = self.conversation_service.get_current_stage()
-                ai_text = "".join(ai_response_parts)
                 await self.ai_conversation_service.save_message(
                     role="assistant", text=ai_text, stage=final_stage
                 )
@@ -343,21 +356,35 @@ class ResponseOrchestrator:
                 summary = self.conversation_service.get_problem_summary()
                 await self.ai_conversation_service.set_topic_title(summary)
 
-            # Close session when entering COMPLETED
-            if transitioned_to_completed and self.ai_conversation_service:
-                completed_stage = self.conversation_service.get_current_stage()
-                await self.ai_conversation_service.close_session(completed_stage)
-
             # Auto-generate provider presentation after entering FINALIZE
             if transitioned_to_finalize:
+                finalize_parts: list[str] = []
+                yield {"type": "new_bubble"}  # open a fresh bubble before presentation
                 async for chunk in self._generate_finalize_presentation(session_id):
+                    finalize_parts.append(chunk)
                     yield chunk
+                if finalize_parts and self.ai_conversation_service:
+                    finalize_text = "".join(finalize_parts)
+                    await self.ai_conversation_service.save_message(
+                        role="assistant",
+                        text=finalize_text,
+                        stage=ConversationStage.FINALIZE,
+                    )
 
-            # Auto-pitch provider after COMPLETED when eligible
-            if transitioned_to_completed and self._should_pitch_provider(context):
-                applied = await self.handle_signal_transition_async("provider_pitch")
-                if applied:
-                    async for chunk in self._generate_provider_pitch_stream(session_id):
+            # After COMPLETED: pitch eligible users; loop back for everyone else
+            if transitioned_to_completed:
+                pitch_launched = False
+                if self._should_pitch_provider(context):
+                    applied = await self.handle_signal_transition_async("provider_pitch")
+                    if applied:
+                        pitch_launched = True
+                        yield {"type": "new_bubble"}
+                        async for chunk in self._generate_provider_pitch_stream(session_id):
+                            yield chunk
+
+                if not pitch_launched:
+                    yield {"type": "new_bubble"}
+                    async for chunk in self._generate_loop_back_stream(session_id):
                         yield chunk
 
         except Exception as exc:
@@ -385,6 +412,24 @@ class ResponseOrchestrator:
         logger.info("Auto-generating provider pitch in PROVIDER_PITCH stage")
         prompt_template = self.conversation_service.create_prompt_for_stage(
             ConversationStage.PROVIDER_PITCH
+        )
+        async for chunk in self.llm_service.generate_stream(" ", prompt_template, session_id):
+            if isinstance(chunk, str):
+                yield chunk
+
+    async def _generate_loop_back_stream(
+        self, session_id: str
+    ) -> AsyncIterator[str]:
+        """Auto-generate the loop-back question after COMPLETED stage.
+
+        Asks the user warmly whether they need help with anything else.
+        The LLM uses LOOP_BACK_PROMPT which instructs it to call
+        signal_transition(target_stage="triage") if the user wants more help,
+        or give a short farewell otherwise.
+        """
+        logger.info("Auto-generating loop-back question in COMPLETED stage")
+        prompt_template = self.conversation_service.create_prompt_for_stage(
+            ConversationStage.COMPLETED
         )
         async for chunk in self.llm_service.generate_stream(" ", prompt_template, session_id):
             if isinstance(chunk, str):

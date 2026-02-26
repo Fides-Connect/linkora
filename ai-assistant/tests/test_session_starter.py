@@ -297,12 +297,12 @@ class TestTextSessionStarterInitialize:
             user_name="Anna", has_open_request=False
         )
 
-    async def test_sends_greeting_dc_bubble(self):
+    async def test_does_not_send_greeting_dc_bubble(self):
+        """Text mode must NOT push a greeting bubble — the TRIAGE response is
+        the natural first reply to the user's already-typed message."""
         starter, deps = _text_starter(greeting_text="Hallo Anna!")
         await starter.initialize()
-        deps["dc_bridge"].send_chat.assert_called_once_with(
-            "Hallo Anna!", is_user=False, is_chunk=False
-        )
+        deps["dc_bridge"].send_chat.assert_not_called()
 
     async def test_adds_greeting_to_llm_history(self):
         from langchain_core.messages import AIMessage
@@ -325,7 +325,6 @@ class TestTextSessionStarterInitialize:
         starter, _ = _text_starter()
         assert not hasattr(starter, "_tts")
         await starter.initialize()
-        # DC bubble IS sent, but TTS is absent — no queue_audio calls.
 
     async def test_initialized_event_set_even_on_error(self):
         starter, deps = _text_starter()
