@@ -18,6 +18,7 @@ from ..prompts_templates import (
     CLARIFY_PROMPT,
     CONFIRMATION_PROMPT,
     RECOVERY_PROMPT,
+    LOOP_BACK_PROMPT,
     PROVIDER_PITCH_PROMPT,
     PROVIDER_ONBOARDING_PROMPT,
     get_language_instruction
@@ -60,7 +61,7 @@ _LEGAL_TRANSITIONS: Dict["ConversationStage", List["ConversationStage"]] = {
     ConversationStage.CONFIRMATION:   [ConversationStage.FINALIZE, ConversationStage.TRIAGE],
     ConversationStage.FINALIZE:       [ConversationStage.COMPLETED, ConversationStage.RECOVERY],
     ConversationStage.RECOVERY:       [ConversationStage.TRIAGE],
-    ConversationStage.COMPLETED:      [ConversationStage.PROVIDER_PITCH],
+    ConversationStage.COMPLETED:      [ConversationStage.PROVIDER_PITCH, ConversationStage.TRIAGE],
     ConversationStage.PROVIDER_PITCH: [ConversationStage.PROVIDER_ONBOARDING, ConversationStage.COMPLETED],
     ConversationStage.PROVIDER_ONBOARDING: [ConversationStage.COMPLETED],
 }
@@ -156,10 +157,12 @@ class ConversationService:
         
         elif stage == ConversationStage.TRIAGE:
             user_name = self.context.get("user_name", "")
+            language_instruction = get_language_instruction(self.language)
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(TRIAGE_CONVERSATION_PROMPT).format(
                     agent_name=self.agent_name,
                     user_name=user_name,
+                    language_instruction=language_instruction,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
@@ -235,29 +238,63 @@ class ConversationService:
                 ("human", "{input}")
             ])
 
+        elif stage == ConversationStage.COMPLETED:
+            language_instruction = get_language_instruction(self.language)
+            return ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(LOOP_BACK_PROMPT).format(
+                    agent_name=self.agent_name,
+                    language_instruction=language_instruction,
+                ),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{input}")
+            ])
+
         else:
             # Default to triage
             return self.create_prompt_for_stage(ConversationStage.TRIAGE)
     
-    async def accumulate_problem_description(self, user_input: str):
-        """
-        Accumulate user's problem description.
-        Note: Provider search is now performed in FINALIZE stage.
-        
-        Args:
-            user_input: User's problem description
+    async def accumulate_problem_description(self, user_input: str) -> None:
+        """Accumulate user's problem description during TRIAGE.
+
+        Note: Provider search is performed in FINALIZE stage via
+        search_providers_for_request().
         """
         self.context["user_problem"].append(user_input)
-    
+
+    def reset_request_context(self) -> None:
+        """Clear per-request fields so a new scoping conversation starts clean.
+
+        Called when looping back from COMPLETED → TRIAGE so the new request
+        scope does not bleed into the previous one. Preserves user_name,
+        has_open_request, and onboarding_draft.
+        """
+        self.context["user_problem"] = []
+        self.context["ai_responses"] = []
+        self.context["request_summary"] = ""
+        self.context["providers_found"] = []
+        self.context["current_provider_index"] = 0
+        logger.info("Request context reset for new TRIAGE scoping session")
+
+    def record_ai_response(self, text: str) -> None:
+        """Append an assembled AI response to the context history.
+
+        Called by ResponseOrchestrator at the end of each generate_response_stream()
+        so get_problem_summary() returns the LLM's confirmed job summary instead
+        of raw joined user inputs.
+        """
+        if text.strip():
+            self.context["ai_responses"].append(text)
+
     def get_problem_summary(self) -> str:
-        """Extract problem summary from conversation context."""
+        """Return the most recent AI response as the job summary.
+
+        Falls back to raw joined user inputs when no AI responses have been
+        recorded yet (e.g., first turn or session reset).
+        """
         ai_responses = self.context.get("ai_responses", [])
-        if len(ai_responses) >= 2:
-            return ai_responses[-2]
-        elif len(ai_responses) == 1:
-            return ai_responses[0]
-        else:
-            return " ".join(self.context["user_problem"])
+        if ai_responses:
+            return ai_responses[-1]
+        return " ".join(self.context["user_problem"])
     
     def _clean_json_response(self, json_str: str) -> str:
         """Clean up JSON response by removing markdown code blocks."""
@@ -270,60 +307,80 @@ class ConversationService:
             json_str = json_str[:-3]
         return json_str.strip()
     
-    async def _generate_structured_query(self, problem_summary: str) -> str:
-        """
-        Generate structured JSON query from problem summary.
-        
-        Args:
-            problem_summary: The user's problem description
-            
+    async def _generate_structured_query(
+        self, problem_summary: str, session_id: str = ""
+    ) -> str:
+        """Generate structured JSON query from the problem summary.
+
+        Passes the last 3 messages from conversation history (when a
+        session_id is provided) alongside the summary so the LLM has
+        richer context for field extraction.
+
         Returns:
-            JSON string of structured query, or original summary on error
+            JSON string of structured query, or original summary on error.
         """
         from ..prompts_templates import STRUCTURED_QUERY_EXTRACTION_PROMPT
-        
+
+        # Build conversation excerpt — last 3 messages from LLM history.
+        history_excerpt = ""
+        if session_id:
+            messages = self.llm_service.get_session_history(session_id).messages
+            recent = messages[-3:] if len(messages) >= 3 else messages
+            if recent:
+                lines = []
+                for msg in recent:
+                    role = "User" if msg.type == "human" else "Assistant"
+                    lines.append(f"{role}: {msg.content}")
+                history_excerpt = "\n".join(lines)
+
         language_instruction = get_language_instruction(self.language)
         extraction_prompt = STRUCTURED_QUERY_EXTRACTION_PROMPT.format(
             problem_summary=problem_summary,
-            language_instruction=language_instruction
+            history_excerpt=history_excerpt,
+            language_instruction=language_instruction,
         )
-        
+
         try:
-            json_response = await self.llm_service.generate([HumanMessage(content=extraction_prompt)])
+            json_response = await self.llm_service.generate(
+                [HumanMessage(content=extraction_prompt)]
+            )
             json_str = self._clean_json_response(json_response)
-            
-            # Validate JSON
             structured_query = json.loads(json_str)
-            logger.info(f"Generated structured query: {json.dumps(structured_query, ensure_ascii=False)}")
-            
+            logger.info(
+                "Generated structured query: %s",
+                json.dumps(structured_query, ensure_ascii=False),
+            )
             return json.dumps(structured_query, ensure_ascii=False)
-            
-        except Exception as e:
-            logger.error(f"Error generating structured query: {e}", exc_info=True)
+        except Exception as exc:
+            logger.error("Error generating structured query: %s", exc, exc_info=True)
             logger.info("Falling back to original summary for search")
             return problem_summary
     
-    async def search_providers_for_request(self):
-        """
-        Search for providers based on the agent's conversational summary.
-        Called when entering FINALIZE stage.
-        Generates a structured JSON query for hybrid search.
+    async def search_providers_for_request(self, session_id: str = "") -> None:
+        """Search for providers based on the confirmed TRIAGE summary.
+
+        Called by ResponseOrchestrator when entering FINALIZE stage.
+        Generates a structured JSON query for hybrid Weaviate search.
+
+        Args:
+            session_id: Active LLM session — last 3 history messages are
+                        included in the extraction prompt for richer context.
         """
         problem_summary = self.get_problem_summary()
-        logger.info(f"Generating structured search query from summary: '{problem_summary[:100]}...'")
-        
-        # Generate structured query
-        query_text = await self._generate_structured_query(problem_summary)
-        
-        # Search for providers
+        logger.info(
+            "Generating structured search query from summary: '%s...'",
+            problem_summary[:100],
+        )
+        query_text = await self._generate_structured_query(problem_summary, session_id)
+
         self.context["request_summary"] = query_text
         providers = await self.data_provider.search_providers(
             query_text=query_text,
-            limit=self.max_providers
+            limit=self.max_providers,
         )
-        
+
         self.context["providers_found"] = providers
-        logger.info(f"Found {len(providers)} matching providers")
+        logger.info("Found %d matching providers", len(providers))
     
     async def generate_greeting_text(
         self,

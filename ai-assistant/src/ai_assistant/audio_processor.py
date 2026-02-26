@@ -391,6 +391,8 @@ class AudioProcessor:
         if (
             self.ai_assistant.conversation_service.get_current_stage()
             == ConversationStage.FINALIZE
+            and self._response_task is not None
+            and not self._response_task.done()
         ):
             busy_msg = (
                 "Ich suche noch nach passenden Anbietern – bitte noch einen Moment Geduld! "
@@ -490,14 +492,18 @@ class AudioProcessor:
                     self.connection_id,
                 )
 
-            # Guard: do not interrupt provider search in progress
+            # Guard: block text input while the provider search + initial
+            # presentation task is still running.  Once the task completes,
+            # the user's accept/decline replies must flow normally.
             if (
                 self.ai_assistant.conversation_service.get_current_stage()
                 == ConversationStage.FINALIZE
+                and self._response_task is not None
+                and not self._response_task.done()
             ):
                 busy_msg = (
-                    "\nIch suche noch nach passenden Anbietern – bitte noch einen Moment Geduld! "
-                    "\nI'm still searching for providers – just a moment more, thank you!"
+                    "Ich suche noch nach passenden Anbietern – bitte noch einen Moment Geduld! "
+                    "I'm still searching for providers – just a moment more, thank you!"
                 )
                 self._send_chat_message(busy_msg, is_user=False)
                 logger.info(
@@ -565,10 +571,19 @@ class AudioProcessor:
             async def tracked_llm_stream():
                 first_chunk = True
                 async for chunk in llm_stream:
+                    # The orchestrator emits a sentinel dict before each
+                    # autonomous sub-stream (finalize presentation, provider
+                    # pitch).  Consume it silently and reset first_chunk so
+                    # the next text chunk opens a new Flutter bubble.
+                    if isinstance(chunk, dict) and chunk.get("type") == "new_bubble":
+                        first_chunk = True
+                        continue
+
                     if chunk:
-                        # Send AI chunk to client
-                        self._send_chat_message(chunk, is_user=False, is_chunk=True)
-                        
+                        # First chunk of each turn → is_chunk=False → new bubble.
+                        # Remaining chunks → is_chunk=True → append.
+                        self._send_chat_message(chunk, is_user=False, is_chunk=not first_chunk)
+
                     if first_chunk and chunk:
                         perf_times['llm_first_token'] = asyncio.get_event_loop().time()
                         logger.info(f"⚡ Time to first LLM token: {perf_times['llm_first_token'] - llm_start:.3f}s")
