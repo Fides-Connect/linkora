@@ -106,6 +106,17 @@ class ResponseOrchestrator:
                     ConversationStage.FINALIZE,
                 ):
                     self.conversation_service.reset_request_context()
+                elif (
+                    target_stage == ConversationStage.COMPLETED
+                    and previous_stage == ConversationStage.PROVIDER_ONBOARDING
+                ):
+                    # Clear the accumulated service-request context so the
+                    # post-onboarding loop-back does not see the old TRIAGE
+                    # request and mistakenly resume the search/FINALIZE flow.
+                    self.conversation_service.reset_request_context()
+                    logger.info(
+                        "Request context cleared after PROVIDER_ONBOARDING → COMPLETED"
+                    )
             except ValueError:
                 pass  # already caught above; can't happen here
         return applied
@@ -221,6 +232,23 @@ class ResponseOrchestrator:
             if current_stage == ConversationStage.TRIAGE:
                 await self.conversation_service.accumulate_problem_description(user_input)
 
+            # Pre-fetch competencies for PROVIDER_ONBOARDING so the LLM always has
+            # the current list injected via the prompt without calling get_my_competencies.
+            if current_stage == ConversationStage.PROVIDER_ONBOARDING and self.tool_registry:
+                try:
+                    competencies = await self.tool_registry.execute(
+                        "get_my_competencies", {}, context or {}
+                    )
+                    self.conversation_service.context["current_competencies"] = (
+                        competencies if isinstance(competencies, list) else []
+                    )
+                    logger.debug(
+                        "Pre-fetched %d competencies for PROVIDER_ONBOARDING",
+                        len(self.conversation_service.context["current_competencies"]),
+                    )
+                except Exception as exc:  # pragma: no cover
+                    logger.warning("Failed to pre-fetch competencies: %s", exc)
+
             # Build prompt for the current stage
             prompt_template = self.conversation_service.create_prompt_for_stage(current_stage)
 
@@ -247,6 +275,48 @@ class ResponseOrchestrator:
                     if fn_name == "signal_transition":
                         self.runtime_fsm.transition("tool_call")
                         target = fn_args.get("target_stage", "")
+
+                        # Hard intercept for PROVIDER_ONBOARDING: the ONLY valid
+                        # signal_transition from this stage is "completed". Any other
+                        # target (e.g. "finalize", "" — leaked TRIAGE behaviour) means
+                        # the LLM confused itself with the service-request confirmation
+                        # flow. Block it immediately and inject a precise correction so
+                        # the follow-up stream calls the correct write tool instead.
+                        _write_tools = ("save_competence_batch", "delete_competences")
+                        if (
+                            current_stage == ConversationStage.PROVIDER_ONBOARDING
+                            and target != ConversationStage.COMPLETED.value
+                        ):
+                            logger.warning(
+                                "Blocked signal_transition(target_stage=%r) from "
+                                "PROVIDER_ONBOARDING — only 'completed' is valid here. "
+                                "Injecting correction to trigger write tool.",
+                                target,
+                            )
+                            correction = (
+                                "ERROR: You called signal_transition with an invalid "
+                                f"target ({target!r}) while in PROVIDER_ONBOARDING stage. "
+                                "Do NOT call signal_transition here. "
+                                "The user has confirmed the details — your only correct "
+                                "action is to call save_competence_batch (for ADD/UPDATE) "
+                                "or delete_competences (for REMOVE) with the data that was "
+                                "just confirmed. Call the write tool now."
+                            )
+                            pending_tool_results.append(("signal_transition", {"error": correction}))
+                            self.runtime_fsm.transition("tool_done")
+                            continue
+
+                        # Observe when PROVIDER_ONBOARDING → completed without a prior
+                        # write — this is expected when the user chose no changes.
+                        if (
+                            current_stage == ConversationStage.PROVIDER_ONBOARDING
+                            and target == ConversationStage.COMPLETED.value
+                            and not any(n in _write_tools for n, _ in pending_tool_results)
+                        ):
+                            logger.info(
+                                "signal_transition to 'completed' from PROVIDER_ONBOARDING "
+                                "without a write tool — user likely chose no changes."
+                            )
                         applied = await self.handle_signal_transition_async(target, session_id)
                         if applied:
                             try:
@@ -261,6 +331,30 @@ class ResponseOrchestrator:
                                     transitioned_to_triage_from_completed = True
                             except ValueError:
                                 pass
+                        else:
+                            # In PROVIDER_ONBOARDING we always inject the failure so
+                            # the follow-up stream can self-correct and call the write
+                            # tool (e.g. save_competence_batch) instead of silently
+                            # abandoning the turn after a bad signal_transition call.
+                            # For all other stages we only inject when no text was
+                            # yielded yet to avoid duplicate replies.
+                            if not ai_response_parts or current_stage == ConversationStage.PROVIDER_ONBOARDING:
+                                pending_tool_results.append((
+                                    "signal_transition",
+                                    {
+                                        "error": (
+                                            f"Transition to '{target}' failed — unrecognised or "
+                                            "illegal stage at this point. Verify the "
+                                            "target_stage value and the current conversation stage."
+                                        )
+                                    },
+                                ))
+                            else:
+                                logger.warning(
+                                    "signal_transition to '%s' failed; suppressing follow-up "
+                                    "stream because main stream already yielded text.",
+                                    target,
+                                )
                         self.runtime_fsm.transition("tool_done")
                     else:
                         # Execute tool and collect result for LLM feedback loop
@@ -302,6 +396,23 @@ class ResponseOrchestrator:
                                     )
                                     if req_id:
                                         await self.ai_conversation_service.set_request_id(req_id)
+                                # Refresh cached competency list after any write so the
+                                # follow-up stream's prompt reflects the latest state.
+                                if fn_name in ("save_competence_batch", "delete_competences") and self.tool_registry:
+                                    try:
+                                        refreshed = await self.tool_registry.execute(
+                                            "get_my_competencies", {}, context or {}
+                                        )
+                                        self.conversation_service.context["current_competencies"] = (
+                                            refreshed if isinstance(refreshed, list) else []
+                                        )
+                                        logger.debug(
+                                            "Refreshed competencies after %r: %d items",
+                                            fn_name,
+                                            len(self.conversation_service.context["current_competencies"]),
+                                        )
+                                    except Exception as exc:  # pragma: no cover
+                                        logger.warning("Failed to refresh competencies after write: %s", exc)
                             else:
                                 logger.warning(
                                     "Tool %r returned error: %s", fn_name, tool_result
@@ -339,6 +450,19 @@ class ResponseOrchestrator:
                         fu_args = chunk.get("args", {})
                         if fu_name == "signal_transition":
                             target = fu_args.get("target_stage", "")
+
+                            # Observe when PROVIDER_ONBOARDING → completed without a prior
+                            # write — expected when the user chose no changes.
+                            _write_tools = ("save_competence_batch", "delete_competences")
+                            if (
+                                current_stage == ConversationStage.PROVIDER_ONBOARDING
+                                and target == ConversationStage.COMPLETED.value
+                                and not any(n in _write_tools for n, _ in pending_tool_results)
+                            ):
+                                logger.info(
+                                    "signal_transition to 'completed' from PROVIDER_ONBOARDING "
+                                    "in follow-up stream without a write — user likely chose no changes."
+                                )
                             applied = await self.handle_signal_transition_async(target, session_id)
                             if applied:
                                 try:
@@ -353,6 +477,22 @@ class ResponseOrchestrator:
                                         transitioned_to_triage_from_completed = True
                                 except ValueError:
                                     pass
+                            else:
+                                _err = {
+                                    "error": (
+                                        f"Transition to '{target}' failed — unrecognised or "
+                                        "illegal stage. Verify the target_stage value."
+                                    )
+                                }
+                                self.llm_service.add_message_to_history(
+                                    session_id,
+                                    AIMessage(
+                                        content=(
+                                            f"[Tool signal_transition returned: "
+                                            f"{json.dumps(_err)}]"
+                                        )
+                                    ),
+                                )
                     elif isinstance(chunk, str):
                         filtered = _strip_tool_call_text(chunk)
                         if filtered.strip():

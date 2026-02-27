@@ -43,8 +43,11 @@ class TestProviderOnboardingPrompt:
     def test_save_competence_batch_tool_referenced(self):
         assert "save_competence_batch" in PROVIDER_ONBOARDING_PROMPT
 
-    def test_get_my_competencies_tool_referenced(self):
+    def test_get_my_competencies_not_called_by_llm(self):
+        """Prompt must instruct the LLM NOT to call get_my_competencies — the backend pre-fetches."""
         assert "get_my_competencies" in PROVIDER_ONBOARDING_PROMPT
+        prompt_lower = PROVIDER_ONBOARDING_PROMPT.lower()
+        assert "do not call" in prompt_lower or "not call" in prompt_lower or "already" in prompt_lower
 
     def test_delete_competences_tool_referenced(self):
         assert "delete_competences" in PROVIDER_ONBOARDING_PROMPT
@@ -59,8 +62,8 @@ class TestProviderOnboardingPrompt:
     def test_language_instruction_placeholder_present(self):
         assert "{language_instruction}" in PROVIDER_ONBOARDING_PROMPT
 
-    def test_onboarding_draft_placeholder_present(self):
-        assert "{onboarding_draft_json}" in PROVIDER_ONBOARDING_PROMPT
+    def test_current_competencies_json_placeholder_present(self):
+        assert "{current_competencies_json}" in PROVIDER_ONBOARDING_PROMPT
 
     def test_competence_fields_mentioned(self):
         """All five CompetenceSchema fields should be mentioned so Elin asks for them."""
@@ -105,3 +108,46 @@ class TestProviderOnboardingSaveResultConfirmation:
     def test_prompt_references_signal_transition_to_completed(self):
         """Signal transition to completed must be documented in the onboarding prompt."""
         assert 'signal_transition(target_stage="completed")' in PROVIDER_ONBOARDING_PROMPT
+
+
+class TestProviderOnboardingOrderingRules:
+    """Prompt must enforce write-before-complete ordering so the LLM cannot skip saves."""
+
+    def test_critical_ordering_section_present(self):
+        """A clearly labelled CRITICAL ORDERING section must exist."""
+        assert "CRITICAL" in PROVIDER_ONBOARDING_PROMPT, (
+            "PROVIDER_ONBOARDING_PROMPT must contain a CRITICAL ordering section"
+        )
+
+    def test_write_tool_must_precede_signal_transition_rule(self):
+        """Prompt must explicitly state that signal_transition comes after the write tool."""
+        prompt_lower = PROVIDER_ONBOARDING_PROMPT.lower()
+        # The ordering rule should mention never combining them
+        assert (
+            "never call" in prompt_lower
+            or "must call" in prompt_lower
+            or "first" in prompt_lower
+        ), "Prompt must say the write tool must be called before signal_transition"
+
+    def test_separate_responses_rule_present(self):
+        """Prompt must say write tool and signal_transition happen in separate responses."""
+        prompt_lower = PROVIDER_ONBOARDING_PROMPT.lower()
+        assert (
+            "separate response" in prompt_lower
+            or "response a" in prompt_lower
+            or "response b" in prompt_lower
+        ), "Prompt must explicitly separate write response from signal_transition response"
+
+    def test_even_if_user_says_done_save_comes_first(self):
+        """Prompt must address the 'correct, nothing else' edge case — save before done."""
+        prompt_lower = PROVIDER_ONBOARDING_PROMPT.lower()
+        # Prompt should mention that even confirmation + done messages require save first
+        assert (
+            "nothing else" in prompt_lower
+            or "correct" in prompt_lower
+            or "defer" in prompt_lower
+        ), "Prompt must address the case where user confirms and says done in one message"
+
+    def test_rules_section_prohibits_combining_write_and_signal_transition(self):
+        """The RULES block must explicitly forbid calling signal_transition + write together."""
+        assert "Never call `signal_transition` and a write tool in the same response" in PROVIDER_ONBOARDING_PROMPT
