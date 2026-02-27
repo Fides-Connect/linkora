@@ -177,8 +177,8 @@ async def update_service_request_status(request: web.Request) -> web.Response:
                 status=422
             )
 
-        updated_request = await firestore_service.update_service_request(
-            service_request_id, {'status': new_status}
+        updated_request = await firestore_service.update_service_request_status(
+            service_request_id, new_status
         )
         if updated_request:
             return web.json_response(serialize_datetime(updated_request))
@@ -186,6 +186,9 @@ async def update_service_request_status(request: web.Request) -> web.Response:
             return web.json_response({"error": "Failed to update service request status"}, status=500)
     except web.HTTPException:
         raise
+    except ValidationError as e:
+        logger.warning(f"Validation error in update_service_request_status: {e}")
+        return web.json_response({"error": "Validation failed", "details": e.errors()}, status=400)
     except Exception as e:
         logger.error(f"Error in update_service_request_status: {e}")
         return web.json_response({"error": str(e)}, status=500)

@@ -163,6 +163,100 @@ class TestAppEndpoints:
         response = await me.add_my_favorite(mock_request)
         assert response.status == 404
 
+    @pytest.mark.asyncio
+    async def test_update_service_request_status_provider_accept(
+        self, mock_request, mock_auth, mock_firestore_service_requests
+    ):
+        """Provider can accept a pending service request → 200."""
+        mock_request.headers = {'Authorization': 'Bearer token'}
+        mock_request.match_info = {'id': 'req_123'}
+        mock_request.json = AsyncMock(return_value={'status': 'accepted'})
+
+        mock_firestore_service_requests.get_service_request = AsyncMock(return_value={
+            'id': 'req_123',
+            'seeker_user_id': 'seeker_456',
+            'selected_provider_user_id': 'test_user_id',  # caller is provider
+            'status': 'pending',
+        })
+        updated = {'id': 'req_123', 'status': 'accepted'}
+        mock_firestore_service_requests.update_service_request_status = AsyncMock(return_value=updated)
+
+        response = await service_requests.update_service_request_status(mock_request)
+
+        assert response.status == 200
+        import json
+        body = json.loads(response.body.decode())
+        assert body['status'] == 'accepted'
+        mock_firestore_service_requests.update_service_request_status.assert_called_once_with(
+            'req_123', 'accepted'
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_service_request_status_seeker_cancel(
+        self, mock_request, mock_auth, mock_firestore_service_requests
+    ):
+        """Seeker can cancel an accepted service request → 200."""
+        mock_request.headers = {'Authorization': 'Bearer token'}
+        mock_request.match_info = {'id': 'req_123'}
+        mock_request.json = AsyncMock(return_value={'status': 'cancelled'})
+
+        mock_firestore_service_requests.get_service_request = AsyncMock(return_value={
+            'id': 'req_123',
+            'seeker_user_id': 'test_user_id',  # caller is seeker
+            'selected_provider_user_id': 'provider_456',
+            'status': 'accepted',
+        })
+        updated = {'id': 'req_123', 'status': 'cancelled'}
+        mock_firestore_service_requests.update_service_request_status = AsyncMock(return_value=updated)
+        mock_firestore_service_requests.notify_service_request_change = Mock()
+
+        response = await service_requests.update_service_request_status(mock_request)
+
+        assert response.status == 200
+        mock_firestore_service_requests.update_service_request_status.assert_called_once_with(
+            'req_123', 'cancelled'
+        )
+
+    @pytest.mark.asyncio
+    async def test_update_service_request_status_403_non_participant(
+        self, mock_request, mock_auth, mock_firestore_service_requests
+    ):
+        """An unrelated user gets 403 Forbidden."""
+        mock_request.headers = {'Authorization': 'Bearer token'}
+        mock_request.match_info = {'id': 'req_123'}
+        mock_request.json = AsyncMock(return_value={'status': 'accepted'})
+
+        mock_firestore_service_requests.get_service_request = AsyncMock(return_value={
+            'id': 'req_123',
+            'seeker_user_id': 'seeker_456',          # not test_user_id
+            'selected_provider_user_id': 'provider_789',  # not test_user_id
+            'status': 'pending',
+        })
+
+        response = await service_requests.update_service_request_status(mock_request)
+
+        assert response.status == 403
+
+    @pytest.mark.asyncio
+    async def test_update_service_request_status_422_invalid_transition(
+        self, mock_request, mock_auth, mock_firestore_service_requests
+    ):
+        """Seeker attempting an illegal transition (pending → paymentCompleted) gets 422."""
+        mock_request.headers = {'Authorization': 'Bearer token'}
+        mock_request.match_info = {'id': 'req_123'}
+        mock_request.json = AsyncMock(return_value={'status': 'paymentCompleted'})
+
+        mock_firestore_service_requests.get_service_request = AsyncMock(return_value={
+            'id': 'req_123',
+            'seeker_user_id': 'test_user_id',
+            'selected_provider_user_id': 'provider_456',
+            'status': 'pending',
+        })
+
+        response = await service_requests.update_service_request_status(mock_request)
+
+        assert response.status == 422
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Auth endpoint — user_sync provider timestamp initialisation

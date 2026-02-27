@@ -125,10 +125,10 @@ class HomeTabViewModel extends ChangeNotifier {
     try {
       await _repository.updateServiceRequestStatus(request.serviceRequestId, newStatus);
       await _reloadRequests();
-      _error = null;
     } catch (e) {
       _error = 'Failed to update status: $e';
       notifyListeners();
+      rethrow;
     }
   }
 
