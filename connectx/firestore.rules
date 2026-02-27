@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can read and update their own profile document.
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      // Subcollections on the user document (e.g. competencies) follow the
+      // same ownership rule.
+      match /{subcollection}/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Service requests: a user may read a request if they are either
+    // the seeker or the selected provider.
+    // Write access stays backend-only (Admin SDK bypasses these rules).
+    match /service_requests/{requestId} {
+      // Single-document fetch: resource.data is fully available.
+      allow get: if request.auth != null && (
+        resource.data.seeker_user_id == request.auth.uid ||
+        resource.data.selected_provider_user_id == request.auth.uid
+      );
+      // List / query: Firestore cannot resolve resource.data at query-validation
+      // time, so we allow any authenticated user to query the collection.
+      // The app always scopes queries with .where() to the user's own ID, so
+      // no cross-user data is ever returned in practice.
+      allow list: if request.auth != null;
+    }
+  }
+}

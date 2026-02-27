@@ -1,12 +1,15 @@
 import '../../../../services/api_service.dart';
+import '../../../../services/wrappers.dart';
 import '../../../../models/service_request.dart';
 import '../../../../models/user.dart';
 
 class HomeRepository {
   final ApiService _apiService;
+  final FirestoreWrapper _firestoreWrapper;
 
-  HomeRepository({ApiService? apiService})
-      : _apiService = apiService ?? ApiService();
+  HomeRepository({ApiService? apiService, FirestoreWrapper? firestoreWrapper})
+      : _apiService = apiService ?? ApiService(),
+        _firestoreWrapper = firestoreWrapper ?? FirebaseFirestoreWrapper();
 
   /// Fetches the list of incoming and outgoing service requests.
   /// Wraps API call to `GET /api/v1/service-requests`.
@@ -16,6 +19,14 @@ class HomeRepository {
       return data.map((json) => ServiceRequest.fromJson(json)).toList();
     }
     return [];
+  }
+
+  /// Returns a stream that emits whenever a service request relevant to
+  /// [userId] is created or updated in Firestore (either as provider or
+  /// seeker). Each emission indicates that [getRequests] should be called
+  /// again to refresh the UI.
+  Stream<void> watchServiceRequests(String userId) {
+    return _firestoreWrapper.watchServiceRequests(userId);
   }
 
   /// Fetches the current user's favorite users.

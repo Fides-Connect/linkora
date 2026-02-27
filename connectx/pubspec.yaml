@@ -51,6 +51,12 @@ dependencies:
   # Firebase Authentication
   firebase_auth: ^6.1.4
 
+  # Firestore for real-time database access
+  cloud_firestore: ^6.1.2
+
+  # Async stream utilities (StreamGroup.merge for Firestore listener)
+  async: ^2.12.0
+
   # Firebase Cloud Messaging for push notifications
   firebase_messaging: ^16.1.1
 
