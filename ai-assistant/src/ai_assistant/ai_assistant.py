@@ -15,6 +15,7 @@ from .services import (
     build_default_registry,
 )
 from .services.response_orchestrator import ResponseOrchestrator
+from .services.competence_enricher import CompetenceEnricher
 from .data_provider import get_data_provider
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,10 @@ class AIAssistant:
         self.firestore_service = None  # injected by PeerConnectionHandler after construction
         self.tool_registry = build_default_registry()
 
+        # Competence enricher: LLM-powered enrichment of provider competence data.
+        # Uses the same underlying LLM instance (no extra API key needed).
+        self.competence_enricher = CompetenceEnricher(llm=self.llm_service.llm)
+
         # Initialize orchestration services
         self.response_orchestrator = ResponseOrchestrator(
             llm_service=self.llm_service,
@@ -144,6 +149,7 @@ class AIAssistant:
             "data_provider": self.data_provider,
             "firestore_service": self.firestore_service,
             "user_context": user_ctx,
+            "competence_enricher": self.competence_enricher,
         }
         async for chunk in self.response_orchestrator.generate_response_stream(
             prompt, self.session_id, context=context

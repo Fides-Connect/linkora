@@ -233,17 +233,32 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
     """
     Create or update one or more competence entries for the user.
 
+    Pipeline:
+    1. Save each skill to Firestore (create or update).
+    2. Run LLM enrichment via CompetenceEnricher (extracts skills_list,
+       search_optimized_summary, availability_tags, price_per_hour, …).
+    3. Write enriched fields back to Firestore.
+    4. Mark user as service provider.
+    5. Full re-sync all competencies to Weaviate with enriched data.
+
     params["skills"] is a list of dicts. Each dict may optionally contain
     "competence_id" to signal an update; otherwise a new entry is created.
-    After saving, marks the user as a service provider and syncs to Weaviate.
     """
+    from .competence_enricher import CompetenceEnricher  # local import avoids circular deps
+
     fs = _require_fs(context)
     user_id = context["user_id"]
+    enricher: Optional[CompetenceEnricher] = context.get("competence_enricher")
     skills: List[dict] = params.get("skills", [])
     saved = []
 
     for skill in skills:
         skill_copy = dict(skill)  # don't mutate caller's dict
+        # Normalise availability field name: LLM may send 'availability' (prompt
+        # field name) — store it as availability_text in Firestore.
+        if "availability" in skill_copy and "availability_text" not in skill_copy:
+            skill_copy["availability_text"] = skill_copy.pop("availability")
+
         competence_id = skill_copy.pop("competence_id", None)
         if competence_id:
             result = await fs.update_competence(user_id, competence_id, skill_copy)
@@ -251,16 +266,49 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
             result = await fs.create_competence(user_id, skill_copy)
         saved.append(result)
 
+        # ── LLM enrichment ───────────────────────────────────────────────────
+        if enricher is not None:
+            # Resolve competence_id for the write-back.
+            saved_id = (
+                result.get("id")
+                or result.get("competence_id")
+                or competence_id
+            )
+            if saved_id:
+                enriched = await enricher.enrich(skill_copy)
+                enriched_fields = {
+                    k: enriched[k]
+                    for k in (
+                        "skills_list",
+                        "search_optimized_summary",
+                        "availability_tags",
+                        "availability_text",
+                        "price_per_hour",
+                        "category",
+                    )
+                    if k in enriched
+                }
+                if enriched_fields:
+                    await fs.update_competence(user_id, saved_id, enriched_fields)
+                    logger.info(
+                        "Enriched competence %s for user %s", saved_id, user_id
+                    )
+        else:
+            logger.warning(
+                "competence_enricher not in context — skipping enrichment for user %s",
+                user_id,
+            )
+
     await fs.update_user(user_id, {"is_service_provider": True})
 
     # Weaviate full re-sync: read ALL competencies from Firestore (ground truth) so
     # that skills saved in earlier sessions are preserved in Weaviate.
-    # Self-heals if the user row is missing in Weaviate (e.g. after a schema reset)
-    # by creating the hub row from Firestore data before retrying.
+    # Pass full enriched dicts — update_competencies_by_user_id writes all
+    # filter/rank properties (price_per_hour, availability_tags, year_of_experience,
+    # search_optimized_summary, …).  Self-heals missing Weaviate user row.
     all_competencies = await fs.get_competencies(user_id)
-    all_titles = [c.get("title", "") for c in all_competencies if c.get("title")]
-    if all_titles:
-        result = HubSpokeIngestion.update_competencies_by_user_id(user_id, all_titles)
+    if all_competencies:
+        result = HubSpokeIngestion.update_competencies_by_user_id(user_id, all_competencies)
         if isinstance(result, dict) and not result.get("success") and result.get("error") == "User not found":
             logger.warning(
                 "Weaviate user not found for %s — self-healing by creating from Firestore",
@@ -270,7 +318,8 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
                 user_data = await fs.get_user(user_id) or {}
                 user_data.setdefault("user_id", user_id)
                 HubSpokeIngestion.create_user(user_data)
-                HubSpokeIngestion.create_competencies_by_user_id(user_id, all_titles)
+                # Re-sync with full competence dicts so all metadata is written.
+                HubSpokeIngestion.update_competencies_by_user_id(user_id, all_competencies)
                 logger.info("Weaviate self-heal complete for user %s", user_id)
             except Exception as heal_exc:
                 logger.error(
@@ -484,6 +533,10 @@ def build_default_registry() -> AgentToolRegistry:
                                 "description": {"type": "string"},
                                 "category": {"type": "string"},
                                 "price_range": {"type": "string"},
+                                "availability": {
+                                    "type": "string",
+                                    "description": "When the provider is available, e.g. 'weekdays after 4pm, weekends'.",
+                                },
                                 "year_of_experience": {"type": "integer"},
                             },
                             "required": ["title"],
