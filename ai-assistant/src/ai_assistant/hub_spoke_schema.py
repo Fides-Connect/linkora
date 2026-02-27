@@ -105,17 +105,18 @@ def init_hub_spoke_schema():
                         Property(name="competence_id", data_type=DataType.TEXT,
                                  skip_vectorization=True),  # Link to Firestore ID
                         Property(name="title", data_type=DataType.TEXT,
-                                 skip_vectorization=True),
+                                 skip_vectorization=True, index_searchable=True),
                         # Raw description — stored for display only, NOT vectorized.
                         # Vector search is driven by search_optimized_summary instead.
                         Property(
                             name="description",
                             data_type=DataType.TEXT,
                             skip_vectorization=True,
+                            index_searchable=True,
                         ),
                         # ── Filter / rank properties ─────────────────────────────────
                         Property(name="category", data_type=DataType.TEXT,
-                                 skip_vectorization=True),
+                                 skip_vectorization=True, index_searchable=True),
                         Property(name="year_of_experience", data_type=DataType.INT,
                                  skip_vectorization=True),
                         Property(name="price_per_hour", data_type=DataType.NUMBER,
@@ -127,7 +128,7 @@ def init_hub_spoke_schema():
                         # availability_text: human-readable string stored for display (Firestore
                         # is authoritative, but kept here so result objects are self-contained).
                         Property(name="availability_text", data_type=DataType.TEXT,
-                                 skip_vectorization=True),
+                                 skip_vectorization=True, index_searchable=True),
                         # ── Primary vector source ────────────────────────────────────
                         # LLM-rewritten summary, optimised for semantic search.
                         # This is the ONLY vectorized field — all nearText queries target it.

@@ -943,3 +943,343 @@ class TestFollowUpStreamSignalTransition:
         assert "competencies are live" in combined, (
             "Confirmation text from the follow-up stream must reach the caller"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PROVIDER_ONBOARDING write-before-complete guard
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProviderOnboardingWriteGuard:
+    """Competence interview pipeline: pre-fetch, post-write refresh, and guard behaviour.
+
+    The guard is now a soft warning: signal_transition('completed') from
+    PROVIDER_ONBOARDING is always allowed so the "user chose no changes" path
+    works without a write tool call.
+    """
+
+    async def test_signal_transition_completed_allowed_without_prior_write(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """signal_transition('completed') without a prior write tool must be ALLOWED:
+        this is the 'user chose no changes' path.  Stage must advance to COMPLETED
+        and no blocking error must be fed to LLM history."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        call_count = 0
+
+        async def stream_signal_only(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Main stream: signal_transition only, no write tool
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "completed"}}
+            else:
+                yield ""
+
+        mock_llm_service.generate_stream = stream_signal_only
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+
+        from unittest.mock import patch
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("nothing to change", "sess"):
+                pass
+
+        # Stage must have advanced to COMPLETED
+        set_stage_calls = [
+            call[0][0] for call in mock_conversation_service.set_stage.call_args_list
+        ]
+        assert ConversationStage.COMPLETED in set_stage_calls, (
+            "Stage must advance to COMPLETED when user chose no changes "
+            "(signal_transition without prior write must be allowed)"
+        )
+
+        # No blocking error must have been fed to LLM history
+        history_calls = mock_llm_service.add_message_to_history.call_args_list
+        messages = [
+            c[0][1].content for c in history_calls if hasattr(c[0][1], "content")
+        ]
+        assert not any(
+            "cannot complete" in m.lower() or "must call save" in m.lower()
+            for m in messages
+        ), "A blocking error must NOT be fed to history for the no-changes path"
+
+    async def test_signal_transition_completed_allowed_after_save_in_same_stream(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """If save_competence_batch is called earlier in the same stream, a subsequent
+        signal_transition('completed') must be allowed."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+        call_count = 0
+
+        async def stream_save_then_signal(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "save_competence_batch",
+                       "args": {"skills": [{"title": "Cycling"}]}}
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "completed"}}
+            else:
+                yield ""
+
+        mock_llm_service.generate_stream = stream_save_then_signal
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"saved": [{"competence_id": "c1"}], "count": 1}
+        )
+
+        from unittest.mock import patch
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("yes", "sess"):
+                pass
+
+        set_stage_calls = [
+            call[0][0] for call in mock_conversation_service.set_stage.call_args_list
+        ]
+        assert ConversationStage.COMPLETED in set_stage_calls, (
+            "signal_transition('completed') must succeed when save_competence_batch "
+            "was called earlier in the same stream"
+        )
+
+    async def test_pre_fetches_competencies_for_provider_onboarding_stage(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """When stage is PROVIDER_ONBOARDING the orchestrator must call
+        get_my_competencies via the tool registry BEFORE the LLM stream
+        and store the result in context['current_competencies']."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+
+        fetched = [{"competence_id": "c1", "title": "Plumbing"}]
+        call_order: list[str] = []
+
+        async def execute_side_effect(name, params, ctx):
+            call_order.append(name)
+            if name == "get_my_competencies":
+                return fetched
+            return {"result": "ok"}
+
+        mock_tool_registry.execute = execute_side_effect
+
+        llm_called_after: list[bool] = []
+        original_stream = mock_llm_service.generate_stream
+
+        async def tracked_stream(*args, **kwargs):
+            llm_called_after.append(
+                "get_my_competencies" in call_order
+            )
+            yield "Done"
+
+        mock_llm_service.generate_stream = tracked_stream
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream("manage skills", "sess"):
+            pass
+
+        assert mock_conversation_service.context["current_competencies"] == fetched, (
+            "Pre-fetched competencies must be stored in context['current_competencies']"
+        )
+        assert llm_called_after and llm_called_after[0], (
+            "get_my_competencies must be called before the LLM stream starts"
+        )
+
+    async def test_refreshes_competencies_after_write_tool(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """After save_competence_batch succeeds, get_my_competencies must be called
+        again so context['current_competencies'] reflects the updated list."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+
+        initial = [{"competence_id": "c1", "title": "Plumbing"}]
+        after_save = [
+            {"competence_id": "c1", "title": "Plumbing"},
+            {"competence_id": "c2", "title": "Carpentry"},
+        ]
+        call_count_get = 0
+
+        async def execute_side_effect(name, params, ctx):
+            nonlocal call_count_get
+            if name == "get_my_competencies":
+                call_count_get += 1
+                return initial if call_count_get == 1 else after_save
+            if name == "save_competence_batch":
+                return {"saved": [{"competence_id": "c2"}], "count": 1}
+            return {"result": "ok"}
+
+        mock_tool_registry.execute = execute_side_effect
+        call_count = 0
+
+        async def stream_with_save(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "save_competence_batch",
+                       "args": {"skills": [{"title": "Carpentry"}]}}
+            else:
+                yield "Saved!"
+
+        mock_llm_service.generate_stream = stream_with_save
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream("add Carpentry", "sess"):
+            pass
+
+        assert mock_conversation_service.context["current_competencies"] == after_save, (
+            "context['current_competencies'] must be refreshed after save_competence_batch"
+        )
+        assert call_count_get == 2, (
+            "get_my_competencies must be called twice: once for pre-fetch, once for post-write refresh"
+        )
+
+    async def test_unknown_signal_transition_stage_feeds_error_to_llm_history(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """signal_transition with an empty/unrecognised target_stage must inject
+        a descriptive error into LLM history so the model can self-correct."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        call_count = 0
+
+        async def stream_empty_stage(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": ""}}   # empty / malformed
+            else:
+                yield "Let me try again."
+
+        mock_llm_service.generate_stream = stream_empty_stage
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream("done", "sess"):
+            pass
+
+        # Stage must not have changed
+        mock_conversation_service.set_stage.assert_not_called()
+
+        # Failure must be fed back to LLM via history
+        history_calls = mock_llm_service.add_message_to_history.call_args_list
+        messages = [
+            c[0][1].content for c in history_calls if hasattr(c[0][1], "content")
+        ]
+        assert any("error" in m.lower() or "failed" in m.lower() for m in messages), (
+            "A signal_transition failure must be fed back as an error into LLM history"
+        )
+
+    async def test_provider_onboarding_empty_signal_after_text_triggers_write_tool_correction(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Regression: LLM in PROVIDER_ONBOARDING yields text then calls
+        signal_transition(target_stage="") (leaked TRIAGE pattern).
+
+        Expected behaviour with the Phase 3 hard pre-check guard:
+        - The transition is BLOCKED before handle_signal_transition_async is called.
+        - A precise "call the write tool" correction is injected into pending results.
+        - The follow-up stream is triggered and its output is included in the response.
+        - No 'suppressing follow-up stream' warning is logged.
+        """
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+        call_count = 0
+
+        async def stream_text_then_bad_signal(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Exact pattern from bug reports: text first, then wrong signal
+                yield "Perfect. I just need a few seconds to search our database..."
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": ""}}
+            else:
+                # Follow-up stream after the correction injection
+                yield "Thanks, I have now saved your skills."
+
+        mock_llm_service.generate_stream = stream_text_then_bad_signal
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        chunks: list[str] = []
+        async for chunk in orch.generate_response_stream("yeah correct", "sess"):
+            if isinstance(chunk, str):
+                chunks.append(chunk)
+
+        combined = "".join(chunks)
+
+        # Follow-up stream must have been triggered and its text included
+        assert "Thanks, I have now saved your skills." in combined, (
+            "Follow-up stream output must be included in response — the hard pre-check "
+            "guard must not suppress the follow-up even after text was yielded"
+        )
+
+        # Stage must NOT have advanced (no valid transition was applied)
+        mock_conversation_service.set_stage.assert_not_called()
+
+        # The correction error must have been fed back to LLM history
+        history_calls = mock_llm_service.add_message_to_history.call_args_list
+        messages = [
+            c[0][1].content for c in history_calls if hasattr(c[0][1], "content")
+        ]
+        assert any(
+            "write tool" in m.lower() or "save_competence_batch" in m.lower()
+            or "invalid" in m.lower() or "error" in m.lower()
+            for m in messages
+        ), (
+            "The 'call the write tool' correction must be fed into LLM history "
+            "so the follow-up stream knows to call save_competence_batch"
+        )
