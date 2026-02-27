@@ -379,8 +379,10 @@ class TestProviderOnboardingTools:
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         assert mock_firestore.create_competence.call_count == 2
         # Must sync ALL competencies from Firestore (not just the current batch)
+        # Full dicts are now passed — not just title strings.
         mock_hub.update_competencies_by_user_id.assert_called_once_with(
-            "user-x", ["Plumbing", "Electrical"]
+            "user-x",
+            [{"competence_id": "c1", "title": "Plumbing"}, {"competence_id": "c2", "title": "Electrical"}],
         )
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
@@ -397,9 +399,11 @@ class TestProviderOnboardingTools:
         skills = [{"title": "Painting", "description": "Interior painting"}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
 
-        # Weaviate sync must use ALL titles returned by get_competencies, not just "Painting"
+        # Weaviate sync must use ALL competence dicts from Firestore, not just the new batch.
+        # Full dicts are passed so all enriched filter/rank fields reach Weaviate.
         mock_hub.update_competencies_by_user_id.assert_called_once_with(
-            "user-x", ["Plumbing", "Electrical"]
+            "user-x",
+            [{"competence_id": "c1", "title": "Plumbing"}, {"competence_id": "c2", "title": "Electrical"}],
         )
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
@@ -419,8 +423,11 @@ class TestProviderOnboardingTools:
         skills = [{"competence_id": "c1", "title": "Plumbing Pro"}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         mock_firestore.update_competence.assert_called_once()
-        # Weaviate sync must use ALL competencies from Firestore, not just the updated title
-        mock_hub.update_competencies_by_user_id.assert_called_once_with("user-x", ["Plumbing", "Electrical"])
+        # Weaviate sync must use ALL competence dicts from Firestore, not just the updated title.
+        mock_hub.update_competencies_by_user_id.assert_called_once_with(
+            "user-x",
+            [{"competence_id": "c1", "title": "Plumbing"}, {"competence_id": "c2", "title": "Electrical"}],
+        )
 
     # ── delete_competences ───────────────────────────────────────────────────
 
@@ -464,8 +471,8 @@ class TestProviderOnboardingTools:
 
         # Must attempt create_user to establish the Weaviate hub row
         mock_hub.create_user.assert_called_once()
-        # Must then sync competencies via create_competencies_by_user_id
-        mock_hub.create_competencies_by_user_id.assert_called_once()
+        # Must retry sync via update_competencies_by_user_id (called twice: once failing, once in retry)
+        assert mock_hub.update_competencies_by_user_id.call_count == 2
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
     async def test_save_competence_batch_self_heal_failure_propagates(

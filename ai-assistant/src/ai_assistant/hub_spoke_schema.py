@@ -102,17 +102,45 @@ def init_hub_spoke_schema():
                     name=COMPETENCE_COLLECTION,
                     vector_config=Configure.Vectors.text2vec_model2vec(),
                     properties=[
-                        Property(name="competence_id", data_type=DataType.TEXT),  # Link to Firestore ID
-                        Property(name="title", data_type=DataType.TEXT),
+                        Property(name="competence_id", data_type=DataType.TEXT,
+                                 skip_vectorization=True),  # Link to Firestore ID
+                        Property(name="title", data_type=DataType.TEXT,
+                                 skip_vectorization=True),
+                        # Raw description — stored for display only, NOT vectorized.
+                        # Vector search is driven by search_optimized_summary instead.
                         Property(
                             name="description",
                             data_type=DataType.TEXT,
-                            vectorize_property_name=True,  # Vectorize for semantic search
-                            skip_vectorization=False
+                            skip_vectorization=True,
                         ),
-                        Property(name="category", data_type=DataType.TEXT),
-                        Property(name="price_range", data_type=DataType.TEXT),
-                        Property(name="availability", data_type=DataType.TEXT),  # When service is available
+                        # ── Filter / rank properties ─────────────────────────────────
+                        Property(name="category", data_type=DataType.TEXT,
+                                 skip_vectorization=True),
+                        Property(name="year_of_experience", data_type=DataType.INT,
+                                 skip_vectorization=True),
+                        Property(name="price_per_hour", data_type=DataType.NUMBER,
+                                 skip_vectorization=True),
+                        # availability_tags: normalised tokens, e.g. ["weekend","monday","morning"]
+                        # Used for ContainsAny where-filters in search_providers.
+                        Property(name="availability_tags", data_type=DataType.TEXT_ARRAY,
+                                 skip_vectorization=True),
+                        # availability_text: human-readable string stored for display (Firestore
+                        # is authoritative, but kept here so result objects are self-contained).
+                        Property(name="availability_text", data_type=DataType.TEXT,
+                                 skip_vectorization=True),
+                        # ── Primary vector source ────────────────────────────────────
+                        # LLM-rewritten summary, optimised for semantic search.
+                        # This is the ONLY vectorized field — all nearText queries target it.
+                        Property(
+                            name="search_optimized_summary",
+                            data_type=DataType.TEXT,
+                            vectorize_property_name=True,
+                            skip_vectorization=False,
+                        ),
+                        # skills_list: explicit + implicit skills, stored for retrieval.
+                        # NOT vectorized individually — the summary already captures them.
+                        Property(name="skills_list", data_type=DataType.TEXT_ARRAY,
+                                 skip_vectorization=True),
                     ],
                 )
                 logger.info(f"Created collection with vectorization: {COMPETENCE_COLLECTION}")
