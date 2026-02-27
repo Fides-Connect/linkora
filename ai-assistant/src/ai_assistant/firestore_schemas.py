@@ -90,6 +90,11 @@ class CompetenceSchema(BaseModel):
     """Schema for Competence documents (subcollection under users).
     
     Note: Competence ID is auto-generated with prefix 'competence_' and used as the document ID (document name).
+
+    Enriched fields (skills_list, search_optimized_summary, availability_tags, availability_text,
+    price_per_hour) are populated asynchronously by CompetenceEnricher after the initial save and
+    written back to Firestore.  They are also synced to Weaviate as filterable/rankable properties.
+    The raw fields (description, price_range) stay in Firestore for display only.
     """
     model_config = ConfigDict(extra='forbid')
     
@@ -102,7 +107,21 @@ class CompetenceSchema(BaseModel):
     year_of_experience: int = Field(default=0, ge=0)
     feedback_positive: List[str] = Field(default_factory=list)
     feedback_negative: List[str] = Field(default_factory=list)
-    
+
+    # ── Enriched fields — LLM-extracted, populated by CompetenceEnricher ───
+    # Stored in Firestore as source-of-truth; also synced to Weaviate for
+    # filtering and vector search.
+    availability_text: str = Field(default="", max_length=500)
+    """Human-readable availability string for display, e.g. 'Weekends, Tue 10am–1pm'."""
+    availability_tags: List[str] = Field(default_factory=list)
+    """Normalised availability tokens for Weaviate filtering, e.g. ['weekend', 'tuesday', 'morning']."""
+    skills_list: List[str] = Field(default_factory=list)
+    """Explicit + implicit skills extracted by LLM, e.g. ['residential wiring', 'lighting installation']."""
+    search_optimized_summary: str = Field(default="", max_length=1500)
+    """LLM-rewritten profile optimised for semantic vector search. Primary vector source in Weaviate."""
+    price_per_hour: Optional[float] = Field(default=None, ge=0)
+    """Numeric hourly rate extracted by LLM from price_range string. Used for range filtering in Weaviate."""
+
     @model_validator(mode='before')
     @classmethod
     def set_timestamps(cls, data):
@@ -133,6 +152,12 @@ class CompetenceUpdateSchema(BaseModel):
     year_of_experience: Optional[int] = Field(None, ge=0)
     feedback_positive: Optional[List[str]] = None
     feedback_negative: Optional[List[str]] = None
+    # ── Enriched fields ─────────────────────────────────────────────────────
+    availability_text: Optional[str] = Field(None, max_length=500)
+    availability_tags: Optional[List[str]] = None
+    skills_list: Optional[List[str]] = None
+    search_optimized_summary: Optional[str] = Field(None, max_length=1500)
+    price_per_hour: Optional[float] = Field(None, ge=0)
 
 
 class ServiceRequestSchema(BaseModel):

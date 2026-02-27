@@ -199,23 +199,42 @@ class HubSpokeIngestion:
             # Process description
             description = competence_data.get("description", "")
             category = competence_data.get("category", "")
-            
-            # Step 1: Sanitize (SEO spam defense)
-            if apply_sanitization:
-                description = sanitize_input(description)
-            
-            # Step 2: Enrich (granularity enhancement)
-            if apply_enrichment and category:
-                description = enrich_text(description, category)
-            
+
+            # ── search_optimized_summary — primary vector source ──────────────
+            # If enrichment produced a summary, use it (sanitized for spam defense).
+            # Fall back to enriching the raw description so legacy / non-enriched
+            # competences still get a reasonable vector.
+            raw_summary = competence_data.get("search_optimized_summary", "")
+            if raw_summary:
+                if apply_sanitization:
+                    raw_summary = sanitize_input(raw_summary, max_unique_words=60)
+                search_optimized_summary = raw_summary
+            else:
+                # Fallback: build a minimal summary from raw description.
+                if apply_sanitization:
+                    description = sanitize_input(description)
+                if apply_enrichment and category:
+                    description = enrich_text(description, category)
+                search_optimized_summary = description  # best effort
+
             # Step 3: Create Competence with owned_by reference
             competence_uuid = competence_collection.data.insert(
                 properties={
                     "competence_id": competence_data.get("competence_id", ""),
                     "title": competence_data.get("title"),
+                    # Raw description stored for display; NOT the vector source.
                     "description": description,
                     "category": category,
-                    "price_range": competence_data.get("price_range", ""),
+                    # ── search / filter fields ──────────────────────────────
+                    "search_optimized_summary": search_optimized_summary,
+                    "skills_list": competence_data.get("skills_list", []),
+                    "price_per_hour": competence_data.get("price_per_hour"),
+                    "year_of_experience": competence_data.get("year_of_experience", 0),
+                    "availability_tags": competence_data.get("availability_tags", []),
+                    "availability_text": competence_data.get(
+                        "availability_text",
+                        competence_data.get("availability", ""),
+                    ),
                 },
                 references={
                     "owned_by": user_uuid  # Link to User (Spoke → Hub)
@@ -369,24 +388,24 @@ class HubSpokeIngestion:
     @staticmethod
     def update_competencies_by_user_id(
         user_id: str,
-        competencies: str | List[str],
-        category: str = "",
-        apply_sanitization: bool = True,
-        apply_enrichment: bool = True
+        competencies: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-        """
-        Update (replace) competencies for a user by user_id.
-        Deletes existing competencies and creates new ones.
-        
+        """Replace all Weaviate competencies for a user with fresh enriched data.
+
+        Deletes every existing Competence spoke for *user_id* and re-inserts them
+        from the supplied *competencies* list (typically read back from Firestore
+        after enrichment).  Passes all filter / rank fields so Weaviate becomes a
+        fully-featured search index.
+
         Args:
-            user_id: The user_id to update competencies for
-            competencies: Single string or list of strings describing new competencies
-            category: Category for the competencies (optional)
-            apply_sanitization: Whether to sanitize descriptions
-            apply_enrichment: Whether to enrich descriptions
-            
+            user_id:      Firestore / Firebase user identifier.
+            competencies: List of competence dicts, each should contain at minimum
+                          ``title``.  Enriched fields (search_optimized_summary,
+                          skills_list, price_per_hour, availability_tags, …) are
+                          written when present.
+
         Returns:
-            Dict with success status and list of updated competence UUIDs
+            Dict with ``success``, ``updated_uuids``, and ``count`` keys.
         """
         try:
             user_collection = get_user_collection()
@@ -426,27 +445,19 @@ class HubSpokeIngestion:
                     )
                     logger.info(f"Deleted old competence: {comp_uuid}")
             
-            # Normalize input to list
-            if isinstance(competencies, str):
-                competencies_list = [competencies]
-            else:
-                competencies_list = competencies
-            
-            # Add new competencies
+            # Add new competencies — pass full dicts so all enriched fields are written.
             updated_uuids = []
-            for comp_text in competencies_list:
-                comp_data = {
-                    "title": comp_text[:50] if len(comp_text) > 50 else comp_text,
-                    "description": comp_text,
-                    "category": category,
-                    "price_range": ""
-                }
-                
+            for comp_dict in competencies:
+                if not isinstance(comp_dict, dict):
+                    # Defensive: skip non-dict entries (legacy callers).
+                    logger.warning("update_competencies_by_user_id: skipping non-dict entry: %r", comp_dict)
+                    continue
+
                 comp_uuid = HubSpokeIngestion.create_competence(
-                    competence_data=comp_data,
+                    competence_data=comp_dict,
                     user_uuid=user_uuid,
-                    apply_sanitization=apply_sanitization,
-                    apply_enrichment=apply_enrichment
+                    apply_sanitization=True,
+                    apply_enrichment=True,
                 )
                 
                 if comp_uuid:
