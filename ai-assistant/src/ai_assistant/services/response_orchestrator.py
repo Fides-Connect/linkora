@@ -332,29 +332,26 @@ class ResponseOrchestrator:
                             except ValueError:
                                 pass
                         else:
-                            # In PROVIDER_ONBOARDING we always inject the failure so
-                            # the follow-up stream can self-correct and call the write
-                            # tool (e.g. save_competence_batch) instead of silently
-                            # abandoning the turn after a bad signal_transition call.
-                            # For all other stages we only inject when no text was
-                            # yielded yet to avoid duplicate replies.
-                            if not ai_response_parts or current_stage == ConversationStage.PROVIDER_ONBOARDING:
-                                pending_tool_results.append((
-                                    "signal_transition",
-                                    {
-                                        "error": (
-                                            f"Transition to '{target}' failed — unrecognised or "
-                                            "illegal stage at this point. Verify the "
-                                            "target_stage value and the current conversation stage."
-                                        )
-                                    },
-                                ))
-                            else:
-                                logger.warning(
-                                    "signal_transition to '%s' failed; suppressing follow-up "
-                                    "stream because main stream already yielded text.",
-                                    target,
-                                )
+                            # Always inject the failure into pending_tool_results so
+                            # the follow-up stream can self-correct regardless of how
+                            # much text was already yielded.  The old "suppress when
+                            # text already yielded" heuristic caused the agent to stop
+                            # dead mid-conversation with no visible error to the user.
+                            logger.warning(
+                                "signal_transition to '%s' failed in stage %s; "
+                                "injecting error to trigger follow-up self-correction.",
+                                target, current_stage,
+                            )
+                            pending_tool_results.append((
+                                "signal_transition",
+                                {
+                                    "error": (
+                                        f"Transition to '{target}' failed — unrecognised or "
+                                        "illegal stage at this point. Verify the "
+                                        "target_stage value and the current conversation stage."
+                                    )
+                                },
+                            ))
                         self.runtime_fsm.transition("tool_done")
                     else:
                         # Execute tool and collect result for LLM feedback loop
