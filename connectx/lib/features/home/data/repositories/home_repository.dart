@@ -116,10 +116,10 @@ class HomeRepository {
   }
 
   /// Updates the status (Accepted, Rejected, Completed) of an existing service request.
-  /// Wraps API call to `PATCH /api/v1/service-requests/{requestId}`.
+  /// Wraps API call to `PATCH /api/v1/service-requests/{requestId}/status`.
   /// Returns the updated service request.
   Future<ServiceRequest> updateServiceRequestStatus(String requestId, RequestStatus status) async {
-    final data = await _apiService.patch('/api/v1/service-requests/${Uri.encodeComponent(requestId)}', body: {'status': status.name});
+    final data = await _apiService.patch('/api/v1/service-requests/${Uri.encodeComponent(requestId)}/status', body: {'status': status.name});
     return ServiceRequest.fromJson(data);
   }
 }

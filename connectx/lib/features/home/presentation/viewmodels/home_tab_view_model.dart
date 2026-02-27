@@ -103,8 +103,33 @@ class HomeTabViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Finds a service request by ID from either the incoming or outgoing list.
+  /// Returns null if not found (e.g. request was deleted).
+  ServiceRequest? findRequest(String id) {
+    try {
+      return [..._incomingRequests, ..._outgoingRequests]
+          .firstWhere((r) => r.serviceRequestId == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<User?> getOtherUser(String userId) {
     return _repository.getOtherUser(userId);
+  }
+
+  Future<void> updateServiceRequestStatus(
+    ServiceRequest request,
+    RequestStatus newStatus,
+  ) async {
+    try {
+      await _repository.updateServiceRequestStatus(request.serviceRequestId, newStatus);
+      await _reloadRequests();
+      _error = null;
+    } catch (e) {
+      _error = 'Failed to update status: $e';
+      notifyListeners();
+    }
   }
 
   Future<void> updateIntroduction(String introduction) async {

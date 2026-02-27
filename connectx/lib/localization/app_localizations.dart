@@ -504,7 +504,42 @@ class AppLocalizations {
     }
     return MessagesEN.cancelRequestButton;
   }
-  
+
+  String get serviceProvided {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.serviceProvided;
+    }
+    return MessagesEN.serviceProvided;
+  }
+
+  String get paymentCompleted {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.paymentCompleted;
+    }
+    return MessagesEN.paymentCompleted;
+  }
+
+  String get cancelled {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.cancelled;
+    }
+    return MessagesEN.cancelled;
+  }
+
+  String get markServiceProvidedButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.markServiceProvidedButton;
+    }
+    return MessagesEN.markServiceProvidedButton;
+  }
+
+  String get confirmPaymentButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.confirmPaymentButton;
+    }
+    return MessagesEN.confirmPaymentButton;
+  }
+
   String get location {
     if (locale.languageCode == 'de') {
       return MessagesDE.location;

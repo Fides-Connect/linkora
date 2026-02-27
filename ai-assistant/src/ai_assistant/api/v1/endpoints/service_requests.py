@@ -117,6 +117,80 @@ async def update_service_request(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+async def update_service_request_status(request: web.Request) -> web.Response:
+    """PATCH /api/v1/service-requests/{id}/status - Update status with role-based authorization.
+
+    Allowed transitions by role:
+      Provider (selected_provider_user_id):
+        pending / waitingForAnswer → accepted, rejected
+        accepted → serviceProvided
+      Seeker (seeker_user_id):
+        pending / waitingForAnswer / accepted → cancelled
+        serviceProvided → paymentCompleted
+    """
+    try:
+        user_id = await get_current_user_id(request)
+        service_request_id = request.match_info['id']
+        body = await request.json()
+        new_status = body.get('status')
+
+        if not new_status:
+            return web.json_response({"error": "Missing required field: status"}, status=400)
+
+        service_request = await firestore_service.get_service_request(service_request_id)
+        if not service_request:
+            return web.json_response({"error": "Service request not found"}, status=404)
+
+        seeker_id = service_request.get('seeker_user_id')
+        provider_id = service_request.get('selected_provider_user_id')
+        current_status = service_request.get('status')
+
+        is_seeker = user_id == seeker_id
+        is_provider = provider_id and user_id == provider_id
+
+        if not is_seeker and not is_provider:
+            return web.json_response(
+                {"error": "Forbidden: Not a participant of this service request"}, status=403
+            )
+
+        PROVIDER_TRANSITIONS = {
+            'pending': ['accepted', 'rejected'],
+            'waitingForAnswer': ['accepted', 'rejected'],
+            'accepted': ['serviceProvided'],
+        }
+        SEEKER_TRANSITIONS = {
+            'pending': ['cancelled'],
+            'waitingForAnswer': ['cancelled'],
+            'accepted': ['cancelled'],
+            'serviceProvided': ['paymentCompleted'],
+        }
+
+        allowed: list[str] = []
+        if is_provider:
+            allowed += PROVIDER_TRANSITIONS.get(current_status, [])
+        if is_seeker:
+            allowed += SEEKER_TRANSITIONS.get(current_status, [])
+
+        if new_status not in allowed:
+            return web.json_response(
+                {"error": f"Transition from '{current_status}' to '{new_status}' is not allowed for this user"},
+                status=422
+            )
+
+        updated_request = await firestore_service.update_service_request(
+            service_request_id, {'status': new_status}
+        )
+        if updated_request:
+            return web.json_response(serialize_datetime(updated_request))
+        else:
+            return web.json_response({"error": "Failed to update service request status"}, status=500)
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in update_service_request_status: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
 async def delete_service_request(request: web.Request) -> web.Response:
     """DELETE /api/v1/service-requests/{id} - Delete service request and all subcollections.
     

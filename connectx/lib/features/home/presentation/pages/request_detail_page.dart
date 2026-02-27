@@ -7,19 +7,36 @@ import '../../../../utils/service_request_extensions.dart';
 import '../viewmodels/home_tab_view_model.dart';
 import 'user_detail_page.dart';
 
-class RequestDetailPage extends StatelessWidget {
+class RequestDetailPage extends StatefulWidget {
   final ServiceRequest request;
 
   const RequestDetailPage({super.key, required this.request});
 
   @override
+  State<RequestDetailPage> createState() => _RequestDetailPageState();
+}
+
+class _RequestDetailPageState extends State<RequestDetailPage> {
+  // Tracks which status transition is in-flight. Non-null while the backend
+  // call is pending — disables all buttons and shows a spinner on the
+  // button that was pressed.
+  RequestStatus? _pendingStatus;
+
+  @override
   Widget build(BuildContext context) {
+    final request = widget.request;
     final localizations = AppLocalizations.of(context);
+    // Watch the ViewModel so this page rebuilds whenever [_reloadRequests]
+    // fires (triggered by the Firestore real-time listener).
+    // Fall back to the constructor argument if the request is not in the lists.
+    final viewModel = context.watch<HomeTabViewModel>();
+    final liveRequest =
+        viewModel.findRequest(request.serviceRequestId) ?? request;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(request.title, style: const TextStyle(color: Colors.white)),
+        title: Text(liveRequest.title, style: const TextStyle(color: Colors.white)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
@@ -47,14 +64,14 @@ class RequestDetailPage extends StatelessWidget {
                           radius: 30,
                           backgroundColor: Colors.blue,
                           child: Icon(
-                            request.icon,
+                            liveRequest.icon,
                             color: Colors.white,
                             size: 30,
                           ),
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          request.title,
+                          liveRequest.title,
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: Colors.white,
@@ -65,9 +82,8 @@ class RequestDetailPage extends StatelessWidget {
                         const SizedBox(height: 8),
                         Builder(
                           builder: (context) {
-                            final viewModel = context.read<HomeTabViewModel>();
                             final currentUserId = viewModel.user?.id ?? '';
-                            final amount = request.getAmount(currentUserId);
+                            final amount = liveRequest.getAmount(currentUserId);
                             return Text(
                               amount,
                               style: TextStyle(
@@ -82,7 +98,7 @@ class RequestDetailPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 16),
                         // Status
-                        _buildStatusChip(context, request),
+                        _buildStatusChip(context, liveRequest),
                       ],
                     ),
                   ),
@@ -92,8 +108,6 @@ class RequestDetailPage extends StatelessWidget {
                   // User Info
                   InkWell(
                     onTap: () async {
-                      final viewModel = context.read<HomeTabViewModel>();
-
                       // Show loading indicator
                       showDialog(
                         context: context,
@@ -105,13 +119,13 @@ class RequestDetailPage extends StatelessWidget {
                       try {
                         // Get the other user's ID based on request type
                         final currentUserId = viewModel.user?.id ?? '';
-                        final requestType = request.getType(currentUserId);
+                        final requestType = liveRequest.getType(currentUserId);
 
                         String otherUserId;
                         if (requestType == RequestType.incoming) {
-                          otherUserId = request.seekerUserId;
+                          otherUserId = liveRequest.seekerUserId;
                         } else if (requestType == RequestType.outgoing) {
-                          otherUserId = request.selectedProviderUserId;
+                          otherUserId = liveRequest.selectedProviderUserId;
                         } else {
                           // Handle unknown request type (e.g. ID mismatch)
                           if (context.mounted) {
@@ -197,17 +211,15 @@ class RequestDetailPage extends StatelessWidget {
                             ),
                             child: Builder(
                               builder: (context) {
-                                final viewModel = context
-                                    .read<HomeTabViewModel>();
                                 final currentUserId =
                                     viewModel.user?.id ?? '';
                                 final isIncoming =
-                                    request.getType(currentUserId) ==
+                                    liveRequest.getType(currentUserId) ==
                                     RequestType.incoming;
                                 return Text(
                                   isIncoming
-                                      ? request.seekerUserInitials
-                                      : request.selectedProviderUserInitials,
+                                      ? liveRequest.seekerUserInitials
+                                      : liveRequest.selectedProviderUserInitials,
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
@@ -220,20 +232,18 @@ class RequestDetailPage extends StatelessWidget {
                           Expanded(
                             child: Builder(
                               builder: (context) {
-                                final viewModel = context
-                                    .read<HomeTabViewModel>();
                                 final currentUserId =
                                     viewModel.user?.id ?? '';
                                 final isIncoming =
-                                    request.getType(currentUserId) ==
+                                    liveRequest.getType(currentUserId) ==
                                     RequestType.incoming;
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       isIncoming
-                                          ? request.seekerUserName
-                                          : request.selectedProviderUserName,
+                                          ? liveRequest.seekerUserName
+                                          : liveRequest.selectedProviderUserName,
                                       style: const TextStyle(
                                         color: Colors.white,
                                         fontSize: 18,
@@ -273,15 +283,15 @@ class RequestDetailPage extends StatelessWidget {
                   _buildDetailRow(
                     context,
                     localizations?.date ?? 'Date',
-                    request.getDate(localizations),
+                    liveRequest.getDate(localizations),
                   ),
-                  if (request.getSecondDateLine(localizations) != null)
+                  if (liveRequest.getSecondDateLine(localizations) != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 4.0),
                       child: _buildDetailRow(
                         context,
                         '',
-                        request.getSecondDateLine(localizations)!,
+                        liveRequest.getSecondDateLine(localizations)!,
                       ),
                     ),
 
@@ -289,7 +299,7 @@ class RequestDetailPage extends StatelessWidget {
                   _buildDetailRow(
                     context,
                     localizations?.location ?? 'Location',
-                    request.location,
+                    liveRequest.location,
                   ),
 
                   const Divider(color: Colors.white24, height: 32),
@@ -305,7 +315,7 @@ class RequestDetailPage extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    request.description,
+                    liveRequest.description,
                     style: TextStyle(
                       color: Colors.white.withValues(alpha: 0.9),
                       fontSize: 16,
@@ -318,114 +328,191 @@ class RequestDetailPage extends StatelessWidget {
                   // Actions
                   Builder(
                     builder: (context) {
-                      final viewModel = context.read<HomeTabViewModel>();
                       final currentUserId = viewModel.user?.id ?? '';
-                      final requestType = request.getType(currentUserId);
+                      final requestType = liveRequest.getType(currentUserId);
 
-                      if (requestType == RequestType.incoming) {
-                        return Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.redAccent.withValues(
-                                    alpha: 0.8,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                onPressed: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        localizations?.featureNotAvailable ??
-                                            'N/A',
-                                      ),
-                                    ),
-                                  );
-                                },
-                                child: Text(
-                                  localizations?.rejectButton ?? 'Reject',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
+                      Future<void> doUpdate(RequestStatus newStatus) async {
+                        setState(() => _pendingStatus = newStatus);
+                        try {
+                          await viewModel.updateServiceRequestStatus(
+                            liveRequest,
+                            newStatus,
+                          );
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Error: $e')),
+                            );
+                          }
+                        } finally {
+                          if (mounted) setState(() => _pendingStatus = null);
+                        }
+                      }
+
+                      // Returns a spinner for the in-flight button, plain
+                      // text otherwise.
+                      Widget buttonChild(RequestStatus forStatus, String label) {
+                        if (_pendingStatus == forStatus) {
+                          return const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blueAccent,
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 16,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                onPressed: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        localizations?.featureNotAvailable ??
-                                            'N/A',
-                                      ),
-                                    ),
-                                  );
-                                },
-                                child: Text(
-                                  localizations?.acceptButton ?? 'Accept',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
+                          );
+                        }
+                        return Text(
+                          label,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
                         );
                       }
 
-                      if (requestType == RequestType.outgoing &&
-                          request.status == RequestStatus.waitingForAnswer) {
-                        return SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.redAccent.withValues(
-                                alpha: 0.8,
-                              ),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    localizations?.featureNotAvailable ??
-                                        'Feature not available',
+                      if (requestType == RequestType.incoming) {
+                        final canRespond =
+                            liveRequest.status == RequestStatus.pending ||
+                            liveRequest.status == RequestStatus.waitingForAnswer;
+                        final canMarkProvided =
+                            liveRequest.status == RequestStatus.accepted;
+
+                        if (canRespond) {
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.redAccent.withValues(
+                                      alpha: 0.8,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: _pendingStatus != null
+                                      ? null
+                                      : () => doUpdate(RequestStatus.rejected),
+                                  child: buttonChild(
+                                    RequestStatus.rejected,
+                                    localizations?.rejectButton ?? 'Reject',
                                   ),
                                 ),
-                              );
-                            },
-                            child: Text(
-                              localizations?.cancelRequestButton ??
-                                  'Cancel Request',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blueAccent,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  onPressed: _pendingStatus != null
+                                      ? null
+                                      : () => doUpdate(RequestStatus.accepted),
+                                  child: buttonChild(
+                                    RequestStatus.accepted,
+                                    localizations?.acceptButton ?? 'Accept',
+                                  ),
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+
+                        if (canMarkProvided) {
+                          return SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: _pendingStatus != null
+                                  ? null
+                                  : () => doUpdate(RequestStatus.serviceProvided),
+                              child: buttonChild(
+                                RequestStatus.serviceProvided,
+                                localizations?.markServiceProvidedButton ??
+                                    'Mark Service as Provided',
                               ),
                             ),
-                          ),
-                        );
+                          );
+                        }
+                      }
+
+                      if (requestType == RequestType.outgoing) {
+                        final canCancel =
+                            liveRequest.status == RequestStatus.pending ||
+                            liveRequest.status == RequestStatus.waitingForAnswer ||
+                            liveRequest.status == RequestStatus.accepted;
+                        final canConfirmPayment =
+                            liveRequest.status == RequestStatus.serviceProvided;
+
+                        if (canCancel) {
+                          return SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.redAccent.withValues(
+                                  alpha: 0.8,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: _pendingStatus != null
+                                  ? null
+                                  : () => doUpdate(RequestStatus.cancelled),
+                              child: buttonChild(
+                                RequestStatus.cancelled,
+                                localizations?.cancelRequestButton ??
+                                    'Cancel Request',
+                              ),
+                            ),
+                          );
+                        }
+
+                        if (canConfirmPayment) {
+                          return SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: _pendingStatus != null
+                                  ? null
+                                  : () => doUpdate(RequestStatus.paymentCompleted),
+                              child: buttonChild(
+                                RequestStatus.paymentCompleted,
+                                localizations?.confirmPaymentButton ??
+                                    'Confirm Payment',
+                              ),
+                            ),
+                          );
+                        }
                       }
 
                       return const SizedBox.shrink();
@@ -465,6 +552,18 @@ class RequestDetailPage extends StatelessWidget {
       case RequestStatus.rejected:
         color = Colors.red;
         text = localizations?.rejected ?? 'Rejected';
+        break;
+      case RequestStatus.serviceProvided:
+        color = Colors.teal;
+        text = localizations?.serviceProvided ?? 'Service Provided';
+        break;
+      case RequestStatus.paymentCompleted:
+        color = Colors.green;
+        text = localizations?.paymentCompleted ?? 'Payment Completed';
+        break;
+      case RequestStatus.cancelled:
+        color = Colors.grey;
+        text = localizations?.cancelled ?? 'Cancelled';
         break;
       default:
         color = Colors.grey;

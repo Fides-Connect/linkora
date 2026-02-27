@@ -161,7 +161,7 @@ class ServiceRequestSchema(BaseModel):
     @classmethod
     def validate_status(cls, v: str) -> str:
         """Validate status values."""
-        valid_statuses = ['pending', 'accepted', 'rejected', 'active', 'waitingForAnswer', 'completed', 'cancelled', 'expired', 'unknown']
+        valid_statuses = ['pending', 'accepted', 'rejected', 'active', 'waitingForAnswer', 'completed', 'cancelled', 'expired', 'unknown', 'serviceProvided', 'paymentCompleted']
         if v and v not in valid_statuses:
             raise ValueError(f'status must be one of {valid_statuses}')
         return v
@@ -206,7 +206,7 @@ class ServiceRequestUpdateSchema(BaseModel):
     def validate_status(cls, v: Optional[str]) -> Optional[str]:
         """Validate status values."""
         if v is not None:
-            valid_statuses = ['pending', 'accepted', 'rejected', 'active', 'waitingForAnswer', 'completed', 'cancelled', 'expired', 'unknown']
+            valid_statuses = ['pending', 'accepted', 'rejected', 'active', 'waitingForAnswer', 'completed', 'cancelled', 'expired', 'unknown', 'serviceProvided', 'paymentCompleted']
             if v not in valid_statuses:
                 raise ValueError(f'status must be one of {valid_statuses}')
         return v
