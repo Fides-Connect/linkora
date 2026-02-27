@@ -111,6 +111,10 @@ class ConversationService:
             # Holds partial skill data during PROVIDER_ONBOARDING (in-memory MVP).
             # List of dicts, each representing one competence being assembled.
             "onboarding_draft": [],
+            # Holds the fetched competencies for PROVIDER_ONBOARDING.
+            # Populated by ResponseOrchestrator before each LLM call in that stage;
+            # refreshed after every successful write tool.
+            "current_competencies": [],
         }
         
         logger.info(f"Conversation service initialized: agent={agent_name}, company={company_name}")
@@ -223,8 +227,8 @@ class ConversationService:
 
         elif stage == ConversationStage.PROVIDER_ONBOARDING:
             language_instruction = get_language_instruction(self.language)
-            onboarding_draft_json = json.dumps(
-                self.context.get("onboarding_draft", []),
+            current_competencies_json = json.dumps(
+                self.context.get("current_competencies", []),
                 ensure_ascii=False,
                 default=json_serializer,
             )
@@ -232,7 +236,7 @@ class ConversationService:
                 SystemMessagePromptTemplate.from_template(PROVIDER_ONBOARDING_PROMPT).format(
                     agent_name=self.agent_name,
                     language_instruction=language_instruction,
-                    onboarding_draft_json=onboarding_draft_json,
+                    current_competencies_json=current_competencies_json,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
@@ -273,6 +277,8 @@ class ConversationService:
         self.context["request_summary"] = ""
         self.context["providers_found"] = []
         self.context["current_provider_index"] = 0
+        # onboarding_draft and current_competencies are preserved across request
+        # resets so a PROVIDER_ONBOARDING session isn't interrupted mid-flow.
         logger.info("Request context reset for new TRIAGE scoping session")
 
     def record_ai_response(self, text: str) -> None:
