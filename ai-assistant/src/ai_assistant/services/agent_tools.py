@@ -252,6 +252,35 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
     skills: List[dict] = params.get("skills", [])
     saved = []
 
+    # Validate: price_range is mandatory for every NEW skill (no competence_id)
+    missing_price = [
+        skill.get("title", "(untitled)")
+        for skill in skills
+        if not skill.get("competence_id")
+        and not skill.get("price_range", "").strip()
+    ]
+    if missing_price:
+        return {
+            "error": (
+                f"price_range is required but was missing or empty for new entries: "
+                f"{', '.join(missing_price)}. "
+                "Ask the user for their pricing (e.g. hourly rate or fixed price) "
+                "before calling save_competence_batch."
+            )
+        }
+
+    # Load existing competencies once for the whole batch so we can do
+    # server-side deduplication (title-collision → upgrade new → update).
+    try:
+        existing_competencies: list[dict] = await fs.get_competencies(user_id) or []
+    except Exception:  # pragma: no cover
+        existing_competencies = []
+    existing_by_title: dict[str, str] = {
+        (c.get("title") or "").strip().lower(): c.get("competence_id", "")
+        for c in existing_competencies
+        if c.get("competence_id")
+    }
+
     for skill in skills:
         skill_copy = dict(skill)  # don't mutate caller's dict
         # Normalise availability field name: LLM may send 'availability' (prompt
@@ -260,6 +289,19 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
             skill_copy["availability_text"] = skill_copy.pop("availability")
 
         competence_id = skill_copy.pop("competence_id", None)
+
+        # Server-side deduplication: if the LLM omitted competence_id but a
+        # competence with the same title already exists, treat this as an update
+        # to prevent duplicate entries.
+        if not competence_id:
+            lookup_title = (skill_copy.get("title") or "").strip().lower()
+            if lookup_title and lookup_title in existing_by_title:
+                competence_id = existing_by_title[lookup_title]
+                logger.info(
+                    "Deduplication: upgrading new-entry '%s' to update of %s",
+                    skill_copy.get("title"), competence_id,
+                )
+
         if competence_id:
             result = await fs.update_competence(user_id, competence_id, skill_copy)
         else:
@@ -513,8 +555,10 @@ def build_default_registry() -> AgentToolRegistry:
         description=(
             "Create or update one or more service competencies for the user. "
             "Each skill dict may include 'competence_id' for updates, or omit it for new entries. "
-            "Required field per skill: 'title'. Optional: 'description', 'category', "
-            "'price_range', 'year_of_experience'."
+            "Required fields per skill: 'title' and 'price_range' (e.g. '€30–€50/h' or 'fixed price €200'). "
+            "price_range is MANDATORY for new entries — never create a competence without it. "
+            "For UPDATE (competence_id provided), price_range is optional. "
+            "Other optional fields: 'description', 'category', 'year_of_experience', 'availability'."
         ),
         schema={
             "name": "save_competence_batch",
@@ -532,14 +576,17 @@ def build_default_registry() -> AgentToolRegistry:
                                 "title": {"type": "string"},
                                 "description": {"type": "string"},
                                 "category": {"type": "string"},
-                                "price_range": {"type": "string"},
+                                "price_range": {
+                                    "type": "string",
+                                    "description": "Pricing information, e.g. '€30–€50/h' or 'fixed price €200'. REQUIRED.",
+                                },
                                 "availability": {
                                     "type": "string",
                                     "description": "When the provider is available, e.g. 'weekdays after 4pm, weekends'.",
                                 },
                                 "year_of_experience": {"type": "integer"},
                             },
-                            "required": ["title"],
+                            "required": ["title", "price_range"],
                         },
                     },
                 },

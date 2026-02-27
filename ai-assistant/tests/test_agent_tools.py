@@ -373,8 +373,8 @@ class TestProviderOnboardingTools:
     async def test_save_competence_batch_creates_new_entries(self, mock_hub, registry, mock_firestore):
         ctx = self._ctx(mock_firestore)
         skills = [
-            {"title": "Gardening", "description": "I love plants", "category": "Garten"},
-            {"title": "Painting", "description": "Interior painting", "category": "Handwerk"},
+            {"title": "Gardening", "description": "I love plants", "category": "Garten", "price_range": "€30–€50/h"},
+            {"title": "Painting", "description": "Interior painting", "category": "Handwerk", "price_range": "€40/h"},
         ]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         assert mock_firestore.create_competence.call_count == 2
@@ -396,7 +396,7 @@ class TestProviderOnboardingTools:
         """
         ctx = self._ctx(mock_firestore)
         # Only 1 new skill in this batch — but Firestore already has "Plumbing" and "Electrical"
-        skills = [{"title": "Painting", "description": "Interior painting"}]
+        skills = [{"title": "Painting", "description": "Interior painting", "price_range": "€40/h"}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
 
         # Weaviate sync must use ALL competence dicts from Firestore, not just the new batch.
@@ -411,7 +411,7 @@ class TestProviderOnboardingTools:
         self, mock_hub, registry, mock_firestore
     ):
         ctx = self._ctx(mock_firestore)
-        skills = [{"title": "Cleaning"}]
+        skills = [{"title": "Cleaning", "price_range": "€25/h"}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         update_call = mock_firestore.update_user.call_args
         data = update_call.args[1] if len(update_call.args) > 1 else update_call.kwargs.get("update_data", {})
@@ -420,6 +420,7 @@ class TestProviderOnboardingTools:
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
     async def test_save_competence_batch_updates_existing_entry(self, mock_hub, registry, mock_firestore):
         ctx = self._ctx(mock_firestore)
+        # UPDATE: competence_id is present, price_range is optional
         skills = [{"competence_id": "c1", "title": "Plumbing Pro"}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         mock_firestore.update_competence.assert_called_once()
@@ -428,6 +429,67 @@ class TestProviderOnboardingTools:
             "user-x",
             [{"competence_id": "c1", "title": "Plumbing"}, {"competence_id": "c2", "title": "Electrical"}],
         )
+
+    async def test_save_competence_batch_missing_price_range_returns_error(
+        self, registry, mock_firestore
+    ):
+        """New entries without price_range must return an error dict — never reach Firestore."""
+        ctx = self._ctx(mock_firestore)
+        skills = [{"title": "Coaching"}]  # price_range intentionally absent
+        result = await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        assert isinstance(result, dict) and "error" in result, (
+            "Missing price_range for a new entry must return an error"
+        )
+        assert "price_range" in result["error"].lower() or "pricing" in result["error"].lower()
+        mock_firestore.create_competence.assert_not_called()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_update_without_price_range_is_allowed(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """UPDATE (competence_id present) without price_range must proceed normally."""
+        ctx = self._ctx(mock_firestore)
+        skills = [{"competence_id": "c1", "description": "Updated description"}]
+        result = await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        assert not (isinstance(result, dict) and "error" in result), (
+            "Updates without price_range must not be blocked"
+        )
+        mock_firestore.update_competence.assert_called_once()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_deduplicates_by_title(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """When a new skill (no competence_id) has the same title as an existing
+        competence (case-insensitive), save_competence_batch must upgrade it to an
+        UPDATE — never create a duplicate entry.
+
+        Regression for: "Presentation Help" appearing twice after a second onboarding
+        session where the LLM omitted competence_id for an already-registered skill.
+        """
+        # Firestore already has "Plumbing" (c1) and "Electrical" (c2)
+        ctx = self._ctx(mock_firestore)
+        # Submit with the same title but no competence_id — simulates LLM omission
+        skills = [{"title": "Plumbing", "price_range": "€60/h", "description": "Updated desc"}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+
+        # Must call update_competence (with c1), never create_competence
+        mock_firestore.update_competence.assert_called_once()
+        update_args = mock_firestore.update_competence.call_args
+        called_id = update_args.args[1] if len(update_args.args) > 1 else update_args.kwargs.get("competence_id")
+        assert called_id == "c1", f"Expected update on 'c1', got '{called_id}'"
+        mock_firestore.create_competence.assert_not_called()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_deduplication_is_case_insensitive(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """Title match for deduplication must be case-insensitive."""
+        ctx = self._ctx(mock_firestore)
+        skills = [{"title": "plumbing", "price_range": "€60/h"}]  # lowercase
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        mock_firestore.update_competence.assert_called_once()
+        mock_firestore.create_competence.assert_not_called()
 
     # ── delete_competences ───────────────────────────────────────────────────
 
@@ -466,7 +528,7 @@ class TestProviderOnboardingTools:
             "email": "vinh@example.com",
         })
         ctx = self._ctx(mock_firestore)
-        skills = [{"title": "Machine Learning"}]
+        skills = [{"title": "Machine Learning", "price_range": "€80/h"}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
 
         # Must attempt create_user to establish the Weaviate hub row
@@ -488,13 +550,13 @@ class TestProviderOnboardingTools:
         mock_hub.create_user.side_effect = Exception("Weaviate unavailable")
         ctx = self._ctx(mock_firestore)
         with pytest.raises(Exception, match="Weaviate unavailable"):
-            await registry.execute("save_competence_batch", {"skills": [{"title": "Plumbing"}]}, ctx)
+            await registry.execute("save_competence_batch", {"skills": [{"title": "Plumbing", "price_range": "€50/h"}]}, ctx)
 
 
         """Weaviate sync failure must propagate — not be silently swallowed."""
         mock_hub.update_competencies_by_user_id.side_effect = Exception("Weaviate unavailable")
         ctx = self._ctx(mock_firestore)
-        skills = [{"title": "Plumbing"}]
+        skills = [{"title": "Plumbing", "price_range": "€50/h"}]
         with pytest.raises(Exception, match="Weaviate unavailable"):
             await registry.execute("save_competence_batch", {"skills": skills}, ctx)
 
