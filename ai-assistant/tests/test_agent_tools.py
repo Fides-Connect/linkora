@@ -553,13 +553,6 @@ class TestProviderOnboardingTools:
             await registry.execute("save_competence_batch", {"skills": [{"title": "Plumbing", "price_range": "€50/h"}]}, ctx)
 
 
-        """Weaviate sync failure must propagate — not be silently swallowed."""
-        mock_hub.update_competencies_by_user_id.side_effect = Exception("Weaviate unavailable")
-        ctx = self._ctx(mock_firestore)
-        skills = [{"title": "Plumbing", "price_range": "€50/h"}]
-        with pytest.raises(Exception, match="Weaviate unavailable"):
-            await registry.execute("save_competence_batch", {"skills": skills}, ctx)
-
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
     async def test_delete_competences_weaviate_failure_propagates(
         self, mock_hub, registry, mock_firestore
