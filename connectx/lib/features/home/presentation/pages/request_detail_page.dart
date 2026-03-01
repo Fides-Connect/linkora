@@ -98,7 +98,10 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                         ),
                         const SizedBox(height: 16),
                         // Status
-                        _buildStatusChip(context, liveRequest),
+                        _buildStatusChip(context, liveRequest,
+                            isIncoming: liveRequest.getType(
+                                    viewModel.user?.id ?? '') ==
+                                RequestType.incoming),
                       ],
                     ),
                   ),
@@ -527,7 +530,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     );
   }
 
-  Widget _buildStatusChip(BuildContext context, ServiceRequest request) {
+  Widget _buildStatusChip(BuildContext context, ServiceRequest request, {bool isIncoming = false}) {
     Color color;
     String text;
     final localizations = AppLocalizations.of(context);
@@ -539,7 +542,9 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         break;
       case RequestStatus.waitingForAnswer:
         color = Colors.blue;
-        text = localizations?.waitingForAnswer ?? 'Waiting for Answer';
+        text = isIncoming
+            ? (localizations?.actionNeededButton ?? 'Action Required')
+            : (localizations?.waitingForAnswer ?? 'Waiting for Answer');
         break;
       case RequestStatus.completed:
         color = Colors.green;

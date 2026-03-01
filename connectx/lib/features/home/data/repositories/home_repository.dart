@@ -11,6 +11,18 @@ class HomeRepository {
       : _apiService = apiService ?? ApiService(),
         _firestoreWrapper = firestoreWrapper ?? FirebaseFirestoreWrapper();
 
+  /// Fetches a single service request by its ID.
+  /// Wraps API call to `GET /api/v1/service-requests/{requestId}`.
+  Future<ServiceRequest?> getRequest(String requestId) async {
+    try {
+      final data = await _apiService.get(
+          '/api/v1/service-requests/${Uri.encodeComponent(requestId)}');
+      return ServiceRequest.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Fetches the list of incoming and outgoing service requests.
   /// Wraps API call to `GET /api/v1/service-requests`.
   Future<List<ServiceRequest>> getRequests() async {

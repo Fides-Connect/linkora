@@ -39,6 +39,18 @@ class TestAppEndpoints:
         with patch('ai_assistant.api.v1.endpoints.service_requests.firestore_service') as mock_service:
             yield mock_service
 
+    @pytest.fixture(autouse=True)
+    def mock_notify_status_change(self):
+        """Suppress fire-and-forget notification tasks in all endpoint tests."""
+        with patch(
+            'ai_assistant.api.v1.endpoints.service_requests.notify_service_request_status_change',
+            new_callable=AsyncMock,
+        ), patch(
+            'ai_assistant.api.v1.endpoints.service_requests.notify_new_service_request',
+            new_callable=AsyncMock,
+        ):
+            yield
+
     @pytest.mark.asyncio
     async def test_get_current_user_id_success(self, mock_request, mock_auth):
         """Test successful user ID extraction."""

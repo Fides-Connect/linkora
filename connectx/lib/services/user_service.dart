@@ -58,13 +58,18 @@ class UserService {
         return null;
       }
 
+      // Always fetch the current token at sync time so we never send a stale
+      // or null token due to a race with initializeFCM().
+      final currentToken = _fcmToken ?? await _messaging.getToken();
+      _fcmToken = currentToken; // keep cache in sync
+
       // Prepare user data
       final userData = {
         'user_id': user.uid,
         'name': user.displayName ?? '',
         'email': user.email ?? '',
         'photo_url': user.photoURL ?? '',
-        'fcm_token': _fcmToken ?? '',
+        'fcm_token': currentToken ?? '',
       };
 
       // Get backend URL from environment

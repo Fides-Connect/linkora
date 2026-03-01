@@ -2,11 +2,16 @@
 /api/v1/service-requests/* endpoints
 Service request and chat management endpoints.
 """
+import asyncio
 import logging
 from aiohttp import web
 from pydantic import ValidationError
 
 from ai_assistant.firestore_service import FirestoreService
+from ai_assistant.services.notification_service import (
+    notify_service_request_status_change,
+    notify_new_service_request,
+)
 from ...deps import get_current_user_id, serialize_datetime
 
 logger = logging.getLogger(__name__)
@@ -40,6 +45,14 @@ async def create_service_request(request: web.Request) -> web.Response:
         
         service_request_id = await firestore_service.create_service_request(body)
         if service_request_id:
+            provider_id = body.get('selected_provider_user_id', '')
+            asyncio.ensure_future(
+                notify_new_service_request(
+                    provider_id=provider_id,
+                    service_request_id=service_request_id,
+                    category=body.get('category', ''),
+                )
+            )
             return web.json_response({
                 "service_request_id": service_request_id,
                 "status": "created"
@@ -181,6 +194,15 @@ async def update_service_request_status(request: web.Request) -> web.Response:
             service_request_id, new_status
         )
         if updated_request:
+            asyncio.ensure_future(
+                notify_service_request_status_change(
+                    seeker_id=seeker_id or '',
+                    provider_id=provider_id,
+                    actor_id=user_id,
+                    service_request_id=service_request_id,
+                    new_status=new_status,
+                )
+            )
             return web.json_response(serialize_datetime(updated_request))
         else:
             return web.json_response({"error": "Failed to update service request status"}, status=500)

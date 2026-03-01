@@ -15,10 +15,14 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _isInitialized = false;
+  Function(String payload)? _onTapCallback;
 
-  /// Initialize the notification service with platform-specific settings
-  Future<void> initialize() async {
+  /// Initialize the notification service with platform-specific settings.
+  /// [onNotificationTap] is called with the notification payload whenever the
+  /// user taps a local notification while the app is in the foreground.
+  Future<void> initialize({Function(String payload)? onNotificationTap}) async {
     if (_isInitialized) return;
+    _onTapCallback = onNotificationTap;
 
     // Android initialization settings
     const AndroidInitializationSettings androidSettings =
@@ -285,8 +289,11 @@ class NotificationService {
     debugPrint(
       'NotificationService: Notification tapped - ${response.payload}',
     );
-    // Handle navigation or actions based on payload
-    // This can be extended to navigate to specific screens
+    final payload = response.payload;
+    if (payload != null && _onTapCallback != null) {
+      // payload format: "<type>:<service_request_id>"
+      _onTapCallback!(payload);
+    }
   }
 
   /// Get pending notifications

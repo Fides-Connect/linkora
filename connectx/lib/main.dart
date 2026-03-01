@@ -10,10 +10,54 @@ import 'package:provider/provider.dart';
 import 'core/providers/user_provider.dart';
 import 'features/auth/presentation/pages/start_page.dart';
 import 'features/auth/presentation/widgets/auth_guard.dart';
+import 'features/home/data/repositories/home_repository.dart';
 import 'features/home/presentation/pages/home_page.dart';
+import 'features/home/presentation/pages/request_detail_page.dart';
+import 'features/home/presentation/viewmodels/home_tab_view_model.dart';
 import 'firebase_options.dart';
 import 'localization/app_localizations.dart';
+import 'services/notification_service.dart';
 import 'theme.dart';
+
+/// Global navigator key — used to push routes from outside the widget tree
+/// (e.g. when a push notification is tapped).
+final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
+/// Fetches the service request with [requestId] from the backend and pushes
+/// [RequestDetailPage] onto the navigator stack. Silently ignored if the
+/// request cannot be fetched or the navigator is not yet ready.
+Future<void> _openServiceRequestDetail(String requestId) async {
+  if (requestId.isEmpty) return;
+  final context = _navigatorKey.currentContext;
+  if (context == null) return;
+  final repo = HomeRepository();
+  final request = await repo.getRequest(requestId);
+  if (request == null) return;
+  if (!context.mounted) return;
+  final viewModel = HomeTabViewModel();
+  // Load user data so getType/getAmount/action buttons work correctly.
+  await viewModel.loadData();
+  if (!context.mounted) return;
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => ChangeNotifierProvider.value(
+        value: viewModel,
+        child: RequestDetailPage(request: request),
+      ),
+    ),
+  );
+}
+
+/// Handles an FCM [RemoteMessage] that opens the app (background / terminated).
+void _handleNotificationOpen(RemoteMessage? message) {
+  if (message == null) return;
+  final type = message.data['type'];
+  if (type == 'service_request_status_change' ||
+      type == 'new_service_request') {
+    final id = message.data['service_request_id'] ?? '';
+    _openServiceRequestDetail(id);
+  }
+}
 
 /// Background message handler - must be top-level function
 @pragma('vm:entry-point')
@@ -35,6 +79,45 @@ void main() async {
 
   // Set up background message handler
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // Show a local notification when the app is in the foreground and a
+  // service-request status-change push arrives (FCM does not auto-display
+  // notification-payload messages while the app is active).
+  // Tapping the local notification calls _openServiceRequestDetail.
+  final notificationService = NotificationService();
+  await notificationService.initialize(
+    onNotificationTap: (payload) {
+      // payload format: "<type>:<service_request_id>"
+      final colonIndex = payload.indexOf(':');
+      if (colonIndex != -1) {
+        final id = payload.substring(colonIndex + 1);
+        _openServiceRequestDetail(id);
+      }
+    },
+  );
+  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+    final type = message.data['type'];
+    if (type == 'service_request_status_change' ||
+        type == 'new_service_request') {
+      final title = message.notification?.title ?? 'Service Request Update';
+      final body = message.notification?.body ?? 'You have a new service request update.';
+      notificationService.showNotification(
+        id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        title: title,
+        body: body,
+        payload: '$type:${message.data['service_request_id'] ?? ''}',
+      );
+    }
+  });
+
+  // Navigate to detail page when the app is opened via a notification tap
+  // while the app was in the background.
+  FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationOpen);
+
+  // Navigate when the app was fully terminated and launched via notification.
+  _handleNotificationOpen(
+    await FirebaseMessaging.instance.getInitialMessage(),
+  );
 
   final userProvider = UserProvider();
   await userProvider.init();
@@ -75,6 +158,7 @@ class _ConnectXAppState extends State<ConnectXApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'ConnectX',
+      navigatorKey: _navigatorKey,
       theme: appTheme,
       locale: _locale,
       localizationsDelegates: const [

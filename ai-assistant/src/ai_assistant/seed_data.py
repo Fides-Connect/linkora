@@ -677,7 +677,7 @@ _LAWN_MOWING_SERVICE_REQUEST_TEMPLATE = {
     "currency": "EUR",
     "requested_competencies": ["Lawn Mowing", "Garden Maintenance"],
     "location": "Berlin, Germany",
-    "status": "pending",
+    "status": "waitingForAnswer",
 }
 
 

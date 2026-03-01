@@ -336,3 +336,109 @@ async def notify_conversation_update(user_id: str, message: str) -> bool:
             "type": "conversation_update",
         }
     )
+
+
+# ── Service-request status-change messages ────────────────────────────────────
+# Maps new_status → (title, body) for seeker and provider.
+# None means that party does NOT get a notification for that transition.
+_STATUS_MESSAGES: dict[str, dict[str, tuple[str, str] | None]] = {
+    "accepted": {
+        "seeker":   ("Request Accepted ✅", "A provider has accepted your service request."),
+        "provider": None,  # actor — no self-notification
+    },
+    "rejected": {
+        "seeker":   ("Request Declined ❌", "Unfortunately your service request was declined."),
+        "provider": None,
+    },
+    "serviceProvided": {
+        "seeker":   ("Service Completed 🎉", "The provider marked the service as done. Please confirm payment."),
+        "provider": None,
+    },
+    "cancelled": {
+        "seeker":   None,
+        "provider": ("Request Cancelled", "The customer has cancelled the service request."),
+    },
+    "paymentCompleted": {
+        "seeker":   None,
+        "provider": ("Payment Confirmed 💰", "The customer confirmed payment. Thank you!"),
+    },
+}
+
+
+async def notify_new_service_request(
+    provider_id: str,
+    service_request_id: str,
+    category: str = '',
+) -> None:
+    """Notify the selected provider that a new service request was created for them."""
+    if not provider_id:
+        return
+    category_text = f' ({category})' if category else ''
+    try:
+        await NotificationService.send_to_user(
+            user_id=provider_id,
+            title='New Service Request 🔔',
+            body=f'You have received a new service request{category_text}.',
+            data={
+                'type': 'new_service_request',
+                'service_request_id': service_request_id,
+            },
+        )
+    except Exception as e:
+        logger.warning(f'Failed to notify provider {provider_id} of new request: {e}')
+
+
+async def notify_service_request_status_change(
+    *,
+    seeker_id: str,
+    provider_id: str | None,
+    actor_id: str,
+    service_request_id: str,
+    new_status: str,
+) -> None:
+    """Send push notifications after a service-request status change.
+
+    Only the *other* party (not the actor who triggered the change) receives a
+    notification.  Lookup is done by role:
+      - seeker notifications are sent when a provider acts (accepted, rejected,
+        serviceProvided)
+      - provider notifications are sent when a seeker acts (cancelled,
+        paymentCompleted)
+
+    Errors are logged and swallowed so they never block the API response.
+    """
+    messages = _STATUS_MESSAGES.get(new_status)
+    if not messages:
+        return  # no configured message for this status
+
+    data: dict[str, str] = {
+        "type": "service_request_status_change",
+        "service_request_id": service_request_id,
+        "new_status": new_status,
+    }
+
+    tasks = []
+
+    seeker_msg = messages.get("seeker")
+    if seeker_msg and seeker_id and seeker_id != actor_id:
+        title, body = seeker_msg
+        tasks.append(
+            NotificationService.send_to_user(
+                user_id=seeker_id, title=title, body=body, data=data
+            )
+        )
+
+    provider_msg = messages.get("provider")
+    if provider_msg and provider_id and provider_id != actor_id:
+        title, body = provider_msg
+        tasks.append(
+            NotificationService.send_to_user(
+                user_id=provider_id, title=title, body=body, data=data
+            )
+        )
+
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning(f"Failed to send service request notification: {result}")

@@ -60,6 +60,7 @@ from ai_assistant.hub_spoke_schema import (
 from ai_assistant.firestore_service import FirestoreService
 from ai_assistant.weaviate_sync import ingest_users_into_weaviate, rebuild_weaviate_from_firestore
 from ai_assistant.seed_data import get_lawn_mowing_service_request
+from ai_assistant.services.notification_service import notify_new_service_request
 
 # Configure logging
 logging.basicConfig(
@@ -522,9 +523,15 @@ async def main():
         )
         result = await firestore_service.create_service_request(request_data)
         if result:
+            service_request_id = result.get('service_request_id', '')
             logger.info(
-                f"✓ Service request created: {result.get('service_request_id')} "
+                f"✓ Service request created: {service_request_id} "
                 f"(seeker={args.seeker_user_id}, provider={args.provider_user_id})"
+            )
+            await notify_new_service_request(
+                provider_id=args.provider_user_id,
+                service_request_id=service_request_id,
+                category=request_data.get('category', ''),
             )
             return 0
         else:

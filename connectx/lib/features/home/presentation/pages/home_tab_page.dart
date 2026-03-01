@@ -97,7 +97,7 @@ class HomeTabPage extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusBadge(ServiceRequest request, AppLocalizations? localizations) {
+  Widget _buildStatusBadge(ServiceRequest request, AppLocalizations? localizations, {bool isIncoming = false}) {
     final Color color;
     final String text;
     switch (request.status) {
@@ -107,7 +107,9 @@ class HomeTabPage extends StatelessWidget {
         break;
       case RequestStatus.waitingForAnswer:
         color = Colors.blue;
-        text = localizations?.waitingForAnswer ?? 'Waiting for Answer';
+        text = isIncoming
+            ? (localizations?.actionNeededButton ?? 'Action Required')
+            : (localizations?.waitingForAnswer ?? 'Waiting for Answer');
         break;
       case RequestStatus.accepted:
         color = Colors.green;
@@ -249,7 +251,7 @@ class HomeTabPage extends StatelessWidget {
                     fontSize: 14,
                   ),
                 ),
-                _buildStatusBadge(request, localizations),
+                _buildStatusBadge(request, localizations, isIncoming: true),
               ],
             ),
           ],
