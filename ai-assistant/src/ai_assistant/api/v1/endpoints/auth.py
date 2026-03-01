@@ -88,7 +88,14 @@ async def user_sync(request: web.Request) -> web.Response:
         
         existing_firestore_user = await firestore_service.get_user(user_id)
         if existing_firestore_user:
-            updated_user = await firestore_service.update_user(user_id, user_data)
+            # Never overwrite an existing FCM token with an empty value.
+            # This prevents a race on app startup where getToken() hasn't
+            # resolved yet and the client sends fcm_token="".
+            update_data = {
+                k: v for k, v in user_data.items()
+                if k != "fcm_token" or v
+            }
+            updated_user = await firestore_service.update_user(user_id, update_data)
             if not updated_user:
                 return web.json_response({
                     "error": "Failed to update Firestore user"

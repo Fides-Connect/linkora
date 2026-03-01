@@ -70,13 +70,17 @@ class UserService {
       final currentToken = _fcmToken ?? await _messaging.getToken();
       _fcmToken = currentToken; // keep cache in sync
 
-      // Prepare user data
-      final userData = {
+      // Prepare user data.
+      // Omit fcm_token entirely when we don't have one so we never overwrite
+      // a valid token that is already stored on the backend with an empty string
+      // (can happen when getToken() returns null before FCM is ready).
+      final userData = <String, dynamic>{
         'user_id': user.uid,
         'name': user.displayName ?? '',
         'email': user.email ?? '',
         'photo_url': user.photoURL ?? '',
-        'fcm_token': currentToken ?? '',
+        if (currentToken != null && currentToken.isNotEmpty)
+          'fcm_token': currentToken,
       };
 
       // Get backend URL from environment
