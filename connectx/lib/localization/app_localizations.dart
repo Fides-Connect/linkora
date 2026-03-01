@@ -533,11 +533,11 @@ class AppLocalizations {
     return MessagesEN.markServiceProvidedButton;
   }
 
-  String get confirmPaymentButton {
+  String get paymentButton {
     if (locale.languageCode == 'de') {
-      return MessagesDE.confirmPaymentButton;
+      return MessagesDE.paymentButton;
     }
-    return MessagesEN.confirmPaymentButton;
+    return MessagesEN.paymentButton;
   }
 
   String get location {

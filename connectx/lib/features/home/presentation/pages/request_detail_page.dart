@@ -507,7 +507,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                                   : () => doUpdate(RequestStatus.paymentCompleted),
                               child: buttonChild(
                                 RequestStatus.paymentCompleted,
-                                localizations?.confirmPaymentButton ??
+                                localizations?.paymentButton ??
                                     'Confirm Payment',
                               ),
                             ),

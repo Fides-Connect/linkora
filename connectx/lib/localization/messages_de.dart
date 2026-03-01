@@ -39,7 +39,7 @@ class MessagesDE {
   static const String paymentCompleted = 'Zahlung bestätigt';
   static const String cancelled = 'Abgebrochen';
   static const String markServiceProvidedButton = 'Leistung als erbracht markieren';
-  static const String confirmPaymentButton = 'Zahlung bestätigen';
+  static const String paymentButton = 'Bezahlen';
   static const String location = 'Ort';
   static const String dateFrom = 'Von';
   static const String dateTo = 'Bis';
