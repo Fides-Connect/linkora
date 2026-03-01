@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Priority levels for notifications
 enum NotificationPriority { high, defaultPriority, low }
@@ -15,7 +16,26 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _isInitialized = false;
+  bool _notificationsEnabled = true;
   Function(String payload)? _onTapCallback;
+
+  static const _kNotificationsEnabledKey = 'notifications_enabled';
+
+  /// Whether the user has opted in to in-app notifications.
+  bool get notificationsEnabled => _notificationsEnabled;
+
+  /// Persist the notification preference and update the in-memory flag.
+  Future<void> setNotificationsEnabled(bool enabled) async {
+    _notificationsEnabled = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kNotificationsEnabledKey, enabled);
+  }
+
+  /// Load persisted preference (called during [initialize]).
+  Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    _notificationsEnabled = prefs.getBool(_kNotificationsEnabledKey) ?? true;
+  }
 
   /// Initialize the notification service with platform-specific settings.
   /// [onNotificationTap] is called with the notification payload whenever the
@@ -61,6 +81,8 @@ class NotificationService {
       settings: initSettings,
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
+
+    await _loadPreferences();
 
     // Create Android notification channel (required for Android 8.0+)
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -117,6 +139,7 @@ class NotificationService {
     required String body,
     String? payload,
   }) async {
+    if (!_notificationsEnabled) return;
     if (!_isInitialized) {
       await initialize();
     }

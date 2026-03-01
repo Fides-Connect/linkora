@@ -291,6 +291,13 @@ class AppLocalizations {
     return MessagesEN.menuLanguage;
   }
 
+  String get menuNotifications {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.menuNotifications;
+    }
+    return MessagesEN.menuNotifications;
+  }
+
   String get languageEnglish {
     if (locale.languageCode == 'de') {
       return MessagesDE.languageEnglish;

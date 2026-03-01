@@ -94,6 +94,7 @@ class MessagesEN {
   // Menu items
   static const String menuLogout = 'Logout';
   static const String menuLanguage = 'Language';
+  static const String menuNotifications = 'Notifications';
   static const String languageEnglish = 'English';
   static const String languageGerman = 'German';
 
