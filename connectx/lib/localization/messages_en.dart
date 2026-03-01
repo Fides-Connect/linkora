@@ -36,7 +36,7 @@ class MessagesEN {
   static const String rejectButton = 'Reject';
   static const String cancelRequestButton = 'Cancel Request';
   static const String serviceProvided = 'Service Provided';
-  static const String paymentCompleted = 'Payment Completed';
+
   static const String cancelled = 'Cancelled';
   static const String markServiceProvidedButton = 'Mark Service as Provided';
   static const String paymentButton = 'Pay';

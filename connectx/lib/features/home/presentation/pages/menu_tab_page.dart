@@ -6,6 +6,7 @@ import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../main.dart';
 import '../../../../services/notification_service.dart';
+import '../../../../services/user_service.dart';
 import '../viewmodels/home_tab_view_model.dart';
 import 'user_page.dart';
 
@@ -26,6 +27,7 @@ class MenuTabPage extends StatelessWidget {
                 title: Text(localizations?.languageEnglish ?? 'English'),
                 onTap: () {
                   ConnectXApp.setLocale(context, const Locale('en', ''));
+                  UserService().updateSettings(language: 'en');
                   Navigator.pop(context);
                 },
               ),
@@ -33,6 +35,7 @@ class MenuTabPage extends StatelessWidget {
                 title: Text(localizations?.languageGerman ?? 'German'),
                 onTap: () {
                   ConnectXApp.setLocale(context, const Locale('de', ''));
+                  UserService().updateSettings(language: 'de');
                   Navigator.pop(context);
                 },
               ),
@@ -225,6 +228,7 @@ class _NotificationsToggleItemState extends State<_NotificationsToggleItem> {
 
   Future<void> _toggle(bool value) async {
     await _notificationService.setNotificationsEnabled(value);
+    UserService().updateSettings(notificationsEnabled: value);
     setState(() => _enabled = value);
   }
 

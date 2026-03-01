@@ -139,7 +139,7 @@ async def update_service_request_status(request: web.Request) -> web.Response:
         accepted → serviceProvided
       Seeker (seeker_user_id):
         pending / waitingForAnswer / accepted → cancelled
-        serviceProvided → paymentCompleted
+        serviceProvided → completed
     """
     try:
         user_id = await get_current_user_id(request)
@@ -175,7 +175,7 @@ async def update_service_request_status(request: web.Request) -> web.Response:
             'pending': ['cancelled'],
             'waitingForAnswer': ['cancelled'],
             'accepted': ['cancelled'],
-            'serviceProvided': ['paymentCompleted'],
+            'serviceProvided': ['completed'],
         }
 
         allowed: list[str] = []

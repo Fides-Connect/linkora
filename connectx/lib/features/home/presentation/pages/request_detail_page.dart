@@ -507,9 +507,9 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                               ),
                               onPressed: _pendingStatus != null
                                   ? null
-                                  : () => doUpdate(RequestStatus.paymentCompleted),
+                                  : () => doUpdate(RequestStatus.completed),
                               child: buttonChild(
-                                RequestStatus.paymentCompleted,
+                                RequestStatus.completed,
                                 localizations?.paymentButton ??
                                     'Confirm Payment',
                               ),
@@ -562,10 +562,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         color = Colors.teal;
         text = localizations?.serviceProvided ?? 'Service Provided';
         break;
-      case RequestStatus.paymentCompleted:
-        color = Colors.green;
-        text = localizations?.paymentCompleted ?? 'Payment Completed';
-        break;
+
       case RequestStatus.cancelled:
         color = Colors.grey;
         text = localizations?.cancelled ?? 'Cancelled';

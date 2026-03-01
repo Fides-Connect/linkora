@@ -519,12 +519,6 @@ class AppLocalizations {
     return MessagesEN.serviceProvided;
   }
 
-  String get paymentCompleted {
-    if (locale.languageCode == 'de') {
-      return MessagesDE.paymentCompleted;
-    }
-    return MessagesEN.paymentCompleted;
-  }
 
   String get cancelled {
     if (locale.languageCode == 'de') {

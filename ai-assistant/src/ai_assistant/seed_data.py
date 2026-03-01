@@ -63,7 +63,7 @@ USER_TEMPLATE_SERVICE_REQUESTS = [
         "seeker_user_id": "user_alice_001",
         "selected_provider_user_id": "{uid}",
         "category": "Technology",
-        "status": "pending",
+        "status": "waitingForAnswer",
         "location": "Berlin, Germany",
     }
 ]

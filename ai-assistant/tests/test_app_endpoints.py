@@ -253,10 +253,10 @@ class TestAppEndpoints:
     async def test_update_service_request_status_422_invalid_transition(
         self, mock_request, mock_auth, mock_firestore_service_requests
     ):
-        """Seeker attempting an illegal transition (pending → paymentCompleted) gets 422."""
+        """Seeker attempting an illegal transition (pending → completed) gets 422."""
         mock_request.headers = {'Authorization': 'Bearer token'}
         mock_request.match_info = {'id': 'req_123'}
-        mock_request.json = AsyncMock(return_value={'status': 'paymentCompleted'})
+        mock_request.json = AsyncMock(return_value={'status': 'completed'})
 
         mock_firestore_service_requests.get_service_request = AsyncMock(return_value={
             'id': 'req_123',

@@ -123,12 +123,9 @@ class HomeTabPage extends StatelessWidget {
         color = Colors.teal;
         text = localizations?.serviceProvided ?? 'Service Provided';
         break;
-      case RequestStatus.paymentCompleted:
       case RequestStatus.completed:
         color = Colors.green;
-        text = request.status == RequestStatus.paymentCompleted
-            ? (localizations?.paymentCompleted ?? 'Payment Completed')
-            : (localizations?.completed ?? 'Completed');
+        text = localizations?.completed ?? 'Completed';
         break;
       case RequestStatus.cancelled:
         color = Colors.grey;

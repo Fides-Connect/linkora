@@ -36,7 +36,7 @@ class MessagesDE {
   static const String rejectButton = 'Ablehnen';
   static const String cancelRequestButton = 'Anfrage zurückziehen';
   static const String serviceProvided = 'Leistung erbracht';
-  static const String paymentCompleted = 'Zahlung bestätigt';
+
   static const String cancelled = 'Abgebrochen';
   static const String markServiceProvidedButton = 'Leistung als erbracht markieren';
   static const String paymentButton = 'Bezahlen';

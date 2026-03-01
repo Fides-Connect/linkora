@@ -356,6 +356,66 @@ async def update_my_competence(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+# ── App settings ─────────────────────────────────────────────────────────────
+
+_ALLOWED_SETTINGS_KEYS: frozenset[str] = frozenset({'language', 'notifications_enabled'})
+_DEFAULT_SETTINGS: dict = {'language': 'en', 'notifications_enabled': True}
+
+
+async def get_settings(request: web.Request) -> web.Response:
+    """GET /api/v1/me/settings - Get current user's app settings."""
+    try:
+        user_id = await get_current_user_id(request)
+        user = await firestore_service.get_user(user_id)
+        if not user:
+            return web.json_response({'error': 'User not found'}, status=404)
+        stored: dict = user.get('user_app_settings', {})
+        return web.json_response({
+            'language': stored.get('language', _DEFAULT_SETTINGS['language']),
+            'notifications_enabled': stored.get(
+                'notifications_enabled', _DEFAULT_SETTINGS['notifications_enabled']
+            ),
+        })
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'Error in get_settings: {e}')
+        return web.json_response({'error': str(e)}, status=500)
+
+
+async def update_settings(request: web.Request) -> web.Response:
+    """PATCH /api/v1/me/settings - Update current user's app settings."""
+    try:
+        user_id = await get_current_user_id(request)
+        body = await request.json()
+        user = await firestore_service.get_user(user_id)
+        if not user:
+            return web.json_response({'error': 'User not found'}, status=404)
+
+        # Merge only the allowed keys into the existing settings dict.
+        merged: dict = dict(user.get('user_app_settings', {}))
+        updated = False
+        for key in _ALLOWED_SETTINGS_KEYS:
+            if key in body:
+                merged[key] = body[key]
+                updated = True
+
+        if updated:
+            await firestore_service.update_user(user_id, {'user_app_settings': merged})
+
+        return web.json_response({
+            'language': merged.get('language', _DEFAULT_SETTINGS['language']),
+            'notifications_enabled': merged.get(
+                'notifications_enabled', _DEFAULT_SETTINGS['notifications_enabled']
+            ),
+        })
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'Error in update_settings: {e}')
+        return web.json_response({'error': str(e)}, status=500)
+
+
 async def remove_my_competence(request: web.Request) -> web.Response:
     """DELETE /api/v1/me/competencies/{competence_id} - Remove competence."""
     try:

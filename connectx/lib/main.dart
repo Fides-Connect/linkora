@@ -17,6 +17,7 @@ import 'features/home/presentation/viewmodels/home_tab_view_model.dart';
 import 'firebase_options.dart';
 import 'localization/app_localizations.dart';
 import 'services/notification_service.dart';
+import 'services/user_service.dart';
 import 'theme.dart';
 
 /// Global navigator key — used to push routes from outside the widget tree
@@ -147,6 +148,44 @@ class ConnectXApp extends StatefulWidget {
 
 class _ConnectXAppState extends State<ConnectXApp> {
   Locale? _locale;
+
+  UserProvider? _userProvider;
+  bool? _prevAuthenticated;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _userProvider = context.read<UserProvider>();
+      _userProvider!.addListener(_onAuthChanged);
+      if (_userProvider!.isAuthenticated) _applyBackendSettings();
+    });
+  }
+
+  @override
+  void dispose() {
+    _userProvider?.removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  void _onAuthChanged() {
+    final isAuth = _userProvider?.isAuthenticated ?? false;
+    if (isAuth && _prevAuthenticated != true) _applyBackendSettings();
+    _prevAuthenticated = isAuth;
+  }
+
+  /// Fetches language + notifications_enabled from the backend and applies
+  /// them locally. Runs once after login and on each fresh authentication.
+  Future<void> _applyBackendSettings() async {
+    final settings = await UserService().getSettings();
+    if (settings == null || !mounted) return;
+    final language = settings['language'] as String?;
+    final notificationsEnabled = settings['notifications_enabled'] as bool?;
+    if (language != null) setState(() => _locale = Locale(language, ''));
+    if (notificationsEnabled != null) {
+      await NotificationService().setNotificationsEnabled(notificationsEnabled);
+    }
+  }
 
   void setLocale(Locale locale) {
     setState(() {
