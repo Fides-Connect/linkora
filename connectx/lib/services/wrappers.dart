@@ -76,6 +76,7 @@ class FirebaseFirestoreWrapper implements FirestoreWrapper {
 
     void onError(Object error, StackTrace stack) {
       debugPrint('[FirestoreWrapper] listener error: $error');
+      if (!controller.isClosed) controller.addError(error, stack);
     }
 
     controller = StreamController<void>(

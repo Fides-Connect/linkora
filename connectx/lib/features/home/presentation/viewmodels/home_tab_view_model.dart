@@ -64,7 +64,13 @@ class HomeTabViewModel extends ChangeNotifier {
 
     _requestsWatchSubscription = _repository
         .watchServiceRequests(userId)
-        .listen((_) => _reloadRequests());
+        .listen(
+          (_) => _reloadRequests(),
+          onError: (Object e) {
+            _error = 'Firestore watch error: $e';
+            notifyListeners();
+          },
+        );
   }
 
   Future<void> _reloadRequests() async {

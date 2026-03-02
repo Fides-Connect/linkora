@@ -54,10 +54,11 @@ async def create_service_request(request: web.Request) -> web.Response:
                     category=body.get('category', ''),
                 )
             )
-            return web.json_response(
-                serialize_datetime(created),
-                status=201,
-            )
+            response_data = serialize_datetime(created)
+            # Explicitly guarantee the ID is present even if schema
+            # validation stripped it from validated_data.
+            response_data['service_request_id'] = service_request_id
+            return web.json_response(response_data, status=201)
         else:
             return web.json_response({"error": "Failed to create service request"}, status=500)
     except ValidationError as e:
