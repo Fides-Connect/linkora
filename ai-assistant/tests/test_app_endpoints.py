@@ -85,7 +85,12 @@ class TestAppEndpoints:
             "category": "plumbing"
         })
         
-        mock_firestore_service_requests.create_service_request = AsyncMock(return_value="req_123")
+        mock_firestore_service_requests.create_service_request = AsyncMock(return_value={
+            'service_request_id': 'req_123',
+            'title': 'Need help',
+            'category': 'plumbing',
+            'seeker_user_id': 'test_user_id',
+        })
 
         # Act
         response = await service_requests.create_service_request(mock_request)
@@ -96,8 +101,8 @@ class TestAppEndpoints:
         import json
         body = json.loads(response.body.decode())
         assert body['service_request_id'] == 'req_123'
-        assert body['status'] == 'created'
-        
+        assert body['title'] == 'Need help'
+
         # Verify call arguments
         mock_firestore_service_requests.create_service_request.assert_called_once()
         ca = mock_firestore_service_requests.create_service_request.call_args[0][0]

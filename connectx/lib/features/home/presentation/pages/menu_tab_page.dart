@@ -25,17 +25,17 @@ class MenuTabPage extends StatelessWidget {
             children: [
               ListTile(
                 title: Text(localizations?.languageEnglish ?? 'English'),
-                onTap: () {
+                onTap: () async {
                   ConnectXApp.setLocale(context, const Locale('en', ''));
-                  UserService().updateSettings(language: 'en');
+                  await UserService().updateSettings(language: 'en');
                   Navigator.pop(context);
                 },
               ),
               ListTile(
                 title: Text(localizations?.languageGerman ?? 'German'),
-                onTap: () {
+                onTap: () async {
                   ConnectXApp.setLocale(context, const Locale('de', ''));
-                  UserService().updateSettings(language: 'de');
+                  await UserService().updateSettings(language: 'de');
                   Navigator.pop(context);
                 },
               ),

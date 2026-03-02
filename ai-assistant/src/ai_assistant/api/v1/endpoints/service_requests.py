@@ -43,8 +43,9 @@ async def create_service_request(request: web.Request) -> web.Response:
         # Enforce seeker_user_id to be the authenticated user
         body['seeker_user_id'] = user_id
         
-        service_request_id = await firestore_service.create_service_request(body)
-        if service_request_id:
+        created = await firestore_service.create_service_request(body)
+        if created:
+            service_request_id = created.get('service_request_id', '')
             provider_id = body.get('selected_provider_user_id', '')
             asyncio.ensure_future(
                 notify_new_service_request(
@@ -53,10 +54,10 @@ async def create_service_request(request: web.Request) -> web.Response:
                     category=body.get('category', ''),
                 )
             )
-            return web.json_response({
-                "service_request_id": service_request_id,
-                "status": "created"
-            }, status=201)
+            return web.json_response(
+                serialize_datetime(created),
+                status=201,
+            )
         else:
             return web.json_response({"error": "Failed to create service request"}, status=500)
     except ValidationError as e:
