@@ -58,7 +58,7 @@ _BASE_COMPETENCE = {
     "category": "Handwerk",
     "price_range": "€20–€40/h",
     "year_of_experience": 12,
-    "availability_text": "Weekends, Tuesday 10am to 1pm",
+    "availability": "Weekends, Tuesday 10am to 1pm",
 }
 
 _ENRICHED_PAYLOAD = {
@@ -70,8 +70,6 @@ _ENRICHED_PAYLOAD = {
     ),
     "category": "Handwerk",
     "price_per_hour": 30.0,
-    "availability_text": "Weekends and Tuesday 10am–1pm",
-    "availability_tags": ["weekend", "tuesday", "morning"],
 }
 
 
@@ -87,9 +85,11 @@ class TestCompetenceEnricherEnrich:
 
         assert result["skills_list"] == _ENRICHED_PAYLOAD["skills_list"]
         assert result["search_optimized_summary"] == _ENRICHED_PAYLOAD["search_optimized_summary"]
-        assert result["availability_tags"] == ["weekend", "tuesday", "morning"]
         assert result["price_per_hour"] == 30.0
-        assert result["availability_text"] == "Weekends and Tuesday 10am–1pm"
+        # availability_text / availability_tags are no longer enricher outputs;
+        # they are derived from the structured availability_time subcollection.
+        assert "availability_text" not in result
+        assert "availability_tags" not in result
 
     async def test_original_fields_preserved(self):
         enricher = CompetenceEnricher(llm=_make_llm_mock(_ENRICHED_PAYLOAD))
@@ -169,42 +169,65 @@ class TestPriceExtraction:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Availability tag normalisation
+# _availability_time_to_text
 # ─────────────────────────────────────────────────────────────────────────────
 
-class TestAvailabilityTags:
+class TestAvailabilityTimeToText:
+    """Tests for CompetenceEnricher._availability_time_to_text."""
 
-    async def test_weekend_tag_present(self):
-        payload = {**_ENRICHED_PAYLOAD, "availability_tags": ["weekend", "saturday", "sunday"]}
-        enricher = CompetenceEnricher(llm=_make_llm_mock(payload))
-        result = await enricher.enrich(_BASE_COMPETENCE)
-        assert "weekend" in result["availability_tags"]
+    def test_empty_dict_returns_empty_string(self):
+        assert CompetenceEnricher._availability_time_to_text({}) == ""
 
-    async def test_weekday_tag_inferred(self):
-        payload = {**_ENRICHED_PAYLOAD, "availability_tags": ["weekday", "monday", "tuesday"]}
-        enricher = CompetenceEnricher(llm=_make_llm_mock(payload))
-        result = await enricher.enrich(_BASE_COMPETENCE)
-        assert "weekday" in result["availability_tags"]
-        assert "monday" in result["availability_tags"]
+    def test_single_day_single_range(self):
+        avail = {"monday_time_ranges": [{"start_time": "09:00", "end_time": "12:00"}]}
+        result = CompetenceEnricher._availability_time_to_text(avail)
+        assert "Monday" in result
+        assert "09:00" in result
+        assert "12:00" in result
 
-    async def test_time_bucket_morning(self):
-        payload = {**_ENRICHED_PAYLOAD, "availability_tags": ["tuesday", "morning"]}
-        enricher = CompetenceEnricher(llm=_make_llm_mock(payload))
-        result = await enricher.enrich(_BASE_COMPETENCE)
-        assert "morning" in result["availability_tags"]
+    def test_multiple_days(self):
+        avail = {
+            "monday_time_ranges": [{"start_time": "09:00", "end_time": "12:00"}],
+            "wednesday_time_ranges": [{"start_time": "14:00", "end_time": "18:00"}],
+        }
+        result = CompetenceEnricher._availability_time_to_text(avail)
+        assert "Monday" in result
+        assert "Wednesday" in result
 
-    async def test_tags_are_lowercase(self):
-        payload = {**_ENRICHED_PAYLOAD, "availability_tags": ["Weekend", "TUESDAY", "Morning"]}
-        enricher = CompetenceEnricher(llm=_make_llm_mock(payload))
-        result = await enricher.enrich(_BASE_COMPETENCE)
-        for tag in result["availability_tags"]:
-            assert tag == tag.lower(), f"Tag not lowercase: {tag!r}"
+    def test_absence_days_included(self):
+        avail = {"absence_days": ["2026-03-15", "2026-03-16"]}
+        result = CompetenceEnricher._availability_time_to_text(avail)
+        assert "2026-03-15" in result
+        assert "absent" in result.lower()
 
-    async def test_empty_tags_on_no_availability(self):
-        payload = {**_ENRICHED_PAYLOAD, "availability_tags": []}
-        enricher = CompetenceEnricher(llm=_make_llm_mock(payload))
-        result = await enricher.enrich(_BASE_COMPETENCE)
-        assert result["availability_tags"] == []
+    def test_days_without_ranges_are_skipped(self):
+        avail = {
+            "monday_time_ranges": [],
+            "tuesday_time_ranges": [{"start_time": "10:00", "end_time": "13:00"}],
+        }
+        result = CompetenceEnricher._availability_time_to_text(avail)
+        assert "Monday" not in result
+        assert "Tuesday" in result
+
+    def test_build_user_message_uses_availability_time_when_present(self):
+        """When raw contains availability_time dict, it should be converted to text."""
+        raw = {
+            **_BASE_COMPETENCE,
+            "availability_time": {
+                "friday_time_ranges": [{"start_time": "08:00", "end_time": "16:00"}],
+            },
+        }
+        # Remove plain 'availability' to confirm structured path is used
+        raw.pop("availability", None)
+        msg = CompetenceEnricher._build_user_message(raw)
+        assert "Friday" in msg
+        assert "08:00" in msg
+
+    def test_build_user_message_falls_back_to_availability_string(self):
+        """When availability_time is absent, falls back to plain 'availability' key."""
+        raw = {**_BASE_COMPETENCE}  # has 'availability' key
+        msg = CompetenceEnricher._build_user_message(raw)
+        assert "Weekends" in msg
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -260,7 +283,7 @@ class TestBuildUserMessage:
         assert "Electrician" in msg
         assert "12" in msg
         assert "€20–€40/h" in msg
-        assert "Weekends" in msg
+        assert "Weekends" in msg  # from 'availability' key in _BASE_COMPETENCE
 
     def test_missing_optional_fields_dont_crash(self):
         msg = CompetenceEnricher._build_user_message({"title": "Plumber"})
