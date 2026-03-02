@@ -377,9 +377,10 @@ class TestProviderOnboardingTools:
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
     async def test_save_competence_batch_creates_new_entries(self, mock_hub, registry, mock_firestore):
         ctx = self._ctx(mock_firestore)
+        avail = {"monday_time_ranges": [{"start_time": "08:00", "end_time": "12:00"}]}
         skills = [
-            {"title": "Gardening", "description": "I love plants", "category": "Garten", "price_range": "€30–€50/h"},
-            {"title": "Painting", "description": "Interior painting", "category": "Handwerk", "price_range": "€40/h"},
+            {"title": "Gardening", "description": "I love plants", "category": "Garten", "price_range": "€30–€50/h", "availability_time": avail},
+            {"title": "Painting", "description": "Interior painting", "category": "Handwerk", "price_range": "€40/h", "availability_time": avail},
         ]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         assert mock_firestore.create_competence.call_count == 2
@@ -401,7 +402,8 @@ class TestProviderOnboardingTools:
         """
         ctx = self._ctx(mock_firestore)
         # Only 1 new skill in this batch — but Firestore already has "Plumbing" and "Electrical"
-        skills = [{"title": "Painting", "description": "Interior painting", "price_range": "€40/h"}]
+        avail = {"monday_time_ranges": [{"start_time": "08:00", "end_time": "17:00"}]}
+        skills = [{"title": "Painting", "description": "Interior painting", "price_range": "€40/h", "availability_time": avail}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
 
         # Weaviate sync must use ALL competence dicts from Firestore, not just the new batch.
@@ -416,7 +418,8 @@ class TestProviderOnboardingTools:
         self, mock_hub, registry, mock_firestore
     ):
         ctx = self._ctx(mock_firestore)
-        skills = [{"title": "Cleaning", "price_range": "€25/h"}]
+        avail = {"friday_time_ranges": [{"start_time": "09:00", "end_time": "17:00"}]}
+        skills = [{"title": "Cleaning", "price_range": "€25/h", "availability_time": avail}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         update_call = mock_firestore.update_user.call_args
         data = update_call.args[1] if len(update_call.args) > 1 else update_call.kwargs.get("update_data", {})
@@ -440,13 +443,40 @@ class TestProviderOnboardingTools:
     ):
         """New entries without price_range must return an error dict — never reach Firestore."""
         ctx = self._ctx(mock_firestore)
-        skills = [{"title": "Coaching"}]  # price_range intentionally absent
+        avail = {"monday_time_ranges": [{"start_time": "08:00", "end_time": "17:00"}]}
+        skills = [{"title": "Coaching", "availability_time": avail}]  # price_range intentionally absent
         result = await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         assert isinstance(result, dict) and "error" in result, (
             "Missing price_range for a new entry must return an error"
         )
         assert "price_range" in result["error"].lower() or "pricing" in result["error"].lower()
         mock_firestore.create_competence.assert_not_called()
+
+    async def test_save_competence_batch_missing_availability_time_returns_error(
+        self, registry, mock_firestore
+    ):
+        """New entries without availability_time must return an error dict — never reach Firestore."""
+        ctx = self._ctx(mock_firestore)
+        skills = [{"title": "Coaching", "price_range": "€50/h"}]  # availability_time intentionally absent
+        result = await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        assert isinstance(result, dict) and "error" in result, (
+            "Missing availability_time for a new entry must return an error"
+        )
+        assert "availability" in result["error"].lower()
+        mock_firestore.create_competence.assert_not_called()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_update_without_availability_time_is_allowed(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """UPDATE (competence_id present) without availability_time must proceed normally."""
+        ctx = self._ctx(mock_firestore)
+        skills = [{"competence_id": "c1", "description": "Now offering weekend slots"}]
+        result = await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        assert not (isinstance(result, dict) and "error" in result), (
+            "Updates without availability_time must not be blocked"
+        )
+        mock_firestore.update_competence.assert_called_once()
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
     async def test_save_competence_batch_update_without_price_range_is_allowed(
@@ -617,7 +647,7 @@ class TestProviderOnboardingTools:
             "email": "vinh@example.com",
         })
         ctx = self._ctx(mock_firestore)
-        skills = [{"title": "Machine Learning", "price_range": "€80/h"}]
+        skills = [{"title": "Machine Learning", "price_range": "€80/h", "availability_time": {"monday_time_ranges": [{"start_time": "09:00", "end_time": "17:00"}]}}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
 
         # Must attempt create_user to establish the Weaviate hub row
