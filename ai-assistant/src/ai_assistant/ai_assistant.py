@@ -16,6 +16,7 @@ from .services import (
 )
 from .services.response_orchestrator import ResponseOrchestrator
 from .services.competence_enricher import CompetenceEnricher
+from .services.cross_encoder_service import CrossEncoderService
 from .data_provider import get_data_provider
 
 logger = logging.getLogger(__name__)
@@ -84,14 +85,19 @@ class AIAssistant:
             temperature=0.2,
             max_output_tokens=2048
         )
-        
+
+        # Cross-encoder reranker: lazy-loading sentence-transformers model.
+        # Initialized before ConversationService so it can be injected.
+        self.cross_encoder_service = CrossEncoderService()
+
         self.conversation_service = ConversationService(
             llm_service=self.llm_service,
             data_provider=self.data_provider,
             agent_name=AGENT_NAME,
             company_name=COMPANY_NAME,
-            max_providers=3,
-            language=self.language
+            max_providers=5,
+            language=self.language,
+            cross_encoder_service=self.cross_encoder_service,
         )
         
         # Build agentic runtime FSM and tool registry
@@ -150,6 +156,7 @@ class AIAssistant:
             "firestore_service": self.firestore_service,
             "user_context": user_ctx,
             "competence_enricher": self.competence_enricher,
+            "cross_encoder_service": self.cross_encoder_service,
         }
         async for chunk in self.response_orchestrator.generate_response_stream(
             prompt, self.session_id, context=context

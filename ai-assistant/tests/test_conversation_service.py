@@ -136,6 +136,7 @@ def conversation_service(mock_llm_service, mock_data_provider):
         company_name="TestCompany",
         max_providers=3,
         language='de'
+        # no cross_encoder_service — reranking skipped in unit tests
     )
 
 
@@ -156,11 +157,11 @@ class TestProviderSearchMethod:
         """_generate_structured_query receives the last recorded AI response."""
         conversation_service.record_ai_response("Klempner für Badezimmer, dringend")
         await conversation_service.search_providers_for_request()
-        # The extraction prompt must contain the recorded summary
-        generate_call = mock_llm_service.generate.call_args
-        assert generate_call is not None
-        prompt_text = generate_call[0][0][0].content
-        assert "Klempner für Badezimmer" in prompt_text
+        # generate is called twice: structured-query extraction (index 0) + HyDE (index 1)
+        assert mock_llm_service.generate.call_count == 2
+        # First call is the structured query extraction — must contain the summary
+        first_call_prompt = mock_llm_service.generate.call_args_list[0][0][0][0].content
+        assert "Klempner für Badezimmer" in first_call_prompt
 
     async def test_falls_back_to_user_problem_when_no_ai_response(
         self, conversation_service, mock_data_provider, mock_llm_service
@@ -168,10 +169,9 @@ class TestProviderSearchMethod:
         """Falls back to joined user inputs when no AI response has been recorded."""
         conversation_service.context["user_problem"] = ["Ich brauche einen Elektriker"]
         await conversation_service.search_providers_for_request()
-        generate_call = mock_llm_service.generate.call_args
-        assert generate_call is not None
-        prompt_text = generate_call[0][0][0].content
-        assert "Elektriker" in prompt_text
+        # First generate call is the structured query extraction
+        first_call_prompt = mock_llm_service.generate.call_args_list[0][0][0][0].content
+        assert "Elektriker" in first_call_prompt
 
     async def test_providers_stored_in_context(
         self, conversation_service, mock_data_provider
@@ -194,17 +194,18 @@ class TestProviderSearchMethod:
     async def test_respects_max_providers_limit(
         self, conversation_service, mock_data_provider
     ):
-        """The search limit matches max_providers."""
+        """The wide-net fetch limit is min(max_providers * 5, 30)."""
         conversation_service.max_providers = 5
         conversation_service.context["user_problem"] = ["need electrician"]
         await conversation_service.search_providers_for_request()
         call_kwargs = mock_data_provider.search_providers.call_args[1]
-        assert call_kwargs["limit"] == 5
+        # fetch_limit = min(5 * 5, 30) = 25
+        assert call_kwargs["limit"] == 25
 
     async def test_history_excerpt_included_when_session_id_provided(
         self, conversation_service, mock_data_provider, mock_llm_service
     ):
-        """Last 3 history messages appear in the extraction prompt when session_id given."""
+        """Last 3 history messages appear in the structured-query extraction prompt."""
         from langchain_core.messages import HumanMessage as HM, AIMessage as AM
         history = mock_llm_service.get_session_history("sess-x")
         history.add_message(HM(content="I need a plumber"))
@@ -212,11 +213,82 @@ class TestProviderSearchMethod:
         history.add_message(HM(content="Yes, today please"))
         conversation_service.context["user_problem"] = ["plumber"]
         await conversation_service.search_providers_for_request(session_id="sess-x")
-        generate_call = mock_llm_service.generate.call_args
-        assert generate_call is not None
-        prompt_text = generate_call[0][0][0].content
-        assert "Yes, today please" in prompt_text
-        assert "Is it urgent?" in prompt_text
+        # First generate call is structured query; second is HyDE
+        first_call_prompt = mock_llm_service.generate.call_args_list[0][0][0][0].content
+        assert "Yes, today please" in first_call_prompt
+        assert "Is it urgent?" in first_call_prompt
+
+
+class TestHydeGeneration:
+    """Tests for _generate_hyde_text."""
+
+    async def test_returns_llm_output(self, conversation_service, mock_llm_service):
+        mock_llm_service.generate = AsyncMock(return_value="A skilled plumber with 10 years of experience.")
+        result = await conversation_service._generate_hyde_text("I need a plumber")
+        assert "plumber" in result.lower()
+
+    async def test_uses_hyde_prompt_template(self, conversation_service, mock_llm_service):
+        """The prompt sent to generate() must contain the problem summary."""
+        mock_llm_service.generate = AsyncMock(return_value="Some profile text")
+        await conversation_service._generate_hyde_text("leaking pipe under sink")
+        prompt_text = mock_llm_service.generate.call_args[0][0][0].content
+        assert "leaking pipe under sink" in prompt_text
+
+    async def test_returns_empty_string_on_error(self, conversation_service, mock_llm_service):
+        """On LLM failure, _generate_hyde_text returns '' without raising."""
+        mock_llm_service.generate = AsyncMock(side_effect=RuntimeError("LLM unavailable"))
+        result = await conversation_service._generate_hyde_text("test")
+        assert result == ""
+
+
+class TestSearchProvidersPipelineIntegration:
+    """Integration tests for the full multi-stage pipeline in search_providers_for_request."""
+
+    async def test_hyde_text_passed_to_data_provider(
+        self, conversation_service, mock_data_provider, mock_llm_service
+    ):
+        """data_provider.search_providers receives hyde_text kwarg."""
+        mock_llm_service.generate = AsyncMock(
+            side_effect=[
+                '{"available_time": "flex", "category": "Plumber", "criterions": []}',
+                "Expert plumber specialising in residential water systems.",
+            ]
+        )
+        conversation_service.context["user_problem"] = ["I need a plumber"]
+        await conversation_service.search_providers_for_request()
+        call_kwargs = mock_data_provider.search_providers.call_args[1]
+        assert "hyde_text" in call_kwargs
+        assert call_kwargs["hyde_text"] == "Expert plumber specialising in residential water systems."
+
+    async def test_reranking_applied_when_cross_encoder_wired(
+        self, mock_llm_service, mock_data_provider
+    ):
+        """When cross_encoder_service is injected, rerank() is called and results replaced."""
+        reranked = [{"provider_id": "px", "rerank_score": 0.99}]
+        mock_cross_encoder = Mock()
+        mock_cross_encoder.rerank = AsyncMock(return_value=reranked)
+
+        service = ConversationService(
+            llm_service=mock_llm_service,
+            data_provider=mock_data_provider,
+            max_providers=5,
+            cross_encoder_service=mock_cross_encoder,
+        )
+        service.context["user_problem"] = ["need electrician"]
+        await service.search_providers_for_request()
+
+        mock_cross_encoder.rerank.assert_called_once()
+        assert service.context["providers_found"] == reranked
+
+    async def test_no_reranking_when_cross_encoder_absent(
+        self, conversation_service, mock_data_provider
+    ):
+        """Without cross_encoder_service, providers are simply sliced to max_providers."""
+        conversation_service.max_providers = 1
+        conversation_service.context["user_problem"] = ["test"]
+        await conversation_service.search_providers_for_request()
+        # mock_data_provider returns 2 providers; sliced to 1
+        assert len(conversation_service.context["providers_found"]) == 1
 
 
 class TestAccumulateProblemDescription:

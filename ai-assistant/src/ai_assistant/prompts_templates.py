@@ -438,3 +438,20 @@ Extract the following information and return ONLY a valid JSON object (no additi
 
 {language_instruction}
 Return ONLY the JSON object, no other text."""
+
+HYDE_GENERATION_PROMPT = """You are an expert at writing service-provider profile summaries.
+
+Based on the user's service request below, write a short hypothetical profile (3–5 sentences) of a \
+freelancer or service provider who would be a *perfect* match for this request.
+
+The profile should:
+- Be written in the third person (e.g. "This provider is …")
+- Mention the specific skills, tools, and experience required
+- Include the type of work and any contextual constraints (timing, location, complexity)
+- Use English regardless of the original request language (the profile is used for vector search)
+- Read like a real provider bio, not a list
+
+User Request Summary:
+{problem_summary}
+
+Return ONLY the profile text. No preamble, no labels, no JSON."""

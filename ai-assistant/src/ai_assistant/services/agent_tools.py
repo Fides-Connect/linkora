@@ -152,9 +152,17 @@ def _require_fs(context: dict):
 
 async def _search_providers(params: dict, context: dict) -> Any:
     query = params.get("query", "")
-    limit = int(params.get("limit", 3))
+    limit = int(params.get("limit", 5))
     dp = context["data_provider"]
-    return await dp.search_providers(query_text=query, limit=limit)
+    cross_encoder = context.get("cross_encoder_service")
+    # For explicit mid-conversation tool calls, apply reranking when available.
+    raw = await dp.search_providers(query_text=query, limit=min(limit * 5, 30))
+    if cross_encoder and raw:
+        from .cross_encoder_service import CrossEncoderService
+        raw = await cross_encoder.rerank(query=query, candidates=raw, top_k=limit)
+    else:
+        raw = raw[:limit]
+    return raw
 
 
 async def _get_favorites(params: dict, context: dict) -> Any:
@@ -494,7 +502,7 @@ def build_default_registry() -> AgentToolRegistry:
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Maximum number of results to return (default 3).",
+                        "description": "Maximum number of results to return (default 5).",
                     },
                 },
                 "required": ["query"],

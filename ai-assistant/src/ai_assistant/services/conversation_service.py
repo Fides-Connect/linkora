@@ -4,6 +4,7 @@ Handles conversation flow, stage management, and orchestration.
 """
 import logging
 import json
+import asyncio
 from enum import Enum
 from datetime import datetime
 from typing import Optional, AsyncIterator, Dict, Any, List
@@ -23,6 +24,7 @@ from ..prompts_templates import (
     PROVIDER_ONBOARDING_PROMPT,
     get_language_instruction
 )
+from .cross_encoder_service import CrossEncoderService
 
 
 logger = logging.getLogger(__name__)
@@ -80,7 +82,8 @@ class ConversationService:
     
     def __init__(self, llm_service, data_provider: DataProvider,
                  agent_name: str = "Elin", company_name: str = "Linkora",
-                 max_providers: int = 3, language: str = 'de'):
+                 max_providers: int = 5, language: str = 'de',
+                 cross_encoder_service: Optional["CrossEncoderService"] = None):
         """
         Initialize Conversation service.
         
@@ -91,6 +94,9 @@ class ConversationService:
             company_name: Company name
             max_providers: Maximum number of providers to present
             language: Language code ('de' or 'en')
+            cross_encoder_service: Optional cross-encoder reranker.  When
+                provided, providers returned by Weaviate are reranked before
+                being stored in ``context["providers_found"]``.
         """
         self.llm_service = llm_service
         self.data_provider = data_provider
@@ -98,6 +104,7 @@ class ConversationService:
         self.company_name = company_name
         self.max_providers = max_providers
         self.language = language
+        self.cross_encoder_service = cross_encoder_service
         
         self.current_stage = ConversationStage.GREETING
         self.context: Dict[str, Any] = {
@@ -361,12 +368,52 @@ class ConversationService:
             logger.error("Error generating structured query: %s", exc, exc_info=True)
             logger.info("Falling back to original summary for search")
             return problem_summary
+
+    async def _generate_hyde_text(self, problem_summary: str) -> str:
+        """Generate a hypothetical provider profile (HyDE) from the problem summary.
+
+        Calls the LLM with ``HYDE_GENERATION_PROMPT`` to produce a short
+        prose description of a *perfect* service provider for the user's need.
+        The resulting text is used as the Weaviate vector query to bridge the
+        vocabulary gap between user language and stored competency bios.
+
+        Args:
+            problem_summary: Plain-language description of the user's request.
+
+        Returns:
+            Hypothetical provider profile string, or empty string on error.
+        """
+        from ..prompts_templates import HYDE_GENERATION_PROMPT
+
+        try:
+            hyde_prompt = HYDE_GENERATION_PROMPT.format(problem_summary=problem_summary)
+            hyde_text = await self.llm_service.generate(
+                [HumanMessage(content=hyde_prompt)]
+            )
+            hyde_text = hyde_text.strip()
+            logger.info("Generated HyDE profile (%d chars): '%s...'" , len(hyde_text), hyde_text[:80])
+            return hyde_text
+        except Exception as exc:
+            logger.error("Error generating HyDE text: %s", exc, exc_info=True)
+            return ""
     
     async def search_providers_for_request(self, session_id: str = "") -> None:
         """Search for providers based on the confirmed TRIAGE summary.
 
-        Called by ResponseOrchestrator when entering FINALIZE stage.
-        Generates a structured JSON query for hybrid Weaviate search.
+        Multi-stage retrieval pipeline:
+
+        1. **Structured query extraction** — LLM parses the problem summary
+           into ``{available_time, category, criterions}`` JSON for hard
+           filters and BM25 matching.
+        2. **HyDE** — LLM writes a hypothetical provider profile that bridges
+           the vocabulary gap between the user's language and stored bios.  The
+           profile is used as the Weaviate vector query.
+        3. **Wide-net hybrid retrieval** — Weaviate returns up to 25 candidates
+           using both vector (HyDE) and BM25 (structured fields) signals.
+        4. **Cross-encoder reranking** — if a ``CrossEncoderService`` is
+           injected, it rescores each candidate against the original problem
+           summary using a joint (query, document) encoder, returning the top
+           ``max_providers`` most relevant results.
 
         Args:
             session_id: Active LLM session — last 3 history messages are
@@ -374,19 +421,47 @@ class ConversationService:
         """
         problem_summary = self.get_problem_summary()
         logger.info(
-            "Generating structured search query from summary: '%s...'",
+            "Starting multi-stage provider search from summary: '%s...'",
             problem_summary[:100],
         )
-        query_text = await self._generate_structured_query(problem_summary, session_id)
+
+        # Stages 1 + 2 run independently — fire both LLM calls concurrently.
+        structured_query_task = asyncio.create_task(
+            self._generate_structured_query(problem_summary, session_id)
+        )
+        hyde_task = asyncio.create_task(
+            self._generate_hyde_text(problem_summary)
+        )
+        query_text, hyde_text = await asyncio.gather(structured_query_task, hyde_task)
 
         self.context["request_summary"] = query_text
+
+        # Stage 3: wide-net retrieval (fetch_limit is computed inside
+        # HubSpokeSearch as min(limit * 5, 30)).
+        fetch_limit = min(self.max_providers * 5, 30)
         providers = await self.data_provider.search_providers(
             query_text=query_text,
-            limit=self.max_providers,
+            limit=fetch_limit,
+            hyde_text=hyde_text,
         )
 
+        # Stage 4: cross-encoder reranking.
+        if self.cross_encoder_service and providers:
+            logger.info(
+                "Reranking %d candidates with cross-encoder (top %d)...",
+                len(providers),
+                self.max_providers,
+            )
+            providers = await self.cross_encoder_service.rerank(
+                query=problem_summary,
+                candidates=providers,
+                top_k=self.max_providers,
+            )
+        else:
+            providers = providers[: self.max_providers]
+
         self.context["providers_found"] = providers
-        logger.info("Found %d matching providers", len(providers))
+        logger.info("Provider search complete — %d results", len(providers))
     
     async def generate_greeting_text(
         self,
