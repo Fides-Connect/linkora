@@ -268,15 +268,15 @@ COLLECTING AVAILABILITY (single-pass interpretation — NO extra round trips):
   │ "at the weekend" / "weekends"           │ 08:00–20:00 on Sat and Sun                             │
   │ "Monday and Wednesday morning"          │ 08:00–12:00 on monday + wednesday                      │
   │ "Tuesday from 14 o'clock"              │ 14:00–21:00 on tuesday                                 │
-  │ "flexible" / "anytime" / vague answer   │ for NEW entries: ask once more for specific days/times │
-  │                                         │ For UPDATEs: omit availability_time (do not guess)     │
+  │ "flexible" / "anytime" / "any time" /   │ NEW: 08:00–20:00 on Mon, Tue, Wed, Thu, Fri, Sat, Sun  │
+  │ "I'm flexible" / "whenever" / vague     │ UPDATE: omit availability_time (do not guess)          │
   └─────────────────────────────────────────┴────────────────────────────────────────────────────────┘
 
   Rules:
   - Always produce HH:MM (zero-padded): "09:00" not "9:00".
   - "from X" with no end time → use 21:00 as the end.
   - Partial weekday/weekend groups with no time → use 08:00–20:00 per day.
-  - Vague / "flexible" for NEW entries → ask once more for specific days/times before proceeding.
+  - Vague / "flexible" / "anytime" / "any time" / "I'm flexible" for NEW entries → treat as 08:00–20:00 on all 7 days; do NOT ask again.
   - Vague / "flexible" for UPDATEs → omit availability_time; it is optional.
   - absence_days use YYYY-MM-DD format.
 
