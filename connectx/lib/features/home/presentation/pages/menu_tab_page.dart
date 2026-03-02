@@ -228,8 +228,19 @@ class _NotificationsToggleItemState extends State<_NotificationsToggleItem> {
 
   Future<void> _toggle(bool value) async {
     await _notificationService.setNotificationsEnabled(value);
-    UserService().updateSettings(notificationsEnabled: value);
     setState(() => _enabled = value);
+    final success = await UserService().updateSettings(notificationsEnabled: value);
+    if (!success) {
+      // Revert local state if backend update failed.
+      await _notificationService.setNotificationsEnabled(!value);
+      if (!mounted) return;
+      setState(() => _enabled = !value);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Failed to update notification settings. Please try again.'),
+        ),
+      );
+    }
   }
 
   @override

@@ -38,11 +38,13 @@ This document describes the architecture, design decisions, and technical implem
 │   ┌────────────┐  ┌────────────┐  ┌──────────────┐          │
 │   │ Google STT │  │ Google TTS │  │ Google Gemini│          │
 │   └────────────┘  └────────────┘  └──────────────┘          │
-│                                                             ││   ┌─────────────┐  ┌──────────────────────────────┐             │
-│   │ Firebase   │  │  Firebase Cloud Messaging (FCM)          │             │
-│   │ Auth/Fstre │  │  Push notifications (localised)          │             │
-│   └─────────────┘  └──────────────────────────────┘             │
-│                                                             │└─────────────────────────────────────────────────────────────┘
+│                                                             │
+│   ┌─────────────┐  ┌───────────────────────────────┐        │
+│   │ Firebase    │  │ Firebase Cloud Messaging (FCM) │        │
+│   │ Auth/Fstre  │  │ Push notifications (localised) │        │
+│   └─────────────┘  └───────────────────────────────┘        │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Interaction Flow

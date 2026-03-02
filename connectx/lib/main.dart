@@ -39,14 +39,16 @@ Future<void> _openServiceRequestDetail(String requestId) async {
   // Load user data so getType/getAmount/action buttons work correctly.
   await viewModel.loadData();
   if (!context.mounted) return;
-  Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (_) => ChangeNotifierProvider.value(
-        value: viewModel,
-        child: RequestDetailPage(request: request),
-      ),
-    ),
-  );
+  Navigator.of(context)
+      .push(
+        MaterialPageRoute(
+          builder: (_) => ChangeNotifierProvider.value(
+            value: viewModel,
+            child: RequestDetailPage(request: request),
+          ),
+        ),
+      )
+      .then((_) => viewModel.dispose());
 }
 
 /// Handles an FCM [RemoteMessage] that opens the app (background / terminated).
@@ -103,7 +105,7 @@ void main() async {
       final title = message.notification?.title ?? 'Service Request Update';
       final body = message.notification?.body ?? 'You have a new service request update.';
       notificationService.showNotification(
-        id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        id: DateTime.now().millisecondsSinceEpoch,
         title: title,
         body: body,
         payload: '$type:${message.data['service_request_id'] ?? ''}',

@@ -392,6 +392,16 @@ async def update_settings(request: web.Request) -> web.Response:
         if not user:
             return web.json_response({'error': 'User not found'}, status=404)
 
+        # Validate types for allowed keys before merging.
+        if 'language' in body and not isinstance(body['language'], str):
+            return web.json_response(
+                {'error': "Field 'language' must be a string"}, status=400
+            )
+        if 'notifications_enabled' in body and not isinstance(body['notifications_enabled'], bool):
+            return web.json_response(
+                {'error': "Field 'notifications_enabled' must be a boolean"}, status=400
+            )
+
         # Merge only the allowed keys into the existing settings dict.
         merged: dict = dict(user.get('user_app_settings', {}))
         updated = False

@@ -411,7 +411,7 @@ async def notify_service_request_status_change(
       - seeker notifications are sent when a provider acts (accepted, rejected,
         serviceProvided)
       - provider notifications are sent when a seeker acts (cancelled,
-        paymentCompleted)
+        completed)
 
     Errors are logged and swallowed so they never block the API response.
     """

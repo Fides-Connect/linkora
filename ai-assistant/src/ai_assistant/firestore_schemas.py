@@ -161,7 +161,7 @@ class ServiceRequestSchema(BaseModel):
     @classmethod
     def validate_status(cls, v: str) -> str:
         """Validate status values."""
-        valid_statuses = ['pending', 'accepted', 'rejected', 'active', 'waitingForAnswer', 'completed', 'cancelled', 'expired', 'unknown', 'serviceProvided', 'paymentCompleted']
+        valid_statuses = ['pending', 'accepted', 'rejected', 'active', 'waitingForAnswer', 'completed', 'cancelled', 'expired', 'unknown', 'serviceProvided']
         if v and v not in valid_statuses:
             raise ValueError(f'status must be one of {valid_statuses}')
         return v

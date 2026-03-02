@@ -15,6 +15,7 @@ class HomeTabViewModel extends ChangeNotifier {
   User? _user;
 
   bool _isLoading = false;
+  bool _isReloading = false;
   String? _error;
 
   HomeTabViewModel({HomeRepository? repository})
@@ -67,7 +68,8 @@ class HomeTabViewModel extends ChangeNotifier {
   }
 
   Future<void> _reloadRequests() async {
-    if (_isLoading) return;
+    if (_isLoading || _isReloading) return;
+    _isReloading = true;
     try {
       final requests = await _repository.getRequests();
       final currentUserId = _user?.id ?? '';
@@ -82,6 +84,8 @@ class HomeTabViewModel extends ChangeNotifier {
     } catch (e) {
       _error = e.toString();
       notifyListeners();
+    } finally {
+      _isReloading = false;
     }
   }
 
