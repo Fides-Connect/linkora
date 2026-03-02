@@ -41,8 +41,11 @@ class NotificationService {
   /// [onNotificationTap] is called with the notification payload whenever the
   /// user taps a local notification while the app is in the foreground.
   Future<void> initialize({Function(String payload)? onNotificationTap}) async {
+    // Allow updating the tap callback even when already initialized (e.g. if
+    // showNotification() triggered a bare initialize() before main.dart could
+    // pass onNotificationTap).
+    if (onNotificationTap != null) _onTapCallback = onNotificationTap;
     if (_isInitialized) return;
-    _onTapCallback = onNotificationTap;
 
     // Android initialization settings
     const AndroidInitializationSettings androidSettings =

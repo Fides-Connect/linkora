@@ -369,7 +369,8 @@ async def get_settings(request: web.Request) -> web.Response:
         user = await firestore_service.get_user(user_id)
         if not user:
             return web.json_response({'error': 'User not found'}, status=404)
-        stored: dict = user.get('user_app_settings', {})
+        raw_settings = user.get('user_app_settings')
+        stored: dict = raw_settings if isinstance(raw_settings, dict) else {}
         return web.json_response({
             'language': stored.get('language', _DEFAULT_SETTINGS['language']),
             'notifications_enabled': stored.get(
@@ -392,18 +393,34 @@ async def update_settings(request: web.Request) -> web.Response:
         if not user:
             return web.json_response({'error': 'User not found'}, status=404)
 
-        # Validate types for allowed keys before merging.
-        if 'language' in body and not isinstance(body['language'], str):
-            return web.json_response(
-                {'error': "Field 'language' must be a string"}, status=400
-            )
+        # Normalize and validate language; only 'en' and 'de' are supported.
+        if 'language' in body:
+            if not isinstance(body['language'], str):
+                return web.json_response(
+                    {'error': "Field 'language' must be a string"}, status=400
+                )
+            normalized_lang = body['language'].strip().lower()
+            if normalized_lang not in {'en', 'de'}:
+                return web.json_response(
+                    {'error': "Field 'language' must be one of: 'en', 'de'"}, status=400
+                )
+            body['language'] = normalized_lang
         if 'notifications_enabled' in body and not isinstance(body['notifications_enabled'], bool):
             return web.json_response(
                 {'error': "Field 'notifications_enabled' must be a boolean"}, status=400
             )
 
+        # Guard against corrupt/missing user_app_settings in Firestore.
+        existing_settings = user.get('user_app_settings') or {}
+        if not isinstance(existing_settings, dict):
+            logger.warning(
+                "User %s has non-dict user_app_settings (%r); resetting to empty dict",
+                user_id, type(existing_settings),
+            )
+            existing_settings = {}
+
         # Merge only the allowed keys into the existing settings dict.
-        merged: dict = dict(user.get('user_app_settings', {}))
+        merged: dict = dict(existing_settings)
         updated = False
         for key in _ALLOWED_SETTINGS_KEYS:
             if key in body:

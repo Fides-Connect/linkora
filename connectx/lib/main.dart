@@ -181,9 +181,14 @@ class _ConnectXAppState extends State<ConnectXApp> {
   Future<void> _applyBackendSettings() async {
     final settings = await UserService().getSettings();
     if (settings == null || !mounted) return;
-    final language = settings['language'] as String?;
+    final languageRaw = settings['language'] as String?;
     final notificationsEnabled = settings['notifications_enabled'] as bool?;
-    if (language != null) setState(() => _locale = Locale(language, ''));
+    if (languageRaw != null) {
+      final normalized = languageRaw.toLowerCase();
+      if (normalized == 'en' || normalized == 'de') {
+        setState(() => _locale = Locale(normalized, ''));
+      }
+    }
     if (notificationsEnabled != null) {
       await NotificationService().setNotificationsEnabled(notificationsEnabled);
     }

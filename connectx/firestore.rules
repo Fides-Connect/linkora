@@ -20,16 +20,15 @@ service cloud.firestore {
     // the seeker or the selected provider.
     // Write access stays backend-only (Admin SDK bypasses these rules).
     match /service_requests/{requestId} {
-      // Single-document fetch: resource.data is fully available.
-      allow get: if request.auth != null && (
+      // Both single-document fetches and queries are restricted so that only
+      // the seeker or the selected provider can see a given request.
+      // For list/query rules Firestore evaluates per-document, so the client
+      // must always include a .where() filter on seeker_user_id or
+      // selected_provider_user_id — queries without such a filter are rejected.
+      allow get, list: if request.auth != null && (
         resource.data.seeker_user_id == request.auth.uid ||
         resource.data.selected_provider_user_id == request.auth.uid
       );
-      // List / query: Firestore cannot resolve resource.data at query-validation
-      // time, so we allow any authenticated user to query the collection.
-      // The app always scopes queries with .where() to the user's own ID, so
-      // no cross-user data is ever returned in practice.
-      allow list: if request.auth != null;
     }
   }
 }
