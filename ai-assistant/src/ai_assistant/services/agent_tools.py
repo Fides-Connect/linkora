@@ -272,6 +272,8 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
 
     # Load existing competencies once for the whole batch so we can do
     # server-side deduplication (title-collision → upgrade new → update).
+    # Must happen BEFORE the availability_time check so deduplicated skills
+    # (which become UPDATEs) are not incorrectly flagged as missing availability.
     try:
         existing_competencies: list[dict] = await fs.get_competencies(user_id) or []
     except Exception:  # pragma: no cover
@@ -281,6 +283,26 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
         for c in existing_competencies
         if c.get("competence_id")
     }
+
+    # Validate: availability_time is mandatory for every truly NEW skill.
+    # A skill is "truly new" when it has no competence_id AND its title does not
+    # match an existing competence (which would be deduplicated to an UPDATE).
+    missing_availability = [
+        skill.get("title", "(untitled)")
+        for skill in skills
+        if not skill.get("competence_id")
+        and (skill.get("title") or "").strip().lower() not in existing_by_title
+        and not skill.get("availability_time")
+    ]
+    if missing_availability:
+        return {
+            "error": (
+                f"availability_time is required but was missing for new entries: "
+                f"{', '.join(missing_availability)}. "
+                "Ask the user when they are usually available (e.g. 'when are you usually free?') "
+                "before calling save_competence_batch."
+            )
+        }
 
     for skill in skills:
         skill_copy = dict(skill)  # don't mutate caller's dict
