@@ -522,21 +522,24 @@ async def main():
             selected_provider_user_id=args.provider_user_id,
         )
         result = await firestore_service.create_service_request(request_data)
-        if result:
-            service_request_id = result.get('service_request_id', '')
-            logger.info(
-                f"✓ Service request created: {service_request_id} "
-                f"(seeker={args.seeker_user_id}, provider={args.provider_user_id})"
-            )
-            await notify_new_service_request(
-                provider_id=args.provider_user_id,
-                service_request_id=service_request_id,
-                category=request_data.get('category', ''),
-            )
-            return 0
-        else:
-            logger.error("✗ Failed to create service request.")
-            return 1
+        try:
+            if result:
+                service_request_id = result.get('service_request_id', '')
+                logger.info(
+                    f"✓ Service request created: {service_request_id} "
+                    f"(seeker={args.seeker_user_id}, provider={args.provider_user_id})"
+                )
+                await notify_new_service_request(
+                    provider_id=args.provider_user_id,
+                    service_request_id=service_request_id,
+                    category=request_data.get('category', ''),
+                )
+                return 0
+            else:
+                logger.error("✗ Failed to create service request.")
+                return 1
+        finally:
+            HubSpokeConnection.close()
 
     # ── Sync path: independent of the normal init flow ─────────────────────
     if args.sync_to_weaviate:
