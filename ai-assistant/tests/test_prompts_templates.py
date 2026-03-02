@@ -151,3 +151,52 @@ class TestProviderOnboardingOrderingRules:
     def test_rules_section_prohibits_combining_write_and_signal_transition(self):
         """The RULES block must explicitly forbid calling signal_transition + write together."""
         assert "Never call `signal_transition` and a write tool in the same response" in PROVIDER_ONBOARDING_PROMPT
+
+
+class TestAvailabilityInterpretationTable:
+    """The onboarding prompt must contain the single-pass availability interpretation table
+    so Elin can convert natural language availability directly into availability_time without
+    an extra round trip."""
+
+    def test_single_pass_instruction_present(self):
+        """Prompt must say no follow-up question is needed for availability."""
+        prompt_lower = PROVIDER_ONBOARDING_PROMPT.lower()
+        assert "no extra round" in prompt_lower or "no follow-up" in prompt_lower or "never ask a follow-up" in prompt_lower, (
+            "Prompt must instruct single-pass availability interpretation (no follow-up turn)"
+        )
+
+    def test_morning_slot_defined(self):
+        assert "08:00" in PROVIDER_ONBOARDING_PROMPT and "12:00" in PROVIDER_ONBOARDING_PROMPT
+
+    def test_afternoon_slot_defined(self):
+        assert "12:00" in PROVIDER_ONBOARDING_PROMPT and "17:00" in PROVIDER_ONBOARDING_PROMPT
+
+    def test_evening_slot_defined(self):
+        assert "17:00" in PROVIDER_ONBOARDING_PROMPT and "21:00" in PROVIDER_ONBOARDING_PROMPT
+
+    def test_default_end_of_day_for_open_ended_times(self):
+        """'from 14' with no end should use 21:00 — the default end-of-day must be documented."""
+        assert "21:00" in PROVIDER_ONBOARDING_PROMPT
+
+    def test_weekend_group_described(self):
+        prompt_lower = PROVIDER_ONBOARDING_PROMPT.lower()
+        assert "weekend" in prompt_lower and "sat" in prompt_lower and "sun" in prompt_lower
+
+    def test_weekday_group_described(self):
+        prompt_lower = PROVIDER_ONBOARDING_PROMPT.lower()
+        assert "weekday" in prompt_lower and "mon" in prompt_lower and "fri" in prompt_lower
+
+    def test_flexible_means_omit(self):
+        """'flexible'/'anytime' must map to omitting availability_time, not guessing."""
+        prompt_lower = PROVIDER_ONBOARDING_PROMPT.lower()
+        assert "flexible" in prompt_lower
+        assert "omit" in prompt_lower or "skip" in prompt_lower or "optional" in prompt_lower
+
+    def test_zero_padding_rule_present(self):
+        """HH:MM zero-padding rule must be stated so the LLM never produces '9:00'."""
+        assert "zero-pad" in PROVIDER_ONBOARDING_PROMPT or "HH:MM" in PROVIDER_ONBOARDING_PROMPT or "09:00" in PROVIDER_ONBOARDING_PROMPT
+
+    def test_natural_language_in_reply_rule(self):
+        """Prompt must say to describe availability naturally in the spoken reply (no JSON to user)."""
+        prompt_lower = PROVIDER_ONBOARDING_PROMPT.lower()
+        assert "naturally" in prompt_lower or "natural language" in prompt_lower

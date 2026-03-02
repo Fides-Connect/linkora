@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from ..hub_spoke_ingestion import HubSpokeIngestion
+from ..firestore_schemas import AvailabilityTimeSchema, derive_availability_tags
 
 logger = logging.getLogger(__name__)
 
@@ -283,10 +284,15 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
 
     for skill in skills:
         skill_copy = dict(skill)  # don't mutate caller's dict
-        # Normalise availability field name: LLM may send 'availability' (prompt
-        # field name) — store it as availability_text in Firestore.
-        if "availability" in skill_copy and "availability_text" not in skill_copy:
-            skill_copy["availability_text"] = skill_copy.pop("availability")
+
+        # Pop availability_time before hitting Firestore — it's written to the
+        # 'availability_time' subcollection separately, not onto the competence doc.
+        availability_time_data: Optional[dict] = skill_copy.pop("availability_time", None)
+
+        # Legacy normalisation: if the LLM sent 'availability' as a plain string,
+        # keep it in skill_copy so CompetenceEnricher can use it for context, but
+        # do NOT store it in Firestore (CompetenceUpdateSchema has extra='ignore').
+        # No 'availability_text' flat field exists on the schema any more.
 
         competence_id = skill_copy.pop("competence_id", None)
 
@@ -307,6 +313,47 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
         else:
             result = await fs.create_competence(user_id, skill_copy)
         saved.append(result)
+
+        # ── Write availability_time subcollection ─────────────────────────────────
+        saved_id = (
+            (result.get("id") or result.get("competence_id") or competence_id)
+            if result
+            else None
+        )
+        if availability_time_data and saved_id:
+            from pydantic import ValidationError as _ValidationError
+            try:
+                # Validate the structured time data before writing.
+                fs._validate_data(availability_time_data, AvailabilityTimeSchema)
+                # Check whether a doc already exists to decide create vs. update.
+                existing_avail = await fs.get_availability_times(
+                    user_id, competence_id=saved_id
+                )
+                if existing_avail:
+                    avail_id = existing_avail[0].get("availability_time_id")
+                    await fs.update_availability_time(
+                        user_id, avail_id, availability_time_data, competence_id=saved_id
+                    )
+                else:
+                    await fs.create_availability_time(
+                        user_id, availability_time_data, competence_id=saved_id
+                    )
+                logger.info(
+                    "Wrote availability_time for competence %s (user %s)", saved_id, user_id
+                )
+            except _ValidationError as avail_err:
+                field_errors = fs._format_validation_errors(avail_err)
+                return {
+                    "error": (
+                        "availability_time contains invalid data. "
+                        "Fix the highlighted fields and retry."
+                    ),
+                    "field_errors": field_errors,
+                    "hint": (
+                        "time ranges: use HH:MM format (e.g. '09:00'), "
+                        "absence_days: use YYYY-MM-DD (e.g. '2026-03-15')"
+                    ),
+                }
 
         # ── LLM enrichment ───────────────────────────────────────────────────
         if enricher is not None:
@@ -345,11 +392,18 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
 
     # Weaviate full re-sync: read ALL competencies from Firestore (ground truth) so
     # that skills saved in earlier sessions are preserved in Weaviate.
-    # Pass full enriched dicts — update_competencies_by_user_id writes all
-    # filter/rank properties (price_per_hour, availability_tags, year_of_experience,
-    # search_optimized_summary, …).  Self-heals missing Weaviate user row.
+    # For each competence, fetch its availability_time subcollection and inject
+    # derived availability_tags so Weaviate filtering stays accurate.
     all_competencies = await fs.get_competencies(user_id)
     if all_competencies:
+        for comp in all_competencies:
+            cid = comp.get("competence_id")
+            if cid:
+                avail_docs = await fs.get_availability_times(user_id, competence_id=cid)
+                if avail_docs:
+                    avail_data = avail_docs[0]  # one doc per competence
+                    comp["availability_time"] = avail_data
+                    comp["availability_tags"] = derive_availability_tags(avail_data)
         result = HubSpokeIngestion.update_competencies_by_user_id(user_id, all_competencies)
         if isinstance(result, dict) and not result.get("success") and result.get("error") == "User not found":
             logger.warning(
@@ -558,7 +612,8 @@ def build_default_registry() -> AgentToolRegistry:
             "Required fields per skill: 'title' and 'price_range' (e.g. '€30–€50/h' or 'fixed price €200'). "
             "price_range is MANDATORY for new entries — never create a competence without it. "
             "For UPDATE (competence_id provided), price_range is optional. "
-            "Other optional fields: 'description', 'category', 'year_of_experience', 'availability'."
+            "Optional fields: 'description', 'category', 'year_of_experience', "
+            "'availability' (free-text string), 'availability_time' (structured weekly slots)."
         ),
         schema={
             "name": "save_competence_batch",
@@ -578,11 +633,42 @@ def build_default_registry() -> AgentToolRegistry:
                                 "category": {"type": "string"},
                                 "price_range": {
                                     "type": "string",
-                                    "description": "Pricing information, e.g. '€30–€50/h' or 'fixed price €200'. REQUIRED.",
+                                    "description": "Pricing information, e.g. '€30–€50/h' or 'fixed price €200'. REQUIRED for new entries.",
                                 },
                                 "availability": {
                                     "type": "string",
-                                    "description": "When the provider is available, e.g. 'weekdays after 4pm, weekends'.",
+                                    "description": "Free-text description of when the provider is available, e.g. 'weekdays after 4pm'. Collected first. If the user confirms specific time slots, populate availability_time instead or alongside.",
+                                },
+                                "availability_time": {
+                                    "type": "object",
+                                    "description": (
+                                        "Structured weekly availability derived from what the user said — no follow-up question needed. "
+                                        "Each day key maps to a list of {start_time, end_time} objects in HH:MM (zero-padded). "
+                                        "absence_days is an optional list of YYYY-MM-DD strings. "
+                                        "Interpretation rules: "
+                                        "'morning' → 08:00–12:00; "
+                                        "'afternoon' → 12:00–17:00; "
+                                        "'evening'/'after work' → 17:00–21:00; "
+                                        "'from 14'/'after 2pm' → 14:00–21:00 (default end 21:00 when no end given); "
+                                        "'from 9:15 to 12' → 09:15–12:00 (use exact numbers); "
+                                        "'whole day'/'all day' → 08:00–20:00; "
+                                        "'weekdays' (no time) → 08:00–20:00 on Mon–Fri; "
+                                        "'at the weekend'/'weekends' → 08:00–20:00 on Sat+Sun; "
+                                        "'flexible'/'anytime'/vague → omit this field entirely. "
+                                        "Example for 'Monday morning and Tuesday from 14': "
+                                        "{\"monday_time_ranges\": [{\"start_time\": \"08:00\", \"end_time\": \"12:00\"}], "
+                                        "\"tuesday_time_ranges\": [{\"start_time\": \"14:00\", \"end_time\": \"21:00\"}]}"
+                                    ),
+                                    "properties": {
+                                        "monday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "tuesday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "wednesday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "thursday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "friday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "saturday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "sunday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "absence_days": {"type": "array", "items": {"type": "string"}},
+                                    },
                                 },
                                 "year_of_experience": {"type": "integer"},
                             },

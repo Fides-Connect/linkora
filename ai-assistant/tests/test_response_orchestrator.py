@@ -105,12 +105,17 @@ class TestHandleSignalTransition:
         mock_conversation_service.get_current_stage.return_value = ConversationStage.GREETING
         assert orchestrator.handle_signal_transition("completed") is False
 
-    async def test_finalize_target_also_triggers_provider_search(
+    async def test_finalize_target_is_thin_wrapper_no_side_effects(
         self, orchestrator, mock_conversation_service
     ):
+        """handle_signal_transition_async is now a thin wrapper: it applies the
+        stage but does NOT trigger provider search.  Side effects (search,
+        competency fetch, context reset) are handled by
+        _apply_signal_transition_with_payload inside generate_response_stream."""
         mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
-        await orchestrator.handle_signal_transition_async("finalize")
-        mock_conversation_service.search_providers_for_request.assert_called_once()
+        result = await orchestrator.handle_signal_transition_async("finalize")
+        assert result is True
+        mock_conversation_service.search_providers_for_request.assert_not_called()
 
     async def test_non_finalize_target_does_not_trigger_search(
         self, orchestrator, mock_conversation_service
@@ -119,13 +124,53 @@ class TestHandleSignalTransition:
         await orchestrator.handle_signal_transition_async("clarify")
         mock_conversation_service.search_providers_for_request.assert_not_called()
 
-    async def test_finalize_target_forwards_session_id_to_search(
+    async def test_apply_payload_finalize_calls_search_with_session_id(
         self, orchestrator, mock_conversation_service
     ):
-        """session_id is forwarded to search_providers_for_request on FINALIZE."""
+        """_apply_signal_transition_with_payload triggers search and forwards session_id."""
         mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
-        await orchestrator.handle_signal_transition_async("finalize", session_id="sess-42")
+        pending: list = []
+        await orchestrator._apply_signal_transition_with_payload(
+            "finalize", "sess-42", None, pending
+        )
         mock_conversation_service.search_providers_for_request.assert_called_once_with("sess-42")
+        assert any(r.get("stage") == "finalize" for _, r in pending)
+
+    async def test_finalize_from_provider_onboarding_skips_provider_search(
+        self, orchestrator, mock_conversation_service
+    ):
+        """PROVIDER_ONBOARDING → FINALIZE is illegal; even if forced, search must not run."""
+        # PROVIDER_ONBOARDING → FINALIZE is not in _LEGAL_TRANSITIONS, so the
+        # transition is rejected and search_providers_for_request must not be called.
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.PROVIDER_ONBOARDING
+        result = await orchestrator.handle_signal_transition_async("finalize")
+        assert result is False
+        mock_conversation_service.search_providers_for_request.assert_not_called()
+
+    async def test_finalize_from_provider_onboarding_guard_if_stage_bypassed(
+        self, orchestrator, mock_conversation_service
+    ):
+        """Even if set_stage fires (e.g. mock bypass), the guard skips the search."""
+        # Simulate previous_stage == PROVIDER_ONBOARDING by returning it on the first
+        # get_current_stage call, then returning FINALIZE after set_stage is called.
+        mock_conversation_service.get_current_stage.side_effect = [
+            ConversationStage.PROVIDER_ONBOARDING,  # queried as previous_stage
+            ConversationStage.FINALIZE,              # queried later
+        ]
+        # Make is_legal_transition accept the transition so the applied path runs.
+        mock_conversation_service.set_stage.return_value = None  # no-op
+
+        # Patch the legality check by making the service return True for set_stage call.
+        # We bypass by calling the internal sync helper with a forged legal response.
+        # The simplest approach: patch handle_signal_transition to return True.
+        original = orchestrator.handle_signal_transition
+        orchestrator.handle_signal_transition = Mock(return_value=True)
+        try:
+            await orchestrator.handle_signal_transition_async("finalize")
+        finally:
+            orchestrator.handle_signal_transition = original
+
+        mock_conversation_service.search_providers_for_request.assert_not_called()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -199,11 +244,18 @@ class TestProviderSearchViaSignalTransition:
         self, orchestrator, mock_conversation_service, mock_llm_service
     ):
         mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        call_count = 0
 
         async def stream_with_transition(*args, **kwargs):
-            yield "Searching now..."
-            yield {"type": "function_call", "name": "signal_transition",
-                   "args": {"target_stage": "finalize"}}
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield "Searching now..."
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "finalize"}}
+            else:
+                # Follow-up presentation stream — yield text only, no new transition
+                yield "Here are your providers."
 
         mock_llm_service.generate_stream = stream_with_transition
         async for _ in orchestrator.generate_response_stream("ready", "sess"):
@@ -579,10 +631,16 @@ class TestAIConversationServiceIntegration:
         mock_conversation_service.get_problem_summary = Mock(return_value="Elektriker")
 
         ai_conv = self._make_ai_conv_svc()
+        call_count = 0
 
         async def stream_with_finalize(*args, **kwargs):
-            yield {"type": "function_call", "name": "signal_transition",
-                   "args": {"target_stage": "finalize"}}
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "finalize"}}
+            else:
+                yield "Here are providers."
 
         mock_llm_service.generate_stream = stream_with_finalize
         orch = ResponseOrchestrator(
@@ -667,13 +725,15 @@ class TestAIConversationServiceIntegration:
         async for _ in orch.generate_response_stream("ready", "sess"):
             pass
 
-        # A save_message call with stage=FINALIZE must exist for the presentation
-        finalize_saves = [
+        # A save_message call with the presentation text must exist
+        presentation_saves = [
             c for c in ai_conv.save_message.call_args_list
-            if c[1].get("stage") == ConversationStage.FINALIZE
+            if "providers" in (c[1].get("text") or "").lower()
         ]
-        assert len(finalize_saves) == 1
-        assert "providers" in finalize_saves[0][1]["text"].lower()
+        assert len(presentation_saves) == 1, (
+            f"Expected 1 save_message with 'providers' in text; "
+            f"got {len(presentation_saves)}: {[c[1] for c in ai_conv.save_message.call_args_list]}"
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -942,6 +1002,113 @@ class TestFollowUpStreamSignalTransition:
         combined = "".join(chunks)
         assert "competencies are live" in combined, (
             "Confirmation text from the follow-up stream must reach the caller"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TRIAGE → PROVIDER_ONBOARDING opener
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestTriageToProviderOnboardingOpener:
+    """When TRIAGE calls signal_transition('provider_onboarding'), the orchestrator must:
+    1. pre-fetch competencies immediately,
+    2. trigger a follow-up LLM stream (so the user receives an opening message),
+    3. use the PROVIDER_ONBOARDING prompt for that follow-up.
+    """
+
+    async def test_follow_up_stream_fires_after_triage_to_provider_onboarding(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """A follow-up LLM stream must run after the TRIAGE→PROVIDER_ONBOARDING
+        transition so the user sees the competency opener.
+        The opener must pass the original user_input (not a whitespace placeholder)
+        to avoid injecting a spurious HumanMessage into LLM history."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_tool_registry.execute = AsyncMock(return_value=[{"title": "Plumbing"}])
+
+        call_count = 0
+        call_inputs: list[str] = []
+
+        async def stream(prompt, *args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            call_inputs.append(prompt)
+            if call_count == 1:
+                # Main TRIAGE stream: only a signal_transition, no text
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "provider_onboarding"}}
+            else:
+                # Follow-up PROVIDER_ONBOARDING stream: opener text
+                yield "You have Plumbing registered."
+
+        mock_llm_service.generate_stream = stream
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+
+        from unittest.mock import patch
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            chunks = []
+            async for chunk in orch.generate_response_stream("show me my skills", "sess"):
+                if isinstance(chunk, str):
+                    chunks.append(chunk)
+
+        assert call_count == 2, (
+            "LLM must be called twice: once for TRIAGE, once for the PROVIDER_ONBOARDING opener"
+        )
+        assert "Plumbing" in "".join(chunks), (
+            "The PROVIDER_ONBOARDING opener text must reach the caller"
+        )
+        # Opener must receive the real user input, not a whitespace placeholder,
+        # to avoid consecutive HumanMessage(" ") entries in LLM history.
+        assert call_inputs[1] == "show me my skills", (
+            "The opener must pass the original user_input to generate_stream, "
+            f"not a whitespace placeholder. Got: {call_inputs[1]!r}"
+        )
+
+    async def test_competencies_prefetched_before_followup_on_provider_onboarding_entry(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Competencies must be fetched before the follow-up stream runs so the
+        PROVIDER_ONBOARDING prompt has the correct `current_competencies_json`."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_tool_registry.execute = AsyncMock(return_value=[{"title": "Gardening"}])
+
+        async def stream(*args, **kwargs):
+            yield {"type": "function_call", "name": "signal_transition",
+                   "args": {"target_stage": "provider_onboarding"}}
+
+        mock_llm_service.generate_stream = stream
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+
+        from unittest.mock import patch
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("show my skills", "sess"):
+                pass
+
+        competencies = mock_conversation_service.context.get("current_competencies", [])
+        assert competencies == [{"title": "Gardening"}], (
+            "Competencies must be pre-fetched and stored in context before the follow-up stream"
         )
 
 

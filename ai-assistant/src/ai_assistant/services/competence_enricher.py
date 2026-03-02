@@ -1,14 +1,18 @@
 """CompetenceEnricher — LLM-powered enrichment of raw competence data.
 
 Transforms the conversationally collected competence fields (title, description,
-price_range, availability_text, …) into a search-optimised representation:
+price_range, …) into a search-optimised representation:
 
   - ``skills_list``              explicit + implicit skills, normalised
   - ``search_optimized_summary`` LLM-rewritten profile for semantic vector search
-  - ``availability_tags``        normalised tokens for Weaviate where-filters
-  - ``availability_text``        cleaner human-readable form (for display)
   - ``price_per_hour``           numeric float extracted from price_range string
   - ``category``                 may be refined / inferred by the LLM
+
+Availability is now structured in the ``availability_time`` subcollection and is
+managed by ``derive_availability_tags()`` in ``firestore_schemas``.  The enricher
+receives a human-readable summary of the availability (``availability`` key) for
+context when writing ``search_optimized_summary`` — but no longer outputs
+``availability_text`` or ``availability_tags``.
 
 Design rules:
 - Single non-streaming LLM call per competence (low latency, deterministic).
@@ -41,7 +45,7 @@ Rules:
 
 2. search_optimized_summary: rewrite the profile in 2–4 sentences specifically
    optimised for semantic vector search by potential customers. Include domain
-   keywords, key skills, experience level, and availability. Write in English.
+   keywords, key skills, experience level, and availability (if known). Write in English.
 
 3. category: use the most appropriate single category from this list:
    Handwerk, IT, Reinigung, Garten, Pflege, Transport, Bildung, Küche, Sonstiges.
@@ -53,29 +57,12 @@ Rules:
    - If no price or non-hourly only, use null.
    Always represent as euros per hour.
 
-5. availability_text: rewrite as a clean, concise human-readable sentence in the
-   SAME language as the input (German if input is German, English otherwise).
-
-6. availability_tags: normalised lowercase tokens for filtering. Rules:
-   - Day names in English: "monday", "tuesday", "wednesday", "thursday",
-     "friday", "saturday", "sunday"
-   - Infer "weekday" if any Mon–Fri day present or "weekdays" mentioned.
-   - Infer "weekend" if Saturday or Sunday present or "weekends" mentioned.
-   - Time-of-day buckets (apply when time mentioned or strongly implied):
-       "morning"   = before 12:00
-       "afternoon" = 12:00–17:00
-       "evening"   = after 17:00
-   - Include "flexible" if the provider says they are flexible / available anytime.
-   - Always use English tokens regardless of input language.
-
 Output schema (strict):
 {
   "skills_list": ["string", ...],
   "search_optimized_summary": "string",
   "category": "string",
-  "price_per_hour": <float | null>,
-  "availability_text": "string",
-  "availability_tags": ["string", ...]
+  "price_per_hour": <float | null>
 }
 """
 
@@ -100,12 +87,13 @@ class CompetenceEnricher:
         Args:
             raw: Competence dict with at minimum ``title``.  Recognised keys:
                  title, description, category, price_range, year_of_experience,
-                 availability_text (raw string collected from user).
+                 availability (human-readable string, derived from availability_time
+                 by the caller if structured data is available).
 
         Returns:
             Copy of *raw* with enriched keys added/overridden:
-            skills_list, search_optimized_summary, availability_tags,
-            availability_text, price_per_hour, and potentially category.
+            skills_list, search_optimized_summary, price_per_hour, and
+            optionally category.
         """
         user_content = self._build_user_message(raw)
         try:
@@ -123,10 +111,9 @@ class CompetenceEnricher:
             result = {**raw}
             result.update(enriched)
             logger.info(
-                "Competence enriched — title=%r  skills=%d  tags=%s",
+                "Competence enriched — title=%r  skills=%d",
                 raw.get("title"),
                 len(enriched.get("skills_list", [])),
-                enriched.get("availability_tags", []),
             )
             return result
 
@@ -144,14 +131,60 @@ class CompetenceEnricher:
     # ─────────────────────────────────────────────────────────────────────────
 
     @staticmethod
+    def _availability_time_to_text(availability_time: Dict[str, Any]) -> str:
+        """Derive a short human-readable availability string from a structured dict.
+
+        Only used as context input to the LLM — not stored in Firestore.
+        Example: "Monday 09:00–12:00, Wednesday 14:00–18:00, Friday 09:00–15:00"
+        """
+        _DAYS = [
+            ("monday",    "Monday"),
+            ("tuesday",   "Tuesday"),
+            ("wednesday", "Wednesday"),
+            ("thursday",  "Thursday"),
+            ("friday",    "Friday"),
+            ("saturday",  "Saturday"),
+            ("sunday",    "Sunday"),
+        ]
+        parts = []
+        for field_key, label in _DAYS:
+            ranges = availability_time.get(f"{field_key}_time_ranges", []) or []
+            if not ranges:
+                continue
+            slot_parts = []
+            for r in ranges:
+                if hasattr(r, "start_time"):
+                    s, e = r.start_time, r.end_time
+                else:
+                    s = r.get("start_time", "")
+                    e = r.get("end_time", "")
+                if s and e:
+                    slot_parts.append(f"{s}–{e}")
+                elif s:
+                    slot_parts.append(f"from {s}")
+            if slot_parts:
+                parts.append(f"{label} {', '.join(slot_parts)}")
+        absence = availability_time.get("absence_days", []) or []
+        if absence:
+            parts.append(f"absent: {', '.join(absence)}")
+        return "; ".join(parts) if parts else ""
+
+    @staticmethod
     def _build_user_message(raw: Dict[str, Any]) -> str:
+        # Derive availability text for context: prefer structured availability_time;
+        # fall back to plain 'availability' or 'availability_text' string.
+        avail_time = raw.get("availability_time")
+        if avail_time and isinstance(avail_time, dict):
+            avail_str = CompetenceEnricher._availability_time_to_text(avail_time)
+        else:
+            avail_str = raw.get("availability", "")
         lines = [
             f"title: {raw.get('title', '')}",
             f"description: {raw.get('description', '')}",
             f"category: {raw.get('category', '')}",
             f"price_range: {raw.get('price_range', '')}",
             f"year_of_experience: {raw.get('year_of_experience', 0)}",
-            f"availability: {raw.get('availability_text', raw.get('availability', ''))}",
+            f"availability: {avail_str}",
         ]
         return "\n".join(lines)
 
@@ -169,18 +202,10 @@ class CompetenceEnricher:
         category: str = str(data.get("category", "")).strip()
         price_raw = data.get("price_per_hour")
         price_per_hour: Optional[float] = float(price_raw) if price_raw is not None else None
-        availability_text: str = str(data.get("availability_text", "")).strip()
-        availability_tags: List[str] = [
-            t.strip().lower()
-            for t in data.get("availability_tags", [])
-            if isinstance(t, str) and t.strip()
-        ]
 
         result: Dict[str, Any] = {
             "skills_list": skills_list,
             "search_optimized_summary": summary,
-            "availability_tags": availability_tags,
-            "availability_text": availability_text,
             "price_per_hour": price_per_hour,
         }
         if category:
