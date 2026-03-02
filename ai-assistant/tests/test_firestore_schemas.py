@@ -10,6 +10,10 @@ from ai_assistant.firestore_schemas import (
     UserUpdateSchema,
     CompetenceSchema,
     CompetenceUpdateSchema,
+    AvailabilityTimeSchema,
+    AvailabilityTimeUpdateSchema,
+    TimeRangeSchema,
+    derive_availability_tags,
     ServiceRequestSchema,
     ServiceRequestUpdateSchema,
     ReviewSchema,
@@ -197,8 +201,137 @@ class TestCompetenceSchema:
         errors = exc_info.value.errors()
         assert any(error['loc'] == ('title',) for error in errors)
 
+    def test_rejects_availability_text_flat_field(self):
+        """availability_text is no longer part of the schema; it must be rejected."""
+        with pytest.raises(ValidationError):
+            CompetenceSchema(title="X", availability_text="weekends")
 
-class TestServiceRequestSchema:
+    def test_rejects_availability_tags_flat_field(self):
+        """availability_tags is no longer part of the schema; it must be rejected."""
+        with pytest.raises(ValidationError):
+            CompetenceSchema(title="X", availability_tags=["weekend"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AvailabilityTimeSchema / TimeRangeSchema
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAvailabilityTimeSchema:
+    """Tests for AvailabilityTimeSchema and TimeRangeSchema validation."""
+
+    def test_valid_single_day(self):
+        data = {"monday_time_ranges": [{"start_time": "09:00", "end_time": "17:00"}]}
+        schema = AvailabilityTimeSchema(**data)
+        assert len(schema.monday_time_ranges) == 1
+        assert schema.monday_time_ranges[0].start_time == "09:00"
+
+    def test_valid_absence_days(self):
+        data = {"absence_days": ["2026-03-15", "2026-12-25"]}
+        schema = AvailabilityTimeSchema(**data)
+        assert "2026-03-15" in schema.absence_days
+
+    def test_invalid_absence_day_format_rejected(self):
+        """absence_days must be YYYY-MM-DD; other formats raise ValidationError."""
+        with pytest.raises(ValidationError):
+            AvailabilityTimeSchema(absence_days=["15/03/2026"])
+
+    def test_invalid_time_format_rejected(self):
+        """TimeRangeSchema requires HH:MM pattern; free-form strings must fail."""
+        with pytest.raises(ValidationError):
+            AvailabilityTimeSchema(
+                monday_time_ranges=[{"start_time": "not-a-time", "end_time": "17:00"}]
+            )
+
+    def test_extra_fields_rejected(self):
+        with pytest.raises(ValidationError):
+            AvailabilityTimeSchema(unknown_day_ranges=[{"start_time": "09:00", "end_time": "12:00"}])
+
+    def test_empty_schema_valid(self):
+        """All fields are optional; an empty dict must pass."""
+        schema = AvailabilityTimeSchema()
+        assert schema.monday_time_ranges == []
+        assert schema.absence_days == []
+
+    def test_multiple_ranges_per_day(self):
+        data = {
+            "tuesday_time_ranges": [
+                {"start_time": "08:00", "end_time": "12:00"},
+                {"start_time": "14:00", "end_time": "18:00"},
+            ]
+        }
+        schema = AvailabilityTimeSchema(**data)
+        assert len(schema.tuesday_time_ranges) == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# derive_availability_tags
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDeriveAvailabilityTags:
+    """Tests for the pure derive_availability_tags() helper."""
+
+    def test_empty_dict_returns_empty_list(self):
+        assert derive_availability_tags({}) == []
+
+    def test_monday_morning_produces_correct_tags(self):
+        data = {"monday_time_ranges": [{"start_time": "09:00", "end_time": "12:00"}]}
+        tags = derive_availability_tags(data)
+        assert "monday" in tags
+        assert "weekday" in tags
+        assert "morning" in tags
+        assert "weekend" not in tags
+
+    def test_saturday_afternoon_produces_correct_tags(self):
+        data = {"saturday_time_ranges": [{"start_time": "14:00", "end_time": "17:00"}]}
+        tags = derive_availability_tags(data)
+        assert "saturday" in tags
+        assert "weekend" in tags
+        assert "afternoon" in tags
+        assert "weekday" not in tags
+
+    def test_evening_tag_for_late_start(self):
+        data = {"thursday_time_ranges": [{"start_time": "18:00", "end_time": "20:00"}]}
+        tags = derive_availability_tags(data)
+        assert "evening" in tags
+        assert "thursday" in tags
+        assert "weekday" in tags
+
+    def test_multiple_days_produces_weekday_and_weekend(self):
+        data = {
+            "monday_time_ranges": [{"start_time": "09:00", "end_time": "12:00"}],
+            "saturday_time_ranges": [{"start_time": "10:00", "end_time": "14:00"}],
+        }
+        tags = derive_availability_tags(data)
+        assert "weekday" in tags
+        assert "weekend" in tags
+        assert "monday" in tags
+        assert "saturday" in tags
+
+    def test_absence_days_produce_absence_tags(self):
+        data = {"absence_days": ["2026-03-15", "2026-12-25"]}
+        tags = derive_availability_tags(data)
+        assert "absence:2026-03-15" in tags
+        assert "absence:2026-12-25" in tags
+
+    def test_all_tags_are_lowercase(self):
+        data = {"wednesday_time_ranges": [{"start_time": "14:00", "end_time": "16:00"}]}
+        tags = derive_availability_tags(data)
+        for tag in tags:
+            assert tag == tag.lower(), f"Tag not lowercase: {tag!r}"
+
+    def test_tags_are_deduplicated(self):
+        """Two morning slots on the same day should not produce duplicate tags."""
+        data = {
+            "friday_time_ranges": [
+                {"start_time": "08:00", "end_time": "10:00"},
+                {"start_time": "10:00", "end_time": "12:00"},
+            ]
+        }
+        tags = derive_availability_tags(data)
+        assert tags.count("morning") == 1
+        assert tags.count("friday") == 1
+
+
     """Tests for ServiceRequestSchema validation."""
     
     def test_valid_service_request(self):

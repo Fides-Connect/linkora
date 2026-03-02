@@ -16,6 +16,7 @@ from ai_assistant.hub_spoke_schema import (
     get_user_collection,
     get_competence_collection
 )
+from ai_assistant.firestore_schemas import derive_availability_tags
 from weaviate.classes.query import Filter
 
 logger = logging.getLogger(__name__)
@@ -230,10 +231,10 @@ class HubSpokeIngestion:
                     "skills_list": competence_data.get("skills_list", []),
                     "price_per_hour": competence_data.get("price_per_hour"),
                     "year_of_experience": competence_data.get("year_of_experience", 0),
-                    "availability_tags": competence_data.get("availability_tags", []),
-                    "availability_text": competence_data.get(
-                        "availability_text",
-                        competence_data.get("availability", ""),
+                    # Derive availability tags from the structured availability_time dict.
+                    # Falls back to an empty list if no availability_time is present.
+                    "availability_tags": derive_availability_tags(
+                        competence_data.get("availability_time") or {}
                     ),
                 },
                 references={

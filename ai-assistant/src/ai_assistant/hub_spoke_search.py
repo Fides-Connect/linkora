@@ -224,8 +224,10 @@ class HubSpokeSearch:
             available_time = ""
         
         # Add availability filter if specified and not flexible
-        if available_time and available_time.lower() not in ["flexibel", "flexible", "any", ""]:
-            filter_clause = filter_clause & Filter.by_property("availability").contains_any([available_time])
+        # The Weaviate schema stores normalised tokens in `availability_tags` (TEXT_ARRAY);
+        # `availability` does not exist as a property.
+        if available_time and available_time.lower() not in ["flexibel", "flexible", "any", "anytime", ""]:
+            filter_clause = filter_clause & Filter.by_property("availability_tags").contains_any([available_time])
             logger.info(f"Added availability filter: {available_time}")
         
         # Build query text from category and criterions
