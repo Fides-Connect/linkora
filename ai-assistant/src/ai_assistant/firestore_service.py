@@ -101,6 +101,36 @@ class FirestoreService:
             logger.error(f"Validation error for {schema_class.__name__}: {e}")
             raise
 
+    @staticmethod
+    def _format_validation_errors(error: ValidationError) -> Dict[str, str]:
+        """Convert a Pydantic ValidationError into a flat {field: message} dict.
+
+        The returned dict is intended to be included verbatim in a tool-call error
+        result so that the LLM can self-correct without a re-prompt cycle.
+
+        Example output::
+
+            {
+                "monday_time_ranges[0].end_time": "String should match pattern '^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$'",
+                "absence_days[0]": "absence_days entries must be ISO-8601 date strings (YYYY-MM-DD), got: '15-03-2026'",
+            }
+        """
+        result: Dict[str, str] = {}
+        for err in error.errors():
+            # Build a human-readable field path, e.g. "monday_time_ranges[0].end_time"
+            parts = []
+            for loc_part in err.get("loc", ()):
+                if isinstance(loc_part, int):
+                    if parts:
+                        parts[-1] = f"{parts[-1]}[{loc_part}]"
+                    else:
+                        parts.append(f"[{loc_part}]")
+                else:
+                    parts.append(str(loc_part))
+            field_path = ".".join(parts) if parts else "(unknown)"
+            result[field_path] = err.get("msg", "invalid value")
+        return result
+
     # --- Service Request Operations ---
 
     async def _enrich_service_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -912,11 +942,14 @@ class FirestoreService:
 
     async def create_competence(self, user_id: str, competence: dict) -> Optional[Dict[str, Any]]:
         """Create a competence for user's competencies subcollection.
-        
+
         Args:
             user_id: The user's ID
-            competence: Dictionary with 'title' (required), 'description', 'category', 'price_range' (optional)
-            
+            competence: Dictionary with 'title' (required) and any other
+                CompetenceSchema fields.  The caller must strip non-schema keys
+                such as 'competence_id' and 'availability_time' before calling
+                (availability_time is written separately via create_availability_time).
+
         Returns:
             The created competence object with auto-generated competence_id, or None if failed
         """
@@ -927,29 +960,27 @@ class FirestoreService:
             if not title:
                 logger.error(f"Competence missing title for user {user_id}")
                 return None
-            
+
             # Generate prefixed competence ID
             competence_id = self._generate_prefixed_id('competence')
-            
-            # Add document to competencies subcollection with prefixed ID
-            competencies_ref = self._get_collection('users').document(user_id).collection('competencies')
-            competence_data = {
-                'title': title,
-                'description': competence.get('description', ''),
-                'category': competence.get('category', ''),
-                'price_range': competence.get('price_range', ''),
-            }
-            
-            # Validate data against schema (timestamps excluded)
+
+            # Build validated data from ALL known CompetenceSchema fields.
+            # Strip IDs and subcollection-only keys that must not be stored on the
+            # competence document itself.
+            _STRIP_KEYS = {'competence_id', 'availability_time', 'created_at', 'updated_at'}
+            competence_data = {k: v for k, v in competence.items() if k not in _STRIP_KEYS}
+
+            # Validate data against schema (raises ValidationError on bad data)
             validated_data = self._validate_data(competence_data, CompetenceSchema)
-            
-            # Add timestamps after validation
+
+            # Overwrite timestamps with authoritative server values
             validated_data['created_at'] = datetime.now()
             validated_data['updated_at'] = datetime.now()
-            
-            # Use the generated competence_id as the document ID
+
+            # Add document to competencies subcollection with prefixed ID
+            competencies_ref = self._get_collection('users').document(user_id).collection('competencies')
             competencies_ref.document(competence_id).set(validated_data)
-            
+
             result = validated_data.copy()
             result['competence_id'] = competence_id
             return result

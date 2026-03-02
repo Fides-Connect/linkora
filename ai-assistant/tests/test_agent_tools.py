@@ -15,6 +15,7 @@ from ai_assistant.services.agent_tools import (
     _require_fs,
 )
 from ai_assistant.firestore_schemas import PROVIDER_PITCH_OPT_OUT_SENTINEL
+from ai_assistant.firestore_service import FirestoreService
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -268,6 +269,10 @@ class TestProviderOnboardingTools:
         fs.create_competence = AsyncMock(return_value={"competence_id": "c-new", "title": "Gardening"})
         fs.update_competence = AsyncMock(return_value={"competence_id": "c1", "title": "Plumbing Pro"})
         fs.remove_competence = AsyncMock(return_value=True)
+        # availability_time subcollection methods
+        fs.get_availability_times = AsyncMock(return_value=[])
+        fs.create_availability_time = AsyncMock(return_value={"availability_time_id": "at-1"})
+        fs.update_availability_time = AsyncMock(return_value={"availability_time_id": "at-1"})
         return fs
 
     @pytest.fixture
@@ -490,6 +495,90 @@ class TestProviderOnboardingTools:
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         mock_firestore.update_competence.assert_called_once()
         mock_firestore.create_competence.assert_not_called()
+
+    # ── availability_time subcollection ──────────────────────────────────────
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_writes_availability_time_subcollection(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """When a skill includes availability_time, it must be validated and written
+        to the availability_time subcollection (not stored on the competence doc)."""
+        ctx = self._ctx(mock_firestore)
+        skills = [
+            {
+                "title": "Gardening",
+                "description": "I love plants",
+                "category": "Garten",
+                "price_range": "€30–€50/h",
+                "availability_time": {
+                    "monday_time_ranges": [{"start_time": "09:00", "end_time": "12:00"}],
+                },
+            }
+        ]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        # availability_time must be written to the subcollection
+        mock_firestore.create_availability_time.assert_called_once()
+        # availability_time must NOT be stored on the competence document itself
+        create_call = mock_firestore.create_competence.call_args
+        competence_data = create_call.args[1] if len(create_call.args) > 1 else create_call.kwargs.get("competence_data", {})
+        assert "availability_time" not in competence_data
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_invalid_availability_time_returns_field_errors(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """A skill with an improperly formatted availability_time must return field-level
+        errors so the LLM can self-correct — Firestore must not be written."""
+        # Wire real validation so that malformed time strings are actually caught.
+        mock_firestore._validate_data = lambda data, schema, exclude_unset=False: \
+            FirestoreService._validate_data(mock_firestore, data, schema, exclude_unset)
+        mock_firestore._format_validation_errors = FirestoreService._format_validation_errors
+        ctx = self._ctx(mock_firestore)
+        skills = [
+            {
+                "title": "Gardening",
+                "description": "I love plants",
+                "category": "Garten",
+                "price_range": "€30–€50/h",
+                "availability_time": {
+                    "monday_time_ranges": [{"start_time": "09:00", "end_time": "not-a-time"}],
+                },
+            }
+        ]
+        result = await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "field_errors" in result
+        field_errs = result["field_errors"]
+        assert any("time" in k.lower() for k in field_errs), (
+            f"Expected a time-related field error, got: {field_errs}"
+        )
+        # Subcollection must NOT be written on validation failure
+        mock_firestore.create_availability_time.assert_not_called()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_updates_existing_availability_time(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """When an existing availability_time doc already exists for the competence,
+        update_availability_time must be called instead of create_availability_time."""
+        mock_firestore.get_availability_times = AsyncMock(return_value=[
+            {"availability_time_id": "at-existing"}
+        ])
+        ctx = self._ctx(mock_firestore)
+        skills = [
+            {
+                "competence_id": "c1",
+                "title": "Plumbing",
+                "availability_time": {
+                    "tuesday_time_ranges": [{"start_time": "10:00", "end_time": "14:00"}],
+                },
+            }
+        ]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        mock_firestore.update_availability_time.assert_called_once()
+        mock_firestore.create_availability_time.assert_not_called()
 
     # ── delete_competences ───────────────────────────────────────────────────
 
