@@ -99,7 +99,6 @@ jobs:
               LANGUAGE_CODE_EN=en-US,\
               VOICE_NAME_EN=en-US-Chirp3-HD-Sulafat,\
               HOST=0.0.0.0,\
-              PORT=8080,\
               LOG_LEVEL=INFO,\
               GOOGLE_TTS_API_CONCURRENCY=5,\
               FIRESTORE_DATABASE_NAME=(default),\

@@ -104,6 +104,12 @@ gcloud iam service-accounts add-iam-policy-binding \
   linkora-rt-service-account-dev@linkora-dev.iam.gserviceaccount.com \
   --member="serviceAccount:${CI_SA}" \
   --role="roles/iam.serviceAccountUser"
+
+# Allow creating and updating secrets in Secret Manager
+# (workflow syncs GEMINI_API_KEY and ADMIN_SECRET_KEY on every deploy)
+gcloud projects add-iam-policy-binding linkora-dev \
+  --member="serviceAccount:${CI_SA}" \
+  --role="roles/secretmanager.admin"
 ```
 
 **Runtime service account** — use the existing account `linkora-rt-service-account-dev@linkora-dev.iam.gserviceaccount.com`.
