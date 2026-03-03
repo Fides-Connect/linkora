@@ -115,7 +115,10 @@ class TestCompetenceManagement(unittest.TestCase):
         with patch.object(HubSpokeIngestion, 'create_competence', side_effect=['new-comp-1', 'new-comp-2']):
             result = HubSpokeIngestion.update_competencies_by_user_id(
                 user_id="user123",
-                competencies=["Updated Competence 1", "Updated Competence 2"]
+                competencies=[
+                    {"title": "Updated Competence 1"},
+                    {"title": "Updated Competence 2"},
+                ],
             )
         
         self.assertTrue(result['success'])

@@ -224,8 +224,10 @@ class HubSpokeSearch:
             available_time = ""
         
         # Add availability filter if specified and not flexible
-        if available_time and available_time.lower() not in ["flexibel", "flexible", "any", ""]:
-            filter_clause = filter_clause & Filter.by_property("availability").contains_any([available_time])
+        # The Weaviate schema stores normalised tokens in `availability_tags` (TEXT_ARRAY);
+        # `availability` does not exist as a property.
+        if available_time and available_time.lower() not in ["flexibel", "flexible", "any", "anytime", ""]:
+            filter_clause = filter_clause & Filter.by_property("availability_tags").contains_any([available_time])
             logger.info(f"Added availability filter: {available_time}")
         
         # Build query text from category and criterions
@@ -339,14 +341,16 @@ class HubSpokeSearch:
             # Execute hybrid search
             # STRATEGY: Use query_properties to boost title and category matches.
             # This ensures that even with long criteria lists, the core "what" (category/title) remains dominant.
-            # We include price_range and availability in search scope to catch keywords like "cheap" or "weekend".
+            # We include availability_text in search scope to catch temporal keywords like "weekend".
+            # Note: price_range is NOT included — the ingestion pipeline stores numeric price_per_hour;
+            #       any legacy price_range TEXT property may lack indexSearchable and would crash.
             response = competence_collection.query.hybrid(
                 query=query_text,
                 limit=limit * 10,  # Fetch more for client-side grouping
                 filters=filter_clause,
                 alpha=alpha,
                 # Boost title and category to prioritize exact service matches over peripheral criteria
-                query_properties=["title^2", "category^2", "description", "price_range", "availability"],
+                query_properties=["title^2", "category^2", "description", "availability_text"],
                 return_metadata=MetadataQuery(score=True),
                 return_references=QueryReference(
                     link_on="owned_by",

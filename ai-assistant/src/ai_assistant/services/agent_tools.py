@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from ..hub_spoke_ingestion import HubSpokeIngestion
+from ..firestore_schemas import AvailabilityTimeSchema, derive_availability_tags
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,21 @@ class AgentToolRegistry:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Context helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _require_fs(context: dict):
+    """Extract firestore_service from context, raising a clear error if absent."""
+    fs = context.get("firestore_service")
+    if fs is None:
+        raise RuntimeError(
+            "firestore_service not injected into tool context — "
+            "ensure _create_language_specific_assistant sets assistant.firestore_service"
+        )
+    return fs
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Built-in tool implementations — service request / search
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -142,17 +158,17 @@ async def _search_providers(params: dict, context: dict) -> Any:
 
 
 async def _get_favorites(params: dict, context: dict) -> Any:
-    fs = context["firestore_service"]
+    fs = _require_fs(context)
     return await fs.get_user_favorites(context["user_id"])
 
 
 async def _get_open_requests(params: dict, context: dict) -> Any:
-    fs = context["firestore_service"]
+    fs = _require_fs(context)
     return await fs.get_service_requests(user_id=context["user_id"])
 
 
 async def _create_service_request(params: dict, context: dict) -> Any:
-    fs = context["firestore_service"]
+    fs = _require_fs(context)
     return await fs.create_service_request(
         user_id=context["user_id"],
         title=params.get("title", ""),
@@ -185,7 +201,7 @@ async def _record_provider_interest(params: dict, context: dict) -> Any:
     """
     from ..firestore_schemas import PROVIDER_PITCH_OPT_OUT_SENTINEL
 
-    fs = context["firestore_service"]
+    fs = _require_fs(context)
     user_id = context["user_id"]
     decision = params.get("decision", "not_now")
     now = datetime.now(timezone.utc)
@@ -210,44 +226,232 @@ async def _record_provider_interest(params: dict, context: dict) -> Any:
 
 async def _get_my_competencies(params: dict, context: dict) -> Any:
     """Fetch the current user's competency list from Firestore."""
-    return await context["firestore_service"].get_competencies(context["user_id"])
+    fs = _require_fs(context)
+    return await fs.get_competencies(context["user_id"])
 
 
 async def _save_competence_batch(params: dict, context: dict) -> Any:
     """
     Create or update one or more competence entries for the user.
 
+    Pipeline:
+    1. Save each skill to Firestore (create or update).
+    2. Run LLM enrichment via CompetenceEnricher (extracts skills_list,
+       search_optimized_summary, availability_tags, price_per_hour, …).
+    3. Write enriched fields back to Firestore.
+    4. Mark user as service provider.
+    5. Full re-sync all competencies to Weaviate with enriched data.
+
     params["skills"] is a list of dicts. Each dict may optionally contain
     "competence_id" to signal an update; otherwise a new entry is created.
-    After saving, marks the user as a service provider and syncs to Weaviate.
     """
-    fs = context["firestore_service"]
+    from .competence_enricher import CompetenceEnricher  # local import avoids circular deps
+
+    fs = _require_fs(context)
     user_id = context["user_id"]
+    enricher: Optional[CompetenceEnricher] = context.get("competence_enricher")
     skills: List[dict] = params.get("skills", [])
     saved = []
 
+    # Validate: price_range is mandatory for every NEW skill (no competence_id)
+    missing_price = [
+        skill.get("title", "(untitled)")
+        for skill in skills
+        if not skill.get("competence_id")
+        and not skill.get("price_range", "").strip()
+    ]
+    if missing_price:
+        return {
+            "error": (
+                f"price_range is required but was missing or empty for new entries: "
+                f"{', '.join(missing_price)}. "
+                "Ask the user for their pricing (e.g. hourly rate or fixed price) "
+                "before calling save_competence_batch."
+            )
+        }
+
+    # Load existing competencies once for the whole batch so we can do
+    # server-side deduplication (title-collision → upgrade new → update).
+    # Must happen BEFORE the availability_time check so deduplicated skills
+    # (which become UPDATEs) are not incorrectly flagged as missing availability.
+    try:
+        existing_competencies: list[dict] = await fs.get_competencies(user_id) or []
+    except Exception:  # pragma: no cover
+        existing_competencies = []
+    existing_by_title: dict[str, str] = {
+        (c.get("title") or "").strip().lower(): c.get("competence_id", "")
+        for c in existing_competencies
+        if c.get("competence_id")
+    }
+
+    # Validate: availability_time is mandatory for every truly NEW skill.
+    # A skill is "truly new" when it has no competence_id AND its title does not
+    # match an existing competence (which would be deduplicated to an UPDATE).
+    missing_availability = [
+        skill.get("title", "(untitled)")
+        for skill in skills
+        if not skill.get("competence_id")
+        and (skill.get("title") or "").strip().lower() not in existing_by_title
+        and not skill.get("availability_time")
+    ]
+    if missing_availability:
+        return {
+            "error": (
+                f"availability_time is required but was missing for new entries: "
+                f"{', '.join(missing_availability)}. "
+                "Ask the user when they are usually available (e.g. 'when are you usually free?') "
+                "before calling save_competence_batch."
+            )
+        }
+
     for skill in skills:
         skill_copy = dict(skill)  # don't mutate caller's dict
+
+        # Pop availability_time before hitting Firestore — it's written to the
+        # 'availability_time' subcollection separately, not onto the competence doc.
+        availability_time_data: Optional[dict] = skill_copy.pop("availability_time", None)
+
+        # Legacy normalisation: if the LLM sent 'availability' as a plain string,
+        # keep it in skill_copy so CompetenceEnricher can use it for context, but
+        # do NOT store it in Firestore (CompetenceUpdateSchema has extra='ignore').
+        # No 'availability_text' flat field exists on the schema any more.
+
         competence_id = skill_copy.pop("competence_id", None)
+
+        # Server-side deduplication: if the LLM omitted competence_id but a
+        # competence with the same title already exists, treat this as an update
+        # to prevent duplicate entries.
+        if not competence_id:
+            lookup_title = (skill_copy.get("title") or "").strip().lower()
+            if lookup_title and lookup_title in existing_by_title:
+                competence_id = existing_by_title[lookup_title]
+                logger.info(
+                    "Deduplication: upgrading new-entry '%s' to update of %s",
+                    skill_copy.get("title"), competence_id,
+                )
+
         if competence_id:
             result = await fs.update_competence(user_id, competence_id, skill_copy)
         else:
             result = await fs.create_competence(user_id, skill_copy)
         saved.append(result)
 
+        # ── Write availability_time subcollection ─────────────────────────────────
+        saved_id = (
+            (result.get("id") or result.get("competence_id") or competence_id)
+            if result
+            else None
+        )
+        if availability_time_data and saved_id:
+            from pydantic import ValidationError as _ValidationError
+            try:
+                # Validate the structured time data before writing.
+                fs._validate_data(availability_time_data, AvailabilityTimeSchema)
+                # Check whether a doc already exists to decide create vs. update.
+                existing_avail = await fs.get_availability_times(
+                    user_id, competence_id=saved_id
+                )
+                if existing_avail:
+                    avail_id = existing_avail[0].get("availability_time_id")
+                    await fs.update_availability_time(
+                        user_id, avail_id, availability_time_data, competence_id=saved_id
+                    )
+                else:
+                    await fs.create_availability_time(
+                        user_id, availability_time_data, competence_id=saved_id
+                    )
+                logger.info(
+                    "Wrote availability_time for competence %s (user %s)", saved_id, user_id
+                )
+            except _ValidationError as avail_err:
+                field_errors = fs._format_validation_errors(avail_err)
+                return {
+                    "error": (
+                        "availability_time contains invalid data. "
+                        "Fix the highlighted fields and retry."
+                    ),
+                    "field_errors": field_errors,
+                    "hint": (
+                        "time ranges: use HH:MM format (e.g. '09:00'), "
+                        "absence_days: use YYYY-MM-DD (e.g. '2026-03-15')"
+                    ),
+                }
+
+        # ── LLM enrichment ───────────────────────────────────────────────────
+        if enricher is not None:
+            # Resolve competence_id for the write-back.
+            saved_id = (
+                result.get("id")
+                or result.get("competence_id")
+                or competence_id
+            )
+            if saved_id:
+                enriched = await enricher.enrich(skill_copy)
+                enriched_fields = {
+                    k: enriched[k]
+                    for k in (
+                        "skills_list",
+                        "search_optimized_summary",
+                        "availability_tags",
+                        "availability_text",
+                        "price_per_hour",
+                        "category",
+                    )
+                    if k in enriched
+                }
+                if enriched_fields:
+                    await fs.update_competence(user_id, saved_id, enriched_fields)
+                    logger.info(
+                        "Enriched competence %s for user %s", saved_id, user_id
+                    )
+        else:
+            logger.warning(
+                "competence_enricher not in context — skipping enrichment for user %s",
+                user_id,
+            )
+
     await fs.update_user(user_id, {"is_service_provider": True})
 
-    # Weaviate re-sync using skill titles (required — errors propagate)
-    titles = [s.get("title", "") for s in skills if s.get("title")]
-    if titles:
-        HubSpokeIngestion.update_competencies_by_user_id(user_id, titles)
+    # Weaviate full re-sync: read ALL competencies from Firestore (ground truth) so
+    # that skills saved in earlier sessions are preserved in Weaviate.
+    # For each competence, fetch its availability_time subcollection and inject
+    # derived availability_tags so Weaviate filtering stays accurate.
+    all_competencies = await fs.get_competencies(user_id)
+    if all_competencies:
+        for comp in all_competencies:
+            cid = comp.get("competence_id")
+            if cid:
+                avail_docs = await fs.get_availability_times(user_id, competence_id=cid)
+                if avail_docs:
+                    avail_data = avail_docs[0]  # one doc per competence
+                    comp["availability_time"] = avail_data
+                    comp["availability_tags"] = derive_availability_tags(avail_data)
+        result = HubSpokeIngestion.update_competencies_by_user_id(user_id, all_competencies)
+        if isinstance(result, dict) and not result.get("success") and result.get("error") == "User not found":
+            logger.warning(
+                "Weaviate user not found for %s — self-healing by creating from Firestore",
+                user_id,
+            )
+            try:
+                user_data = await fs.get_user(user_id) or {}
+                user_data.setdefault("user_id", user_id)
+                HubSpokeIngestion.create_user(user_data)
+                # Re-sync with full competence dicts so all metadata is written.
+                HubSpokeIngestion.update_competencies_by_user_id(user_id, all_competencies)
+                logger.info("Weaviate self-heal complete for user %s", user_id)
+            except Exception as heal_exc:
+                logger.error(
+                    "Weaviate self-heal failed for user %s: %s", user_id, heal_exc,
+                    exc_info=True,
+                )
+                raise
 
     return {"saved": saved, "count": len(saved)}
 
 
 async def _delete_competences(params: dict, context: dict) -> Any:
     """Delete competencies by their IDs and sync to Weaviate."""
-    fs = context["firestore_service"]
+    fs = _require_fs(context)
     user_id = context["user_id"]
     ids: List[str] = params.get("competence_ids", [])
     deleted = []
@@ -427,8 +631,11 @@ def build_default_registry() -> AgentToolRegistry:
         description=(
             "Create or update one or more service competencies for the user. "
             "Each skill dict may include 'competence_id' for updates, or omit it for new entries. "
-            "Required field per skill: 'title'. Optional: 'description', 'category', "
-            "'price_range', 'year_of_experience'."
+            "Required fields per skill: 'title' and 'price_range' (e.g. '€30–€50/h' or 'fixed price €200'). "
+            "price_range is MANDATORY for new entries — never create a competence without it. "
+            "For UPDATE (competence_id provided), price_range is optional. "
+            "Optional fields: 'description', 'category', 'year_of_experience', "
+            "'availability' (free-text string), 'availability_time' (structured weekly slots)."
         ),
         schema={
             "name": "save_competence_batch",
@@ -446,10 +653,48 @@ def build_default_registry() -> AgentToolRegistry:
                                 "title": {"type": "string"},
                                 "description": {"type": "string"},
                                 "category": {"type": "string"},
-                                "price_range": {"type": "string"},
+                                "price_range": {
+                                    "type": "string",
+                                    "description": "Pricing information, e.g. '€30–€50/h' or 'fixed price €200'. REQUIRED for new entries.",
+                                },
+                                "availability": {
+                                    "type": "string",
+                                    "description": "Free-text description of when the provider is available, e.g. 'weekdays after 4pm'. Collected first. If the user confirms specific time slots, populate availability_time instead or alongside.",
+                                },
+                                "availability_time": {
+                                    "type": "object",
+                                    "description": (
+                                        "Structured weekly availability derived from what the user said — no follow-up question needed. "
+                                        "Each day key maps to a list of {start_time, end_time} objects in HH:MM (zero-padded). "
+                                        "absence_days is an optional list of YYYY-MM-DD strings. "
+                                        "Interpretation rules: "
+                                        "'morning' → 08:00–12:00; "
+                                        "'afternoon' → 12:00–17:00; "
+                                        "'evening'/'after work' → 17:00–21:00; "
+                                        "'from 14'/'after 2pm' → 14:00–21:00 (default end 21:00 when no end given); "
+                                        "'from 9:15 to 12' → 09:15–12:00 (use exact numbers); "
+                                        "'whole day'/'all day' → 08:00–20:00; "
+                                        "'weekdays' (no time) → 08:00–20:00 on Mon–Fri; "
+                                        "'at the weekend'/'weekends' → 08:00–20:00 on Sat+Sun; "
+                                        "'flexible'/'anytime'/vague → omit this field entirely. "
+                                        "Example for 'Monday morning and Tuesday from 14': "
+                                        "{\"monday_time_ranges\": [{\"start_time\": \"08:00\", \"end_time\": \"12:00\"}], "
+                                        "\"tuesday_time_ranges\": [{\"start_time\": \"14:00\", \"end_time\": \"21:00\"}]}"
+                                    ),
+                                    "properties": {
+                                        "monday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "tuesday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "wednesday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "thursday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "friday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "saturday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "sunday_time_ranges": {"type": "array", "items": {"type": "object", "properties": {"start_time": {"type": "string"}, "end_time": {"type": "string"}}}},
+                                        "absence_days": {"type": "array", "items": {"type": "string"}},
+                                    },
+                                },
                                 "year_of_experience": {"type": "integer"},
                             },
-                            "required": ["title"],
+                            "required": ["title", "price_range"],
                         },
                     },
                 },

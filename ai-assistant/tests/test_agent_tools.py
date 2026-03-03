@@ -12,8 +12,10 @@ from ai_assistant.services.agent_tools import (
     ToolPermissionError,
     check_capability,
     build_default_registry,
+    _require_fs,
 )
 from ai_assistant.firestore_schemas import PROVIDER_PITCH_OPT_OUT_SENTINEL
+from ai_assistant.firestore_service import FirestoreService
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -267,6 +269,10 @@ class TestProviderOnboardingTools:
         fs.create_competence = AsyncMock(return_value={"competence_id": "c-new", "title": "Gardening"})
         fs.update_competence = AsyncMock(return_value={"competence_id": "c1", "title": "Plumbing Pro"})
         fs.remove_competence = AsyncMock(return_value=True)
+        # availability_time subcollection methods
+        fs.get_availability_times = AsyncMock(return_value=[])
+        fs.create_availability_time = AsyncMock(return_value={"availability_time_id": "at-1"})
+        fs.update_availability_time = AsyncMock(return_value={"availability_time_id": "at-1"})
         return fs
 
     @pytest.fixture
@@ -371,14 +377,40 @@ class TestProviderOnboardingTools:
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
     async def test_save_competence_batch_creates_new_entries(self, mock_hub, registry, mock_firestore):
         ctx = self._ctx(mock_firestore)
+        avail = {"monday_time_ranges": [{"start_time": "08:00", "end_time": "12:00"}]}
         skills = [
-            {"title": "Gardening", "description": "I love plants", "category": "Garten"},
-            {"title": "Painting", "description": "Interior painting", "category": "Handwerk"},
+            {"title": "Gardening", "description": "I love plants", "category": "Garten", "price_range": "€30–€50/h", "availability_time": avail},
+            {"title": "Painting", "description": "Interior painting", "category": "Handwerk", "price_range": "€40/h", "availability_time": avail},
         ]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         assert mock_firestore.create_competence.call_count == 2
+        # Must sync ALL competencies from Firestore (not just the current batch)
+        # Full dicts are now passed — not just title strings.
         mock_hub.update_competencies_by_user_id.assert_called_once_with(
-            "user-x", ["Gardening", "Painting"]
+            "user-x",
+            [{"competence_id": "c1", "title": "Plumbing"}, {"competence_id": "c2", "title": "Electrical"}],
+        )
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_syncs_all_firestore_competencies_not_just_batch(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """Weaviate must reflect ALL competencies from Firestore, not just the current batch.
+
+        Regression: previously only the batch titles were synced, so adding competencies
+        across multiple sessions would overwrite earlier ones in Weaviate.
+        """
+        ctx = self._ctx(mock_firestore)
+        # Only 1 new skill in this batch — but Firestore already has "Plumbing" and "Electrical"
+        avail = {"monday_time_ranges": [{"start_time": "08:00", "end_time": "17:00"}]}
+        skills = [{"title": "Painting", "description": "Interior painting", "price_range": "€40/h", "availability_time": avail}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+
+        # Weaviate sync must use ALL competence dicts from Firestore, not just the new batch.
+        # Full dicts are passed so all enriched filter/rank fields reach Weaviate.
+        mock_hub.update_competencies_by_user_id.assert_called_once_with(
+            "user-x",
+            [{"competence_id": "c1", "title": "Plumbing"}, {"competence_id": "c2", "title": "Electrical"}],
         )
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
@@ -386,7 +418,8 @@ class TestProviderOnboardingTools:
         self, mock_hub, registry, mock_firestore
     ):
         ctx = self._ctx(mock_firestore)
-        skills = [{"title": "Cleaning"}]
+        avail = {"friday_time_ranges": [{"start_time": "09:00", "end_time": "17:00"}]}
+        skills = [{"title": "Cleaning", "price_range": "€25/h", "availability_time": avail}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         update_call = mock_firestore.update_user.call_args
         data = update_call.args[1] if len(update_call.args) > 1 else update_call.kwargs.get("update_data", {})
@@ -395,10 +428,187 @@ class TestProviderOnboardingTools:
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
     async def test_save_competence_batch_updates_existing_entry(self, mock_hub, registry, mock_firestore):
         ctx = self._ctx(mock_firestore)
+        # UPDATE: competence_id is present, price_range is optional
         skills = [{"competence_id": "c1", "title": "Plumbing Pro"}]
         await registry.execute("save_competence_batch", {"skills": skills}, ctx)
         mock_firestore.update_competence.assert_called_once()
-        mock_hub.update_competencies_by_user_id.assert_called_once_with("user-x", ["Plumbing Pro"])
+        # Weaviate sync must use ALL competence dicts from Firestore, not just the updated title.
+        mock_hub.update_competencies_by_user_id.assert_called_once_with(
+            "user-x",
+            [{"competence_id": "c1", "title": "Plumbing"}, {"competence_id": "c2", "title": "Electrical"}],
+        )
+
+    async def test_save_competence_batch_missing_price_range_returns_error(
+        self, registry, mock_firestore
+    ):
+        """New entries without price_range must return an error dict — never reach Firestore."""
+        ctx = self._ctx(mock_firestore)
+        avail = {"monday_time_ranges": [{"start_time": "08:00", "end_time": "17:00"}]}
+        skills = [{"title": "Coaching", "availability_time": avail}]  # price_range intentionally absent
+        result = await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        assert isinstance(result, dict) and "error" in result, (
+            "Missing price_range for a new entry must return an error"
+        )
+        assert "price_range" in result["error"].lower() or "pricing" in result["error"].lower()
+        mock_firestore.create_competence.assert_not_called()
+
+    async def test_save_competence_batch_missing_availability_time_returns_error(
+        self, registry, mock_firestore
+    ):
+        """New entries without availability_time must return an error dict — never reach Firestore."""
+        ctx = self._ctx(mock_firestore)
+        skills = [{"title": "Coaching", "price_range": "€50/h"}]  # availability_time intentionally absent
+        result = await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        assert isinstance(result, dict) and "error" in result, (
+            "Missing availability_time for a new entry must return an error"
+        )
+        assert "availability" in result["error"].lower()
+        mock_firestore.create_competence.assert_not_called()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_update_without_availability_time_is_allowed(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """UPDATE (competence_id present) without availability_time must proceed normally."""
+        ctx = self._ctx(mock_firestore)
+        skills = [{"competence_id": "c1", "description": "Now offering weekend slots"}]
+        result = await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        assert not (isinstance(result, dict) and "error" in result), (
+            "Updates without availability_time must not be blocked"
+        )
+        mock_firestore.update_competence.assert_called_once()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_update_without_price_range_is_allowed(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """UPDATE (competence_id present) without price_range must proceed normally."""
+        ctx = self._ctx(mock_firestore)
+        skills = [{"competence_id": "c1", "description": "Updated description"}]
+        result = await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        assert not (isinstance(result, dict) and "error" in result), (
+            "Updates without price_range must not be blocked"
+        )
+        mock_firestore.update_competence.assert_called_once()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_deduplicates_by_title(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """When a new skill (no competence_id) has the same title as an existing
+        competence (case-insensitive), save_competence_batch must upgrade it to an
+        UPDATE — never create a duplicate entry.
+
+        Regression for: "Presentation Help" appearing twice after a second onboarding
+        session where the LLM omitted competence_id for an already-registered skill.
+        """
+        # Firestore already has "Plumbing" (c1) and "Electrical" (c2)
+        ctx = self._ctx(mock_firestore)
+        # Submit with the same title but no competence_id — simulates LLM omission
+        skills = [{"title": "Plumbing", "price_range": "€60/h", "description": "Updated desc"}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+
+        # Must call update_competence (with c1), never create_competence
+        mock_firestore.update_competence.assert_called_once()
+        update_args = mock_firestore.update_competence.call_args
+        called_id = update_args.args[1] if len(update_args.args) > 1 else update_args.kwargs.get("competence_id")
+        assert called_id == "c1", f"Expected update on 'c1', got '{called_id}'"
+        mock_firestore.create_competence.assert_not_called()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_deduplication_is_case_insensitive(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """Title match for deduplication must be case-insensitive."""
+        ctx = self._ctx(mock_firestore)
+        skills = [{"title": "plumbing", "price_range": "€60/h"}]  # lowercase
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        mock_firestore.update_competence.assert_called_once()
+        mock_firestore.create_competence.assert_not_called()
+
+    # ── availability_time subcollection ──────────────────────────────────────
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_writes_availability_time_subcollection(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """When a skill includes availability_time, it must be validated and written
+        to the availability_time subcollection (not stored on the competence doc)."""
+        ctx = self._ctx(mock_firestore)
+        skills = [
+            {
+                "title": "Gardening",
+                "description": "I love plants",
+                "category": "Garten",
+                "price_range": "€30–€50/h",
+                "availability_time": {
+                    "monday_time_ranges": [{"start_time": "09:00", "end_time": "12:00"}],
+                },
+            }
+        ]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        # availability_time must be written to the subcollection
+        mock_firestore.create_availability_time.assert_called_once()
+        # availability_time must NOT be stored on the competence document itself
+        create_call = mock_firestore.create_competence.call_args
+        competence_data = create_call.args[1] if len(create_call.args) > 1 else create_call.kwargs.get("competence_data", {})
+        assert "availability_time" not in competence_data
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_invalid_availability_time_returns_field_errors(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """A skill with an improperly formatted availability_time must return field-level
+        errors so the LLM can self-correct — Firestore must not be written."""
+        # Wire real validation so that malformed time strings are actually caught.
+        mock_firestore._validate_data = lambda data, schema, exclude_unset=False: \
+            FirestoreService._validate_data(mock_firestore, data, schema, exclude_unset)
+        mock_firestore._format_validation_errors = FirestoreService._format_validation_errors
+        ctx = self._ctx(mock_firestore)
+        skills = [
+            {
+                "title": "Gardening",
+                "description": "I love plants",
+                "category": "Garten",
+                "price_range": "€30–€50/h",
+                "availability_time": {
+                    "monday_time_ranges": [{"start_time": "09:00", "end_time": "not-a-time"}],
+                },
+            }
+        ]
+        result = await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        assert isinstance(result, dict)
+        assert "error" in result
+        assert "field_errors" in result
+        field_errs = result["field_errors"]
+        assert any("time" in k.lower() for k in field_errs), (
+            f"Expected a time-related field error, got: {field_errs}"
+        )
+        # Subcollection must NOT be written on validation failure
+        mock_firestore.create_availability_time.assert_not_called()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_updates_existing_availability_time(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """When an existing availability_time doc already exists for the competence,
+        update_availability_time must be called instead of create_availability_time."""
+        mock_firestore.get_availability_times = AsyncMock(return_value=[
+            {"availability_time_id": "at-existing"}
+        ])
+        ctx = self._ctx(mock_firestore)
+        skills = [
+            {
+                "competence_id": "c1",
+                "title": "Plumbing",
+                "availability_time": {
+                    "tuesday_time_ranges": [{"start_time": "10:00", "end_time": "14:00"}],
+                },
+            }
+        ]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        mock_firestore.update_availability_time.assert_called_once()
+        mock_firestore.create_availability_time.assert_not_called()
 
     # ── delete_competences ───────────────────────────────────────────────────
 
@@ -417,15 +627,50 @@ class TestProviderOnboardingTools:
         mock_hub.remove_competence_by_firestore_id.assert_any_call("c2")
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
-    async def test_save_competence_batch_weaviate_failure_propagates(
+    async def test_save_competence_batch_self_heals_when_weaviate_user_missing(
         self, mock_hub, registry, mock_firestore
     ):
-        """Weaviate sync failure must propagate — not be silently swallowed."""
-        mock_hub.update_competencies_by_user_id.side_effect = Exception("Weaviate unavailable")
+        """When Weaviate reports 'User not found', the tool must create the Weaviate user
+        from Firestore data and retry with create_competencies_by_user_id.
+
+        Regression for: 'No user found with user_id' logged during save_competence_batch
+        when the user exists in Firestore but is absent from Weaviate.
+        """
+        mock_hub.update_competencies_by_user_id.return_value = {
+            "success": False,
+            "error": "User not found",
+            "updated_uuids": [],
+        }
+        mock_firestore.get_user = AsyncMock(return_value={
+            "user_id": "user-x",
+            "name": "Vinh",
+            "email": "vinh@example.com",
+        })
         ctx = self._ctx(mock_firestore)
-        skills = [{"title": "Plumbing"}]
+        skills = [{"title": "Machine Learning", "price_range": "€80/h", "availability_time": {"monday_time_ranges": [{"start_time": "09:00", "end_time": "17:00"}]}}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+
+        # Must attempt create_user to establish the Weaviate hub row
+        mock_hub.create_user.assert_called_once()
+        # Must retry sync via update_competencies_by_user_id (called twice: once failing, once in retry)
+        assert mock_hub.update_competencies_by_user_id.call_count == 2
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_self_heal_failure_propagates(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """If the self-heal itself fails, the error must propagate — not be swallowed."""
+        mock_hub.update_competencies_by_user_id.return_value = {
+            "success": False,
+            "error": "User not found",
+            "updated_uuids": [],
+        }
+        mock_firestore.get_user = AsyncMock(return_value={"user_id": "user-x"})
+        mock_hub.create_user.side_effect = Exception("Weaviate unavailable")
+        ctx = self._ctx(mock_firestore)
         with pytest.raises(Exception, match="Weaviate unavailable"):
-            await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+            await registry.execute("save_competence_batch", {"skills": [{"title": "Plumbing", "price_range": "€50/h"}]}, ctx)
+
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
     async def test_delete_competences_weaviate_failure_propagates(
@@ -512,3 +757,64 @@ class TestCancelServiceRequestTool:
         err = exc_info.value
         assert err.tool_name == "cancel_service_request"
         assert err.required_capability == ToolCapability("service_requests", "write")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _require_fs — fail-fast guard
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRequireFs:
+    """Tests for the _require_fs context-validation helper."""
+
+    def test_returns_fs_when_present(self):
+        fs = Mock()
+        ctx = {"firestore_service": fs}
+        assert _require_fs(ctx) is fs
+
+    def test_raises_runtime_error_when_none(self):
+        ctx = {"firestore_service": None}
+        with pytest.raises(RuntimeError, match="firestore_service not injected"):
+            _require_fs(ctx)
+
+    def test_raises_runtime_error_when_key_missing(self):
+        ctx = {}
+        with pytest.raises(RuntimeError, match="firestore_service not injected"):
+            _require_fs(ctx)
+
+    @pytest.mark.parametrize("tool_name", [
+        "get_favorites",
+        "get_open_requests",
+        "create_service_request",
+        "record_provider_interest",
+        "get_my_competencies",
+        "save_competence_batch",
+        "delete_competences",
+    ])
+    async def test_all_firestore_tools_raise_runtime_error_when_fs_is_none(
+        self, tool_name
+    ):
+        """Every Firestore-dependent tool must raise RuntimeError (not AttributeError)
+        when firestore_service is missing from context."""
+        registry = build_default_registry()
+        all_caps = [
+            ToolCapability("favorites", "read"),
+            ToolCapability("service_requests", "read"),
+            ToolCapability("service_requests", "write"),
+            ToolCapability("provider_onboarding", "write"),
+        ]
+        ctx = {
+            "user_id": "u1",
+            "user_capabilities": all_caps,
+            "data_provider": Mock(),
+            "firestore_service": None,  # ← the misconfiguration
+        }
+        params: dict = {}
+        if tool_name == "record_provider_interest":
+            params = {"decision": "accepted"}
+        elif tool_name == "save_competence_batch":
+            params = {"skills": [{"title": "Plumbing"}]}
+        elif tool_name == "delete_competences":
+            params = {"competence_ids": ["c1"]}
+
+        with pytest.raises(RuntimeError, match="firestore_service not injected"):
+            await registry.execute(tool_name, params, ctx)

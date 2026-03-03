@@ -88,27 +88,116 @@ class ResponseOrchestrator:
     async def handle_signal_transition_async(
         self, target_str: str, session_id: str = ""
     ) -> bool:
-        """Async variant of handle_signal_transition.
+        """Async variant — thin wrapper around the sync helper.
 
-        In addition to applying the stage, triggers a Weaviate provider search
-        when the target stage is FINALIZE, forwarding the active session so the
-        extractor can include the last 3 history messages.
+        Side effects (provider search, context reset, competency fetch) are
+        performed by _apply_signal_transition_with_payload in the stream loop.
+        This variant is kept for compatibility with session_starter and tests.
+        """
+        return self.handle_signal_transition(target_str)
+
+    async def _apply_signal_transition_with_payload(
+        self,
+        target: str,
+        session_id: str,
+        context: Optional[dict],
+        pending: list,
+    ) -> bool:
+        """Apply a stage transition, run its side effects, and append a structured
+        payload to *pending* so the follow-up LLM stream has full context.
+
+        Returns True when the transition was accepted; on failure the error is
+        appended to *pending* and False is returned.
         """
         previous_stage = self.conversation_service.get_current_stage()
-        applied = self.handle_signal_transition(target_str)
-        if applied:
-            try:
-                target_stage = ConversationStage(target_str)
-                if target_stage == ConversationStage.FINALIZE:
-                    await self.conversation_service.search_providers_for_request(session_id)
-                elif target_stage == ConversationStage.TRIAGE and previous_stage in (
-                    ConversationStage.COMPLETED,
-                    ConversationStage.FINALIZE,
-                ):
-                    self.conversation_service.reset_request_context()
-            except ValueError:
-                pass  # already caught above; can't happen here
-        return applied
+        applied = self.handle_signal_transition(target)
+        if not applied:
+            logger.warning(
+                "signal_transition to '%s' failed in stage %s; "
+                "injecting error to trigger follow-up self-correction.",
+                target, previous_stage,
+            )
+            pending.append((
+                "signal_transition",
+                {
+                    "error": (
+                        f"Transition to '{target}' failed — unrecognised or "
+                        "illegal stage at this point. Verify the "
+                        "target_stage value and the current conversation stage."
+                    )
+                },
+            ))
+            return False
+
+        try:
+            target_stage = ConversationStage(target)
+        except ValueError:
+            pending.append(("signal_transition", {"stage": target}))
+            return True
+
+        if target_stage == ConversationStage.FINALIZE:
+            if previous_stage == ConversationStage.PROVIDER_ONBOARDING:
+                logger.warning("Skipping provider search: previous stage was PROVIDER_ONBOARDING")
+                providers: list = []
+            else:
+                providers = await self.conversation_service.search_providers_for_request(session_id) or []
+            # Update topic title as soon as we enter FINALIZE
+            if self.ai_conversation_service:
+                summary = self.conversation_service.get_problem_summary()
+                await self.ai_conversation_service.set_topic_title(summary)
+            pending.append(("signal_transition", {
+                "stage": "finalize",
+                "providers": providers,
+                "provider_count": len(providers),
+            }))
+
+        elif target_stage == ConversationStage.PROVIDER_ONBOARDING:
+            comps: list = []
+            if self.tool_registry:
+                try:
+                    result = await self.tool_registry.execute(
+                        "get_my_competencies", {}, context or {}
+                    )
+                    comps = result if isinstance(result, list) else []
+                except Exception as exc:  # pragma: no cover
+                    logger.warning(
+                        "Failed to fetch competencies for PROVIDER_ONBOARDING payload: %s", exc
+                    )
+            self.conversation_service.context["current_competencies"] = comps
+            logger.debug(
+                "Fetched %d competencies for PROVIDER_ONBOARDING payload", len(comps)
+            )
+            pending.append(("signal_transition", {
+                "stage": "provider_onboarding",
+                "competencies": comps,
+            }))
+
+        elif target_stage == ConversationStage.COMPLETED:
+            if previous_stage == ConversationStage.PROVIDER_ONBOARDING:
+                self.conversation_service.reset_request_context()
+                logger.info("Request context cleared after PROVIDER_ONBOARDING → COMPLETED")
+            pitch_eligible = self._should_pitch_provider(context)
+            if pitch_eligible:
+                pitch_applied = self.handle_signal_transition("provider_pitch")
+                if not pitch_applied:
+                    pitch_eligible = False
+                    logger.warning(
+                        "provider_pitch transition rejected; falling back to loop-back"
+                    )
+            pending.append(("signal_transition", {
+                "stage": "completed",
+                "pitch_eligible": pitch_eligible,
+            }))
+
+        elif target_stage == ConversationStage.TRIAGE:
+            if previous_stage in (ConversationStage.COMPLETED, ConversationStage.FINALIZE):
+                self.conversation_service.reset_request_context()
+            pending.append(("signal_transition", {"stage": "triage"}))
+
+        else:
+            pending.append(("signal_transition", {"stage": target}))
+
+        return True
 
     # ── Tool dispatch ──────────────────────────────────────────────────────────
 
@@ -178,6 +267,110 @@ class ResponseOrchestrator:
 
     # ── Main stream ────────────────────────────────────────────────────────────
 
+    async def _run_follow_up_stream(
+        self,
+        pending: list,
+        follow_up_input: str,
+        session_id: str,
+        context: Optional[dict],
+        ai_response_parts: list,
+        new_pending: list,
+    ) -> AsyncIterator[Union[str, dict]]:
+        """Run one follow-up LLM stream after a batch of pending tool results.
+
+        1. All pending results are added to LLM history as AIMessages.
+        2. If any result is a signal_transition payload, a "new_bubble" dict is
+           yielded and the real *follow_up_input* is used (avoids blank
+           HumanMessage that causes consecutive-human-message errors in Gemini).
+        3. The stream runs with the current (possibly newly-transitioned) stage.
+        4. Text chunks are appended to *ai_response_parts* and yielded to the
+           caller. Tool calls in the follow-up populate *new_pending* so the
+           caller can run a second pass.
+        """
+        if not pending:
+            return
+
+        # Feed all results into LLM history
+        for fn_name, result in pending:
+            result_str = (
+                json.dumps(result, ensure_ascii=False, default=str)
+                if isinstance(result, (dict, list))
+                else str(result)
+            )
+            self.llm_service.add_message_to_history(
+                session_id,
+                AIMessage(content=f"[Tool {fn_name} returned: {result_str}]"),
+            )
+
+        has_transition = any(n == "signal_transition" for n, _ in pending)
+        if has_transition:
+            yield {"type": "new_bubble"}
+
+        follow_up_stage = self.conversation_service.get_current_stage()
+        follow_up_template = self.conversation_service.create_prompt_for_stage(follow_up_stage)
+        # Use the real user input when a stage transition is present to avoid
+        # storing a blank HumanMessage that would upset Gemini on the next turn.
+        actual_input = follow_up_input if has_transition else " "
+
+        async for chunk in self.llm_service.generate_stream(
+            actual_input, follow_up_template, session_id
+        ):
+            if isinstance(chunk, dict) and chunk.get("type") == "function_call":
+                fu_name = chunk.get("name", "")
+                fu_args = chunk.get("args", {})
+
+                if fu_name == "signal_transition":
+                    fu_target = fu_args.get("target_stage", "")
+                    current = self.conversation_service.get_current_stage()
+                    _write_tools = ("save_competence_batch", "delete_competences")
+                    # Honour the PROVIDER_ONBOARDING guard in follow-up streams too
+                    if (
+                        current == ConversationStage.PROVIDER_ONBOARDING
+                        and fu_target != ConversationStage.COMPLETED.value
+                    ):
+                        logger.warning(
+                            "Blocked signal_transition(%r) from PROVIDER_ONBOARDING "
+                            "in follow-up stream.",
+                            fu_target,
+                        )
+                        new_pending.append(("signal_transition", {
+                            "error": (
+                                "ERROR: You called signal_transition with an invalid "
+                                f"target ({fu_target!r}) while in PROVIDER_ONBOARDING. "
+                                "Call save_competence_batch or delete_competences instead."
+                            )
+                        }))
+                    else:
+                        if (
+                            current == ConversationStage.PROVIDER_ONBOARDING
+                            and fu_target == ConversationStage.COMPLETED.value
+                            and not any(n in _write_tools for n, _ in pending)
+                        ):
+                            logger.info(
+                                "signal_transition('completed') from PROVIDER_ONBOARDING "
+                                "in follow-up without a write — user chose no changes."
+                            )
+                        await self._apply_signal_transition_with_payload(
+                            fu_target, session_id, context, new_pending
+                        )
+                else:
+                    tool_result = None
+                    async for tc in self.dispatch_tool(fu_name, fu_args, context or {}):
+                        tool_result = tc
+                    if tool_result is not None and not (
+                        isinstance(tool_result, dict) and tool_result.get("error")
+                    ):
+                        new_pending.append((fu_name, tool_result))
+                        if isinstance(tool_result, dict) and "signal_transition" in tool_result:
+                            await self._apply_signal_transition_with_payload(
+                                tool_result["signal_transition"], session_id, context, new_pending
+                            )
+            elif isinstance(chunk, str):
+                filtered = _strip_tool_call_text(chunk)
+                if filtered.strip():
+                    ai_response_parts.append(filtered)
+                    yield filtered
+
     async def generate_response_stream(
         self,
         user_input: str,
@@ -190,16 +383,21 @@ class ResponseOrchestrator:
         Handles both plain-text LLM chunks and function-call dicts
         (signal_transition, arbitrary tool calls) yielded by the LLM service.
 
-        Also:
-        - Registers SIGNAL_TRANSITION_SCHEMA per session so Gemini uses
-          native function-calling instead of emitting tool calls as text.
-        - Strips any leaked identifier(...) patterns from text chunks.
-        - Fires AgentRuntimeFSM events at key lifecycle points.
-        - Delegates message persistence to ai_conversation_service when set.
+        Flow:
+        1. Main LLM stream — text chunks yielded directly; signal_transition and
+           tool calls go to pending_tool_results (signal_transition payloads
+           include side-effect data: providers, competencies, pitch eligibility).
+        2. First follow-up stream — runs if pending_tool_results is non-empty;
+           handles the auto-response for finalize, onboarding, completed, etc.
+        3. Second follow-up stream — runs if the first follow-up itself triggered
+           new signal_transitions or tool calls (e.g. loop-back → triage).
+
+        Registers SIGNAL_TRANSITION_SCHEMA so Gemini uses native function-calling.
+        Fires AgentRuntimeFSM events at key lifecycle points.
+        Delegates message persistence to ai_conversation_service when set.
         """
         try:
-            # Register all tool schemas for this session so Gemini uses
-            # function-calling rather than emitting plaintext.
+            # ── Register tools ─────────────────────────────────────────────────
             tool_schemas = [SIGNAL_TRANSITION_SCHEMA]
             if self.tool_registry:
                 tool_schemas += self.tool_registry.all_schemas()
@@ -221,13 +419,29 @@ class ResponseOrchestrator:
             if current_stage == ConversationStage.TRIAGE:
                 await self.conversation_service.accumulate_problem_description(user_input)
 
+            # Pre-fetch competencies for ongoing PROVIDER_ONBOARDING turns so the
+            # stage prompt always has the up-to-date list without the LLM calling
+            # get_my_competencies.  (Freshly transitioned sessions are handled by
+            # _apply_signal_transition_with_payload.)
+            if current_stage == ConversationStage.PROVIDER_ONBOARDING and self.tool_registry:
+                try:
+                    competencies = await self.tool_registry.execute(
+                        "get_my_competencies", {}, context or {}
+                    )
+                    self.conversation_service.context["current_competencies"] = (
+                        competencies if isinstance(competencies, list) else []
+                    )
+                    logger.debug(
+                        "Pre-fetched %d competencies for PROVIDER_ONBOARDING",
+                        len(self.conversation_service.context["current_competencies"]),
+                    )
+                except Exception as exc:  # pragma: no cover
+                    logger.warning("Failed to pre-fetch competencies: %s", exc)
+
             # Build prompt for the current stage
             prompt_template = self.conversation_service.create_prompt_for_stage(current_stage)
 
-            # Stream LLM — chunks are either plain strings or function-call dicts
-            transitioned_to_finalize = False
-            transitioned_to_completed = False
-            transitioned_to_triage_from_completed = False
+            # ── Main LLM stream ─────────────────────────────────────────────────
             first_chunk = True
             ai_response_parts: list[str] = []
             pending_tool_results: list[tuple[str, object]] = []
@@ -235,7 +449,6 @@ class ResponseOrchestrator:
             async for chunk in self.llm_service.generate_stream(
                 user_input, prompt_template, session_id
             ):
-                # Fire llm_stream_started on the very first chunk (text or tool call)
                 if first_chunk:
                     self.runtime_fsm.transition("llm_stream_started")
                     first_chunk = False
@@ -247,23 +460,49 @@ class ResponseOrchestrator:
                     if fn_name == "signal_transition":
                         self.runtime_fsm.transition("tool_call")
                         target = fn_args.get("target_stage", "")
-                        applied = await self.handle_signal_transition_async(target, session_id)
-                        if applied:
-                            try:
-                                if ConversationStage(target) == ConversationStage.FINALIZE:
-                                    transitioned_to_finalize = True
-                                elif ConversationStage(target) == ConversationStage.COMPLETED:
-                                    transitioned_to_completed = True
-                                elif (
-                                    ConversationStage(target) == ConversationStage.TRIAGE
-                                    and current_stage == ConversationStage.COMPLETED
-                                ):
-                                    transitioned_to_triage_from_completed = True
-                            except ValueError:
-                                pass
+
+                        # Guard: block any signal_transition from PROVIDER_ONBOARDING
+                        # other than "completed" — those are leaked TRIAGE behaviour.
+                        _write_tools = ("save_competence_batch", "delete_competences")
+                        if (
+                            current_stage == ConversationStage.PROVIDER_ONBOARDING
+                            and target != ConversationStage.COMPLETED.value
+                        ):
+                            logger.warning(
+                                "Blocked signal_transition(target_stage=%r) from "
+                                "PROVIDER_ONBOARDING — only 'completed' is valid here.",
+                                target,
+                            )
+                            pending_tool_results.append(("signal_transition", {
+                                "error": (
+                                    "ERROR: You called signal_transition with an invalid "
+                                    f"target ({target!r}) while in PROVIDER_ONBOARDING stage. "
+                                    "Do NOT call signal_transition here. "
+                                    "The user has confirmed the details — your only correct "
+                                    "action is to call save_competence_batch (for ADD/UPDATE) "
+                                    "or delete_competences (for REMOVE). Call the write tool now."
+                                )
+                            }))
+                            self.runtime_fsm.transition("tool_done")
+                            continue
+
+                        if (
+                            current_stage == ConversationStage.PROVIDER_ONBOARDING
+                            and target == ConversationStage.COMPLETED.value
+                            and not any(n in _write_tools for n, _ in pending_tool_results)
+                        ):
+                            logger.info(
+                                "signal_transition to 'completed' from PROVIDER_ONBOARDING "
+                                "without a write tool — user likely chose no changes."
+                            )
+
+                        await self._apply_signal_transition_with_payload(
+                            target, session_id, context, pending_tool_results
+                        )
                         self.runtime_fsm.transition("tool_done")
+
                     else:
-                        # Execute tool and collect result for LLM feedback loop
+                        # Regular tool call
                         self.runtime_fsm.transition("tool_call")
                         tool_result = None
                         async for tool_chunk in self.dispatch_tool(
@@ -274,26 +513,21 @@ class ResponseOrchestrator:
 
                         if tool_result is not None:
                             is_error = (
-                                isinstance(tool_result, dict)
-                                and tool_result.get("error")
+                                isinstance(tool_result, dict) and tool_result.get("error")
                             )
                             if not is_error:
                                 pending_tool_results.append((fn_name, tool_result))
-                                # If the tool returned a stage transition signal, apply it
+                                # Handle stage transition embedded in tool result
                                 if isinstance(tool_result, dict) and "signal_transition" in tool_result:
                                     sig_target = tool_result["signal_transition"]
-                                    await self.handle_signal_transition_async(sig_target)
+                                    await self._apply_signal_transition_with_payload(
+                                        sig_target, session_id, context, pending_tool_results
+                                    )
                                 # Surface provider list for stage-context use
-                                if (
-                                    fn_name == "search_providers"
-                                    and isinstance(tool_result, list)
-                                ):
+                                if fn_name == "search_providers" and isinstance(tool_result, list):
                                     self.conversation_service.context["providers_found"] = tool_result
                                 # Link created service request to conversation
-                                if (
-                                    fn_name == "create_service_request"
-                                    and self.ai_conversation_service
-                                ):
+                                if fn_name == "create_service_request" and self.ai_conversation_service:
                                     req_id = (
                                         tool_result.get("id")
                                         or tool_result.get("service_request_id")
@@ -302,6 +536,28 @@ class ResponseOrchestrator:
                                     )
                                     if req_id:
                                         await self.ai_conversation_service.set_request_id(req_id)
+                                # Refresh competency list after a write so next prompt
+                                # reflects the latest state
+                                if (
+                                    fn_name in ("save_competence_batch", "delete_competences")
+                                    and self.tool_registry
+                                ):
+                                    try:
+                                        refreshed = await self.tool_registry.execute(
+                                            "get_my_competencies", {}, context or {}
+                                        )
+                                        self.conversation_service.context["current_competencies"] = (
+                                            refreshed if isinstance(refreshed, list) else []
+                                        )
+                                        logger.debug(
+                                            "Refreshed competencies after %r: %d items",
+                                            fn_name,
+                                            len(self.conversation_service.context["current_competencies"]),
+                                        )
+                                    except Exception as exc:  # pragma: no cover
+                                        logger.warning(
+                                            "Failed to refresh competencies after write: %s", exc
+                                        )
                             else:
                                 logger.warning(
                                     "Tool %r returned error: %s", fn_name, tool_result
@@ -313,230 +569,38 @@ class ResponseOrchestrator:
                         ai_response_parts.append(filtered)
                         yield filtered
 
-            # Feed tool results back into LLM history and generate a follow-up stream
-            if pending_tool_results:
-                for fn_name, result in pending_tool_results:
-                    result_str = (
-                        json.dumps(result, ensure_ascii=False, default=str)
-                        if isinstance(result, (dict, list))
-                        else str(result)
-                    )
-                    self.llm_service.add_message_to_history(
-                        session_id,
-                        AIMessage(content=f"[Tool {fn_name} returned: {result_str}]"),
-                    )
-                follow_up_stage = self.conversation_service.get_current_stage()
-                follow_up_template = self.conversation_service.create_prompt_for_stage(
-                    follow_up_stage
-                )
-                async for chunk in self.llm_service.generate_stream(
-                    " ",
-                    follow_up_template,
-                    session_id,
-                ):
-                    if isinstance(chunk, str):
-                        filtered = _strip_tool_call_text(chunk)
-                        if filtered.strip():
-                            ai_response_parts.append(filtered)
-                            yield filtered
+            # ── First follow-up stream ───────────────────────────────────────────
+            # Handles the auto-response for finalize presentation, provider
+            # onboarding opener, completed loop-back/pitch, etc.
+            second_pending: list[tuple[str, object]] = []
+            async for chunk in self._run_follow_up_stream(
+                pending_tool_results, user_input, session_id, context,
+                ai_response_parts, second_pending
+            ):
+                yield chunk
 
-            # Stream complete — advance FSM back to LISTENING
+            # ── Second follow-up stream ──────────────────────────────────────────
+            # Runs when the first follow-up itself triggered new signal_transitions
+            # or tool calls (e.g. COMPLETED loop-back immediately calling triage).
+            third_pending: list[tuple[str, object]] = []
+            async for chunk in self._run_follow_up_stream(
+                second_pending, user_input, session_id, context,
+                ai_response_parts, third_pending
+            ):
+                yield chunk
+
+            # ── Stream complete ──────────────────────────────────────────────────
             self.runtime_fsm.transition("stream_complete_text")
 
-            # Assemble and record the AI response so get_problem_summary()
-            # returns the LLM's confirmed job summary on subsequent calls.
             ai_text = "".join(ai_response_parts)
             self.conversation_service.record_ai_response(ai_text)
 
-            # Persist the assembled AI response (skip if empty — e.g. the LLM
-            # emitted only a function call with no accompanying text)
             if self.ai_conversation_service and ai_text.strip():
                 final_stage = self.conversation_service.get_current_stage()
                 await self.ai_conversation_service.save_message(
                     role="assistant", text=ai_text, stage=final_stage
                 )
 
-            # Update topic title when entering FINALIZE
-            if transitioned_to_finalize and self.ai_conversation_service:
-                summary = self.conversation_service.get_problem_summary()
-                await self.ai_conversation_service.set_topic_title(summary)
-
-            # Auto-generate provider presentation after entering FINALIZE
-            if transitioned_to_finalize:
-                finalize_parts: list[str] = []
-                yield {"type": "new_bubble"}  # open a fresh bubble before presentation
-                async for chunk in self._generate_finalize_presentation(session_id):
-                    finalize_parts.append(chunk)
-                    yield chunk
-                if finalize_parts and self.ai_conversation_service:
-                    finalize_text = "".join(finalize_parts)
-                    await self.ai_conversation_service.save_message(
-                        role="assistant",
-                        text=finalize_text,
-                        stage=ConversationStage.FINALIZE,
-                    )
-
-            # After COMPLETED: pitch eligible users; loop back for everyone else
-            if transitioned_to_completed:
-                pitch_launched = False
-                if self._should_pitch_provider(context):
-                    applied = await self.handle_signal_transition_async("provider_pitch")
-                    if applied:
-                        pitch_launched = True
-                        yield {"type": "new_bubble"}
-                        async for chunk in self._generate_provider_pitch_stream(session_id):
-                            yield chunk
-
-                if not pitch_launched:
-                    yield {"type": "new_bubble"}
-                    loop_back_triggered_triage = False
-                    async for chunk in self._generate_loop_back_stream(session_id):
-                        if isinstance(chunk, dict) and chunk.get("type") == "triage_triggered":
-                            loop_back_triggered_triage = True
-                        else:
-                            yield chunk
-                    if loop_back_triggered_triage:
-                        yield {"type": "new_bubble"}
-                        triage_parts: list[str] = []
-                        async for chunk in self._generate_triage_opener_stream(user_input, session_id):
-                            triage_parts.append(chunk)
-                            yield chunk
-                        if triage_parts and self.ai_conversation_service:
-                            await self.ai_conversation_service.save_message(
-                                role="assistant",
-                                text="".join(triage_parts),
-                                stage=ConversationStage.TRIAGE,
-                            )
-
-            # Auto-start TRIAGE scoping when the user replied in COMPLETED with a new
-            # request and the main stream (not the loop-back) triggered the transition.
-            if transitioned_to_triage_from_completed:
-                yield {"type": "new_bubble"}
-                triage_parts_main: list[str] = []
-                async for chunk in self._generate_triage_opener_stream(user_input, session_id):
-                    triage_parts_main.append(chunk)
-                    yield chunk
-                if triage_parts_main and self.ai_conversation_service:
-                    await self.ai_conversation_service.save_message(
-                        role="assistant",
-                        text="".join(triage_parts_main),
-                        stage=ConversationStage.TRIAGE,
-                    )
-
         except Exception as exc:
             logger.error("Error in response orchestration: %s", exc, exc_info=True)
             yield "Entschuldigung, ich konnte keine Antwort generieren."
-
-    # ── Private helpers ────────────────────────────────────────────────────────
-
-    async def _generate_finalize_presentation(
-        self, session_id: str
-    ) -> AsyncIterator[str]:
-        """Auto-generate provider presentation after entering FINALIZE stage."""
-        logger.info("Auto-generating provider presentation in FINALIZE stage")
-        prompt_template = self.conversation_service.create_prompt_for_stage(
-            ConversationStage.FINALIZE
-        )
-        async for chunk in self.llm_service.generate_stream(" ", prompt_template, session_id):
-            if isinstance(chunk, str):
-                yield chunk
-
-    async def _generate_provider_pitch_stream(
-        self, session_id: str
-    ) -> AsyncIterator[str]:
-        """Auto-generate provider pitch after entering PROVIDER_PITCH stage."""
-        logger.info("Auto-generating provider pitch in PROVIDER_PITCH stage")
-        prompt_template = self.conversation_service.create_prompt_for_stage(
-            ConversationStage.PROVIDER_PITCH
-        )
-        async for chunk in self.llm_service.generate_stream(" ", prompt_template, session_id):
-            if isinstance(chunk, str):
-                yield chunk
-
-    async def _generate_loop_back_stream(
-        self, session_id: str
-    ) -> AsyncIterator[str]:
-        """Auto-generate the loop-back question after COMPLETED stage.
-
-        Asks the user warmly whether they need help with anything else.
-        The LLM uses LOOP_BACK_PROMPT which instructs it to call
-        signal_transition(target_stage="triage") if the user wants more help,
-        or give a short farewell otherwise.
-
-        IMPORTANT: The LLM may skip the warm-up sentence entirely and emit
-        only a signal_transition("triage") function call (e.g. when the user
-        already indicated they want more help in the same turn).  This helper
-        handles that case by processing the tool call instead of silently
-        dropping it.
-        """
-        logger.info("Auto-generating loop-back question in COMPLETED stage")
-        prompt_template = self.conversation_service.create_prompt_for_stage(
-            ConversationStage.COMPLETED
-        )
-        pending_tool_results: list[tuple[str, object]] = []
-        async for chunk in self.llm_service.generate_stream(" ", prompt_template, session_id):
-            if isinstance(chunk, dict) and chunk.get("type") == "function_call":
-                fn_name = chunk.get("name", "")
-                fn_args = chunk.get("args", {})
-                if fn_name == "signal_transition":
-                    target = fn_args.get("target_stage", "")
-                    applied = await self.handle_signal_transition_async(target, session_id)
-                    if applied and target == "triage":
-                        # Signal to the caller that a TRIAGE opener should be generated.
-                        # We yield a sentinel rather than generating inline so the caller
-                        # can pass the user's original input to the TRIAGE stream.
-                        yield {"type": "triage_triggered"}
-                else:
-                    # Other tools are unlikely here but handle gracefully
-                    tool_result = None
-                    async for tool_chunk in self.dispatch_tool(fn_name, fn_args, {}):
-                        tool_result = tool_chunk
-                    if tool_result is not None and not (
-                        isinstance(tool_result, dict) and tool_result.get("error")
-                    ):
-                        pending_tool_results.append((fn_name, tool_result))
-            elif isinstance(chunk, str):
-                filtered = _strip_tool_call_text(chunk)
-                if filtered.strip():
-                    yield filtered
-
-        # If there were tool results, feed them back and generate a follow-up
-        if pending_tool_results:
-            import json
-            from langchain_core.messages import AIMessage as _AIMessage
-            for fn_name, result in pending_tool_results:
-                result_str = (
-                    json.dumps(result, ensure_ascii=False, default=str)
-                    if isinstance(result, (dict, list))
-                    else str(result)
-                )
-                self.llm_service.add_message_to_history(
-                    session_id,
-                    _AIMessage(content=f"[Tool {fn_name} returned: {result_str}]"),
-                )
-            follow_up_stage = self.conversation_service.get_current_stage()
-            follow_up_template = self.conversation_service.create_prompt_for_stage(follow_up_stage)
-            async for chunk in self.llm_service.generate_stream(" ", follow_up_template, session_id):
-                if isinstance(chunk, str):
-                    filtered = _strip_tool_call_text(chunk)
-                    if filtered.strip():
-                        yield filtered
-
-    async def _generate_triage_opener_stream(
-        self, user_input: str, session_id: str
-    ) -> AsyncIterator[str]:
-        """Auto-generate the first TRIAGE response after looping back from COMPLETED.
-
-        Passes the user's original input (which already describes the new topic)
-        directly to the TRIAGE LLM so it can start scoping immediately without
-        requiring an extra round-trip from the user.
-        """
-        logger.info("Auto-generating TRIAGE opener after COMPLETED→TRIAGE loop-back")
-        prompt_template = self.conversation_service.create_prompt_for_stage(
-            ConversationStage.TRIAGE
-        )
-        async for chunk in self.llm_service.generate_stream(user_input, prompt_template, session_id):
-            if isinstance(chunk, str):
-                filtered = _strip_tool_call_text(chunk)
-                if filtered.strip():
-                    yield filtered
