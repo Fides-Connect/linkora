@@ -166,9 +166,23 @@ class AudioProcessor:
     # ── DataChannel wiring ────────────────────────────────────────────────────
 
     def set_data_channel(self, channel) -> None:
-        """Attach the DataChannel for outbound messages."""
+        """Attach the DataChannel for outbound messages.
+
+        Also re-emits the current AgentRuntimeFSM state so Flutter receives it
+        even when the FSM transitioned to LISTENING before the DataChannel was
+        open (common in text-mode sessions where the DC opens after the FSM
+        has already advanced past BOOTSTRAP/DATA_CHANNEL_WAIT).
+        """
         self.data_channel = channel  # property setter also wires _dc_bridge
         logger.info("Data channel set in AudioProcessor")
+
+        # Re-emit the current FSM state so the client syncs even if it missed
+        # the earlier state events that fired before the channel was ready.
+        try:
+            fsm = self.ai_assistant.response_orchestrator.runtime_fsm
+            self._emit_runtime_state(fsm.state)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Could not re-emit FSM state on DC attach: %s", exc)
 
     # ── Strategy factories ────────────────────────────────────────────────────
 
@@ -197,6 +211,7 @@ class AudioProcessor:
             connection_id=self.connection_id,
             interrupt_event=self.interrupt_event,
             on_speaking_change=lambda speaking: setattr(self, "is_ai_speaking", speaking),
+            firestore_service=self.ai_assistant.firestore_service,
         )
 
     # ── DataChannel send helpers (thin wrappers over DataChannelBridge) ───────
