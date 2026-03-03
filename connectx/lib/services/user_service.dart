@@ -4,11 +4,18 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/foundation.dart';
+import 'api_service.dart';
 
-/// Service for managing user sync and FCM token registration
+/// Service for managing user sync, FCM token registration, and backend settings.
 class UserService {
+  // Singleton so the same instance is shared across the app.
+  static final UserService _instance = UserService._internal();
+  factory UserService() => _instance;
+  UserService._internal();
+
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  final ApiService _apiService = ApiService();
 
   String? _fcmToken;
 
@@ -58,13 +65,22 @@ class UserService {
         return null;
       }
 
-      // Prepare user data
-      final userData = {
+      // Always fetch the current token at sync time so we never send a stale
+      // or null token due to a race with initializeFCM().
+      final currentToken = _fcmToken ?? await _messaging.getToken();
+      _fcmToken = currentToken; // keep cache in sync
+
+      // Prepare user data.
+      // Omit fcm_token entirely when we don't have one so we never overwrite
+      // a valid token that is already stored on the backend with an empty string
+      // (can happen when getToken() returns null before FCM is ready).
+      final userData = <String, dynamic>{
         'user_id': user.uid,
         'name': user.displayName ?? '',
         'email': user.email ?? '',
         'photo_url': user.photoURL ?? '',
-        'fcm_token': _fcmToken ?? '',
+        if (currentToken != null && currentToken.isNotEmpty)
+          'fcm_token': currentToken,
       };
 
       // Get backend URL from environment
@@ -139,6 +155,37 @@ class UserService {
       }
     } catch (e) {
       debugPrint('Error logging out user: $e');
+      return false;
+    }
+  }
+
+  /// Fetch the current user's app settings from the backend.
+  /// Returns `{'language': 'en', 'notifications_enabled': true}` or null on failure.
+  Future<Map<String, dynamic>?> getSettings() async {
+    try {
+      final data = await _apiService.get('/api/v1/me/settings');
+      return (data as Map<String, dynamic>?);
+    } catch (e) {
+      debugPrint('Error fetching settings: $e');
+      return null;
+    }
+  }
+
+  /// Persist app settings to the backend.
+  /// Only the provided (non-null) fields are sent.
+  Future<bool> updateSettings({
+    String? language,
+    bool? notificationsEnabled,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (language != null) body['language'] = language;
+      if (notificationsEnabled != null) body['notifications_enabled'] = notificationsEnabled;
+      if (body.isEmpty) return true;
+      await _apiService.patch('/api/v1/me/settings', body: body);
+      return true;
+    } catch (e) {
+      debugPrint('Error updating settings: $e');
       return false;
     }
   }

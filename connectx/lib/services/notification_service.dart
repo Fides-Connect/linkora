@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Priority levels for notifications
 enum NotificationPriority { high, defaultPriority, low }
@@ -15,9 +16,35 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _isInitialized = false;
+  bool _notificationsEnabled = true;
+  Function(String payload)? _onTapCallback;
 
-  /// Initialize the notification service with platform-specific settings
-  Future<void> initialize() async {
+  static const _kNotificationsEnabledKey = 'notifications_enabled';
+
+  /// Whether the user has opted in to in-app notifications.
+  bool get notificationsEnabled => _notificationsEnabled;
+
+  /// Persist the notification preference and update the in-memory flag.
+  Future<void> setNotificationsEnabled(bool enabled) async {
+    _notificationsEnabled = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kNotificationsEnabledKey, enabled);
+  }
+
+  /// Load persisted preference (called during [initialize]).
+  Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    _notificationsEnabled = prefs.getBool(_kNotificationsEnabledKey) ?? true;
+  }
+
+  /// Initialize the notification service with platform-specific settings.
+  /// [onNotificationTap] is called with the notification payload whenever the
+  /// user taps a local notification while the app is in the foreground.
+  Future<void> initialize({Function(String payload)? onNotificationTap}) async {
+    // Allow updating the tap callback even when already initialized (e.g. if
+    // showNotification() triggered a bare initialize() before main.dart could
+    // pass onNotificationTap).
+    if (onNotificationTap != null) _onTapCallback = onNotificationTap;
     if (_isInitialized) return;
 
     // Android initialization settings
@@ -57,6 +84,8 @@ class NotificationService {
       settings: initSettings,
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
+
+    await _loadPreferences();
 
     // Create Android notification channel (required for Android 8.0+)
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
@@ -113,6 +142,7 @@ class NotificationService {
     required String body,
     String? payload,
   }) async {
+    if (!_notificationsEnabled) return;
     if (!_isInitialized) {
       await initialize();
     }
@@ -285,8 +315,11 @@ class NotificationService {
     debugPrint(
       'NotificationService: Notification tapped - ${response.payload}',
     );
-    // Handle navigation or actions based on payload
-    // This can be extended to navigate to specific screens
+    final payload = response.payload;
+    if (payload != null && _onTapCallback != null) {
+      // payload format: "<type>:<service_request_id>"
+      _onTapCallback!(payload);
+    }
   }
 
   /// Get pending notifications

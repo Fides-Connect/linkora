@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:connectx/features/home/data/repositories/home_repository.dart';
@@ -8,10 +9,15 @@ import '../../../../helpers/test_helpers.mocks.dart';
 void main() {
   late HomeRepository repository;
   late MockApiService mockApiService;
+  late MockFirestoreWrapper mockFirestoreWrapper;
 
   setUp(() {
     mockApiService = MockApiService();
-    repository = HomeRepository(apiService: mockApiService);
+    mockFirestoreWrapper = MockFirestoreWrapper();
+    repository = HomeRepository(
+      apiService: mockApiService,
+      firestoreWrapper: mockFirestoreWrapper,
+    );
   });
 
   group('getRequests', () {
@@ -47,8 +53,27 @@ void main() {
       expect(result.first.title, 'Test Request');
       verify(mockApiService.get('/api/v1/service-requests')).called(1);
     });
+  });
 
+  group('watchServiceRequests', () {
+    test('delegates to FirestoreWrapper and forwards events', () async {
+      const userId = 'user_42';
+      final streamController = StreamController<void>();
+      when(mockFirestoreWrapper.watchServiceRequests(userId))
+          .thenAnswer((_) => streamController.stream);
 
+      final emitted = <void>[];
+      final sub = repository.watchServiceRequests(userId).listen(emitted.add);
+
+      streamController.add(null);
+      await Future<void>.delayed(Duration.zero); // pump
+
+      expect(emitted.length, 1);
+      verify(mockFirestoreWrapper.watchServiceRequests(userId)).called(1);
+
+      await sub.cancel();
+      await streamController.close();
+    });
   });
 
   group('getFavorites', () {

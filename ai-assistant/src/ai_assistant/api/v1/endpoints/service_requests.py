@@ -2,11 +2,16 @@
 /api/v1/service-requests/* endpoints
 Service request and chat management endpoints.
 """
+import asyncio
 import logging
 from aiohttp import web
 from pydantic import ValidationError
 
 from ai_assistant.firestore_service import FirestoreService
+from ai_assistant.services.notification_service import (
+    notify_service_request_status_change,
+    notify_new_service_request,
+)
 from ...deps import get_current_user_id, serialize_datetime
 
 logger = logging.getLogger(__name__)
@@ -38,12 +43,22 @@ async def create_service_request(request: web.Request) -> web.Response:
         # Enforce seeker_user_id to be the authenticated user
         body['seeker_user_id'] = user_id
         
-        service_request_id = await firestore_service.create_service_request(body)
-        if service_request_id:
-            return web.json_response({
-                "service_request_id": service_request_id,
-                "status": "created"
-            }, status=201)
+        created = await firestore_service.create_service_request(body)
+        if created:
+            service_request_id = created.get('service_request_id', '')
+            provider_id = body.get('selected_provider_user_id', '')
+            asyncio.ensure_future(
+                notify_new_service_request(
+                    provider_id=provider_id,
+                    service_request_id=service_request_id,
+                    category=body.get('category', ''),
+                )
+            )
+            response_data = serialize_datetime(created)
+            # Explicitly guarantee the ID is present even if schema
+            # validation stripped it from validated_data.
+            response_data['service_request_id'] = service_request_id
+            return web.json_response(response_data, status=201)
         else:
             return web.json_response({"error": "Failed to create service request"}, status=500)
     except ValidationError as e:
@@ -114,6 +129,100 @@ async def update_service_request(request: web.Request) -> web.Response:
         raise
     except Exception as e:
         logger.error(f"Error in update_service_request: {e}")
+        return web.json_response({"error": str(e)}, status=500)
+
+
+async def update_service_request_status(request: web.Request) -> web.Response:
+    """PATCH /api/v1/service-requests/{id}/status - Update status with role-based authorization.
+
+    Allowed transitions by role:
+      Provider (selected_provider_user_id):
+        pending / waitingForAnswer → accepted, rejected
+        accepted → serviceProvided
+      Seeker (seeker_user_id):
+        pending / waitingForAnswer / accepted → cancelled
+        serviceProvided → completed
+    """
+    try:
+        user_id = await get_current_user_id(request)
+        service_request_id = request.match_info['id']
+        body = await request.json()
+
+        if not isinstance(body, dict):
+            return web.json_response(
+                {"error": "Invalid request body: expected a JSON object"},
+                status=400,
+            )
+
+        new_status = body.get('status')
+        if not isinstance(new_status, str) or not new_status.strip():
+            return web.json_response({"error": "Invalid or missing field: status"}, status=400)
+
+        new_status = new_status.strip()
+
+        service_request = await firestore_service.get_service_request(service_request_id)
+        if not service_request:
+            return web.json_response({"error": "Service request not found"}, status=404)
+
+        seeker_id = service_request.get('seeker_user_id')
+        provider_id = service_request.get('selected_provider_user_id')
+        current_status = service_request.get('status')
+
+        is_seeker = user_id == seeker_id
+        is_provider = provider_id and user_id == provider_id
+
+        if not is_seeker and not is_provider:
+            return web.json_response(
+                {"error": "Forbidden: Not a participant of this service request"}, status=403
+            )
+
+        PROVIDER_TRANSITIONS = {
+            'pending': ['accepted', 'rejected'],
+            'waitingForAnswer': ['accepted', 'rejected'],
+            'accepted': ['serviceProvided'],
+        }
+        SEEKER_TRANSITIONS = {
+            'pending': ['cancelled'],
+            'waitingForAnswer': ['cancelled'],
+            'accepted': ['cancelled'],
+            'serviceProvided': ['completed'],
+        }
+
+        allowed: list[str] = []
+        if is_provider:
+            allowed += PROVIDER_TRANSITIONS.get(current_status, [])
+        if is_seeker:
+            allowed += SEEKER_TRANSITIONS.get(current_status, [])
+
+        if new_status not in allowed:
+            return web.json_response(
+                {"error": f"Transition from '{current_status}' to '{new_status}' is not allowed for this user"},
+                status=422
+            )
+
+        updated_request = await firestore_service.update_service_request_status(
+            service_request_id, new_status
+        )
+        if updated_request:
+            asyncio.ensure_future(
+                notify_service_request_status_change(
+                    seeker_id=seeker_id or '',
+                    provider_id=provider_id,
+                    actor_id=user_id,
+                    service_request_id=service_request_id,
+                    new_status=new_status,
+                )
+            )
+            return web.json_response(serialize_datetime(updated_request))
+        else:
+            return web.json_response({"error": "Failed to update service request status"}, status=500)
+    except web.HTTPException:
+        raise
+    except ValidationError as e:
+        logger.warning(f"Validation error in update_service_request_status: {e}")
+        return web.json_response({"error": "Validation failed", "details": e.errors()}, status=400)
+    except Exception as e:
+        logger.error(f"Error in update_service_request_status: {e}")
         return web.json_response({"error": str(e)}, status=500)
 
 

@@ -35,6 +35,11 @@ class MessagesDE {
   static const String acceptButton = 'Annehmen';
   static const String rejectButton = 'Ablehnen';
   static const String cancelRequestButton = 'Anfrage zurückziehen';
+  static const String serviceProvided = 'Leistung erbracht';
+
+  static const String cancelled = 'Abgebrochen';
+  static const String markServiceProvidedButton = 'Leistung als erbracht markieren';
+  static const String paymentButton = 'Bezahlen';
   static const String location = 'Ort';
   static const String dateFrom = 'Von';
   static const String dateTo = 'Bis';
@@ -89,6 +94,7 @@ class MessagesDE {
   // Menu items
   static const String menuLogout = 'Abmelden';
   static const String menuLanguage = 'Sprache';
+  static const String menuNotifications = 'Benachrichtigungen';
   static const String languageEnglish = 'Englisch';
   static const String languageGerman = 'Deutsch';
 

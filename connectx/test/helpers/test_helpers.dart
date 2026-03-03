@@ -27,6 +27,7 @@ import 'package:http/http.dart' as http;
   PermissionWrapper,
   WebRTCWrapper,
   FirebaseAuthWrapper,
+  FirestoreWrapper,
   User,
   RTCRtpSender,
   ApiService,

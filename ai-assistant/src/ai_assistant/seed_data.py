@@ -63,7 +63,7 @@ USER_TEMPLATE_SERVICE_REQUESTS = [
         "seeker_user_id": "user_alice_001",
         "selected_provider_user_id": "{uid}",
         "category": "Technology",
-        "status": "pending",
+        "status": "waitingForAnswer",
         "location": "Berlin, Germany",
     }
 ]
@@ -660,3 +660,55 @@ TEST_PERSONAS = [
 ]
 
 # --- Database Test Data (Requests, Chat, Reviews) ---
+
+
+# --- Standalone Service Request Templates ---
+
+# Template data for a lawn mowing service request.
+# Use get_lawn_mowing_service_request() to obtain a fully-populated dict.
+_LAWN_MOWING_SERVICE_REQUEST_TEMPLATE = {
+    "title": "Lawn Mowing",
+    "description": (
+        "One time lawn mowing service for a mid-sized suburban garden (~150 m²). "
+        "Includes edge trimming, grass collection, and disposal of clippings."
+    ),
+    "category": "Gardening",
+    "amount_value": 45.0,
+    "currency": "EUR",
+    "requested_competencies": ["Lawn Mowing", "Garden Maintenance"],
+    "location": "Berlin, Germany",
+    "status": "waitingForAnswer",
+}
+
+
+def get_lawn_mowing_service_request(
+    seeker_user_id: str,
+    selected_provider_user_id: str,
+) -> dict:
+    """Return a lawn mowing service request dict ready for Firestore.
+
+    Start date is set to approximately two weeks from *now*; end date is
+    three hours after the start.
+
+    Args:
+        seeker_user_id: Firestore user ID of the service seeker.
+        selected_provider_user_id: Firestore user ID of the selected provider.
+
+    Returns:
+        A dict compatible with ``ServiceRequestSchema`` (excluding timestamps,
+        which are injected by ``FirestoreService.create_service_request``).
+    """
+    from datetime import datetime, timezone, timedelta
+
+    start = datetime.now(timezone.utc).replace(
+        hour=10, minute=0, second=0, microsecond=0
+    ) + timedelta(weeks=2)
+    end = start + timedelta(hours=3)
+
+    return {
+        **_LAWN_MOWING_SERVICE_REQUEST_TEMPLATE,
+        "seeker_user_id": seeker_user_id,
+        "selected_provider_user_id": selected_provider_user_id,
+        "start_date": start,
+        "end_date": end,
+    }

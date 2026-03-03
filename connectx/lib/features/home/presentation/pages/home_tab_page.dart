@@ -97,6 +97,62 @@ class HomeTabPage extends StatelessWidget {
     );
   }
 
+  Widget _buildStatusBadge(ServiceRequest request, AppLocalizations? localizations, {bool isIncoming = false}) {
+    final Color color;
+    final String text;
+    switch (request.status) {
+      case RequestStatus.pending:
+        color = Colors.orange;
+        text = localizations?.pending ?? 'Pending';
+        break;
+      case RequestStatus.waitingForAnswer:
+        color = Colors.blue;
+        text = isIncoming
+            ? (localizations?.actionNeededButton ?? 'Action Required')
+            : (localizations?.waitingForAnswer ?? 'Waiting for Answer');
+        break;
+      case RequestStatus.accepted:
+        color = Colors.green;
+        text = localizations?.accepted ?? 'Accepted';
+        break;
+      case RequestStatus.rejected:
+        color = Colors.red;
+        text = localizations?.rejected ?? 'Rejected';
+        break;
+      case RequestStatus.serviceProvided:
+        color = Colors.teal;
+        text = localizations?.serviceProvided ?? 'Service Provided';
+        break;
+      case RequestStatus.completed:
+        color = Colors.green;
+        text = localizations?.completed ?? 'Completed';
+        break;
+      case RequestStatus.cancelled:
+        color = Colors.grey;
+        text = localizations?.cancelled ?? 'Cancelled';
+        break;
+      default:
+        color = Colors.grey;
+        text = localizations?.unknown ?? 'Unknown';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
   Widget _buildIncomingRequestCard(
     BuildContext context,
     ServiceRequest request,
@@ -192,24 +248,7 @@ class HomeTabPage extends StatelessWidget {
                     fontSize: 14,
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.shade700,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    localizations?.actionNeededButton ?? 'Action Needed',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
+                _buildStatusBadge(request, localizations, isIncoming: true),
               ],
             ),
           ],
@@ -223,13 +262,6 @@ class HomeTabPage extends StatelessWidget {
     ServiceRequest request,
     AppLocalizations? localizations,
   ) {
-    Color statusColor = Colors.blue;
-    String statusText = localizations?.waitingForAnswer ?? 'Waiting';
-
-    if (request.status == RequestStatus.completed) {
-      statusColor = Colors.green;
-      statusText = localizations?.completed ?? 'Completed';
-    }
 
     return GestureDetector(
       onTap: () {
@@ -346,24 +378,7 @@ class HomeTabPage extends StatelessWidget {
                       ),
                   ],
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    statusText,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
+                _buildStatusBadge(request, localizations),
               ],
             ),
           ],

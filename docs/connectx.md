@@ -45,6 +45,7 @@ ConnectX is a comprehensive mobile client for the Linkora platform that:
 │  └── Data Sources (API/Mock)        │
 ├─────────────────────────────────────┤
 │  Service Layer                      │
+│  ├── ApiService                     │
 │  ├── AuthService                    │
 │  ├── WebRTCService                  │
 │  ├── SpeechService                  │
@@ -69,12 +70,14 @@ ConnectX is a comprehensive mobile client for the Linkora platform that:
 - **Voice Output**: Playback of AI-generated responses
 - **Authentication**: Google Sign-In, Email/Password, Phone Auth
 - **User Profile Sync**: Auto-syncs name, email, and photo from Google Profile to backend
-- **Service Requests**: View and manage incoming/outgoing requests
+- **Service Requests**: View and manage incoming/outgoing requests with role-based status labels
 - **Favorites Management**: Save preferred providers for quick access
 - **User Profiles**: Detailed view of users including location, competencies, and reviews
 - **WebRTC**: Direct peer-to-peer audio streaming
 - **Visual Feedback**: Audio visualization during recording
 - **Chat History**: Conversation transcript display
+- **Push Notifications**: FCM-based notifications for service-request status changes, in the user's configured language
+- **App Settings**: Language (EN/DE) and notification-toggle preferences synced to the backend on login and saved persistently
 - **Cross-Platform**: Runs on iOS and Android
 - **Responsive UI**: Adaptive layout for different screen sizes
 
@@ -239,16 +242,20 @@ connectx/
 │   │   └── competence.dart            # Competence model
 │   │
 │   ├── services/                      # Business logic
+│   │   ├── api_service.dart           # HTTP client (GET/POST/PATCH/DELETE)
 │   │   ├── auth_service.dart          # Firebase authentication
+│   │   ├── notification_service.dart  # FCM notifications + toggle persistence
 │   │   ├── speech_service.dart        # Speech recognition
 │   │   ├── webrtc_service.dart        # WebRTC management
-│   │   └── user_service.dart          # User data management
+│   │   └── user_service.dart          # User profile & settings (singleton)
 │   │
 │   ├── utils/                         # Helper methods
 │   │   └── constants.dart             # App constants
 │   │
-│   └── localization/                  # Internationalization
-│       └── app_localizations.dart
+│   └── localization/                  # Internationalization (EN, DE)
+│       ├── app_localizations.dart     # AppLocalizations facade
+│       ├── messages_en.dart           # English strings
+│       └── messages_de.dart           # German strings
 │
 ├── android/                           # Android platform files
 │   ├── app/
