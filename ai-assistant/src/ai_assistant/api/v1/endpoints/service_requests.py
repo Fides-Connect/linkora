@@ -147,10 +147,18 @@ async def update_service_request_status(request: web.Request) -> web.Response:
         user_id = await get_current_user_id(request)
         service_request_id = request.match_info['id']
         body = await request.json()
-        new_status = body.get('status')
 
-        if not new_status:
-            return web.json_response({"error": "Missing required field: status"}, status=400)
+        if not isinstance(body, dict):
+            return web.json_response(
+                {"error": "Invalid request body: expected a JSON object"},
+                status=400,
+            )
+
+        new_status = body.get('status')
+        if not isinstance(new_status, str) or not new_status.strip():
+            return web.json_response({"error": "Invalid or missing field: status"}, status=400)
+
+        new_status = new_status.strip()
 
         service_request = await firestore_service.get_service_request(service_request_id)
         if not service_request:
