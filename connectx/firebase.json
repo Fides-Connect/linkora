@@ -1,1 +1,24 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"linkora-dev","appId":"1:995957667958:android:ef830341da190d6b9b8757","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"linkora-dev","configurations":{"android":"1:995957667958:android:ef830341da190d6b9b8757"}}}}}}
+{
+    "firestore": {
+        "rules": "firestore.rules"
+    },
+    "flutter": {
+        "platforms": {
+            "android": {
+                "default": {
+                    "projectId": "linkora-dev",
+                    "appId": "1:995957667958:android:ef830341da190d6b9b8757",
+                    "fileOutput": "android/app/google-services.json"
+                }
+            },
+            "dart": {
+                "lib/firebase_options.dart": {
+                    "projectId": "linkora-dev",
+                    "configurations": {
+                        "android": "1:995957667958:android:ef830341da190d6b9b8757"
+                    }
+                }
+            }
+        }
+    }
+}

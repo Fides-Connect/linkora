@@ -356,6 +356,114 @@ async def update_my_competence(request: web.Request) -> web.Response:
         return web.json_response({"error": str(e)}, status=500)
 
 
+# ── App settings ─────────────────────────────────────────────────────────────
+
+_ALLOWED_SETTINGS_KEYS: frozenset[str] = frozenset({'language', 'notifications_enabled'})
+_DEFAULT_SETTINGS: dict = {'language': 'en', 'notifications_enabled': True}
+
+
+async def get_settings(request: web.Request) -> web.Response:
+    """GET /api/v1/me/settings - Get current user's app settings."""
+    try:
+        user_id = await get_current_user_id(request)
+        user = await firestore_service.get_user(user_id)
+        if not user:
+            return web.json_response({'error': 'User not found'}, status=404)
+        raw_settings = user.get('user_app_settings')
+        stored: dict = raw_settings if isinstance(raw_settings, dict) else {}
+        # Coerce language: must be a supported string, else fall back to default.
+        lang_raw = stored.get('language')
+        if isinstance(lang_raw, str):
+            normalized_lang = lang_raw.strip().lower()
+            language = normalized_lang if normalized_lang in {'en', 'de'} else _DEFAULT_SETTINGS['language']
+        else:
+            language = _DEFAULT_SETTINGS['language']
+        # Coerce notifications_enabled: must be bool, else fall back to default.
+        notif_raw = stored.get('notifications_enabled')
+        notifications_enabled = notif_raw if isinstance(notif_raw, bool) else _DEFAULT_SETTINGS['notifications_enabled']
+        return web.json_response({
+            'language': language,
+            'notifications_enabled': notifications_enabled,
+        })
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'Error in get_settings: {e}')
+        return web.json_response({'error': str(e)}, status=500)
+
+
+async def update_settings(request: web.Request) -> web.Response:
+    """PATCH /api/v1/me/settings - Update current user's app settings."""
+    try:
+        user_id = await get_current_user_id(request)
+        body = await request.json()
+        if not isinstance(body, dict):
+            return web.json_response({'error': 'Request body must be a JSON object'}, status=400)
+        user = await firestore_service.get_user(user_id)
+        if not user:
+            return web.json_response({'error': 'User not found'}, status=404)
+
+        # Normalize and validate language; only 'en' and 'de' are supported.
+        if 'language' in body:
+            if not isinstance(body['language'], str):
+                return web.json_response(
+                    {'error': "Field 'language' must be a string"}, status=400
+                )
+            normalized_lang = body['language'].strip().lower()
+            if normalized_lang not in {'en', 'de'}:
+                return web.json_response(
+                    {'error': "Field 'language' must be one of: 'en', 'de'"}, status=400
+                )
+            body['language'] = normalized_lang
+        if 'notifications_enabled' in body and not isinstance(body['notifications_enabled'], bool):
+            return web.json_response(
+                {'error': "Field 'notifications_enabled' must be a boolean"}, status=400
+            )
+
+        # Guard against corrupt/missing user_app_settings in Firestore.
+        existing_settings = user.get('user_app_settings') or {}
+        if not isinstance(existing_settings, dict):
+            logger.warning(
+                "User %s has non-dict user_app_settings (%r); resetting to empty dict",
+                user_id, type(existing_settings),
+            )
+            existing_settings = {}
+
+        # Merge only the allowed keys into the existing settings dict.
+        merged: dict = dict(existing_settings)
+        updated = False
+        for key in _ALLOWED_SETTINGS_KEYS:
+            if key in body:
+                merged[key] = body[key]
+                updated = True
+
+        if updated:
+            await firestore_service.update_user(user_id, {'user_app_settings': merged})
+
+        # Sanitize response values to match get_settings behavior:
+        # - language must be one of {'en', 'de'}, otherwise fall back to default
+        # - notifications_enabled must be a boolean, otherwise fall back to default
+        language = merged.get('language', _DEFAULT_SETTINGS['language'])
+        if not isinstance(language, str) or language not in {'en', 'de'}:
+            language = _DEFAULT_SETTINGS['language']
+
+        notifications_enabled = merged.get(
+            'notifications_enabled', _DEFAULT_SETTINGS['notifications_enabled']
+        )
+        if not isinstance(notifications_enabled, bool):
+            notifications_enabled = _DEFAULT_SETTINGS['notifications_enabled']
+
+        return web.json_response({
+            'language': language,
+            'notifications_enabled': notifications_enabled,
+        })
+    except web.HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f'Error in update_settings: {e}')
+        return web.json_response({'error': str(e)}, status=500)
+
+
 async def remove_my_competence(request: web.Request) -> web.Response:
     """DELETE /api/v1/me/competencies/{competence_id} - Remove competence."""
     try:

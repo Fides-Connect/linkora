@@ -7,7 +7,10 @@ from ai_assistant.services.notification_service import (
     NotificationService,
     notify_provider_match,
     notify_request_completed,
-    notify_conversation_update
+    notify_conversation_update,
+    notify_service_request_status_change,
+    notify_new_service_request,
+    _get_user_language,
 )
 
 
@@ -280,3 +283,243 @@ class TestConvenienceFunctions:
             call_kwargs = mock_send.call_args[1]
             assert call_kwargs["body"] == "AI has a response for you"
             assert call_kwargs["data"]["type"] == "conversation_update"
+
+
+class TestServiceRequestStatusNotifications:
+    """Tests for notify_service_request_status_change helper."""
+
+    @pytest.fixture(autouse=True)
+    def mock_user_language(self):
+        """Default: all users prefer English — override per test for i18n checks."""
+        with patch(
+            'ai_assistant.services.notification_service._get_user_language',
+            new=AsyncMock(return_value='en'),
+        ) as mock:
+            yield mock
+
+    @pytest.fixture
+    def mock_send_to_user(self):
+        with patch(
+            'ai_assistant.services.notification_service.NotificationService.send_to_user',
+            new_callable=AsyncMock,
+        ) as mock:
+            mock.return_value = True
+            yield mock
+
+    async def test_seeker_notified_on_accepted(self, mock_send_to_user):
+        """Seeker receives notification when provider accepts."""
+        await notify_service_request_status_change(
+            seeker_id='seeker_1',
+            provider_id='provider_1',
+            actor_id='provider_1',
+            service_request_id='req_abc',
+            new_status='accepted',
+        )
+        assert mock_send_to_user.call_count == 1
+        kwargs = mock_send_to_user.call_args[1]
+        assert kwargs['user_id'] == 'seeker_1'
+        assert kwargs['data']['type'] == 'service_request_status_change'
+        assert kwargs['data']['service_request_id'] == 'req_abc'
+        assert kwargs['data']['new_status'] == 'accepted'
+
+    async def test_provider_notified_on_cancelled(self, mock_send_to_user):
+        """Provider receives notification when seeker cancels."""
+        await notify_service_request_status_change(
+            seeker_id='seeker_1',
+            provider_id='provider_1',
+            actor_id='seeker_1',
+            service_request_id='req_abc',
+            new_status='cancelled',
+        )
+        assert mock_send_to_user.call_count == 1
+        kwargs = mock_send_to_user.call_args[1]
+        assert kwargs['user_id'] == 'provider_1'
+        assert kwargs['data']['new_status'] == 'cancelled'
+
+    async def test_provider_notified_on_completed(self, mock_send_to_user):
+        """Provider receives notification when seeker confirms payment (completed)."""
+        await notify_service_request_status_change(
+            seeker_id='seeker_1',
+            provider_id='provider_1',
+            actor_id='seeker_1',
+            service_request_id='req_abc',
+            new_status='completed',
+        )
+        assert mock_send_to_user.call_count == 1
+        kwargs = mock_send_to_user.call_args[1]
+        assert kwargs['user_id'] == 'provider_1'
+
+    async def test_actor_does_not_receive_own_notification(self, mock_send_to_user):
+        """The user who triggered the change is not notified."""
+        # seeker cancels — they are the actor, so only provider should be notified
+        await notify_service_request_status_change(
+            seeker_id='seeker_1',
+            provider_id='seeker_1',   # edge case: same ID
+            actor_id='seeker_1',
+            service_request_id='req_abc',
+            new_status='cancelled',
+        )
+        assert mock_send_to_user.call_count == 0
+
+    async def test_unknown_status_sends_no_notification(self, mock_send_to_user):
+        """An unrecognised status does not trigger any notification."""
+        await notify_service_request_status_change(
+            seeker_id='seeker_1',
+            provider_id='provider_1',
+            actor_id='provider_1',
+            service_request_id='req_abc',
+            new_status='unknownStatus',
+        )
+        mock_send_to_user.assert_not_called()
+
+    async def test_no_provider_on_cancelled_does_not_crash(self, mock_send_to_user):
+        """Cancelling a request with no provider yet completes without error."""
+        await notify_service_request_status_change(
+            seeker_id='seeker_1',
+            provider_id=None,
+            actor_id='seeker_1',
+            service_request_id='req_abc',
+            new_status='cancelled',
+        )
+        mock_send_to_user.assert_not_called()
+
+    async def test_seeker_notified_in_german(self, mock_send_to_user, mock_user_language):
+        """Seeker with language='de' receives a German notification."""
+        mock_user_language.return_value = 'de'
+        await notify_service_request_status_change(
+            seeker_id='seeker_1',
+            provider_id='provider_1',
+            actor_id='provider_1',
+            service_request_id='req_abc',
+            new_status='accepted',
+        )
+        assert mock_send_to_user.call_count == 1
+        kwargs = mock_send_to_user.call_args[1]
+        assert kwargs['user_id'] == 'seeker_1'
+        assert 'akzeptiert' in kwargs['title']
+        assert 'angenommen' in kwargs['body']
+
+    async def test_provider_notified_in_german_on_completed(self, mock_send_to_user, mock_user_language):
+        """Provider with language='de' receives a German notification on completion."""
+        mock_user_language.return_value = 'de'
+        await notify_service_request_status_change(
+            seeker_id='seeker_1',
+            provider_id='provider_1',
+            actor_id='seeker_1',
+            service_request_id='req_abc',
+            new_status='completed',
+        )
+        assert mock_send_to_user.call_count == 1
+        kwargs = mock_send_to_user.call_args[1]
+        assert kwargs['user_id'] == 'provider_1'
+        assert 'bestätigt' in kwargs['title']
+
+    async def test_unknown_language_falls_back_to_english(self, mock_send_to_user, mock_user_language):
+        """An unknown language code falls back to English messages."""
+        mock_user_language.return_value = 'fr'
+        await notify_service_request_status_change(
+            seeker_id='seeker_1',
+            provider_id='provider_1',
+            actor_id='provider_1',
+            service_request_id='req_abc',
+            new_status='accepted',
+        )
+        kwargs = mock_send_to_user.call_args[1]
+        assert 'Accepted' in kwargs['title']
+
+
+class TestNotifyNewServiceRequest:
+    """Tests for notify_new_service_request helper."""
+
+    @pytest.fixture(autouse=True)
+    def mock_user_language(self):
+        """Default: provider prefers English."""
+        with patch(
+            'ai_assistant.services.notification_service._get_user_language',
+            new=AsyncMock(return_value='en'),
+        ) as mock:
+            yield mock
+
+    @pytest.fixture
+    def mock_send_to_user(self):
+        with patch(
+            'ai_assistant.services.notification_service.NotificationService.send_to_user',
+            new_callable=AsyncMock,
+        ) as mock:
+            mock.return_value = True
+            yield mock
+
+    async def test_provider_notified_on_new_request(self, mock_send_to_user):
+        """Provider receives a notification when a new service request is created."""
+        await notify_new_service_request(
+            provider_id='provider_1',
+            service_request_id='req_new',
+            category='Plumbing',
+        )
+        mock_send_to_user.assert_called_once()
+        kwargs = mock_send_to_user.call_args[1]
+        assert kwargs['user_id'] == 'provider_1'
+        assert kwargs['data']['type'] == 'new_service_request'
+        assert kwargs['data']['service_request_id'] == 'req_new'
+        assert 'Plumbing' in kwargs['body']
+
+    async def test_no_provider_id_sends_nothing(self, mock_send_to_user):
+        """Empty provider_id silently skips the notification."""
+        await notify_new_service_request(
+            provider_id='',
+            service_request_id='req_new',
+        )
+        mock_send_to_user.assert_not_called()
+
+    async def test_no_category_omits_category_text(self, mock_send_to_user):
+        """Notification body is still valid when no category is provided."""
+        await notify_new_service_request(
+            provider_id='provider_1',
+            service_request_id='req_new',
+        )
+        kwargs = mock_send_to_user.call_args[1]
+        assert '()' not in kwargs['body']
+
+    async def test_provider_notified_in_german(self, mock_send_to_user, mock_user_language):
+        """Provider with language='de' receives a German notification."""
+        mock_user_language.return_value = 'de'
+        await notify_new_service_request(
+            provider_id='provider_1',
+            service_request_id='req_new',
+            category='Klempner',
+        )
+        kwargs = mock_send_to_user.call_args[1]
+        assert kwargs['user_id'] == 'provider_1'
+        assert 'Neue' in kwargs['title']
+        assert 'Klempner' in kwargs['body']
+        assert 'erhalten' in kwargs['body']
+
+    async def test_get_user_language_uses_firestore_setting(self):
+        """_get_user_language reads user_app_settings.language from Firestore."""
+        with patch(
+            'ai_assistant.services.notification_service._firestore'
+        ) as mock_fs:
+            mock_fs.get_user = AsyncMock(return_value={
+                'user_id': 'u1',
+                'user_app_settings': {'language': 'de'},
+            })
+            lang = await _get_user_language('u1')
+        assert lang == 'de'
+
+    async def test_get_user_language_defaults_to_en_when_missing(self):
+        """_get_user_language returns 'en' if user_app_settings is absent."""
+        with patch(
+            'ai_assistant.services.notification_service._firestore'
+        ) as mock_fs:
+            mock_fs.get_user = AsyncMock(return_value={'user_id': 'u1'})
+            lang = await _get_user_language('u1')
+        assert lang == 'en'
+
+    async def test_get_user_language_defaults_to_en_on_error(self):
+        """_get_user_language returns 'en' if Firestore raises."""
+        with patch(
+            'ai_assistant.services.notification_service._firestore'
+        ) as mock_fs:
+            mock_fs.get_user = AsyncMock(side_effect=Exception('db error'))
+            lang = await _get_user_language('u1')
+        assert lang == 'en'

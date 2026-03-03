@@ -28,6 +28,8 @@ def register_v1_routes(app: web.Application):
     app.router.add_post('/api/v1/me/competencies', me.create_my_competence)
     app.router.add_patch('/api/v1/me/competencies/{competence_id}', me.update_my_competence)
     app.router.add_delete('/api/v1/me/competencies/{competence_id}', me.remove_my_competence)
+    app.router.add_get('/api/v1/me/settings', me.get_settings)
+    app.router.add_patch('/api/v1/me/settings', me.update_settings)
     
     # User management endpoints
     app.router.add_post('/api/v1/users', users.create_user)
@@ -39,6 +41,7 @@ def register_v1_routes(app: web.Application):
     app.router.add_post('/api/v1/service-requests', service_requests.create_service_request)
     app.router.add_get('/api/v1/service-requests/{id}', service_requests.get_service_request)
     app.router.add_patch('/api/v1/service-requests/{id}', service_requests.update_service_request)
+    app.router.add_patch('/api/v1/service-requests/{id}/status', service_requests.update_service_request_status)
     app.router.add_delete('/api/v1/service-requests/{id}', service_requests.delete_service_request)
     
     # Chat endpoints (nested under service requests)

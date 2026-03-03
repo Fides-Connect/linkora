@@ -291,6 +291,13 @@ class AppLocalizations {
     return MessagesEN.menuLanguage;
   }
 
+  String get menuNotifications {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.menuNotifications;
+    }
+    return MessagesEN.menuNotifications;
+  }
+
   String get languageEnglish {
     if (locale.languageCode == 'de') {
       return MessagesDE.languageEnglish;
@@ -504,7 +511,36 @@ class AppLocalizations {
     }
     return MessagesEN.cancelRequestButton;
   }
-  
+
+  String get serviceProvided {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.serviceProvided;
+    }
+    return MessagesEN.serviceProvided;
+  }
+
+
+  String get cancelled {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.cancelled;
+    }
+    return MessagesEN.cancelled;
+  }
+
+  String get markServiceProvidedButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.markServiceProvidedButton;
+    }
+    return MessagesEN.markServiceProvidedButton;
+  }
+
+  String get paymentButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.paymentButton;
+    }
+    return MessagesEN.paymentButton;
+  }
+
   String get location {
     if (locale.languageCode == 'de') {
       return MessagesDE.location;

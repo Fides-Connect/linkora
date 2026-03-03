@@ -11,6 +11,28 @@ import logging
 from typing import Any, List
 from firebase_admin import messaging
 from ..weaviate_models import UserModelWeaviate
+from ..firestore_service import FirestoreService
+from ..localization import NotificationStrings
+
+_firestore = FirestoreService()
+
+
+async def _get_user_language(user_id: str) -> str:
+    """Return the preferred language for *user_id* (from Firestore user_app_settings).
+
+    Falls back to 'en' on any error or if no preference is stored.
+    """
+    try:
+        user = await _firestore.get_user(user_id)
+        if user:
+            language = user.get('user_app_settings', {}).get('language')
+            if isinstance(language, str):
+                normalized = language.strip().lower()
+                if normalized:
+                    return normalized
+    except Exception:
+        pass
+    return 'en'
 
 logger = logging.getLogger(__name__)
 
@@ -336,3 +358,103 @@ async def notify_conversation_update(user_id: str, message: str) -> bool:
             "type": "conversation_update",
         }
     )
+
+
+# ── Service-request status-change routing ────────────────────────────────────
+# Maps new_status → {role: attribute_prefix on NotificationStrings}.
+# None means that party does NOT receive a notification for that transition.
+# Attribute names follow the pattern ``{prefix}_{role}_title / _body`` on
+# ``NotificationStrings``.  To add a new status, add a row here and the
+# matching string constants in the language files.
+_NOTIFICATION_MAP: dict[str, dict[str, str | None]] = {
+    'accepted':         {'seeker': 'accepted',        'provider': None},
+    'rejected':         {'seeker': 'rejected',         'provider': None},
+    'serviceProvided':  {'seeker': 'service_provided', 'provider': None},
+    'cancelled':        {'seeker': None,               'provider': 'cancelled'},
+    'completed':        {'seeker': None,               'provider': 'completed'},
+}
+
+
+async def notify_new_service_request(
+    provider_id: str,
+    service_request_id: str,
+    category: str = '',
+) -> None:
+    """Notify the selected provider that a new service request was created for them."""
+    if not provider_id:
+        return
+    strings = NotificationStrings(await _get_user_language(provider_id))
+    try:
+        await NotificationService.send_to_user(
+            user_id=provider_id,
+            title=strings.new_request_title,
+            body=strings.new_request_body(category=category),
+            data={
+                'type': 'new_service_request',
+                'service_request_id': service_request_id,
+            },
+        )
+    except Exception as e:
+        logger.warning(f'Failed to notify provider {provider_id} of new request: {e}')
+
+
+async def notify_service_request_status_change(
+    *,
+    seeker_id: str,
+    provider_id: str | None,
+    actor_id: str,
+    service_request_id: str,
+    new_status: str,
+) -> None:
+    """Send push notifications after a service-request status change.
+
+    Each recipient receives the notification in their own preferred language
+    (resolved via ``NotificationStrings``).
+    Only the *other* party (not the actor who triggered the change) receives a
+    notification.  Lookup is done by role:
+      - seeker notifications are sent when a provider acts (accepted, rejected,
+        serviceProvided)
+      - provider notifications are sent when a seeker acts (cancelled,
+        completed)
+
+    Errors are logged and swallowed so they never block the API response.
+    """
+    roles = _NOTIFICATION_MAP.get(new_status)
+    if not roles:
+        return  # no configured message for this status
+
+    data: dict[str, str] = {
+        "type": "service_request_status_change",
+        "service_request_id": service_request_id,
+        "new_status": new_status,
+    }
+
+    # Collect (user_id, role, attribute_prefix) for each party to notify.
+    recipients: list[tuple[str, str, str]] = []
+    if roles['seeker'] and seeker_id and seeker_id != actor_id:
+        recipients.append((seeker_id, 'seeker', roles['seeker']))
+    if roles['provider'] and provider_id and provider_id != actor_id:
+        recipients.append((provider_id, 'provider', roles['provider']))
+
+    if not recipients:
+        return
+
+    # Fetch all recipient languages in parallel, then build localised messages.
+    languages = await asyncio.gather(*[_get_user_language(uid) for uid, _, _ in recipients])
+
+    tasks = []
+    for (user_id, role, prefix), lang in zip(recipients, languages):
+        strings = NotificationStrings(lang)
+        title = getattr(strings, f'{prefix}_{role}_title')
+        body  = getattr(strings, f'{prefix}_{role}_body')
+        tasks.append(
+            NotificationService.send_to_user(
+                user_id=user_id, title=title, body=body, data=data
+            )
+        )
+
+    if tasks:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning(f"Failed to send service request notification: {result}")
