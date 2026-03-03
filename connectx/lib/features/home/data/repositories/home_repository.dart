@@ -1,12 +1,27 @@
 import '../../../../services/api_service.dart';
+import '../../../../services/wrappers.dart';
 import '../../../../models/service_request.dart';
 import '../../../../models/user.dart';
 
 class HomeRepository {
   final ApiService _apiService;
+  final FirestoreWrapper _firestoreWrapper;
 
-  HomeRepository({ApiService? apiService})
-      : _apiService = apiService ?? ApiService();
+  HomeRepository({ApiService? apiService, FirestoreWrapper? firestoreWrapper})
+      : _apiService = apiService ?? ApiService(),
+        _firestoreWrapper = firestoreWrapper ?? FirebaseFirestoreWrapper();
+
+  /// Fetches a single service request by its ID.
+  /// Wraps API call to `GET /api/v1/service-requests/{requestId}`.
+  Future<ServiceRequest?> getRequest(String requestId) async {
+    try {
+      final data = await _apiService.get(
+          '/api/v1/service-requests/${Uri.encodeComponent(requestId)}');
+      return ServiceRequest.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Fetches the list of incoming and outgoing service requests.
   /// Wraps API call to `GET /api/v1/service-requests`.
@@ -16,6 +31,14 @@ class HomeRepository {
       return data.map((json) => ServiceRequest.fromJson(json)).toList();
     }
     return [];
+  }
+
+  /// Returns a stream that emits whenever a service request relevant to
+  /// [userId] is created or updated in Firestore (either as provider or
+  /// seeker). Each emission indicates that [getRequests] should be called
+  /// again to refresh the UI.
+  Stream<void> watchServiceRequests(String userId) {
+    return _firestoreWrapper.watchServiceRequests(userId);
   }
 
   /// Fetches the current user's favorite users.
@@ -105,10 +128,10 @@ class HomeRepository {
   }
 
   /// Updates the status (Accepted, Rejected, Completed) of an existing service request.
-  /// Wraps API call to `PATCH /api/v1/service-requests/{requestId}`.
+  /// Wraps API call to `PATCH /api/v1/service-requests/{requestId}/status`.
   /// Returns the updated service request.
   Future<ServiceRequest> updateServiceRequestStatus(String requestId, RequestStatus status) async {
-    final data = await _apiService.patch('/api/v1/service-requests/${Uri.encodeComponent(requestId)}', body: {'status': status.name});
+    final data = await _apiService.patch('/api/v1/service-requests/${Uri.encodeComponent(requestId)}/status', body: {'status': status.name});
     return ServiceRequest.fromJson(data);
   }
 }

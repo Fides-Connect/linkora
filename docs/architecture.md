@@ -39,6 +39,11 @@ This document describes the architecture, design decisions, and technical implem
 │   │ Google STT │  │ Google TTS │  │ Google Gemini│          │
 │   └────────────┘  └────────────┘  └──────────────┘          │
 │                                                             │
+│   ┌────────────────┐  ┌────────────────────────────────┐    │
+│   │ Firebase       │  │ Firebase Cloud Messaging (FCM) │    │
+│   │ Auth/Firestore │  │ Push notifications (localised) │    │
+│   └────────────────┘  └────────────────────────────────┘    │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -334,6 +339,10 @@ search_providers(query, filters)
 
 8. Audio Response
    Audio Chunks → WebRTC Stream → ConnectX → Speaker
+
+9. Push Notifications (async, out-of-band)
+   Service Request status change → NotificationService → FCM → ConnectX (background/foreground)
+   Each recipient's language (EN/DE) is fetched from Firestore before the notification is sent.
 ```
 
 ## 🚀 Deployment Architecture

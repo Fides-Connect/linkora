@@ -25,6 +25,8 @@ Options:
                             Local:  WEAVIATE_URL (default http://localhost:8090)
                             Cloud:  WEAVIATE_CLUSTER_URL + WEAVIATE_API_KEY
     --force               Skip confirmation prompts for any destructive operation
+    --add-service-request Add a single lawn mowing service request to Firestore.
+                          Requires --seeker-user-id and --provider-user-id.
 """
 import os
 import sys
@@ -57,6 +59,8 @@ from ai_assistant.hub_spoke_schema import (
 )
 from ai_assistant.firestore_service import FirestoreService
 from ai_assistant.weaviate_sync import ingest_users_into_weaviate, rebuild_weaviate_from_firestore
+from ai_assistant.seed_data import get_lawn_mowing_service_request
+from ai_assistant.services.notification_service import notify_new_service_request
 
 # Configure logging
 logging.basicConfig(
@@ -485,8 +489,57 @@ async def main():
         action='store_true',
         help='Skip confirmation prompts for any destructive operation (--clean-only, --load-test-data, --sync-to-weaviate)'
     )
-    
+    parser.add_argument(
+        '--add-service-request',
+        action='store_true',
+        help='Add a single lawn mowing service request to Firestore. Requires --seeker-user-id and --provider-user-id.'
+    )
+    parser.add_argument(
+        '--seeker-user-id',
+        type=str,
+        help='User ID of the service seeker (required with --add-service-request).'
+    )
+    parser.add_argument(
+        '--provider-user-id',
+        type=str,
+        help='User ID of the selected service provider (required with --add-service-request).'
+    )
+
     args = parser.parse_args()
+
+    # ── Add single service request ──────────────────────────────────────────
+    if args.add_service_request:
+        if not args.seeker_user_id or not args.provider_user_id:
+            logger.error(
+                "--add-service-request requires both --seeker-user-id and --provider-user-id."
+            )
+            return 1
+        if not firestore_service:
+            logger.error("Firestore client is not active. Cannot create service request.")
+            return 1
+        request_data = get_lawn_mowing_service_request(
+            seeker_user_id=args.seeker_user_id,
+            selected_provider_user_id=args.provider_user_id,
+        )
+        result = await firestore_service.create_service_request(request_data)
+        try:
+            if result:
+                service_request_id = result.get('service_request_id', '')
+                logger.info(
+                    f"✓ Service request created: {service_request_id} "
+                    f"(seeker={args.seeker_user_id}, provider={args.provider_user_id})"
+                )
+                await notify_new_service_request(
+                    provider_id=args.provider_user_id,
+                    service_request_id=service_request_id,
+                    category=request_data.get('category', ''),
+                )
+                return 0
+            else:
+                logger.error("✗ Failed to create service request.")
+                return 1
+        finally:
+            HubSpokeConnection.close()
 
     # ── Sync path: independent of the normal init flow ─────────────────────
     if args.sync_to_weaviate:

@@ -9,6 +9,7 @@ enum RequestStatus {
   active,
   waitingForAnswer,
   completed,
+  serviceProvided,
   cancelled,
   expired,
   unknown,
