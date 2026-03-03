@@ -5,14 +5,16 @@ Cross-Encoder Reranking Service
 Provides a second-pass reranking step for provider search results.
 
 After Weaviate's wide-net hybrid retrieval (Stage 1), this service runs a
-cross-encoder that scores each (query, candidate) pair *jointly*, giving far
+cross-encoder that scores each (query, document) pair *jointly*, giving far
 more accurate relevance judgments than the bi-encoder used during retrieval.
 
-Model: cross-encoder/ms-marco-MiniLM-L-6-v2
+Model: cross-encoder/ms-marco-MiniLM-L-6-v2  (~87 MB)
   - Fast (MiniLM backbone), English
   - Trained on MS MARCO passage ranking → good at matching natural language
     queries to descriptive text
-  - ~22 MB of weights, loads once and is reused across all calls
+  - Bundled under ai-assistant/models/ (Git LFS) — no download on startup
+  - Falls back to the HF identifier when the local directory is absent
+    (e.g. on a fresh clone before `git lfs pull`)
 
 Usage pattern:
     service = CrossEncoderService()
@@ -20,6 +22,7 @@ Usage pattern:
 """
 import asyncio
 import logging
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 try:
@@ -29,7 +32,33 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+_HF_MODEL_ID = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
+# Bundled path: ai-assistant/models/cross-encoder/ms-marco-MiniLM-L-6-v2/
+# Resolves correctly both locally and inside Docker (/app/models/…).
+_BUNDLED_MODEL_DIR = (
+    Path(__file__).parent  # services/
+    .parent                 # ai_assistant/
+    .parent                 # src/
+    .parent                 # ai-assistant/
+    / "models"
+    / "cross-encoder"
+    / "ms-marco-MiniLM-L-6-v2"
+)
+
+_DEFAULT_MODEL = _HF_MODEL_ID  # kept for backward compat / tests that pass a custom name
+
+
+def _resolve_model_name() -> str:
+    """Return the local bundled path if it exists, else the HF identifier."""
+    if (_BUNDLED_MODEL_DIR / "config.json").exists():
+        logger.debug("Using bundled cross-encoder model at %s", _BUNDLED_MODEL_DIR)
+        return str(_BUNDLED_MODEL_DIR)
+    logger.warning(
+        "Bundled model not found at %s — will download from HF Hub",
+        _BUNDLED_MODEL_DIR,
+    )
+    return _HF_MODEL_ID
 
 
 def _candidate_to_text(candidate: Dict[str, Any]) -> str:
@@ -68,9 +97,12 @@ class CrossEncoderService:
     """
 
     def __init__(self, model_name: str = _DEFAULT_MODEL):
-        self._model_name = model_name
+        # When using the default HF identifier, prefer the bundled local copy.
+        self._model_name = (
+            _resolve_model_name() if model_name == _DEFAULT_MODEL else model_name
+        )
         self._model: Optional[Any] = None  # loaded lazily
-        logger.info("CrossEncoderService created with model '%s' (lazy load)", model_name)
+        logger.info("CrossEncoderService created with model '%s' (lazy load)", self._model_name)
 
     def _load_model(self) -> Any:
         """Load the cross-encoder model (called once on first use)."""
