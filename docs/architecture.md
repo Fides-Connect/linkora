@@ -79,7 +79,7 @@ AI-Assistant ← WebRTC stream ← Audio response ← ConnectX plays audio
 - **Stateless Server**: Horizontally scalable
 - **Connection-Based State**: No shared session storage
 - **Docker Containers**: Easy deployment and scaling
-- **Kubernetes Ready**: Helm charts for orchestration
+- **Cloud Ready**: Cloud Run + Compute Engine deployment
 
 ### 4. Developer Experience
 - **Clear Separation**: Frontend/backend boundaries
@@ -345,25 +345,20 @@ localhost:8090    → Weaviate
 localhost:60099   → ConnectX Web (optional)
 ```
 
-### Production (GKE)
+### Production (Cloud Run + Compute Engine)
 ```
-GKE Cluster (fides-production)
-├── Namespace: default
-├── Services:
-│   ├── ai-assistant-service (LoadBalancer)
-│   └── weaviate-service (ClusterIP)
-├── Deployments:
-│   ├── ai-assistant (3 replicas)
-│   └── weaviate (1 replica)
-└── Secrets:
-    ├── google-service-account
-    ├── gemini-api-key
-    └── oauth-client-id
+Cloud Run: ai-assistant (europe-west3, 1–3 instances)
+├── Secrets via Secret Manager (gemini-api-key, admin-secret-key)
+└── Workload Identity → Speech, TTS, Firebase, Firestore
+
+Compute Engine VM: weaviate-vm (e2-medium, europe-west3-a)
+└── Docker Compose: Weaviate + text2vec-model2vec
 ```
 
 ### CI/CD Pipeline
 ```
-GitHub → Actions → Build → Test → Docker Build → GCR Push → Helm Deploy → GKE
+GitHub → Actions → Build → Test → Docker Build → Artifact Registry → Cloud Run deploy
+                                             └── weaviate/** change → SSH → docker compose up
 ```
 
 ## 🔐 Security Architecture
@@ -385,12 +380,12 @@ Session authenticated
 - **Client**: No API keys (only OAuth client ID)
 - **Server**: All credentials in environment variables
 - **GCP**: Service account with minimal permissions
-- **Secrets**: Kubernetes secrets in production
+- **Secrets**: Secret Manager in production
 
 ### Network Security
 - **TLS**: Required in production
 - **WebRTC**: DTLS encryption for media
-- **Firewall**: Restrict access to GKE cluster
+- **Firewall**: GCE firewall rules restrict Weaviate port access
 - **CORS**: Configured for allowed origins
 
 ## 📊 Performance Characteristics

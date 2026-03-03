@@ -6,14 +6,10 @@ on:
     paths:
       - 'ai-assistant/**'
       - '.github/workflows/ai-assistant-test.yml'
-      - 'helm/ai-assistant/**'
-      - '.github/workflows/cloud-deploy.yml'
   pull_request:
     paths:
       - 'ai-assistant/**'
       - '.github/workflows/ai-assistant-test.yml'
-      - 'helm/ai-assistant/**'
-      - '.github/workflows/cloud-deploy.yml'
 
 permissions:
   id-token: write

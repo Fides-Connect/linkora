@@ -1,107 +1,156 @@
-name: Deploy AI Assistant to Google Cloud Platform
+name: Deploy to Google Cloud
 
+# AI-Assistant deploy: triggered after tests pass on main (see ai-assistant-test.yml).
+# Weaviate deploy: triggered directly on push to main when weaviate/** changes.
 on:
   workflow_run:
     workflows: ["AI Assistant Integration Test"]
-    types:
-      - completed
-    branches:
-      - main
+    types: [completed]
+    branches: [main, feature/update-cloud-deployment]
+  push:
+    branches: [main, feature/update-cloud-deployment]
+    paths:
+      - 'weaviate/**'
+      - '.github/workflows/cloud-deploy.yml'
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GKE_CLUSTER: fides-production
-  GKE_REGION: europe-west3
-  IMAGE_NAME: ai-assistant
-  NAMESPACE: production
+  REGION: europe-west3
+  SERVICE_NAME: ai-assistant
+  AR_REPO: ai-assistant  # Artifact Registry repository name
 
 jobs:
-  build-and-deploy:
-    if: github.event.workflow_run.conclusion == 'success'
-    name: Build and Deploy to GKE
+  # ── Deploy AI-Assistant to Cloud Run ────────────────────────────────────────
+  deploy-ai-assistant:
+    name: Deploy AI-Assistant to Cloud Run
+    # Only run when triggered by the test workflow completing successfully.
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
-      id-token: write   # Required for OIDC token generation (Workload Identity Federation)
+      id-token: write
       contents: read
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # Checkout the commit that triggered the test workflow, not HEAD.
+          ref: ${{ github.event.workflow_run.head_sha }}
 
-    - name: Authenticate to GCP
-      uses: google-github-actions/auth@v2
-      with:
-        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-        service_account: ${{ secrets.WIF_CI_SERVICE_ACCOUNT }}
-    
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v2
-      with:
-        project_id: ${{ env.PROJECT_ID }}
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_CI_SERVICE_ACCOUNT }}
 
-    - name: Install gke-gcloud-auth-plugin & kubectl
-      run: |
-        gcloud components install gke-gcloud-auth-plugin kubectl --quiet || true
-    
-    - name: Configure Docker for GCR
-      run: |
-        gcloud auth configure-docker
-    
-    - name: Build Docker image
-      run: |
-        IMAGE_TAG="gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-        IMAGE_LATEST="gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:latest"
-        
-        docker build \
-          -f ai-assistant/Dockerfile \
-          -t "$IMAGE_TAG" \
-          -t "$IMAGE_LATEST" \
-          ai-assistant/
-        
-        echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-        echo "IMAGE_LATEST=$IMAGE_LATEST" >> $GITHUB_ENV
-    
-    - name: Push Docker image to GCR
-      run: |
-        docker push "${{ env.IMAGE_TAG }}"
-        docker push "${{ env.IMAGE_LATEST }}"
-    
-    - name: Get GKE credentials
-      run: |
-        gcloud container clusters get-credentials ${{ env.GKE_CLUSTER }} \
-          --region ${{ env.GKE_REGION }} \
-          --project ${{ env.PROJECT_ID }}
-    
-    - name: Install/Upgrade Helm
-      uses: azure/setup-helm@v4
-      with:
-        version: 'latest'
-    
-    - name: Deploy Weaviate to GKE
-      run: |
-        helm upgrade --install weaviate ./helm/weaviate \
-          --namespace ${{ env.NAMESPACE }} \
-          --create-namespace
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
 
-    - name: Deploy AI Assistant to GKE
-      run: |
-        helm upgrade --install ai-assistant ./helm/ai-assistant \
-          --namespace ${{ env.NAMESPACE }} \
-          --create-namespace \
-          --set image.repository="gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}" \
-          --set image.tag=${{ github.sha }} \
-          --set secrets.geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
-          --set secrets.adminSecretKey="${{ secrets.ADMIN_SECRET_KEY }}" \
-          --set "serviceAccount.annotations.iam\.gke\.io/gcp-service-account=${{ secrets.WIF_RT_SERVICE_ACCOUNT }}"
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-    - name: Deployment Summary
-      run: |
-        echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "✅ **Deployment successful!**" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "- **Project:** ${{ env.PROJECT_ID }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Cluster:** ${{ env.GKE_CLUSTER }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Region:** ${{ env.GKE_REGION }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Image:** gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+      - name: Build and push Docker image
+        run: |
+          SHA=${{ github.event.workflow_run.head_sha }}
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/ai-assistant:${SHA}"
+          IMAGE_LATEST="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/ai-assistant:latest"
+
+          docker build \
+            -f ai-assistant/Dockerfile \
+            -t "$IMAGE" \
+            -t "$IMAGE_LATEST" \
+            ai-assistant/
+
+          docker push "$IMAGE"
+          docker push "$IMAGE_LATEST"
+
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image "${{ env.IMAGE }}" \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --service-account "${{ secrets.WIF_RT_SERVICE_ACCOUNT }}" \
+            --set-env-vars "WEAVIATE_URL=http://${{ secrets.WEAVIATE_VM_IP }}:8080,\
+              GEMINI_MODEL=gemini-2.5-flash,\
+              LANGUAGE_CODE_DE=de-DE,\
+              VOICE_NAME_DE=de-DE-Chirp3-HD-Sulafat,\
+              LANGUAGE_CODE_EN=en-US,\
+              VOICE_NAME_EN=en-US-Chirp3-HD-Sulafat,\
+              HOST=0.0.0.0,\
+              PORT=8080,\
+              LOG_LEVEL=INFO,\
+              GOOGLE_TTS_API_CONCURRENCY=5,\
+              FIRESTORE_DATABASE_NAME=(default),\
+              DEBUG_RECORD_AUDIO=false" \
+            --set-secrets "GEMINI_API_KEY=gemini-api-key:latest,ADMIN_SECRET_KEY=admin-secret-key:latest" \
+            --min-instances 1 \
+            --max-instances 3 \
+            --memory 1Gi \
+            --cpu 1 \
+            --port 8080 \
+            --timeout 3600 \
+            --quiet
+
+      - name: Print Cloud Run URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --format "value(status.url)")
+          echo "## AI-Assistant Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: $URL" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ env.IMAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.event.workflow_run.head_sha }}" >> $GITHUB_STEP_SUMMARY
+
+  # ── Deploy Weaviate to Compute Engine VM ────────────────────────────────────
+  deploy-weaviate:
+    name: Deploy Weaviate to Compute Engine VM
+    # Only run when triggered directly by a push (not by workflow_run).
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_CI_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Copy docker-compose.yml to VM
+        run: |
+          gcloud compute scp weaviate/docker-compose.yml \
+            ${{ secrets.WEAVIATE_VM_NAME }}:/opt/weaviate/docker-compose.yml \
+            --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
+            --quiet
+
+      - name: Restart Weaviate on VM
+        run: |
+          gcloud compute ssh ${{ secrets.WEAVIATE_VM_NAME }} \
+            --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
+            --quiet \
+            --command="cd /opt/weaviate && docker compose pull && docker compose up -d"
+
+      - name: Print deployment summary
+        run: |
+          echo "## Weaviate Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **VM**: ${{ secrets.WEAVIATE_VM_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Zone**: ${{ secrets.WEAVIATE_VM_ZONE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

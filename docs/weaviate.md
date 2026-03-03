@@ -176,9 +176,9 @@ WEAVIATE_URL=http://localhost:8090
 
 **Note**: Cloud configuration (`WEAVIATE_CLUSTER_URL`) takes precedence over local `WEAVIATE_URL`.
 
-### Option 3: Kubernetes (Production)
+### Option 3: Compute Engine VM (Production)
 
-See [Helm Documentation](helm.md) for Kubernetes deployment using Helm charts.
+See [Deployment Documentation](deployment.md) for the full Compute Engine setup.
 
 ## ⚙️ Configuration
 
