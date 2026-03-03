@@ -19,7 +19,7 @@ GCP (europe-west3)
 │   ├── Port: 8080 (publicly accessible, allow-unauthenticated)
 │   ├── Resources: 1 CPU, 1 Gi memory, 1–3 instances
 │   ├── Secrets via Secret Manager: gemini-api-key, admin-secret-key
-│   └── Runtime SA: fides-runtime (Workload Identity → Speech, TTS, Firebase, Firestore)
+│   └── Runtime SA: linkora-rt-service-account-dev@linkora-dev.iam.gserviceaccount.com
 ├── Compute Engine VM: weaviate-vm (e2-medium, europe-west3-a)
 │   ├── Docker Compose: Weaviate 1.32.2 + text2vec-model2vec
 │   └── Startup script: weaviate/startup-script.sh

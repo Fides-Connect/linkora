@@ -50,7 +50,9 @@ gcloud services enable \
   artifactregistry.googleapis.com \
   secretmanager.googleapis.com \
   iam.googleapis.com \
-  iamcredentials.googleapis.com
+  iamcredentials.googleapis.com \
+  speech.googleapis.com \
+  texttospeech.googleapis.com
 ```
 
 ---
@@ -60,7 +62,7 @@ gcloud services enable \
 ### 1. Artifact Registry repository
 
 ```bash
-gcloud artifacts repositories create ai-assistant \
+gcloud artifacts repositories create ai-assistant-dev \
   --repository-format=docker \
   --location=europe-west3 \
   --description="AI-Assistant container images"
@@ -68,109 +70,87 @@ gcloud artifacts repositories create ai-assistant \
 
 ### 2. Service accounts
 
-**CI service account** (builds images, deploys):
+**CI service account** — use the existing account `linkora-ci-service-account-dev@linkora-dev.iam.gserviceaccount.com`.
+
+Grant it the required roles:
 ```bash
-gcloud iam service-accounts create fides-ci \
-  --display-name="Fides CI/CD"
+CI_SA="linkora-ci-service-account-dev@linkora-dev.iam.gserviceaccount.com"
 
 # Allow Cloud Run deploys
-gcloud projects add-iam-policy-binding <PROJECT_ID> \
-  --member="serviceAccount:fides-ci@<PROJECT_ID>.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding linkora-dev \
+  --member="serviceAccount:${CI_SA}" \
   --role="roles/run.admin"
 
 # Allow pushing to Artifact Registry
-gcloud projects add-iam-policy-binding <PROJECT_ID> \
-  --member="serviceAccount:fides-ci@<PROJECT_ID>.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding linkora-dev \
+  --member="serviceAccount:${CI_SA}" \
   --role="roles/artifactregistry.writer"
 
-# Allow SSH into Compute Engine VM
-gcloud projects add-iam-policy-binding <PROJECT_ID> \
-  --member="serviceAccount:fides-ci@<PROJECT_ID>.iam.gserviceaccount.com" \
-  --role="roles/compute.osLogin"
+# Allow scp/ssh to Compute Engine VM (includes setMetadata, get, osLogin)
+gcloud projects add-iam-policy-binding linkora-dev \
+  --member="serviceAccount:${CI_SA}" \
+  --role="roles/compute.instanceAdmin.v1"
+
+# Allow CI SA to impersonate default Compute Engine service account
+# (required for adding SSH keys to VM instance metadata)
+PROJECT_NUMBER=$(gcloud projects describe linkora-dev --format="value(projectNumber)")
+gcloud iam service-accounts add-iam-policy-binding \
+  ${PROJECT_NUMBER}-compute@developer.gserviceaccount.com \
+  --member="serviceAccount:${CI_SA}" \
+  --role="roles/iam.serviceAccountUser"
 
 # Allow deploying with runtime SA
 gcloud iam service-accounts add-iam-policy-binding \
-  fides-runtime@<PROJECT_ID>.iam.gserviceaccount.com \
-  --member="serviceAccount:fides-ci@<PROJECT_ID>.iam.gserviceaccount.com" \
+  linkora-rt-service-account-dev@linkora-dev.iam.gserviceaccount.com \
+  --member="serviceAccount:${CI_SA}" \
   --role="roles/iam.serviceAccountUser"
 ```
 
-**Runtime service account** (used by Cloud Run at runtime):
+**Runtime service account** — use the existing account `linkora-rt-service-account-dev@linkora-dev.iam.gserviceaccount.com`.
+
+Grant it the required roles:
 ```bash
-gcloud iam service-accounts create fides-runtime \
-  --display-name="Fides Runtime"
+RT_SA="linkora-rt-service-account-dev@linkora-dev.iam.gserviceaccount.com"
 
 # GCP APIs: Speech-to-Text, TTS, Firestore, Firebase Admin
-gcloud projects add-iam-policy-binding <PROJECT_ID> \
-  --member="serviceAccount:fides-runtime@<PROJECT_ID>.iam.gserviceaccount.com" \
-  --role="roles/cloudmicroservices.serviceAgent"
-
-gcloud projects add-iam-policy-binding <PROJECT_ID> \
-  --member="serviceAccount:fides-runtime@<PROJECT_ID>.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding linkora-dev \
+  --member="serviceAccount:${RT_SA}" \
   --role="roles/speech.client"
 
-gcloud projects add-iam-policy-binding <PROJECT_ID> \
-  --member="serviceAccount:fides-runtime@<PROJECT_ID>.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding linkora-dev \
+  --member="serviceAccount:${RT_SA}" \
   --role="roles/texttospeech.client"
 
-gcloud projects add-iam-policy-binding <PROJECT_ID> \
-  --member="serviceAccount:fides-runtime@<PROJECT_ID>.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding linkora-dev \
+  --member="serviceAccount:${RT_SA}" \
   --role="roles/datastore.user"
 
 # Allow reading secrets
-gcloud projects add-iam-policy-binding <PROJECT_ID> \
-  --member="serviceAccount:fides-runtime@<PROJECT_ID>.iam.gserviceaccount.com" \
+gcloud projects add-iam-policy-binding linkora-dev \
+  --member="serviceAccount:${RT_SA}" \
   --role="roles/secretmanager.secretAccessor"
 ```
 
 ### 3. Workload Identity Federation (GitHub Actions → GCP, no keys)
 
+The WIF pool `linkora-identity-pool-dev`, OIDC provider `linkora-github-provider-dev`, and CI SA binding are all already configured. Retrieve the provider resource name for the GitHub secret:
+
 ```bash
-# Create WIF pool
-gcloud iam workload-identity-pools create "github-pool" \
-  --location="global" \
-  --display-name="GitHub Actions Pool"
-
-# Create OIDC provider
-gcloud iam workload-identity-pools providers create-oidc "github-provider" \
-  --location="global" \
-  --workload-identity-pool="github-pool" \
-  --display-name="GitHub provider" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-  --issuer-uri="https://token.actions.githubusercontent.com"
-
-POOL_ID=$(gcloud iam workload-identity-pools describe "github-pool" \
-  --location="global" --format="value(name)")
-
-# Bind CI SA to the WIF pool (scoped to this repo)
-gcloud iam service-accounts add-iam-policy-binding \
-  fides-ci@<PROJECT_ID>.iam.gserviceaccount.com \
-  --role="roles/iam.workloadIdentityUser" \
-  --member="principalSet://iam.googleapis.com/${POOL_ID}/attribute.repository/Fides-Connect/Fides"
-
 # Print the provider resource name (needed for GitHub secret WIF_PROVIDER)
-gcloud iam workload-identity-pools providers describe "github-provider" \
+gcloud iam workload-identity-pools providers describe "linkora-github-provider-dev" \
   --location="global" \
-  --workload-identity-pool="github-pool" \
+  --workload-identity-pool="linkora-identity-pool-dev" \
   --format="value(name)"
 ```
 
 ### 4. Secrets in Secret Manager
 
-```bash
-# Gemini API key
-echo -n "<your-gemini-api-key>" | \
-  gcloud secrets create gemini-api-key --data-file=-
-
-# Admin secret key (used for admin API endpoints)
-echo -n "<your-admin-secret-key>" | \
-  gcloud secrets create admin-secret-key --data-file=-
-```
+No manual setup needed. Add `GEMINI_API_KEY` and `ADMIN_SECRET_KEY` to **GitHub Actions secrets** (see table below) and the deployment workflow will automatically create or update the corresponding Secret Manager secrets on every deploy.
 
 ### 5. Weaviate VM
 
 ```bash
-gcloud compute instances create weaviate-vm \
+gcloud compute instances create weaviate-vm-dev \
   --zone=europe-west3-a \
   --machine-type=e2-medium \
   --image-family=ubuntu-2204-lts \
@@ -192,14 +172,14 @@ gcloud compute firewall-rules create allow-weaviate \
   --description="Weaviate API access (restrict source IPs for production)"
 
 # Get the VM's internal IP for WEAVIATE_VM_IP secret
-gcloud compute instances describe weaviate-vm \
+gcloud compute instances describe weaviate-vm-dev \
   --zone=europe-west3-a \
   --format="value(networkInterfaces[0].networkIP)"
 ```
 
 Wait ~3 minutes for the startup script to finish, then verify:
 ```bash
-VM_EXTERNAL_IP=$(gcloud compute instances describe weaviate-vm \
+VM_EXTERNAL_IP=$(gcloud compute instances describe weaviate-vm-dev \
   --zone=europe-west3-a --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
 curl http://$VM_EXTERNAL_IP:8080/v1/.well-known/ready
 ```
@@ -229,13 +209,15 @@ Add these in **Settings → Secrets and variables → Actions**:
 |---|---|
 | `GCP_PROJECT_ID` | `gcloud config get-value project` |
 | `WIF_PROVIDER` | Output of WIF provider describe command above |
-| `WIF_CI_SERVICE_ACCOUNT` | `fides-ci@<PROJECT_ID>.iam.gserviceaccount.com` |
-| `WIF_RT_SERVICE_ACCOUNT` | `fides-runtime@<PROJECT_ID>.iam.gserviceaccount.com` |
+| `WIF_CI_SERVICE_ACCOUNT` | `linkora-ci-service-account-dev@linkora-dev.iam.gserviceaccount.com` |
+| `WIF_RT_SERVICE_ACCOUNT` | `linkora-rt-service-account-dev@linkora-dev.iam.gserviceaccount.com` |
 | `WEAVIATE_VM_NAME` | `weaviate-vm` |
 | `WEAVIATE_VM_ZONE` | `europe-west3-a` |
 | `WEAVIATE_VM_IP` | Internal IP from step 5 above |
+| `GEMINI_API_KEY` | Your Gemini API key |
+| `ADMIN_SECRET_KEY` | Your admin API secret |
 
-`GEMINI_API_KEY` and `ADMIN_SECRET_KEY` are stored in **Secret Manager** (not GitHub secrets) and injected by Cloud Run at runtime via `--set-secrets`.
+The deployment workflow syncs `GEMINI_API_KEY` and `ADMIN_SECRET_KEY` into **Secret Manager** automatically. Cloud Run then injects them at runtime via `--set-secrets` (never in environment variables).
 
 ---
 

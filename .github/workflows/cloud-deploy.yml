@@ -48,6 +48,20 @@ jobs:
         with:
           project_id: ${{ env.PROJECT_ID }}
 
+      - name: Sync secrets to Secret Manager
+        run: |
+          sync_secret() {
+            local NAME=$1
+            local VALUE=$2
+            if gcloud secrets describe "$NAME" --project="${{ env.PROJECT_ID }}" &>/dev/null; then
+              echo -n "$VALUE" | gcloud secrets versions add "$NAME" --data-file=- --quiet
+            else
+              echo -n "$VALUE" | gcloud secrets create "$NAME" --data-file=- --quiet
+            fi
+          }
+          sync_secret "gemini-api-key"   "${{ secrets.GEMINI_API_KEY }}"
+          sync_secret "admin-secret-key" "${{ secrets.ADMIN_SECRET_KEY }}"
+
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
