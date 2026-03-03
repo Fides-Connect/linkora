@@ -17,7 +17,7 @@ env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: europe-west3
   SERVICE_NAME: ai-assistant
-  AR_REPO: ai-assistant  # Artifact Registry repository name
+  AR_REPO: ai-assistant-dev  # Artifact Registry repository name
 
 jobs:
   # ── Deploy AI-Assistant to Cloud Run ────────────────────────────────────────
@@ -177,7 +177,7 @@ jobs:
           gcloud compute ssh ${{ secrets.WEAVIATE_VM_NAME }} \
             --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
             --quiet \
-            --command="cd /opt/weaviate && docker compose pull && docker compose up -d"
+            --command="cd /opt/weaviate && sudo docker compose pull && sudo docker compose up -d"
 
       - name: Print deployment summary
         run: |

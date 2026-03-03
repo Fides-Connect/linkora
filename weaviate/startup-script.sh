@@ -39,8 +39,6 @@ mkdir -p /opt/weaviate
 
 # ── 3. Write docker-compose.yml (initial version; CI keeps it updated) ─────────
 cat > /opt/weaviate/docker-compose.yml << 'COMPOSE'
-version: '4.0'
-
 services:
   weaviate:
     image: cr.weaviate.io/semitechnologies/weaviate:1.32.2
