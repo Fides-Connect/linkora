@@ -497,3 +497,57 @@ class TestPromptTemplatesForNewStages:
         assert "signal_transition" in RECOVERY_PROMPT
         assert RECOVERY_PROMPT.strip()
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PROVIDER_ONBOARDING prompt — is_service_provider injection
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProviderOnboardingPromptIsServiceProvider:
+    """Verifies that create_prompt_for_stage(PROVIDER_ONBOARDING) correctly
+    injects the is_service_provider flag from conversation_service.context
+    into the rendered prompt."""
+
+    def test_false_flag_renders_false_in_prompt(self, conversation_service):
+        """is_service_provider=False must appear in the rendered system message."""
+        conversation_service.context["is_service_provider"] = False
+        template = conversation_service.create_prompt_for_stage(
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        rendered = str(template.messages[0])
+        assert "False" in rendered, (
+            "is_service_provider=False must be visible in the PROVIDER_ONBOARDING prompt"
+        )
+
+    def test_true_flag_renders_true_in_prompt(self, conversation_service):
+        """is_service_provider=True must appear in the rendered system message."""
+        conversation_service.context["is_service_provider"] = True
+        template = conversation_service.create_prompt_for_stage(
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        rendered = str(template.messages[0])
+        assert "True" in rendered, (
+            "is_service_provider=True must be visible in the PROVIDER_ONBOARDING prompt"
+        )
+
+    def test_prompt_contains_step_0_when_not_provider(self, conversation_service):
+        """STEP 0 intent-gate instructions must be present in the prompt."""
+        conversation_service.context["is_service_provider"] = False
+        template = conversation_service.create_prompt_for_stage(
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        rendered = str(template.messages[0])
+        assert "STEP 0" in rendered, "STEP 0 section must be in the PROVIDER_ONBOARDING prompt"
+        assert "record_provider_interest" in rendered, (
+            "record_provider_interest call must be instructed in STEP 0"
+        )
+
+    def test_context_defaults_to_false(self, conversation_service):
+        """If is_service_provider is not set in context it defaults to False
+        without raising a KeyError."""
+        conversation_service.context.pop("is_service_provider", None)
+        # Should not raise
+        template = conversation_service.create_prompt_for_stage(
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        rendered = str(template.messages[0])
+        assert "False" in rendered

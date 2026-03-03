@@ -43,10 +43,14 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
       if (mounted) {
         final localizations = AppLocalizations.of(context);
         final locale = Localizations.localeOf(context);
-        context.read<AssistantTabViewModel>().initialize(
+        final vm = context.read<AssistantTabViewModel>();
+        vm.initialize(
           localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
           locale.languageCode,
         );
+        // Auto-start a text session so the server greets the user by name
+        // as soon as the Assistant page opens, without requiring any input.
+        await vm.startChat(voiceMode: false);
       }
     });
     _setupForegroundMessageHandler();

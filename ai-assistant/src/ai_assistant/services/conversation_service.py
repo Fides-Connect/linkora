@@ -123,6 +123,9 @@ class ConversationService:
             # Populated by ResponseOrchestrator before each LLM call in that stage;
             # refreshed after every successful write tool.
             "current_competencies": [],
+            # Mirrored from user_context by ResponseOrchestrator on every
+            # PROVIDER_ONBOARDING turn so the prompt can render STEP 0 correctly.
+            "is_service_provider": False,
         }
         
         logger.info(f"Conversation service initialized: agent={agent_name}, company={company_name}")
@@ -245,6 +248,7 @@ class ConversationService:
                     agent_name=self.agent_name,
                     language_instruction=language_instruction,
                     current_competencies_json=current_competencies_json,
+                    is_service_provider=self.context.get("is_service_provider", False),
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")

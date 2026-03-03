@@ -1595,3 +1595,174 @@ class TestProviderStageEscapeToTriage:
             "In-memory last_time_asked_being_provider must be refreshed after 'not_now' "
             "so _should_pitch_provider won't re-fire on the next COMPLETED transition"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Same-stage guard: signal_transition embedded in tool result
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSameStageToolResultGuard:
+    """record_provider_interest(accepted) can legally be called from within
+    PROVIDER_ONBOARDING (STEP 0 intent gate).  Its tool result carries
+    {"signal_transition": "provider_onboarding"} which must NOT trigger a
+    re-entry attempt — the orchestrator should silently skip it."""
+
+    async def test_same_stage_signal_in_tool_result_is_skipped(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """No set_stage call with PROVIDER_ONBOARDING when already in that stage
+        and the tool result embeds signal_transition='provider_onboarding'."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [], "is_service_provider": False,
+        }
+
+        async def stream_accepted(*args, **kwargs):
+            yield {"type": "function_call", "name": "record_provider_interest",
+                   "args": {"decision": "accepted"}}
+
+        mock_llm_service.generate_stream = stream_accepted
+        # Tool returns the signal that would normally trigger onboarding entry
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"signal_transition": "provider_onboarding", "status": "accepted"}
+        )
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream("I could teach cooking", "sess"):
+            pass
+
+        # set_stage must NOT have been called with PROVIDER_ONBOARDING (self-loop)
+        for call in mock_conversation_service.set_stage.call_args_list:
+            assert call[0][0] != ConversationStage.PROVIDER_ONBOARDING, (
+                "set_stage(PROVIDER_ONBOARDING) must NOT be called when already in "
+                "PROVIDER_ONBOARDING — same-stage self-loop guard failed"
+            )
+
+    async def test_different_stage_signal_in_tool_result_is_applied(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """A tool result with signal_transition to a DIFFERENT stage must still
+        be applied normally (guard must not block legitimate transitions)."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_PITCH
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [], "is_service_provider": False,
+        }
+
+        async def stream_accepted(*args, **kwargs):
+            yield {"type": "function_call", "name": "record_provider_interest",
+                   "args": {"decision": "accepted"}}
+
+        mock_llm_service.generate_stream = stream_accepted
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"signal_transition": "provider_onboarding", "status": "accepted"}
+        )
+
+        from unittest.mock import patch
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("yes I want to", "sess"):
+                pass
+
+        set_stage_calls = [c[0][0] for c in mock_conversation_service.set_stage.call_args_list]
+        assert ConversationStage.PROVIDER_ONBOARDING in set_stage_calls, (
+            "Transition from PROVIDER_PITCH → PROVIDER_ONBOARDING must still be applied"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# is_service_provider sync into conversation_service.context
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestIsServiceProviderContextSync:
+    """ResponseOrchestrator must mirror user_context.is_service_provider into
+    conversation_service.context on every PROVIDER_ONBOARDING turn."""
+
+    async def test_is_service_provider_synced_on_entry(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """When entering PROVIDER_ONBOARDING via signal_transition, is_service_provider
+        from user_context must be stored in conversation_service.context."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+        mock_tool_registry.execute = AsyncMock(return_value=[])
+
+        async def stream_transition(*args, **kwargs):
+            yield {"type": "function_call", "name": "signal_transition",
+                   "args": {"target_stage": "provider_onboarding"}}
+
+        mock_llm_service.generate_stream = stream_transition
+        context = {"user_context": {"is_service_provider": True, "user_id": "u1"}}
+
+        from unittest.mock import patch
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("manage my skills", "sess", context=context):
+                pass
+
+        assert mock_conversation_service.context.get("is_service_provider") is True, (
+            "is_service_provider=True from user_context must be propagated into "
+            "conversation_service.context on PROVIDER_ONBOARDING entry"
+        )
+
+    async def test_record_provider_interest_accepted_updates_context(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """After record_provider_interest(accepted) fires, conversation_service.context
+        must have is_service_provider=True so the next prompt renders with STEP 0 skipped."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [], "is_service_provider": False,
+        }
+        context = {"user_context": {"is_service_provider": False, "user_id": "u1"}}
+
+        async def stream_accepted(*args, **kwargs):
+            yield {"type": "function_call", "name": "record_provider_interest",
+                   "args": {"decision": "accepted"}}
+
+        mock_llm_service.generate_stream = stream_accepted
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"signal_transition": "provider_onboarding", "status": "accepted"}
+        )
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream("I could help", "sess", context=context):
+            pass
+
+        assert mock_conversation_service.context.get("is_service_provider") is True, (
+            "conversation_service.context['is_service_provider'] must be True after "
+            "record_provider_interest(accepted) so STEP 0 is skipped next turn"
+        )

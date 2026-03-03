@@ -181,6 +181,43 @@ class TestFetchUserData:
         assert name == ""
         assert has_req is False
 
+    async def test_firestore_name_used_when_weaviate_name_empty(self):
+        """Firestore is authoritative: its name is used when Weaviate has none."""
+        provider = Mock()
+        provider.get_user_by_id = AsyncMock(return_value={
+            "name": "",
+            "has_open_request": True,
+        })
+        fs = Mock()
+        fs.get_user = AsyncMock(return_value={"name": "Lena Huber"})
+        name, has_req = await _fetch_user_data(provider, "u1", firestore_service=fs)
+        assert name == "Lena"
+        assert has_req is True
+
+    async def test_firestore_name_overrides_weaviate_name(self):
+        """Firestore wins even when Weaviate already has a name."""
+        provider = Mock()
+        provider.get_user_by_id = AsyncMock(return_value={
+            "name": "Old Name",
+            "has_open_request": False,
+        })
+        fs = Mock()
+        fs.get_user = AsyncMock(return_value={"name": "Max Mustermann"})
+        name, has_req = await _fetch_user_data(provider, "u1", firestore_service=fs)
+        assert name == "Max"
+
+    async def test_firestore_error_falls_back_to_weaviate_name(self):
+        """A Firestore error must not discard the Weaviate name."""
+        provider = Mock()
+        provider.get_user_by_id = AsyncMock(return_value={
+            "name": "Anna",
+            "has_open_request": False,
+        })
+        fs = Mock()
+        fs.get_user = AsyncMock(side_effect=RuntimeError("Firestore down"))
+        name, has_req = await _fetch_user_data(provider, "u1", firestore_service=fs)
+        assert name == "Anna"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # VoiceSessionStarter
@@ -297,12 +334,14 @@ class TestTextSessionStarterInitialize:
             user_name="Anna", has_open_request=False
         )
 
-    async def test_does_not_send_greeting_dc_bubble(self):
-        """Text mode must NOT push a greeting bubble — the TRIAGE response is
-        the natural first reply to the user's already-typed message."""
+    async def test_sends_greeting_dc_bubble(self):
+        """Text mode must push a greeting bubble so it appears in the UI
+        immediately when the Assistant page opens."""
         starter, deps = _text_starter(greeting_text="Hallo Anna!")
         await starter.initialize()
-        deps["dc_bridge"].send_chat.assert_not_called()
+        deps["dc_bridge"].send_chat.assert_called_once_with(
+            "Hallo Anna!", is_user=False, is_chunk=False
+        )
 
     async def test_adds_greeting_to_llm_history(self):
         from langchain_core.messages import AIMessage

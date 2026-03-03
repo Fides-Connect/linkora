@@ -164,6 +164,11 @@ class ResponseOrchestrator:
                         "Failed to fetch competencies for PROVIDER_ONBOARDING payload: %s", exc
                     )
             self.conversation_service.context["current_competencies"] = comps
+            # Mirror is_service_provider so STEP 0 in the prompt renders correctly.
+            _user_ctx = (context or {}).get("user_context", {})
+            self.conversation_service.context["is_service_provider"] = (
+                _user_ctx.get("is_service_provider", False)
+            )
             logger.debug(
                 "Fetched %d competencies for PROVIDER_ONBOARDING payload", len(comps)
             )
@@ -416,6 +421,11 @@ class ResponseOrchestrator:
                     self.conversation_service.context["current_competencies"] = (
                         competencies if isinstance(competencies, list) else []
                     )
+                    # Keep is_service_provider in sync so STEP 0 reflects reality.
+                    _uctx = (context or {}).get("user_context", {})
+                    self.conversation_service.context["is_service_provider"] = (
+                        _uctx.get("is_service_provider", False)
+                    )
                     logger.debug(
                         "Pre-fetched %d competencies for PROVIDER_ONBOARDING",
                         len(self.conversation_service.context["current_competencies"]),
@@ -478,12 +488,27 @@ class ResponseOrchestrator:
                             )
                             if not is_error:
                                 pending_tool_results.append((fn_name, tool_result))
-                                # Handle stage transition embedded in tool result
+                                # Handle stage transition embedded in tool result.
+                                # Guard: skip self-loop transitions (e.g. record_provider_interest
+                                # called while already in PROVIDER_ONBOARDING returns
+                                # {"signal_transition": "provider_onboarding"} — do not re-enter).
                                 if isinstance(tool_result, dict) and "signal_transition" in tool_result:
                                     sig_target = tool_result["signal_transition"]
-                                    await self._apply_signal_transition_with_payload(
-                                        sig_target, session_id, context, pending_tool_results
-                                    )
+                                    try:
+                                        _sig_stage = ConversationStage(sig_target)
+                                    except ValueError:
+                                        _sig_stage = None
+                                    _cur_stage = self.conversation_service.get_current_stage()
+                                    if _sig_stage is not None and _sig_stage == _cur_stage:
+                                        logger.info(
+                                            "Skipping same-stage signal_transition '%s' "
+                                            "from tool result — already in this stage.",
+                                            sig_target,
+                                        )
+                                    else:
+                                        await self._apply_signal_transition_with_payload(
+                                            sig_target, session_id, context, pending_tool_results
+                                        )
                                 # Surface provider list for stage-context use
                                 if fn_name == "search_providers" and isinstance(tool_result, list):
                                     self.conversation_service.context["providers_found"] = tool_result
@@ -500,6 +525,9 @@ class ResponseOrchestrator:
                                             context["user_context"]["last_time_asked_being_provider"] = _dt.now(_tz.utc)
                                         if status == "accepted":
                                             context["user_context"]["is_service_provider"] = True
+                                            # Also mirror into conversation context so the next
+                                            # PROVIDER_ONBOARDING prompt renders with STEP 0 skipped.
+                                            self.conversation_service.context["is_service_provider"] = True
                                 # Link created service request to conversation
                                 if fn_name == "create_service_request" and self.ai_conversation_service:
                                     req_id = (
