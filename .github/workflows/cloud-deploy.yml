@@ -162,10 +162,15 @@ jobs:
 
       - name: Copy docker-compose.yml to VM
         run: |
+          # scp to home dir (no root permissions needed), then sudo mv into place
           gcloud compute scp weaviate/docker-compose.yml \
-            ${{ secrets.WEAVIATE_VM_NAME }}:/opt/weaviate/docker-compose.yml \
+            ${{ secrets.WEAVIATE_VM_NAME }}:~/docker-compose.yml \
             --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
             --quiet
+          gcloud compute ssh ${{ secrets.WEAVIATE_VM_NAME }} \
+            --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
+            --quiet \
+            --command="sudo mkdir -p /opt/weaviate && sudo mv ~/docker-compose.yml /opt/weaviate/docker-compose.yml"
 
       - name: Restart Weaviate on VM
         run: |

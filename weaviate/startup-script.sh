@@ -36,7 +36,6 @@ fi
 
 # ── 2. Create app directory ────────────────────────────────────────────────────
 mkdir -p /opt/weaviate
-chmod 755 /opt/weaviate
 
 # ── 3. Write docker-compose.yml (initial version; CI keeps it updated) ─────────
 cat > /opt/weaviate/docker-compose.yml << 'COMPOSE'
