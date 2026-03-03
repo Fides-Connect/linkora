@@ -54,6 +54,7 @@ linux/flutter/generated_plugin_registrant.h
 
 # Coverage
 coverage/
+.coverage
 
 # Symbols
 app.*.symbols

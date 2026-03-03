@@ -25,7 +25,11 @@ async def _get_user_language(user_id: str) -> str:
     try:
         user = await _firestore.get_user(user_id)
         if user:
-            return user.get('user_app_settings', {}).get('language', 'en')
+            language = user.get('user_app_settings', {}).get('language')
+            if isinstance(language, str):
+                normalized = language.strip().lower()
+                if normalized:
+                    return normalized
     except Exception:
         pass
     return 'en'

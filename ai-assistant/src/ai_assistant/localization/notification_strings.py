@@ -36,7 +36,10 @@ class NotificationStrings:
     """
 
     def __init__(self, language: str) -> None:
-        self._msgs = _LANGUAGE_MAP.get(language, NotificationsEN)
+        # Normalize inputs like "DE" or " de " so callers don't need to
+        # guarantee formatting before constructing NotificationStrings.
+        normalized_language = (language or "").strip().lower()
+        self._msgs = _LANGUAGE_MAP.get(normalized_language, NotificationsEN)
 
     # ── Service-request status-change strings ─────────────────────────────────
 

@@ -371,11 +371,19 @@ async def get_settings(request: web.Request) -> web.Response:
             return web.json_response({'error': 'User not found'}, status=404)
         raw_settings = user.get('user_app_settings')
         stored: dict = raw_settings if isinstance(raw_settings, dict) else {}
+        # Coerce language: must be a supported string, else fall back to default.
+        lang_raw = stored.get('language')
+        if isinstance(lang_raw, str):
+            normalized_lang = lang_raw.strip().lower()
+            language = normalized_lang if normalized_lang in {'en', 'de'} else _DEFAULT_SETTINGS['language']
+        else:
+            language = _DEFAULT_SETTINGS['language']
+        # Coerce notifications_enabled: must be bool, else fall back to default.
+        notif_raw = stored.get('notifications_enabled')
+        notifications_enabled = notif_raw if isinstance(notif_raw, bool) else _DEFAULT_SETTINGS['notifications_enabled']
         return web.json_response({
-            'language': stored.get('language', _DEFAULT_SETTINGS['language']),
-            'notifications_enabled': stored.get(
-                'notifications_enabled', _DEFAULT_SETTINGS['notifications_enabled']
-            ),
+            'language': language,
+            'notifications_enabled': notifications_enabled,
         })
     except web.HTTPException:
         raise
