@@ -23,8 +23,10 @@ jobs:
   # ── Deploy AI-Assistant to Cloud Run ────────────────────────────────────────
   deploy-ai-assistant:
     name: Deploy AI-Assistant to Cloud Run
-    # Only run when triggered by the test workflow completing successfully.
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    # Run when tests pass (workflow_run), OR on direct push to feature branch for testing.
+    if: |
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/feature/update-cloud-deployment')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -34,8 +36,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          # Checkout the commit that triggered the test workflow, not HEAD.
-          ref: ${{ github.event.workflow_run.head_sha }}
+          # Use workflow_run SHA when triggered by tests, otherwise use the push SHA.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -67,7 +69,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          SHA=${{ github.event.workflow_run.head_sha }}
+          SHA=${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
           IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/ai-assistant:${SHA}"
           IMAGE_LATEST="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/ai-assistant:latest"
 
@@ -120,7 +122,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **URL**: $URL" >> $GITHUB_STEP_SUMMARY
           echo "- **Image**: ${{ env.IMAGE }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: ${{ github.event.workflow_run.head_sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
 
   # ── Deploy Weaviate to Compute Engine VM ────────────────────────────────────
   deploy-weaviate:
