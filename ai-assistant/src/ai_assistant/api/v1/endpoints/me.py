@@ -334,6 +334,15 @@ async def create_my_competence(request: web.Request) -> web.Response:
             except Exception as e:
                 logger.error(f"Failed to sync new competence to Weaviate: {e}")
 
+            # Creating a competence means this user is now offering services.
+            # Mirror is_service_provider=True to Firestore and Weaviate so they
+            # appear in provider searches (same invariant as save_competence_batch).
+            try:
+                await firestore_service.update_user(user_id, {"is_service_provider": True})
+                HubSpokeIngestion.update_user_hub_properties(user_id, {"is_service_provider": True})
+            except Exception as e:
+                logger.error(f"Failed to set is_service_provider=True for {user_id}: {e}")
+
             # Fetch and return the updated user object
             user = await firestore_service.get_user(user_id)
             if user:

@@ -141,6 +141,9 @@ class ResponseOrchestrator:
                 providers: list = []
             else:
                 providers = await self.conversation_service.search_providers_for_request(session_id) or []
+            # Cache the result so any redundant search_providers tool calls in
+            # FINALIZE can return this list without a second Weaviate round-trip.
+            self.conversation_service.context["providers_found"] = providers
             # Update topic title as soon as we enter FINALIZE
             if self.ai_conversation_service:
                 summary = self.conversation_service.get_problem_summary()
@@ -344,9 +347,25 @@ class ResponseOrchestrator:
                         fu_target, session_id, context, new_pending
                     )
                 else:
-                    tool_result = None
-                    async for tc in self.dispatch_tool(fu_name, fu_args, context or {}):
-                        tool_result = tc
+                    # Guard: search_providers is redundant in FINALIZE (same as
+                    # main-stream guard above — the auto-search already ran).
+                    if (
+                        fu_name == "search_providers"
+                        and self.conversation_service.get_current_stage()
+                            == ConversationStage.FINALIZE
+                    ):
+                        tool_result = self.conversation_service.context.get(
+                            "providers_found", []
+                        )
+                        logger.info(
+                            "Intercepted search_providers in FINALIZE (follow-up) — "
+                            "returning %d cached provider(s), skipping re-fetch.",
+                            len(tool_result),
+                        )
+                    else:
+                        tool_result = None
+                        async for tc in self.dispatch_tool(fu_name, fu_args, context or {}):
+                            tool_result = tc
                     if tool_result is not None and not (
                         isinstance(tool_result, dict) and tool_result.get("error")
                     ):
@@ -475,11 +494,30 @@ class ResponseOrchestrator:
                     else:
                         # Regular tool call
                         self.runtime_fsm.transition("tool_call")
-                        tool_result = None
-                        async for tool_chunk in self.dispatch_tool(
-                            fn_name, fn_args, context or {}
+                        # Guard: search_providers is redundant in FINALIZE because
+                        # the auto-search already ran on stage entry via
+                        # _apply_signal_transition_with_payload.  Return the cached
+                        # list immediately so the LLM can proceed to Scenario 4
+                        # without an unnecessary Weaviate round-trip.
+                        if (
+                            fn_name == "search_providers"
+                            and self.conversation_service.get_current_stage()
+                                == ConversationStage.FINALIZE
                         ):
-                            tool_result = tool_chunk
+                            tool_result = self.conversation_service.context.get(
+                                "providers_found", []
+                            )
+                            logger.info(
+                                "Intercepted search_providers in FINALIZE — "
+                                "returning %d cached provider(s), skipping re-fetch.",
+                                len(tool_result),
+                            )
+                        else:
+                            tool_result = None
+                            async for tool_chunk in self.dispatch_tool(
+                                fn_name, fn_args, context or {}
+                            ):
+                                tool_result = tool_chunk
                         self.runtime_fsm.transition("tool_done")
 
                         if tool_result is not None:
@@ -590,6 +628,25 @@ class ResponseOrchestrator:
                 ai_response_parts, third_pending
             ):
                 yield chunk
+
+            # ── Safety fallback: stuck-in-FINALIZE guard ─────────────────────────
+            # If all follow-up rounds are exhausted and the stage is still FINALIZE
+            # (the LLM never called signal_transition("completed")), force the
+            # transition so the conversation does not get permanently stuck.
+            if self.conversation_service.get_current_stage() == ConversationStage.FINALIZE:
+                logger.warning(
+                    "Safety fallback: conversation still in FINALIZE after all follow-up "
+                    "streams — forcing transition to COMPLETED."
+                )
+                fallback_pending: list[tuple[str, object]] = []
+                await self._apply_signal_transition_with_payload(
+                    "completed", session_id, context, fallback_pending
+                )
+                async for chunk in self._run_follow_up_stream(
+                    fallback_pending, user_input, session_id, context,
+                    ai_response_parts, []
+                ):
+                    yield chunk
 
             # ── Stream complete ──────────────────────────────────────────────────
             self.runtime_fsm.transition("stream_complete_text")
