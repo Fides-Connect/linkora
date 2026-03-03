@@ -438,11 +438,22 @@ async def update_settings(request: web.Request) -> web.Response:
         if updated:
             await firestore_service.update_user(user_id, {'user_app_settings': merged})
 
+        # Sanitize response values to match get_settings behavior:
+        # - language must be one of {'en', 'de'}, otherwise fall back to default
+        # - notifications_enabled must be a boolean, otherwise fall back to default
+        language = merged.get('language', _DEFAULT_SETTINGS['language'])
+        if not isinstance(language, str) or language not in {'en', 'de'}:
+            language = _DEFAULT_SETTINGS['language']
+
+        notifications_enabled = merged.get(
+            'notifications_enabled', _DEFAULT_SETTINGS['notifications_enabled']
+        )
+        if not isinstance(notifications_enabled, bool):
+            notifications_enabled = _DEFAULT_SETTINGS['notifications_enabled']
+
         return web.json_response({
-            'language': merged.get('language', _DEFAULT_SETTINGS['language']),
-            'notifications_enabled': merged.get(
-                'notifications_enabled', _DEFAULT_SETTINGS['notifications_enabled']
-            ),
+            'language': language,
+            'notifications_enabled': notifications_enabled,
         })
     except web.HTTPException:
         raise
