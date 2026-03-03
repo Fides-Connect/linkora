@@ -397,6 +397,8 @@ async def update_settings(request: web.Request) -> web.Response:
     try:
         user_id = await get_current_user_id(request)
         body = await request.json()
+        if not isinstance(body, dict):
+            return web.json_response({'error': 'Request body must be a JSON object'}, status=400)
         user = await firestore_service.get_user(user_id)
         if not user:
             return web.json_response({'error': 'User not found'}, status=404)
