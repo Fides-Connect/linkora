@@ -68,6 +68,9 @@ class WebRTCService {
   // Language configuration
   final String _languageCode;
 
+  // Whether the server URL is secure (wss/https → Cloud Run auth required)
+  bool _isSecure = false;
+
   // Dependencies
   final WebRTCWrapper _webRTCWrapper;
   final WebSocketChannel Function(Uri) _webSocketFactory;
@@ -95,7 +98,16 @@ class WebRTCService {
         'AI_ASSISTANT_SERVER_URL not set in .env. Add AI_ASSISTANT_SERVER_URL to .env',
       );
     }
-    _serverUrl = 'ws://$rawServer/ws';
+    // Detect protocol and map https→wss, http/bare→ws.
+    if (rawServer.startsWith('https://')) {
+      _serverUrl = rawServer.replaceFirst('https://', 'wss://') + '/ws';
+      _isSecure = true;
+    } else if (rawServer.startsWith('http://')) {
+      _serverUrl = rawServer.replaceFirst('http://', 'ws://') + '/ws';
+    } else {
+      // Bare host(:port) — local development
+      _serverUrl = 'ws://$rawServer/ws';
+    }
   }
 
   bool get isConnected => _isConnected;
@@ -359,12 +371,25 @@ class WebRTCService {
         throw Exception('No authenticated user found');
       }
 
+      // For secure (Cloud Run) connections, attach a Firebase ID token so the
+      // server can verify the caller's identity.  For plain ws:// (local dev)
+      // we skip the token entirely.
+      final Map<String, String> queryParams = {
+        'user_id': userId,
+        'language': _languageCode,
+        'mode': _sessionMode,
+      };
+
+      if (_isSecure) {
+        final String? idToken = await _firebaseAuthWrapper.getIdToken();
+        if (idToken == null || idToken.isEmpty) {
+          throw Exception('Could not retrieve Firebase ID token for authenticated request');
+        }
+        queryParams['token'] = idToken;
+      }
+
       final Uri wsUri = Uri.parse(_serverUrl).replace(
-        queryParameters: {
-          'user_id': userId,
-          'language': _languageCode,
-          'mode': _sessionMode,
-        },
+        queryParameters: queryParams,
       );
       _signaling = _webSocketFactory(wsUri);
 

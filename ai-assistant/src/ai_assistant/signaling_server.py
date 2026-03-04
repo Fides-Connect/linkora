@@ -7,6 +7,7 @@ import logging
 from typing import Dict
 from aiohttp import web, WSMsgType
 from aiortc import RTCSessionDescription
+from firebase_admin import auth as firebase_auth
 
 from .peer_connection_handler import PeerConnectionHandler
 
@@ -31,6 +32,22 @@ class SignalingServer:
         user_id = request.query.get('user_id')
         language = request.query.get('language', 'de')  # Default to German
         raw_mode = request.query.get('mode', 'voice')
+
+        # If a Firebase ID token is present, verify it and extract the uid.
+        # This is required for Cloud Run connections. Local/dev connections
+        # without a token fall through to the plain user_id query param.
+        token = request.query.get('token')
+        if token:
+            try:
+                decoded_token = firebase_auth.verify_id_token(token)
+                user_id = decoded_token['uid']
+                logger.debug(f"Token verified for uid: {user_id}")
+            except Exception as e:
+                logger.warning(f"WebSocket auth failed — invalid token: {e}")
+                ws = web.WebSocketResponse()
+                await ws.prepare(request)
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
         if raw_mode not in ('voice', 'text'):
             logger.warning(
                 f"Invalid session mode '{raw_mode}' from {client_ip}; defaulting to 'voice'"

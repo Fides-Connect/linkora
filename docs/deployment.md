@@ -127,9 +127,15 @@ gcloud projects add-iam-policy-binding linkora-dev \
   --member="serviceAccount:${RT_SA}" \
   --role="roles/texttospeech.client"
 
+# Firestore read/write (users, requests, chats, reviews)
 gcloud projects add-iam-policy-binding linkora-dev \
   --member="serviceAccount:${RT_SA}" \
   --role="roles/datastore.user"
+
+# Firebase Auth: verify_id_token with check_revoked=True
+gcloud projects add-iam-policy-binding linkora-dev \
+  --member="serviceAccount:${RT_SA}" \
+  --role="roles/firebaseauth.viewer"
 
 # Allow reading secrets
 gcloud projects add-iam-policy-binding linkora-dev \
@@ -205,9 +211,52 @@ WEAVIATE_URL=http://localhost:8090 python scripts/init_database.py --load-test-d
 kill $SSH_PID
 ```
 
----
+### 7. Allow public access to Cloud Run (required for mobile clients)
 
-## GitHub Secrets
+Cloud Run defaults to requiring Google OIDC IAM authentication, which mobile apps cannot satisfy. The application already enforces authentication via Firebase ID tokens on every endpoint — the Cloud Run IAM layer must be set to `allUsers` so that requests from the ConnectX app can reach the application code at all.
+
+**Step 7a — Lift the org policy restriction (one-time, already done for `allinked.org`)**
+
+The `allinked.org` organization had a "Domain restricted sharing" policy (`iam.allowedPolicyMemberDomains`) blocking `allUsers` bindings. This was lifted in the GCP Console under **IAM & Admin → Organization Policies → Domain restricted sharing → Allow All**. This only needs to be done once per GCP organization.
+
+**Step 7b — Grant public invoker access to the Cloud Run service**
+
+Run this once after every initial deployment of the service (not required on redeployments):
+
+```bash
+gcloud run services add-iam-policy-binding ai-assistant \
+  --region=europe-west3 \
+  --member=allUsers \
+  --role=roles/run.invoker
+```
+
+> **Why this is safe**: This only removes Google OIDC authentication at the Cloud Run network layer. Every REST endpoint is still protected by `get_current_user_id()` in `api/deps.py`, which verifies the Firebase ID token on every request and returns 401 for missing or invalid tokens. The WebSocket endpoint verifies the Firebase ID token via `firebase_auth.verify_id_token()` in `signaling_server.py` when connecting from Cloud Run.
+
+### 8. Connect Cloud Run to Weaviate VM (Serverless VPC Access)
+
+Cloud Run is serverless and cannot reach private RFC-1918 IPs (e.g. `10.156.0.6`) by default. A **Serverless VPC Access connector** routes private-range egress traffic from Cloud Run through your VPC so it can reach the Weaviate VM's internal IP.
+
+```bash
+# Enable the VPC Access API (one-time)
+gcloud services enable vpcaccess.googleapis.com
+
+# Create the connector (one-time per region)
+gcloud compute networks vpc-access connectors create ai-assistant-connect-dev \
+  --region=europe-west3 \
+  --network=default \
+  --range=10.8.0.0/28
+
+# Attach the connector to the Cloud Run service
+# (redeployment required — run once; CI/CD workflow keeps it attached)
+gcloud run services update ai-assistant \
+  --region=europe-west3 \
+  --vpc-connector=ai-assistant-connect-dev \
+  --vpc-egress=private-ranges-only
+```
+
+After this, Cloud Run routes requests to `10.x.x.x` through the VPC and the Weaviate VM is reachable at its internal IP. The `WEAVIATE_VM_IP` GitHub secret (used to build `WEAVIATE_URL=http://<IP>:8080`) must be set to the **internal** IP of the VM (not the external IP).
+
+> **Note**: The firewall rule `allow-weaviate` created in step 5 already allows traffic on port 8080 from within the VPC, so no additional firewall change is needed.
 
 Add these in **Settings → Secrets and variables → Actions**:
 

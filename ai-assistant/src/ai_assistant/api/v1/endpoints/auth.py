@@ -31,8 +31,10 @@ async def sign_in_google(request: web.Request) -> web.Response:
         if not token:
             return web.json_response({"error": "Missing id_token"}, status=400)
 
-        # Verify the Firebase ID token
-        decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
+        # Verify the Firebase ID token.
+        # check_revoked=True requires the runtime SA to have firebaseauth.users.get,
+        # which is not granted in production. Token is still cryptographically verified.
+        decoded_token = firebase_auth.verify_id_token(token)
 
         # Extract user information
         user_id = decoded_token["uid"]

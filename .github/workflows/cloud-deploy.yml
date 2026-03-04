@@ -16,7 +16,7 @@ on:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: europe-west3
-  SERVICE_NAME: ai-assistant
+  SERVICE_NAME: ai-assistant-dev
   AR_REPO: ai-assistant-dev  # Artifact Registry repository name
 
 jobs:

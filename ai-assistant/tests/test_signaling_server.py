@@ -74,6 +74,7 @@ class TestWebSocketHandling:
         # Mock request
         mock_request = Mock(spec=web.Request)
         mock_request.remote = '127.0.0.1'
+        mock_request.query = {'user_id': 'test_user', 'language': 'de', 'mode': 'voice'}
         
         with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
              patch('ai_assistant.signaling_server.PeerConnectionHandler') as mock_handler_class:
@@ -171,3 +172,102 @@ class TestConnectionManagement:
         del signaling_server.active_connections['conn-1']
         
         assert len(signaling_server.active_connections) == 0
+
+
+class TestTokenAuthentication:
+    """Test Firebase ID token authentication on WebSocket connections."""
+
+    def _make_request(self, query_params: dict) -> Mock:
+        """Helper to build a mock aiohttp request with query params."""
+        mock_request = Mock(spec=web.Request)
+        mock_request.remote = '127.0.0.1'
+        mock_request.query = query_params
+        return mock_request
+
+    @pytest.mark.asyncio
+    async def test_valid_token_overrides_user_id(self, signaling_server):
+        """A valid Firebase ID token should replace the client-supplied user_id."""
+        mock_ws = Mock(spec=web.WebSocketResponse)
+        mock_ws.prepare = AsyncMock()
+
+        async def mock_ws_iter():
+            return
+            yield
+
+        mock_ws.__aiter__ = lambda self: mock_ws_iter()
+
+        mock_request = self._make_request({
+            'user_id': 'spoofed-uid',
+            'token': 'valid-token',
+            'language': 'en',
+            'mode': 'text',
+        })
+
+        with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
+             patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
+                   return_value={'uid': 'real-uid-from-token'}) as mock_verify, \
+             patch('ai_assistant.signaling_server.PeerConnectionHandler') as mock_handler_class:
+
+            mock_handler = Mock()
+            mock_handler.close = AsyncMock()
+            mock_handler_class.return_value = mock_handler
+
+            await signaling_server.handle_websocket(mock_request)
+
+            mock_verify.assert_called_once_with('valid-token')
+            # The handler must receive the uid from the token, not the spoofed one
+            _, kwargs = mock_handler_class.call_args
+            assert kwargs['user_id'] == 'real-uid-from-token'
+
+    @pytest.mark.asyncio
+    async def test_invalid_token_closes_websocket_with_4401(self, signaling_server):
+        """An invalid token should close the WebSocket with code 4401."""
+        mock_ws = Mock(spec=web.WebSocketResponse)
+        mock_ws.prepare = AsyncMock()
+        mock_ws.close = AsyncMock()
+
+        mock_request = self._make_request({
+            'user_id': 'any-uid',
+            'token': 'bad-token',
+        })
+
+        with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
+             patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
+                   side_effect=Exception('Token invalid')):
+
+            await signaling_server.handle_websocket(mock_request)
+
+            mock_ws.close.assert_called_once_with(code=4401, message=b'Unauthorized')
+
+    @pytest.mark.asyncio
+    async def test_no_token_uses_client_supplied_user_id(self, signaling_server):
+        """When no token is present (local dev), the plain user_id is trusted."""
+        mock_ws = Mock(spec=web.WebSocketResponse)
+        mock_ws.prepare = AsyncMock()
+
+        async def mock_ws_iter():
+            return
+            yield
+
+        mock_ws.__aiter__ = lambda self: mock_ws_iter()
+
+        mock_request = self._make_request({
+            'user_id': 'local-dev-uid',
+            'language': 'de',
+            'mode': 'voice',
+        })
+
+        with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
+             patch('ai_assistant.signaling_server.firebase_auth.verify_id_token') as mock_verify, \
+             patch('ai_assistant.signaling_server.PeerConnectionHandler') as mock_handler_class:
+
+            mock_handler = Mock()
+            mock_handler.close = AsyncMock()
+            mock_handler_class.return_value = mock_handler
+
+            await signaling_server.handle_websocket(mock_request)
+
+            # verify_id_token must not be called when no token is present
+            mock_verify.assert_not_called()
+            _, kwargs = mock_handler_class.call_args
+            assert kwargs['user_id'] == 'local-dev-uid'

@@ -72,34 +72,40 @@ class AuthService {
   Future<void> _handleAuthStateChanged(User? user) async {
     if (user != null) {
       _photoUrl = user.photoURL;
-
-      // Sync user with backend
-      await _userService.syncUserWithBackend();
-
-      // Auto-connect to WebRTC if service is available
-      if (_webrtcService != null) {
-        await _webrtcService!.connect();
-      }
-
-      // Validate with backend if configured — soft failure only, never sign out.
-      final String? serverUrl = dotenv.env['AI_ASSISTANT_SERVER_URL'];
-      if (serverUrl != null &&
-          serverUrl.isNotEmpty &&
-          serverUrl != 'localhost:8080') {
-        final idToken = await user.getIdToken();
-        if (idToken != null) {
-          final bool valid = await _signInBackend(idToken);
-          if (!valid) {
-            debugPrint(
-              'Backend validation failed or backend unreachable — continuing as authenticated.',
-            );
-            // Do not sign out: a missing or unreachable backend must not
-            // prevent the user from using the app.
-          }
-        }
-      }
     } else {
       _photoUrl = null;
+    }
+  }
+
+  /// Perform post-auth work: sync user record, connect WebRTC, validate with
+  /// backend. Called by [UserProvider] after Firebase auth fires, awaited
+  /// before navigating to the home screen so the home page never sees a 404
+  /// on /me due to a sync race.
+  Future<void> performSyncAndConnect(User user) async {
+    // Sync user with backend (creates Firestore document if first sign-in)
+    await _userService.syncUserWithBackend();
+
+    // Auto-connect to WebRTC if service is available
+    if (_webrtcService != null) {
+      await _webrtcService!.connect();
+    }
+
+    // Validate with backend if configured — soft failure only, never sign out.
+    final String? serverUrl = dotenv.env['AI_ASSISTANT_SERVER_URL'];
+    if (serverUrl != null &&
+        serverUrl.isNotEmpty &&
+        serverUrl != 'localhost:8080') {
+      final idToken = await user.getIdToken();
+      if (idToken != null) {
+        final bool valid = await _signInBackend(idToken);
+        if (!valid) {
+          debugPrint(
+            'Backend validation failed or backend unreachable — continuing as authenticated.',
+          );
+          // Do not sign out: a missing or unreachable backend must not
+          // prevent the user from using the app.
+        }
+      }
     }
   }
 
@@ -150,7 +156,10 @@ class AuthService {
     if (rawServer == null || rawServer.isEmpty) {
       return false;
     }
-    final String url = 'http://$rawServer/api/v1/auth/sign-in-google';
+    final String baseUrl = rawServer.startsWith('http')
+        ? rawServer
+        : 'http://$rawServer';
+    final String url = '$baseUrl/api/v1/auth/sign-in-google';
 
     try {
       final response = await http

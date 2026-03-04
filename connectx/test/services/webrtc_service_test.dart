@@ -322,4 +322,67 @@ void main() {
       expect(capturedError, contains('Failed to send'));
     });
   });
+
+  group('WebRTCService URL scheme detection', () {
+    test('bare host:port produces ws:// URL and no token request', () async {
+      // webRTCService is already built with serverUrl: 'localhost:8000' (bare)
+      await webRTCService.connect();
+      // getIdToken must NOT be called for plain ws connections
+      verifyNever(mockFirebaseAuthWrapper.getIdToken());
+    });
+
+    test('https:// URL produces wss connection and attaches Firebase ID token', () async {
+      // Arrange – build a service with a Cloud Run HTTPS URL
+      final secureService = WebRTCService(
+        webRTCWrapper: mockWebRTCWrapper,
+        webSocketFactory: (uri) {
+          // Verify wss scheme and token query param
+          expect(uri.scheme, 'wss');
+          expect(uri.queryParameters['token'], 'fake-id-token');
+          return mockWebSocketChannel;
+        },
+        audioRoutingServiceFactory: () => AudioRoutingService(
+          hardwareController: mockAudioHardwareController,
+          deviceCheckInterval: testDeviceCheckInterval,
+          inputChangeDebounce: testInputChangeDebounce,
+        ),
+        firebaseAuthWrapper: mockFirebaseAuthWrapper,
+        serverUrl: 'https://ai-assistant-test.run.app',
+      );
+      when(mockFirebaseAuthWrapper.getIdToken())
+          .thenAnswer((_) async => 'fake-id-token');
+
+      // Act
+      await secureService.connect();
+
+      // Assert token was fetched
+      verify(mockFirebaseAuthWrapper.getIdToken()).called(1);
+
+      await secureService.disconnect();
+    });
+
+    test('http:// URL produces ws connection and no token request', () async {
+      // Arrange
+      final httpService = WebRTCService(
+        webRTCWrapper: mockWebRTCWrapper,
+        webSocketFactory: (uri) {
+          expect(uri.scheme, 'ws');
+          return mockWebSocketChannel;
+        },
+        audioRoutingServiceFactory: () => AudioRoutingService(
+          hardwareController: mockAudioHardwareController,
+          deviceCheckInterval: testDeviceCheckInterval,
+          inputChangeDebounce: testInputChangeDebounce,
+        ),
+        firebaseAuthWrapper: mockFirebaseAuthWrapper,
+        serverUrl: 'http://192.168.1.100:8080',
+      );
+
+      await httpService.connect();
+
+      verifyNever(mockFirebaseAuthWrapper.getIdToken());
+
+      await httpService.disconnect();
+    });
+  });
 }
