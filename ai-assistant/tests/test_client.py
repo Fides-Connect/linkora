@@ -160,16 +160,26 @@ class AIAssistentTestClient:
         
         logger.info("Sent offer to server")
         
-        # Wait for answer
-        message = await self._receive_message()
-        
-        if message['type'] == 'answer':
-            answer = RTCSessionDescription(
-                sdp=message['sdp'],
-                type='answer'
-            )
-            await self.pc.setRemoteDescription(answer)
-            logger.info("Received answer from server")
+        # Wait for answer, discarding any ice-config message the server sends
+        # first (the server pushes ICE/TURN credentials before the offer/answer
+        # exchange; the test client runs locally so TURN is not needed).
+        while True:
+            message = await self._receive_message()
+            if message['type'] == 'answer':
+                answer = RTCSessionDescription(
+                    sdp=message['sdp'],
+                    type='answer'
+                )
+                await self.pc.setRemoteDescription(answer)
+                logger.info("Received answer from server")
+                break
+            elif message['type'] == 'ice-config':
+                logger.info(
+                    "Received ice-config (%d server(s)) — using default STUN for local test",
+                    len(message.get('iceServers', [])),
+                )
+            else:
+                logger.warning("Unexpected signaling message type: %s", message.get('type'))
         
     async def _send_message(self, message: dict):
         """Send message to server."""
