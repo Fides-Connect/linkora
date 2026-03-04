@@ -81,6 +81,7 @@ class TestWebSocketHandling:
             
             mock_handler = Mock()
             mock_handler.close = AsyncMock()
+            mock_handler.send_ice_config = AsyncMock()
             mock_handler_class.return_value = mock_handler
             
             result = await signaling_server.handle_websocket(mock_request)
@@ -210,6 +211,7 @@ class TestTokenAuthentication:
 
             mock_handler = Mock()
             mock_handler.close = AsyncMock()
+            mock_handler.send_ice_config = AsyncMock()
             mock_handler_class.return_value = mock_handler
 
             await signaling_server.handle_websocket(mock_request)
@@ -263,6 +265,7 @@ class TestTokenAuthentication:
 
             mock_handler = Mock()
             mock_handler.close = AsyncMock()
+            mock_handler.send_ice_config = AsyncMock()
             mock_handler_class.return_value = mock_handler
 
             await signaling_server.handle_websocket(mock_request)

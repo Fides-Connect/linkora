@@ -272,6 +272,8 @@ Add these in **Settings → Secrets and variables → Actions**:
 | `WEAVIATE_VM_PORT` | Host port Weaviate listens on (e.g. `8090`) |
 | `GEMINI_API_KEY` | Your Gemini API key |
 | `ADMIN_SECRET_KEY` | Your admin API secret |
+| `METERED_APP_NAME` | Your Metered.ca application name (subdomain of `metered.live`) |
+| `METERED_API_KEY` | Your Metered.ca API key — enables TURN relay for WebRTC through NAT/Cloud Run |
 
 The deployment workflow syncs `GEMINI_API_KEY` and `ADMIN_SECRET_KEY` into **Secret Manager** automatically. Cloud Run then injects them at runtime via `--set-secrets` (never in environment variables).
 

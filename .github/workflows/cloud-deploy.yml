@@ -63,6 +63,7 @@ jobs:
           }
           sync_secret "gemini-api-key"   "${{ secrets.GEMINI_API_KEY }}"
           sync_secret "admin-secret-key" "${{ secrets.ADMIN_SECRET_KEY }}"
+          sync_secret "metered-api-key"  "${{ secrets.METERED_API_KEY }}"
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
@@ -93,6 +94,7 @@ jobs:
             --allow-unauthenticated \
             --service-account "${{ secrets.WIF_RT_SERVICE_ACCOUNT }}" \
             --set-env-vars "WEAVIATE_URL=http://${{ secrets.WEAVIATE_VM_IP }}:${{ secrets.WEAVIATE_VM_PORT }},\
+              METERED_APP_NAME=${{ secrets.METERED_APP_NAME }},\
               GEMINI_MODEL=gemini-2.5-flash,\
               LANGUAGE_CODE_DE=de-DE,\
               VOICE_NAME_DE=de-DE-Chirp3-HD-Sulafat,\
@@ -103,7 +105,7 @@ jobs:
               GOOGLE_TTS_API_CONCURRENCY=5,\
               FIRESTORE_DATABASE_NAME=(default),\
               DEBUG_RECORD_AUDIO=false" \
-            --set-secrets "GEMINI_API_KEY=gemini-api-key:latest,ADMIN_SECRET_KEY=admin-secret-key:latest" \
+            --set-secrets "GEMINI_API_KEY=gemini-api-key:latest,ADMIN_SECRET_KEY=admin-secret-key:latest,METERED_API_KEY=metered-api-key:latest" \
             --min-instances 1 \
             --max-instances 3 \
             --memory 1Gi \

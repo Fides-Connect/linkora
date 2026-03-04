@@ -4,7 +4,9 @@ Handles WebSocket connections and WebRTC signaling between client and AI assista
 """
 import json
 import logging
+import os
 from typing import Dict
+import aiohttp
 from aiohttp import web, WSMsgType
 from aiortc import RTCSessionDescription
 from firebase_admin import auth as firebase_auth
@@ -12,6 +14,39 @@ from firebase_admin import auth as firebase_auth
 from .peer_connection_handler import PeerConnectionHandler
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_ICE_SERVERS: list[dict] = [{"urls": "stun:stun.l.google.com:19302"}]
+
+
+async def _fetch_ice_servers() -> list[dict]:
+    """Fetch ephemeral TURN credentials from Metered.ca.
+
+    Requires ``METERED_APP_NAME`` and ``METERED_API_KEY`` environment variables.
+    Falls back to a plain STUN server when either is absent or the request
+    fails, so the service degrades gracefully in development.
+    """
+    app_name = os.getenv("METERED_APP_NAME")
+    api_key = os.getenv("METERED_API_KEY")
+    if not app_name or not api_key:
+        logger.debug("METERED_APP_NAME/METERED_API_KEY not set — using default STUN server")
+        return _DEFAULT_ICE_SERVERS
+    url = f"https://{app_name}.metered.live/api/v1/turn/credentials?apiKey={api_key}"
+    try:
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    servers = await resp.json()
+                    if servers:
+                        logger.debug("Fetched %d ICE server(s) from Metered.ca", len(servers))
+                        return servers
+                else:
+                    logger.warning(
+                        "Metered.ca returned status %d — using default STUN", resp.status
+                    )
+    except Exception as exc:
+        logger.warning("Failed to fetch TURN credentials: %s — using default STUN", exc)
+    return _DEFAULT_ICE_SERVERS
 
 
 class SignalingServer:
@@ -63,15 +98,21 @@ class SignalingServer:
         
         # Create peer connection handler
         logger.debug(f"Creating PeerConnectionHandler for {connection_id}")
+        ice_servers = await _fetch_ice_servers()
         handler = PeerConnectionHandler(
             connection_id=str(connection_id),
             websocket=ws,
             user_id=user_id,
             language=language,
             session_mode=session_mode,
+            ice_servers=ice_servers,
         )
         self.active_connections[str(connection_id)] = handler
         logger.debug(f"Active connections: {len(self.active_connections)}")
+
+        # Send ICE config to client immediately so it can configure its peer
+        # connection with TURN credentials before sending the offer.
+        await handler.send_ice_config(ice_servers)
         
         try:
             logger.debug(f"Starting message loop for connection {connection_id}")

@@ -65,6 +65,10 @@ class WebRTCService {
   final List<RTCIceCandidate> _iceCandidatesQueue = [];
   bool _remoteDescriptionSet = false;
 
+  // ICE server config received from backend (includes TURN credentials)
+  List<Map<String, dynamic>>? _iceServers;
+  Completer<void>? _iceConfigCompleter;
+
   // Language configuration
   final String _languageCode;
 
@@ -160,6 +164,7 @@ class WebRTCService {
 
     _sessionMode = validatedMode;
     _dataChannelOpenFired = false;
+    _iceConfigCompleter = Completer<void>();
 
     _isConnecting = true;
 
@@ -177,6 +182,18 @@ class WebRTCService {
       }
 
       await _connectSignaling();
+
+      // Wait for the server to push ICE/TURN credentials before creating the
+      // peer connection.  The backend sends 'ice-config' immediately on WS
+      // connect; we give it up to 5 s before falling back to plain STUN.
+      try {
+        await _iceConfigCompleter!.future.timeout(const Duration(seconds: 5));
+      } on TimeoutException {
+        debugPrint(
+          'WebRTC: Ice-config not received in time — using default STUN',
+        );
+      }
+
       await _createPeerConnection();
       await _createOffer();
     } catch (e) {
@@ -197,6 +214,11 @@ class WebRTCService {
     _isRenegotiating = false;
     _isRecreatingTrack = false;
     _iceCandidatesQueue.clear();
+    _iceServers = null;
+    if (_iceConfigCompleter != null && !_iceConfigCompleter!.isCompleted) {
+      _iceConfigCompleter!.completeError('disconnected');
+    }
+    _iceConfigCompleter = null;
 
     await _signaling?.sink.close();
     _signaling = null;
@@ -412,10 +434,13 @@ class WebRTCService {
   /// Create WebRTC peer connection
   Future<void> _createPeerConnection() async {
     try {
+      final List<Map<String, dynamic>> iceServerList = _iceServers ??
+          [
+            {'urls': 'stun:stun.l.google.com:19302'},
+          ];
+
       final Map<String, dynamic> configuration = {
-        'iceServers': [
-          {'urls': 'stun:stun.l.google.com:19302'},
-        ],
+        'iceServers': iceServerList,
         'sdpSemantics': 'unified-plan',
       };
 
@@ -531,6 +556,21 @@ class WebRTCService {
       final String? type = data['type'];
 
       switch (type) {
+        case 'ice-config':
+          final rawServers = data['iceServers'];
+          if (rawServers is List) {
+            _iceServers = rawServers
+                .whereType<Map<String, dynamic>>()
+                .toList();
+            debugPrint(
+              'WebRTC: Received ${_iceServers!.length} ICE server(s) from server',
+            );
+          }
+          if (_iceConfigCompleter != null &&
+              !_iceConfigCompleter!.isCompleted) {
+            _iceConfigCompleter!.complete();
+          }
+          break;
         case 'answer':
           _handleAnswer(data['sdp']);
           break;
