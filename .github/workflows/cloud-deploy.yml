@@ -92,7 +92,7 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --service-account "${{ secrets.WIF_RT_SERVICE_ACCOUNT }}" \
-            --set-env-vars "WEAVIATE_URL=http://${{ secrets.WEAVIATE_VM_IP }}:8080,\
+            --set-env-vars "WEAVIATE_URL=http://${{ secrets.WEAVIATE_VM_IP }}:${{ secrets.WEAVIATE_VM_PORT }},\
               GEMINI_MODEL=gemini-2.5-flash,\
               LANGUAGE_CODE_DE=de-DE,\
               VOICE_NAME_DE=de-DE-Chirp3-HD-Sulafat,\

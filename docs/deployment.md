@@ -269,6 +269,7 @@ Add these in **Settings → Secrets and variables → Actions**:
 | `WEAVIATE_VM_NAME` | `weaviate-vm` |
 | `WEAVIATE_VM_ZONE` | `europe-west3-a` |
 | `WEAVIATE_VM_IP` | Internal IP from step 5 above |
+| `WEAVIATE_VM_PORT` | Host port Weaviate listens on (e.g. `8090`) |
 | `GEMINI_API_KEY` | Your Gemini API key |
 | `ADMIN_SECRET_KEY` | Your admin API secret |
 
