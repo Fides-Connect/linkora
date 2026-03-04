@@ -1766,3 +1766,117 @@ class TestIsServiceProviderContextSync:
             "conversation_service.context['is_service_provider'] must be True after "
             "record_provider_interest(accepted) so STEP 0 is skipped next turn"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# search_providers cache-skip guard in FINALIZE
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSearchProvidersCacheGuardInFinalize:
+    """The cache-skip guard must only bypass a Weaviate re-fetch when the cached
+    result is non-empty.  When providers_found == [], a re-fetch is required so
+    that a repaired Weaviate dataset (or a search that was interrupted on the
+    first FINALIZE entry) is picked up on the next LLM turn."""
+
+    @staticmethod
+    def _make_orchestrator(
+        mock_llm_service,
+        mock_conversation_service,
+        mock_tool_registry,
+    ):
+        return ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+
+    async def test_cache_used_when_providers_already_found(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """When providers_found has entries, the LLM-triggered search_providers call
+        must return the cache and NOT call the tool registry again."""
+        cached = [{"user": {"name": "Alice"}, "title": "Coaching"}]
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": cached, "current_provider_index": 0,
+        }
+
+        async def stream_search(*args, **kwargs):
+            yield {"type": "function_call", "name": "search_providers", "args": {}}
+            yield "Great, I found someone."
+
+        mock_llm_service.generate_stream = stream_search
+
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        chunks = []
+        async for c in orch.generate_response_stream("good", "sess"):
+            chunks.append(c)
+
+        # Tool registry must NOT be called for search_providers — cache was used
+        for call in mock_tool_registry.execute.call_args_list:
+            assert call.args[0] != "search_providers", (
+                "search_providers must be served from cache when providers_found is non-empty"
+            )
+
+    async def test_refetch_triggered_when_cache_is_empty(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """When providers_found is empty (e.g. first search was interrupted or
+        returned 0 due to stale Weaviate data), the next LLM call to search_providers
+        must execute the real tool, giving Weaviate a second chance."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+        }
+
+        async def stream_search(*args, **kwargs):
+            yield {"type": "function_call", "name": "search_providers", "args": {}}
+
+        mock_llm_service.generate_stream = stream_search
+        mock_tool_registry.execute = AsyncMock(return_value=[{"user": {"name": "Bob"}}])
+
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        async for _ in orch.generate_response_stream("good", "sess"):
+            pass
+
+        # Tool registry MUST have been called for search_providers
+        executed_names = [c.args[0] for c in mock_tool_registry.execute.call_args_list]
+        assert "search_providers" in executed_names, (
+            "search_providers must re-fetch when providers_found cache is empty"
+        )
+
+    async def test_followup_stream_refetches_when_cache_empty(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Same empty-cache rule applies to the follow-up LLM stream in FINALIZE."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+        }
+
+        # First stream: signal_transition → follow-up stream: search_providers
+        turn = 0
+
+        async def two_turn_stream(*args, **kwargs):
+            nonlocal turn
+            if turn == 0:
+                turn += 1
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "finalize"}}
+            else:
+                yield {"type": "function_call", "name": "search_providers", "args": {}}
+
+        mock_llm_service.generate_stream = two_turn_stream
+        # Return empty from search_providers_for_request (auto-search on FINALIZE entry)
+        mock_conversation_service.search_providers_for_request = AsyncMock(return_value=[])
+        mock_tool_registry.execute = AsyncMock(return_value=[{"user": {"name": "Carol"}}])
+
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        async for _ in orch.generate_response_stream("yes", "sess"):
+            pass
+
+        # Tool registry must have been called for search_providers in follow-up
+        executed_names = [c.args[0] for c in mock_tool_registry.execute.call_args_list]
+        assert "search_providers" in executed_names, (
+            "Follow-up stream must re-fetch search_providers when cache is empty"
+        )

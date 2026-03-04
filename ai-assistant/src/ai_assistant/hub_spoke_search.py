@@ -472,7 +472,34 @@ class HubSpokeSearch:
                 [r.get("name") for r in results],
             )
 
-            logger.info(f"Hybrid search found {len(results)} unique providers")
+            if results:
+                logger.info("Hybrid search found %d unique providers", len(results))
+            else:
+                # Zero results — emit a diagnostic so the cause (no matching
+                # competencies vs. missing/wrong is_service_provider flag) is
+                # immediately visible at INFO level in production logs.
+                try:
+                    sp_filter = Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
+                    sp_count = (
+                        competence_collection.aggregate.over_all(
+                            filters=sp_filter, total_count=True
+                        ).total_count
+                        or 0
+                    )
+                    logger.info(
+                        "Hybrid search found 0 providers — "
+                        "competencies with is_service_provider=True in Weaviate: %d — "
+                        "query=%r availability=%r",
+                        sp_count,
+                        query_text[:80],
+                        available_time or "none",
+                    )
+                except Exception:
+                    logger.info(
+                        "Hybrid search found 0 providers — query=%r availability=%r",
+                        query_text[:80],
+                        available_time or "none",
+                    )
             return results
             
         except Exception as e:

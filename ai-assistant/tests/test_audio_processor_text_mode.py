@@ -835,3 +835,144 @@ class TestReceiveTextInput:
 
         # Just verifying no AttributeError — the mode check itself is the contract
         assert True
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# History repair: _trigger_interrupt stashes orphaned HumanMessages
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestInterruptHistoryRepair:
+    """_trigger_interrupt must pop any trailing HumanMessage from LLM history
+    and stash it in _interrupted_text_buffer so no user intent is lost when a
+    rapid burst of messages cancels the previous LLM response task."""
+
+    async def test_buffer_initialises_empty(self, text_proc):
+        assert text_proc._interrupted_text_buffer == []
+
+    async def test_interrupt_stashes_trailing_human_message(self, text_proc):
+        """When a HumanMessage is orphaned by cancellation it goes into the buffer."""
+        from langchain_core.messages import HumanMessage
+
+        llm_svc = text_proc.ai_assistant.response_orchestrator.llm_service
+        llm_svc.add_message_to_history(text_proc.connection_id, HumanMessage(content="find a coach"))
+
+        # Set up a fake in-flight response task so _trigger_interrupt sees one to cancel
+        cancelled = asyncio.Event()
+
+        async def _blocked():
+            await cancelled.wait()
+
+        text_proc._response_task = asyncio.create_task(_blocked())
+
+        # Stub FSM transitions so we don't need real FSM wiring
+        fsm = text_proc.ai_assistant.response_orchestrator.runtime_fsm
+        fsm.transition("data_channel_wait")
+        fsm.transition("data_channel_opened")  # BOOTSTRAP → LISTENING
+
+        with patch.object(text_proc.tts_manager, "interrupt"), \
+             patch.object(text_proc.output_track, "clear_queue", new=AsyncMock()):
+            await text_proc._trigger_interrupt()
+
+        assert text_proc._interrupted_text_buffer == ["find a coach"]
+        # Message removed from history
+        assert len(llm_svc.get_session_history(text_proc.connection_id).messages) == 0
+
+    async def test_interrupt_does_not_stash_when_no_trailing_human_message(self, text_proc):
+        """If history ends with an AI message, the buffer must remain empty."""
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        llm_svc = text_proc.ai_assistant.response_orchestrator.llm_service
+        llm_svc.add_message_to_history(text_proc.connection_id, HumanMessage(content="hi"))
+        llm_svc.add_message_to_history(text_proc.connection_id, AIMessage(content="hello!"))
+
+        fsm = text_proc.ai_assistant.response_orchestrator.runtime_fsm
+        fsm.transition("data_channel_wait")
+        fsm.transition("data_channel_opened")
+
+        with patch.object(text_proc.tts_manager, "interrupt"), \
+             patch.object(text_proc.output_track, "clear_queue", new=AsyncMock()):
+            await text_proc._trigger_interrupt()
+
+        assert text_proc._interrupted_text_buffer == []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# process_text_input: stashed text is combined with the next user message
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestInterruptedTextCombining:
+    """When _interrupted_text_buffer is non-empty, process_text_input must prepend
+    those stashed fragments to the new input before dispatching to the LLM.
+    This ensures rapid STT bursts / multi-message sequences are processed as
+    one coherent turn and Gemini never sees consecutive HumanMessages."""
+
+    async def test_stashed_text_prepended_to_new_input(self, text_proc):
+        """Text in _interrupted_text_buffer is merged with the new message."""
+        _advance_fsm_to_listening(text_proc)
+        text_proc._session_starter.initialized_event.set()
+
+        text_proc._interrupted_text_buffer = ["First message.", "Second message."]
+
+        dispatched: list[str] = []
+
+        async def fake_transcript(transcript: str):
+            dispatched.append(transcript)
+
+        with patch.object(text_proc, "_process_final_transcript", new=AsyncMock(side_effect=fake_transcript)):
+            await text_proc.process_text_input("Third message.")
+            await asyncio.sleep(0)  # let the created task run
+
+        assert len(dispatched) == 1
+        combined = dispatched[0]
+        assert "First message." in combined
+        assert "Second message." in combined
+        assert "Third message." in combined
+        # Chronological order: stashed first, new text last
+        assert combined.index("First message.") < combined.index("Third message.")
+
+    async def test_buffer_cleared_after_combining(self, text_proc):
+        """After combining, _interrupted_text_buffer must be empty."""
+        _advance_fsm_to_listening(text_proc)
+        text_proc._session_starter.initialized_event.set()
+        text_proc._interrupted_text_buffer = ["old fragment"]
+
+        with patch.object(text_proc, "_process_final_transcript", new=AsyncMock()):
+            await text_proc.process_text_input("new input")
+            await asyncio.sleep(0)
+
+        assert text_proc._interrupted_text_buffer == []
+
+    async def test_no_stash_leaves_input_unchanged(self, text_proc):
+        """When buffer is empty, the input text is dispatched as-is."""
+        _advance_fsm_to_listening(text_proc)
+        text_proc._session_starter.initialized_event.set()
+
+        dispatched: list[str] = []
+
+        async def fake_transcript(transcript: str):
+            dispatched.append(transcript)
+
+        with patch.object(text_proc, "_process_final_transcript", new=AsyncMock(side_effect=fake_transcript)):
+            await text_proc.process_text_input("standalone message")
+            await asyncio.sleep(0)
+
+        assert dispatched == ["standalone message"]
+
+    async def test_multiple_stashed_turns_all_combined(self, text_proc):
+        """Three stashed fragments plus new input all end up in one dispatch."""
+        _advance_fsm_to_listening(text_proc)
+        text_proc._session_starter.initialized_event.set()
+        text_proc._interrupted_text_buffer = ["A", "B", "C"]
+
+        dispatched: list[str] = []
+
+        async def fake_transcript(transcript: str):
+            dispatched.append(transcript)
+
+        with patch.object(text_proc, "_process_final_transcript", new=AsyncMock(side_effect=fake_transcript)):
+            await text_proc.process_text_input("D")
+            await asyncio.sleep(0)
+
+        assert len(dispatched) == 1
+        assert all(frag in dispatched[0] for frag in ["A", "B", "C", "D"])
+

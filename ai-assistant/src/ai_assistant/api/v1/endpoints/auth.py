@@ -116,9 +116,37 @@ async def user_sync(request: web.Request) -> web.Response:
             # Keep the hub-spoke Weaviate User node in sync with Firestore's
             # is_service_provider so provider-search filters stay correct.
             is_sp = existing_firestore_user.get("is_service_provider", False)
-            HubSpokeIngestion.update_user_hub_properties(
+            hub_updated = HubSpokeIngestion.update_user_hub_properties(
                 user_id, {"is_service_provider": is_sp}
             )
+            if not hub_updated:
+                # Hub node is missing — self-heal by recreating it from Firestore
+                # so this user appears in provider-search results immediately.
+                logger.warning(
+                    "user_sync: Weaviate hub node missing for user_id=%s — self-healing",
+                    user_id,
+                )
+                try:
+                    user_data_for_weaviate = {**existing_firestore_user, "user_id": user_id}
+                    HubSpokeIngestion.create_user(user_data_for_weaviate)
+                    # Re-sync all competencies so provider-search cross-references exist.
+                    all_competencies = await firestore_service.get_competencies(user_id)
+                    if all_competencies:
+                        from ai_assistant.firestore_schemas import derive_availability_tags
+                        for comp in all_competencies:
+                            cid = comp.get("competence_id")
+                            if cid:
+                                avail_docs = await firestore_service.get_availability_times(
+                                    user_id, competence_id=cid
+                                )
+                                if avail_docs:
+                                    comp["availability_tags"] = derive_availability_tags(avail_docs[0])
+                        HubSpokeIngestion.update_competencies_by_user_id(user_id, all_competencies)
+                    logger.info("user_sync: self-heal complete for user_id=%s", user_id)
+                except Exception as heal_exc:
+                    logger.error(
+                        "user_sync: self-heal failed for user_id=%s: %s", user_id, heal_exc
+                    )
 
             if UserModelWeaviate.get_user_by_id(user_id):
                 if not UserModelWeaviate.update_user(user_id, user_data):

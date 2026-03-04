@@ -100,6 +100,31 @@ class LLMService:
         history.add_message(message)
         logger.debug(f"Added message to session {session_id}: {type(message).__name__}")
 
+    def pop_trailing_human_message(self, session_id: str) -> Optional[str]:
+        """Remove and return the last message's text if it is a trailing HumanMessage.
+
+        Called when an LLM response task is cancelled mid-stream to undo the
+        HumanMessage that LangChain's RunnableWithMessageHistory committed at
+        stream-start.  Without this repair, consecutive cancelled turns leave a
+        run of back-to-back HumanMessages in history that confuses Gemini on
+        the next real turn (it forgets context and re-asks top-level questions).
+
+        Returns the message text so the caller can prepend it to the next
+        user input, ensuring no user intent is lost.  Returns ``None`` when
+        history is empty or the last message is already an AI turn.
+        """
+        history = self.get_session_history(session_id)
+        msgs = history.messages
+        if msgs and isinstance(msgs[-1], HumanMessage):
+            popped = msgs.pop()
+            text = popped.content if isinstance(popped.content, str) else None
+            logger.debug(
+                "Popped trailing HumanMessage from session %s: %r",
+                session_id, (text or "")[:80],
+            )
+            return text
+        return None
+
     def register_functions(self, session_id: str, tool_schemas: List[Dict[str, Any]]) -> None:
         """
         Register (or replace) Gemini function-calling schemas for a session.

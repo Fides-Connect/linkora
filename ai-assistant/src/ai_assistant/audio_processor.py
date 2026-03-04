@@ -114,6 +114,14 @@ class AudioProcessor:
         # between concurrent process_text_input() calls.
         self._text_input_lock = asyncio.Lock()
 
+        # Stash for text from interrupted/cancelled LLM turns.  When a
+        # response task is cancelled mid-stream (e.g. rapid voice-transcript
+        # bursts), the HumanMessage that LangChain already committed is popped
+        # from history and saved here.  The next process_text_input call
+        # prepends these fragments so the LLM sees the full accumulated
+        # intent in one coherent turn instead of losing earlier context.
+        self._interrupted_text_buffer: list[str] = []
+
         # ── Response delivery strategy & session starter ─────────────────────
         # Swapped on mode switch via _make_delivery() / _make_session_starter().
         self._delivery: ResponseDelivery = self._make_delivery(self.session_mode)
@@ -486,6 +494,27 @@ class AudioProcessor:
         fsm = self.ai_assistant.response_orchestrator.runtime_fsm
         fsm.transition("interrupt")
         fsm.transition("interrupt_handled")
+        # ── History repair ────────────────────────────────────────────────────
+        # LangChain's RunnableWithMessageHistory commits the HumanMessage at
+        # the START of astream().  If the task is cancelled before the AI
+        # response is streamed back, that HumanMessage is left orphaned in
+        # history with no following AIMessage.  Rapid bursts (e.g. multiple
+        # STT transcripts) accumulate a run of bare HumanMessages that Gemini
+        # consistently mishandles by losing context and re-asking intent.
+        # Fix: pop the orphaned message and stash it; process_text_input will
+        # prepend it to the next real input so intent is never lost.
+        try:
+            llm_svc = self.ai_assistant.response_orchestrator.llm_service
+            popped = llm_svc.pop_trailing_human_message(self.connection_id)
+            if popped:
+                self._interrupted_text_buffer.append(popped)
+                logger.info(
+                    "History repair: stashed %d-char interrupted turn for %s "
+                    "(buffer depth=%d)",
+                    len(popped), self.connection_id, len(self._interrupted_text_buffer),
+                )
+        except Exception as exc:  # pragma: no cover
+            logger.warning("History repair in _trigger_interrupt failed: %s", exc)
     
     async def process_text_input(self, text: str):
         """Process a text message through the LLM pipeline.
@@ -539,6 +568,22 @@ class AudioProcessor:
             # Interrupt any in-progress response before generating the new one.
             if self.is_ai_speaking or (self._response_task and not self._response_task.done()):
                 await self._trigger_interrupt()
+
+            # Combine any text stashed from previously-interrupted turns so
+            # the LLM receives the full accumulated user intent in one turn.
+            # This prevents history from being polluted by consecutive
+            # HumanMessages (a known Gemini failure mode) and ensures the
+            # assistant never has to re-ask what the user wants.
+            if self._interrupted_text_buffer:
+                combined_parts = self._interrupted_text_buffer + [text]
+                text = " ".join(combined_parts)
+                logger.info(
+                    "Combined %d stashed turn(s) with new input for %s: %r...",
+                    len(self._interrupted_text_buffer),
+                    self.connection_id,
+                    text[:80],
+                )
+                self._interrupted_text_buffer.clear()
 
             # Advance FSM LISTENING → THINKING if not already done.
             from .services.agent_runtime_fsm import AgentRuntimeState

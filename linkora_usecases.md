@@ -33,6 +33,10 @@
 - Plain-text queries → vector search. JSON with `{available_time, location, criterions}` → hybrid search.
 - Priority for connection: `WEAVIATE_URL` (local) takes precedence over `WEAVIATE_CLUSTER_URL` + `WEAVIATE_API_KEY` (cloud).
 - In CI, Weaviate is auto-mocked via `conftest.py` patching `HubSpokeConnection.get_client`.
+- **Provider search gate**: `hybrid_search_providers` filters competencies by `owned_by.is_service_provider == True`. If a user's Weaviate hub node is missing or has this flag as `False`, they return zero results regardless of how many competencies exist in Firestore. When 0 results are returned, an INFO-level log emits the count of competencies with `is_service_provider=True` to diagnose whether the issue is a missing flag or a vocabulary mismatch.
+- **Hub node self-heal on login**: `POST /api/v1/auth/sync` calls `update_user_hub_properties` on every login. If the call returns `False` (hub node absent), it immediately creates the hub node from Firestore data and re-syncs all competencies — preventing the user from being invisible in searches after a Weaviate re-init. Owned by `api/v1/endpoints/auth.py`.
+- **FINALIZE search cache-skip guard**: `ResponseOrchestrator` caches the provider list when FINALIZE is entered (auto-search) and returns the cache if the LLM tries to call `search_providers` again within the same stage. The cache is only used when non-empty — if `providers_found == []` (first search was interrupted or returned 0 due to stale data), the next `search_providers` tool call performs a real Weaviate round-trip. Owned by `services/response_orchestrator.py`.
+- **Manual repair**: run `python scripts/repair_weaviate_user.py <user_id>` against any user who is not appearing in provider search results. This script reads Firestore as ground truth, creates or updates the hub node, and fully re-syncs competencies with correct `availability_tags`.
 
 ---
 
@@ -93,6 +97,7 @@
 
 - `AudioProcessor.is_ai_speaking` must be checked on every new response-generation path.
 - If a user speaks while the AI is speaking, the in-flight TTS pipeline is interrupted before a new response is generated.
+- **History repair on interrupt** (added 2026-03-04): Langchain's `RunnableWithMessageHistory.astream()` commits a `HumanMessage` to history at stream-start, before a single AI token is produced. When the task is cancelled mid-stream (rapid STT bursts, rapid chat messages), the `HumanMessage` is orphaned in history with no following `AIMessage`. This produces consecutive `HumanMessage` runs that cause Gemini to lose context and re-ask the user's top-level intent. Fix: `_trigger_interrupt()` calls `LLMService.pop_trailing_human_message()` to remove the orphaned message and appends it to `AudioProcessor._interrupted_text_buffer`. The next `process_text_input()` call prepends all stashed fragments to the new input, so the LLM receives the full accumulated request in one coherent turn. Owned by `audio_processor.py` + `llm_service.py`.
 
 ---
 
@@ -111,3 +116,5 @@
 - `@pytest.mark.asyncio` is **not** used in this repo — `asyncio_mode = "auto"` is set globally in `pyproject.toml`.
 - Never hardcode language strings (e.g. `'de'`); language must flow from the WS `?language=` param through every layer.
 - The `AgentRuntimeFSM` is deterministic and must not be bypassed or replicated elsewhere. Its 11 states are: `BOOTSTRAP → DATA_CHANNEL_WAIT → LISTENING → THINKING → LLM_STREAMING → TOOL_EXECUTING → SPEAKING → INTERRUPTING → MODE_SWITCH → ERROR_RETRYABLE → TERMINATED`.
+- **Rapid multi-message bursts** (voice STT or text mode): when a user sends multiple messages in quick succession, each new message cancels the previous LLM task. Without history repair the LLM sees consecutive `HumanMessage`s with no AI replies, causing it to forget earlier context and re-ask top-level intent. See history repair in Interrupt Handling above.
+- **TRIAGE over-probing prevention**: the `TRIAGE_CONVERSATION_PROMPT` includes a "Fast-path" step (step 2): if the user has already provided sufficient detail across multiple short messages, the LLM must skip probing and jump directly to summarising. Phrases like "do you know someone who can help me?" signal the user considers their brief complete and should trigger an immediate summarise+confirm flow. Owned by `prompts_templates.py`.

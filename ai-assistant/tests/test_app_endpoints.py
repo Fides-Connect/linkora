@@ -401,3 +401,148 @@ class TestUserSyncProviderTimestamp:
         mock_hub.update_user_hub_properties.assert_called_once_with(
             "new_user_123", {"is_service_provider": True}
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Auth endpoint — user_sync Weaviate hub self-heal
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestUserSyncWeaviateHubSelfHeal:
+    """Tests for the self-heal path in user_sync when the Weaviate hub node is missing."""
+
+    @pytest.fixture
+    def mock_firestore_auth(self):
+        with patch('ai_assistant.api.v1.endpoints.auth.firestore_service') as mock_fs:
+            yield mock_fs
+
+    @pytest.fixture
+    def mock_request(self):
+        request = Mock(spec=web.Request)
+        request.json = AsyncMock(return_value={
+            "user_id": "uid_heal",
+            "name": "Heal User",
+            "email": "heal@example.com",
+            "photo_url": "",
+            "fcm_token": "tok",
+        })
+        return request
+
+    async def test_self_heal_creates_hub_node_when_missing(
+        self, mock_request, mock_firestore_auth
+    ):
+        """When update_user_hub_properties returns False (hub node absent),
+        user_sync must call create_user to self-heal the Weaviate hub."""
+        from ai_assistant.api.v1.endpoints import auth as auth_module
+
+        existing = {
+            "user_id": "uid_heal",
+            "name": "Heal User",
+            "email": "heal@example.com",
+            "is_service_provider": True,
+        }
+        mock_firestore_auth.get_user = AsyncMock(return_value=existing)
+        mock_firestore_auth.update_user = AsyncMock(return_value=existing)
+        mock_firestore_auth.get_competencies = AsyncMock(return_value=[])
+
+        with patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate, \
+             patch('ai_assistant.api.v1.endpoints.auth.HubSpokeIngestion') as mock_hub:
+            mock_weaviate.get_user_by_id.return_value = existing
+            mock_weaviate.update_user.return_value = True
+            # Simulate missing hub node → returns False
+            mock_hub.update_user_hub_properties.return_value = False
+            mock_hub.create_user.return_value = "weaviate-uuid-123"
+            mock_hub.update_competencies_by_user_id.return_value = {"success": True}
+
+            response = await auth_module.user_sync(mock_request)
+
+        assert response.status == 200
+        # create_user must have been called with the Firestore data
+        mock_hub.create_user.assert_called_once()
+        call_kwargs = mock_hub.create_user.call_args[0][0]
+        assert call_kwargs["user_id"] == "uid_heal"
+
+    async def test_self_heal_syncs_competencies(
+        self, mock_request, mock_firestore_auth
+    ):
+        """Self-heal must also call update_competencies_by_user_id when competencies exist."""
+        from ai_assistant.api.v1.endpoints import auth as auth_module
+
+        existing = {
+            "user_id": "uid_heal",
+            "name": "Heal User",
+            "email": "heal@example.com",
+            "is_service_provider": True,
+        }
+        competencies = [
+            {"competence_id": "c1", "title": "Coaching", "description": "Life coaching"},
+        ]
+        mock_firestore_auth.get_user = AsyncMock(return_value=existing)
+        mock_firestore_auth.update_user = AsyncMock(return_value=existing)
+        mock_firestore_auth.get_competencies = AsyncMock(return_value=competencies)
+        mock_firestore_auth.get_availability_times = AsyncMock(return_value=[])
+
+        with patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate, \
+             patch('ai_assistant.api.v1.endpoints.auth.HubSpokeIngestion') as mock_hub:
+            mock_weaviate.get_user_by_id.return_value = existing
+            mock_weaviate.update_user.return_value = True
+            mock_hub.update_user_hub_properties.return_value = False
+            mock_hub.create_user.return_value = "weaviate-uuid-123"
+            mock_hub.update_competencies_by_user_id.return_value = {"success": True}
+
+            response = await auth_module.user_sync(mock_request)
+
+        assert response.status == 200
+        mock_hub.update_competencies_by_user_id.assert_called_once_with("uid_heal", competencies)
+
+    async def test_no_self_heal_when_hub_node_exists(
+        self, mock_request, mock_firestore_auth
+    ):
+        """When update_user_hub_properties returns True (hub exists), create_user must NOT be called."""
+        from ai_assistant.api.v1.endpoints import auth as auth_module
+
+        existing = {
+            "user_id": "uid_heal",
+            "name": "Heal User",
+            "email": "heal@example.com",
+            "is_service_provider": False,
+        }
+        mock_firestore_auth.get_user = AsyncMock(return_value=existing)
+        mock_firestore_auth.update_user = AsyncMock(return_value=existing)
+
+        with patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate, \
+             patch('ai_assistant.api.v1.endpoints.auth.HubSpokeIngestion') as mock_hub:
+            mock_weaviate.get_user_by_id.return_value = existing
+            mock_weaviate.update_user.return_value = True
+            # Hub node exists → True
+            mock_hub.update_user_hub_properties.return_value = True
+
+            response = await auth_module.user_sync(mock_request)
+
+        assert response.status == 200
+        mock_hub.create_user.assert_not_called()
+
+    async def test_self_heal_failure_does_not_crash_sync(
+        self, mock_request, mock_firestore_auth
+    ):
+        """a self-heal exception must not abort the login response — user_sync returns 200."""
+        from ai_assistant.api.v1.endpoints import auth as auth_module
+
+        existing = {
+            "user_id": "uid_heal",
+            "name": "Heal User",
+            "email": "heal@example.com",
+            "is_service_provider": False,
+        }
+        mock_firestore_auth.get_user = AsyncMock(return_value=existing)
+        mock_firestore_auth.update_user = AsyncMock(return_value=existing)
+
+        with patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate, \
+             patch('ai_assistant.api.v1.endpoints.auth.HubSpokeIngestion') as mock_hub:
+            mock_weaviate.get_user_by_id.return_value = existing
+            mock_weaviate.update_user.return_value = True
+            mock_hub.update_user_hub_properties.return_value = False
+            mock_hub.create_user.side_effect = RuntimeError("Weaviate down")
+
+            response = await auth_module.user_sync(mock_request)
+
+        assert response.status == 200

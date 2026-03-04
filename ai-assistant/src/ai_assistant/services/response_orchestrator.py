@@ -347,16 +347,21 @@ class ResponseOrchestrator:
                         fu_target, session_id, context, new_pending
                     )
                 else:
-                    # Guard: search_providers is redundant in FINALIZE (same as
-                    # main-stream guard above — the auto-search already ran).
+                    # Guard: search_providers is redundant in FINALIZE when the
+                    # auto-search already ran and returned results on stage entry.
+                    # If the cached list is empty the first search may have been
+                    # interrupted or used stale Weaviate data — re-fetch in that
+                    # case so a repaired dataset is picked up.
+                    _cached_providers = self.conversation_service.context.get(
+                        "providers_found", []
+                    )
                     if (
                         fu_name == "search_providers"
                         and self.conversation_service.get_current_stage()
                             == ConversationStage.FINALIZE
+                        and _cached_providers
                     ):
-                        tool_result = self.conversation_service.context.get(
-                            "providers_found", []
-                        )
+                        tool_result = _cached_providers
                         logger.info(
                             "Intercepted search_providers in FINALIZE (follow-up) — "
                             "returning %d cached provider(s), skipping re-fetch.",
@@ -494,19 +499,21 @@ class ResponseOrchestrator:
                     else:
                         # Regular tool call
                         self.runtime_fsm.transition("tool_call")
-                        # Guard: search_providers is redundant in FINALIZE because
-                        # the auto-search already ran on stage entry via
-                        # _apply_signal_transition_with_payload.  Return the cached
-                        # list immediately so the LLM can proceed to Scenario 4
-                        # without an unnecessary Weaviate round-trip.
+                        # Guard: search_providers is redundant in FINALIZE when
+                        # the auto-search already ran and found results.  If the
+                        # cache is empty the first search may have been interrupted
+                        # or used stale Weaviate data — re-fetch so a repaired
+                        # dataset is picked up on the next turn.
+                        _cached_providers = self.conversation_service.context.get(
+                            "providers_found", []
+                        )
                         if (
                             fn_name == "search_providers"
                             and self.conversation_service.get_current_stage()
                                 == ConversationStage.FINALIZE
+                            and _cached_providers
                         ):
-                            tool_result = self.conversation_service.context.get(
-                                "providers_found", []
-                            )
+                            tool_result = _cached_providers
                             logger.info(
                                 "Intercepted search_providers in FINALIZE — "
                                 "returning %d cached provider(s), skipping re-fetch.",
