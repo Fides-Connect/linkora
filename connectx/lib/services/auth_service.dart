@@ -92,18 +92,23 @@ class AuthService {
 
     // Validate with backend if configured — soft failure only, never sign out.
     final String? serverUrl = dotenv.env['AI_ASSISTANT_SERVER_URL'];
-    if (serverUrl != null &&
-        serverUrl.isNotEmpty &&
-        serverUrl != 'localhost:8080') {
-      final idToken = await user.getIdToken();
-      if (idToken != null) {
-        final bool valid = await _signInBackend(idToken);
-        if (!valid) {
-          debugPrint(
-            'Backend validation failed or backend unreachable — continuing as authenticated.',
-          );
-          // Do not sign out: a missing or unreachable backend must not
-          // prevent the user from using the app.
+    if (serverUrl != null && serverUrl.isNotEmpty) {
+      // Mirror WebRTCService logic: skip backend validation for plain ws:// or
+      // explicit local HTTP endpoints (Android emulator uses 10.0.2.2).
+      final bool isInsecureWs = serverUrl.startsWith('ws://');
+      final bool isLocalHttp = serverUrl.startsWith('http://localhost') ||
+          serverUrl.startsWith('http://10.0.2.2');
+      if (!isInsecureWs && !isLocalHttp) {
+        final idToken = await user.getIdToken();
+        if (idToken != null) {
+          final bool valid = await _signInBackend(idToken);
+          if (!valid) {
+            debugPrint(
+              'Backend validation failed or backend unreachable — continuing as authenticated.',
+            );
+            // Do not sign out: a missing or unreachable backend must not
+            // prevent the user from using the app.
+          }
         }
       }
     }

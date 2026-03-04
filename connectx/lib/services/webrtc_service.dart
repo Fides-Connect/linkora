@@ -77,20 +77,20 @@ class WebRTCService {
 
   // Dependencies
   final WebRTCWrapper _webRTCWrapper;
-  final WebSocketChannel Function(Uri) _webSocketFactory;
+  final WebSocketChannel Function(Uri, Map<String, dynamic>) _webSocketFactory;
   final FirebaseAuthWrapper _firebaseAuthWrapper;
   final AudioRoutingService Function()? _audioRoutingServiceFactory;
 
   WebRTCService({
     WebRTCWrapper? webRTCWrapper,
-    WebSocketChannel Function(Uri)? webSocketFactory,
+    WebSocketChannel Function(Uri, Map<String, dynamic>)? webSocketFactory,
     FirebaseAuthWrapper? firebaseAuthWrapper,
     AudioRoutingService Function()? audioRoutingServiceFactory,
     String? serverUrl,
     String? languageCode,
   }) : _webRTCWrapper = webRTCWrapper ?? WebRTCWrapper(),
        _webSocketFactory =
-           webSocketFactory ?? ((uri) => WebSocketChannel.connect(uri)),
+           webSocketFactory ?? ((uri, headers) => WebSocketChannel.connect(uri, headers: headers)),
        _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper(),
        _audioRoutingServiceFactory = audioRoutingServiceFactory,
        _languageCode = languageCode ?? 'de' {
@@ -393,27 +393,28 @@ class WebRTCService {
         throw Exception('No authenticated user found');
       }
 
-      // For secure (Cloud Run) connections, attach a Firebase ID token so the
-      // server can verify the caller's identity.  For plain ws:// (local dev)
-      // we skip the token entirely.
+      // For secure (Cloud Run) connections, pass the Firebase ID token via the
+      // Authorization header so it is never written to URL access logs.
+      // For plain ws:// (local dev) we skip the token entirely.
       final Map<String, String> queryParams = {
         'user_id': userId,
         'language': _languageCode,
         'mode': _sessionMode,
       };
 
+      final Map<String, dynamic> wsHeaders = {};
       if (_isSecure) {
         final String? idToken = await _firebaseAuthWrapper.getIdToken();
         if (idToken == null || idToken.isEmpty) {
           throw Exception('Could not retrieve Firebase ID token for authenticated request');
         }
-        queryParams['token'] = idToken;
+        wsHeaders['Authorization'] = 'Bearer $idToken';
       }
 
       final Uri wsUri = Uri.parse(_serverUrl).replace(
         queryParameters: queryParams,
       );
-      _signaling = _webSocketFactory(wsUri);
+      _signaling = _webSocketFactory(wsUri, wsHeaders);
 
       _signaling!.stream.listen(
         _handleSignalingMessage,

@@ -44,7 +44,7 @@ services:
     image: cr.weaviate.io/semitechnologies/weaviate:1.32.2
     container_name: weaviate
     ports:
-      - "8080:8080"   # Weaviate HTTP API
+      - "8090:8080"   # Weaviate HTTP API
       - "50051:50051" # Weaviate gRPC
     environment:
       QUERY_DEFAULTS_LIMIT: 25

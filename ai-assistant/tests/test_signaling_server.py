@@ -75,6 +75,7 @@ class TestWebSocketHandling:
         mock_request = Mock(spec=web.Request)
         mock_request.remote = '127.0.0.1'
         mock_request.query = {'user_id': 'test_user', 'language': 'de', 'mode': 'voice'}
+        mock_request.headers = {}
         
         with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
              patch('ai_assistant.signaling_server.PeerConnectionHandler') as mock_handler_class:
@@ -203,6 +204,7 @@ class TestTokenAuthentication:
             'language': 'en',
             'mode': 'text',
         })
+        mock_request.headers = {}
 
         with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
              patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
@@ -232,6 +234,7 @@ class TestTokenAuthentication:
             'user_id': 'any-uid',
             'token': 'bad-token',
         })
+        mock_request.headers = {}
 
         with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
              patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
@@ -258,6 +261,7 @@ class TestTokenAuthentication:
             'language': 'de',
             'mode': 'voice',
         })
+        mock_request.headers = {}
 
         with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
              patch('ai_assistant.signaling_server.firebase_auth.verify_id_token') as mock_verify, \

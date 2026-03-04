@@ -93,7 +93,7 @@ void main() {
 
     webRTCService = WebRTCService(
       webRTCWrapper: mockWebRTCWrapper,
-      webSocketFactory: (uri) => mockWebSocketChannel,
+      webSocketFactory: (uri, headers) => mockWebSocketChannel,
       audioRoutingServiceFactory: () => AudioRoutingService(
         hardwareController: mockAudioHardwareController,
         // Use short intervals for unit tests to avoid leaking timers
@@ -335,10 +335,10 @@ void main() {
       // Arrange – build a service with a Cloud Run HTTPS URL
       final secureService = WebRTCService(
         webRTCWrapper: mockWebRTCWrapper,
-        webSocketFactory: (uri) {
-          // Verify wss scheme and token query param
+        webSocketFactory: (uri, headers) {
+          // Verify wss scheme and Authorization header
           expect(uri.scheme, 'wss');
-          expect(uri.queryParameters['token'], 'fake-id-token');
+          expect(headers['Authorization'], 'Bearer fake-id-token');
           return mockWebSocketChannel;
         },
         audioRoutingServiceFactory: () => AudioRoutingService(
@@ -365,7 +365,7 @@ void main() {
       // Arrange
       final httpService = WebRTCService(
         webRTCWrapper: mockWebRTCWrapper,
-        webSocketFactory: (uri) {
+        webSocketFactory: (uri, headers) {
           expect(uri.scheme, 'ws');
           return mockWebSocketChannel;
         },

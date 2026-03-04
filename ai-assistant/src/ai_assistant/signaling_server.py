@@ -2,9 +2,11 @@
 WebRTC Signaling Server
 Handles WebSocket connections and WebRTC signaling between client and AI assistant.
 """
+import asyncio
 import json
 import logging
 import os
+import time
 from typing import Dict
 import aiohttp
 from aiohttp import web, WSMsgType
@@ -17,36 +19,59 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_ICE_SERVERS: list[dict] = [{"urls": "stun:stun.l.google.com:19302"}]
 
+# Module-level TTL cache for ICE servers — Metered.ca credentials are valid
+# for ~1 day, so we cache for 5 minutes to amortise per-connection latency.
+_ICE_CACHE: list[dict] | None = None
+_ICE_CACHE_TIMESTAMP: float = 0.0
+_ICE_CACHE_TTL: float = 300.0  # seconds
+_ICE_CACHE_LOCK: asyncio.Lock | None = None
+
+
+def _get_ice_cache_lock() -> asyncio.Lock:
+    """Return (creating if needed) the module-level asyncio.Lock for the ICE cache."""
+    global _ICE_CACHE_LOCK
+    if _ICE_CACHE_LOCK is None:
+        _ICE_CACHE_LOCK = asyncio.Lock()
+    return _ICE_CACHE_LOCK
+
 
 async def _fetch_ice_servers() -> list[dict]:
-    """Fetch ephemeral TURN credentials from Metered.ca.
+    """Fetch ephemeral TURN credentials from Metered.ca with a 5-minute TTL cache.
 
     Requires ``METERED_APP_NAME`` and ``METERED_API_KEY`` environment variables.
     Falls back to a plain STUN server when either is absent or the request
     fails, so the service degrades gracefully in development.
     """
-    app_name = os.getenv("METERED_APP_NAME")
-    api_key = os.getenv("METERED_API_KEY")
-    if not app_name or not api_key:
-        logger.debug("METERED_APP_NAME/METERED_API_KEY not set — using default STUN server")
+    global _ICE_CACHE, _ICE_CACHE_TIMESTAMP
+    async with _get_ice_cache_lock():
+        if _ICE_CACHE is not None and (time.monotonic() - _ICE_CACHE_TIMESTAMP) < _ICE_CACHE_TTL:
+            logger.debug("Returning cached ICE servers (%d entry(s))", len(_ICE_CACHE))
+            return _ICE_CACHE
+
+        app_name = os.getenv("METERED_APP_NAME")
+        api_key = os.getenv("METERED_API_KEY")
+        if not app_name or not api_key:
+            logger.debug("METERED_APP_NAME/METERED_API_KEY not set — using default STUN server")
+            return _DEFAULT_ICE_SERVERS
+        url = f"https://{app_name}.metered.live/api/v1/turn/credentials?apiKey={api_key}"
+        try:
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        servers = await resp.json()
+                        if servers:
+                            logger.debug("Fetched %d ICE server(s) from Metered.ca", len(servers))
+                            _ICE_CACHE = servers
+                            _ICE_CACHE_TIMESTAMP = time.monotonic()
+                            return _ICE_CACHE
+                    else:
+                        logger.warning(
+                            "Metered.ca returned status %d — using default STUN", resp.status
+                        )
+        except Exception as exc:
+            logger.warning("Failed to fetch TURN credentials: %s — using default STUN", exc)
         return _DEFAULT_ICE_SERVERS
-    url = f"https://{app_name}.metered.live/api/v1/turn/credentials?apiKey={api_key}"
-    try:
-        timeout = aiohttp.ClientTimeout(total=5)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as resp:
-                if resp.status == 200:
-                    servers = await resp.json()
-                    if servers:
-                        logger.debug("Fetched %d ICE server(s) from Metered.ca", len(servers))
-                        return servers
-                else:
-                    logger.warning(
-                        "Metered.ca returned status %d — using default STUN", resp.status
-                    )
-    except Exception as exc:
-        logger.warning("Failed to fetch TURN credentials: %s — using default STUN", exc)
-    return _DEFAULT_ICE_SERVERS
 
 
 class SignalingServer:
@@ -69,9 +94,12 @@ class SignalingServer:
         raw_mode = request.query.get('mode', 'voice')
 
         # If a Firebase ID token is present, verify it and extract the uid.
-        # This is required for Cloud Run connections. Local/dev connections
-        # without a token fall through to the plain user_id query param.
-        token = request.query.get('token')
+        # Accept the token from either the Authorization: Bearer header (preferred,
+        # avoids logging credentials) or the ?token= query param (legacy fallback).
+        # Cloud Run connections must supply a token; local/dev connections without
+        # a token fall through to the plain user_id query param.
+        auth_header = request.headers.get('Authorization', '')
+        token = auth_header[len('Bearer '):] if auth_header.startswith('Bearer ') else request.query.get('token')
         if token:
             try:
                 decoded_token = firebase_auth.verify_id_token(token)
@@ -79,8 +107,6 @@ class SignalingServer:
                 logger.debug(f"Token verified for uid: {user_id}")
             except Exception as e:
                 logger.warning(f"WebSocket auth failed — invalid token: {e}")
-                ws = web.WebSocketResponse()
-                await ws.prepare(request)
                 await ws.close(code=4401, message=b'Unauthorized')
                 return ws
         if raw_mode not in ('voice', 'text'):

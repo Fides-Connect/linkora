@@ -30,7 +30,7 @@ void main() {
 
   WebRTCService buildService() => WebRTCService(
         webRTCWrapper: mockWebRTCWrapper,
-        webSocketFactory: (uri) => mockWebSocketChannel,
+        webSocketFactory: (uri, headers) => mockWebSocketChannel,
         audioRoutingServiceFactory: () => AudioRoutingService(
           hardwareController: mockAudioHardwareController,
           deviceCheckInterval: testDeviceCheckInterval,
@@ -156,7 +156,7 @@ void main() {
       // Re-create with URI-capturing factory
       final capturingSvc = WebRTCService(
         webRTCWrapper: mockWebRTCWrapper,
-        webSocketFactory: (uri) {
+        webSocketFactory: (uri, headers) {
           capturedUris.add(uri);
           return mockWebSocketChannel;
         },

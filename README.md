@@ -61,9 +61,6 @@ Fides/
 │   ├── Dockerfile       # Container definition
 │   └── docker-compose.yml
 │
-├── weaviate/             # 🗄️ Vector database infrastructure
-│   └── docker-compose.yml
-│
 ├── weaviate/             # 🗄️ Weaviate docker-compose + VM startup script
 │
 ├── .github/              # 🔄 CI/CD workflows

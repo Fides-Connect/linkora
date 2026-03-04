@@ -172,16 +172,16 @@ gcloud compute instances create weaviate-vm-dev \
   --tags=weaviate-server \
   --metadata-from-file startup-script=weaviate/startup-script.sh
 
-# Allow AI-Assistant (Cloud Run) to reach Weaviate on port 8080.
-# NOTE: For production, restrict source ranges to your Cloud Run egress IPs
-# or set up a Serverless VPC Access connector instead.
+# Allow AI-Assistant (Cloud Run) to reach Weaviate without exposing it publicly.
+# IMPORTANT: Do NOT use 0.0.0.0/0. Restrict source ranges to internal/VPC ranges
+# only — the Weaviate HTTP and gRPC APIs run without authentication.
 gcloud compute firewall-rules create allow-weaviate \
   --network=default \
   --action=allow \
   --rules=tcp:8080,tcp:50051 \
-  --source-ranges=0.0.0.0/0 \
+  --source-ranges=10.0.0.0/8 \
   --target-tags=weaviate-server \
-  --description="Weaviate API access (restrict source IPs for production)"
+  --description="Weaviate API access from internal/VPC ranges only"
 
 # Get the VM's internal IP for WEAVIATE_VM_IP secret
 gcloud compute instances describe weaviate-vm-dev \
@@ -254,9 +254,9 @@ gcloud run services update ai-assistant \
   --vpc-egress=private-ranges-only
 ```
 
-After this, Cloud Run routes requests to `10.x.x.x` through the VPC and the Weaviate VM is reachable at its internal IP. The `WEAVIATE_VM_IP` GitHub secret (used to build `WEAVIATE_URL=http://<IP>:8080`) must be set to the **internal** IP of the VM (not the external IP).
+After this, Cloud Run routes requests to `10.x.x.x` through the VPC and the Weaviate VM is reachable at its internal IP. The `WEAVIATE_VM_IP` GitHub secret (used to build `WEAVIATE_URL=http://<IP>:<WEAVIATE_VM_PORT>`) must be set to the **internal** IP of the VM (not the external IP).
 
-> **Note**: The firewall rule `allow-weaviate` created in step 5 already allows traffic on port 8080 from within the VPC, so no additional firewall change is needed.
+> **Note**: The firewall rule `allow-weaviate` created in step 5 already allows traffic from within the VPC, so no additional firewall change is needed.
 
 Add these in **Settings → Secrets and variables → Actions**:
 
@@ -270,12 +270,12 @@ Add these in **Settings → Secrets and variables → Actions**:
 | `WEAVIATE_VM_ZONE` | `europe-west3-a` |
 | `WEAVIATE_VM_IP` | Internal IP from step 5 above |
 | `WEAVIATE_VM_PORT` | Host port Weaviate listens on (e.g. `8090`) |
-| `GEMINI_API_KEY` | Your Gemini API key |
-| `ADMIN_SECRET_KEY` | Your admin API secret |
+| `GEMINI_API_KEY` | Your Gemini API key — stored as a GitHub Actions secret and synced to Secret Manager by the workflow |
+| `ADMIN_SECRET_KEY` | Your admin API secret — stored as a GitHub Actions secret and synced to Secret Manager by the workflow |
 | `METERED_APP_NAME` | Your Metered.ca application name (subdomain of `metered.live`) |
 | `METERED_API_KEY` | Your Metered.ca API key — enables TURN relay for WebRTC through NAT/Cloud Run |
 
-The deployment workflow syncs `GEMINI_API_KEY` and `ADMIN_SECRET_KEY` into **Secret Manager** automatically. Cloud Run then injects them at runtime via `--set-secrets` (never in environment variables).
+The deployment workflow syncs `GEMINI_API_KEY` and `ADMIN_SECRET_KEY` into **Secret Manager** automatically. Cloud Run then injects them at runtime via `--set-secrets` (never in plain environment variables).
 
 ---
 
