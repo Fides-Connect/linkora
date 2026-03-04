@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'wrappers.dart';
 import 'audio_routing_service.dart';
@@ -90,7 +91,10 @@ class WebRTCService {
     String? languageCode,
   }) : _webRTCWrapper = webRTCWrapper ?? WebRTCWrapper(),
        _webSocketFactory =
-           webSocketFactory ?? ((uri, headers) => WebSocketChannel.connect(uri, headers: headers)),
+           webSocketFactory ??
+               ((uri, headers) => kIsWeb
+                   ? WebSocketChannel.connect(uri)
+                   : IOWebSocketChannel.connect(uri, headers: headers)),
        _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper(),
        _audioRoutingServiceFactory = audioRoutingServiceFactory,
        _languageCode = languageCode ?? 'de' {
