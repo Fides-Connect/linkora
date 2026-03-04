@@ -219,6 +219,9 @@ async def _record_provider_interest(params: dict, context: dict) -> Any:
             "is_service_provider": True,
             "last_time_asked_being_provider": now,
         })
+        # Immediately mirror the flag to Weaviate so the is_service_provider==True
+        # filter in provider searches is visible before the next request.
+        HubSpokeIngestion.update_user_hub_properties(user_id, {"is_service_provider": True})
         return {"signal_transition": "provider_onboarding", "status": "accepted"}
     elif decision == "never":
         await fs.update_user(user_id, {
@@ -419,6 +422,11 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
             )
 
     await fs.update_user(user_id, {"is_service_provider": True})
+    # Immediately mirror the flag to the Weaviate User hub so that the
+    # is_service_provider==True filter in provider searches becomes visible
+    # before the next request.  (update_competencies_by_user_id only touches
+    # Competence spokes — it does not rewrite User hub properties.)
+    HubSpokeIngestion.update_user_hub_properties(user_id, {"is_service_provider": True})
 
     # Weaviate full re-sync: read ALL competencies from Firestore (ground truth) so
     # that skills saved in earlier sessions are preserved in Weaviate.

@@ -92,8 +92,9 @@ class UserModelWeaviate:
             
             obj = response.objects[0]
             
-            # Update last_sign_in on any update
-            update_data['last_sign_in'] = datetime.now(UTC).isoformat()
+            # Update last_sign_in on any update (store as datetime, not isoformat string,
+            # so the DATE property type is consistent with how it is written at creation).
+            update_data['last_sign_in'] = datetime.now(UTC)
             
             # Merge existing properties with update data to preserve unmodified fields
             merged_properties = {**obj.properties, **update_data}

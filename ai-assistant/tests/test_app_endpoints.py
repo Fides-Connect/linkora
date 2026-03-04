@@ -346,9 +346,11 @@ class TestUserSyncProviderTimestamp:
         mock_firestore_auth.get_user = AsyncMock(return_value=existing)
         mock_firestore_auth.update_user = AsyncMock(return_value=existing)
 
-        with patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate:
+        with patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate, \
+             patch('ai_assistant.api.v1.endpoints.auth.HubSpokeIngestion') as mock_hub:
             mock_weaviate.get_user_by_id.return_value = existing
             mock_weaviate.update_user.return_value = True
+            mock_hub.update_user_hub_properties.return_value = True
             response = await auth_module.user_sync(mock_request)
 
         assert response.status == 200
@@ -358,3 +360,44 @@ class TestUserSyncProviderTimestamp:
             assert "last_time_asked_being_provider" not in d, (
                 "existing user update must not touch last_time_asked_being_provider"
             )
+
+    async def test_existing_user_sync_preserves_is_service_provider(
+        self, mock_request, mock_firestore_auth
+    ):
+        """Existing user sync must not overwrite is_service_provider with the client value.
+
+        The client always sends is_service_provider=False (default). The backend
+        is the authoritative source for this flag (set by AI onboarding).
+        The hub-spoke Weaviate User must be updated to match the Firestore value.
+        """
+        from ai_assistant.api.v1.endpoints import auth as auth_module
+
+        existing = {
+            "user_id": "new_user_123",
+            "name": "Old Name",
+            "email": "new@example.com",
+            "is_service_provider": True,  # backend set this via AI onboarding
+        }
+        mock_firestore_auth.get_user = AsyncMock(return_value=existing)
+        mock_firestore_auth.update_user = AsyncMock(return_value=existing)
+
+        with patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate, \
+             patch('ai_assistant.api.v1.endpoints.auth.HubSpokeIngestion') as mock_hub:
+            mock_weaviate.get_user_by_id.return_value = existing
+            mock_weaviate.update_user.return_value = True
+            mock_hub.update_user_hub_properties.return_value = True
+            response = await auth_module.user_sync(mock_request)
+
+        assert response.status == 200
+
+        # Firestore update must NOT contain is_service_provider
+        for c in mock_firestore_auth.update_user.call_args_list:
+            d = c.args[1] if len(c.args) > 1 else c.kwargs.get("update_data", {})
+            assert "is_service_provider" not in d, (
+                "user_sync must not overwrite is_service_provider in Firestore"
+            )
+
+        # Hub-spoke Weaviate User must be synced with Firestore's True value
+        mock_hub.update_user_hub_properties.assert_called_once_with(
+            "new_user_123", {"is_service_provider": True}
+        )

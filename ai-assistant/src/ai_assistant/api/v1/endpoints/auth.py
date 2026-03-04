@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from firebase_admin import auth as firebase_auth
 
 from ai_assistant.firestore_service import FirestoreService
+from ai_assistant.hub_spoke_ingestion import HubSpokeIngestion
 from ai_assistant.weaviate_models import UserModelWeaviate
 from ai_assistant.services.user_seeding_service import UserSeedingService
 
@@ -88,19 +89,32 @@ async def user_sync(request: web.Request) -> web.Response:
         
         existing_firestore_user = await firestore_service.get_user(user_id)
         if existing_firestore_user:
-            # Never overwrite an existing FCM token with an empty value.
-            # This prevents a race on app startup where getToken() hasn't
-            # resolved yet and the client sends fcm_token="".
-            update_data = {
-                k: v for k, v in user_data.items()
-                if k != "fcm_token" or v
+            # Session-only update — never overwrite backend-managed fields like
+            # is_service_provider (set by AI onboarding / PATCH /me, not by the
+            # client, which always defaults to False).
+            # Also: never overwrite an existing FCM token with an empty value —
+            # prevents a race on app startup where getToken() hasn't resolved yet.
+            session_update = {
+                "name": user_data["name"],
+                "email": user_data["email"],
+                "photo_url": user_data["photo_url"],
+                "last_sign_in": user_data["last_sign_in"],
             }
-            updated_user = await firestore_service.update_user(user_id, update_data)
+            if user_data["fcm_token"]:
+                session_update["fcm_token"] = user_data["fcm_token"]
+            updated_user = await firestore_service.update_user(user_id, session_update)
             if not updated_user:
                 return web.json_response({
                     "error": "Failed to update Firestore user"
                 }, status=500)
-            
+
+            # Keep the hub-spoke Weaviate User node in sync with Firestore's
+            # is_service_provider so provider-search filters stay correct.
+            is_sp = existing_firestore_user.get("is_service_provider", False)
+            HubSpokeIngestion.update_user_hub_properties(
+                user_id, {"is_service_provider": is_sp}
+            )
+
             if UserModelWeaviate.get_user_by_id(user_id):
                 if not UserModelWeaviate.update_user(user_id, user_data):
                     return web.json_response({
@@ -120,7 +134,8 @@ async def user_sync(request: web.Request) -> web.Response:
                     user_id=user_id,
                     name=user_data["name"],
                     email=user_data["email"],
-                    photo_url=user_data["photo_url"]
+                    photo_url=user_data["photo_url"],
+                    enricher=request.app.get("competence_enricher"),
                 )
                 
                 # Only update FCM token and last_sign_in after seeding

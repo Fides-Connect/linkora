@@ -56,6 +56,9 @@ class TestIsLegalTransition:
         (ConversationStage.PROVIDER_PITCH,     ConversationStage.PROVIDER_ONBOARDING),
         (ConversationStage.PROVIDER_PITCH,     ConversationStage.COMPLETED),
         (ConversationStage.PROVIDER_ONBOARDING, ConversationStage.COMPLETED),
+        # Provider stages can escape back to triage (user pivots to seeking a service)
+        (ConversationStage.PROVIDER_PITCH,     ConversationStage.TRIAGE),
+        (ConversationStage.PROVIDER_ONBOARDING, ConversationStage.TRIAGE),
         # Direct onboarding from TRIAGE (existing providers managing skills)
         (ConversationStage.TRIAGE,    ConversationStage.PROVIDER_ONBOARDING),
     ])
@@ -66,7 +69,6 @@ class TestIsLegalTransition:
         (ConversationStage.GREETING,       ConversationStage.COMPLETED),
         (ConversationStage.TRIAGE,         ConversationStage.GREETING),
         (ConversationStage.COMPLETED,      ConversationStage.GREETING),
-        (ConversationStage.PROVIDER_PITCH, ConversationStage.TRIAGE),
     ])
     def test_illegal_pairs_return_false(self, from_s, to_s):
         assert is_legal_transition(from_s, to_s) is False

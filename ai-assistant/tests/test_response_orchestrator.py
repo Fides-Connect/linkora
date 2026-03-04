@@ -1385,13 +1385,13 @@ class TestProviderOnboardingWriteGuard:
         self, mock_llm_service, mock_conversation_service, mock_tool_registry
     ):
         """Regression: LLM in PROVIDER_ONBOARDING yields text then calls
-        signal_transition(target_stage="") (leaked TRIAGE pattern).
+        signal_transition(target_stage="") (empty / unrecognised stage value).
 
-        Expected behaviour with the Phase 3 hard pre-check guard:
-        - The transition is BLOCKED before handle_signal_transition_async is called.
-        - A precise "call the write tool" correction is injected into pending results.
+        Expected behaviour:
+        - The transition is rejected (empty string is not a valid ConversationStage).
+        - A descriptive error is injected into pending results and fed to LLM history.
         - The follow-up stream is triggered and its output is included in the response.
-        - No 'suppressing follow-up stream' warning is logged.
+        - Stage must NOT advance (set_stage not called).
         """
         mock_conversation_service.get_current_stage.return_value = (
             ConversationStage.PROVIDER_ONBOARDING
@@ -1447,6 +1447,151 @@ class TestProviderOnboardingWriteGuard:
             or "invalid" in m.lower() or "error" in m.lower()
             for m in messages
         ), (
-            "The 'call the write tool' correction must be fed into LLM history "
-            "so the follow-up stream knows to call save_competence_batch"
+            "A transition failure error must be fed into LLM history so the "
+            "follow-up stream can self-correct"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Provider stage escape to TRIAGE
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProviderStageEscapeToTriage:
+    """signal_transition('triage') must be allowed from PROVIDER_ONBOARDING and
+    PROVIDER_PITCH — the user may pivot mid-conversation to seek a service.
+    The old hardcoded guard that blocked any non-'completed' target from
+    PROVIDER_ONBOARDING must no longer fire."""
+
+    async def test_provider_onboarding_to_triage_allowed(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """LLM calls signal_transition('triage') from PROVIDER_ONBOARDING
+        (user says they want to find a provider, not manage skills).
+        Stage must advance to TRIAGE and no error must be injected."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+        call_count = 0
+
+        async def stream_triage(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "triage"}}
+            else:
+                yield "Of course! Let me help you find a provider."
+
+        mock_llm_service.generate_stream = stream_triage
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream(
+            "no, I am looking for someone teaching me inliner skating", "sess"
+        ):
+            pass
+
+        set_stage_calls = [c[0][0] for c in mock_conversation_service.set_stage.call_args_list]
+        assert ConversationStage.TRIAGE in set_stage_calls, (
+            "signal_transition('triage') from PROVIDER_ONBOARDING must be applied — "
+            "the old blocking guard must no longer reject it"
+        )
+
+        # No error should have been fed to LLM history for this valid transition
+        history_calls = mock_llm_service.add_message_to_history.call_args_list
+        messages = [
+            c[0][1].content for c in history_calls if hasattr(c[0][1], "content")
+        ]
+        assert not any(
+            '"error"' in m and "triage" in m.lower() for m in messages
+        ), "No blocking error should be injected for a valid ONBOARDING→TRIAGE transition"
+
+    async def test_provider_pitch_to_triage_allowed(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """signal_transition('triage') from PROVIDER_PITCH must be applied."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_PITCH
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+        call_count = 0
+
+        async def stream_triage(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "triage"}}
+            else:
+                yield "Sure, let me help you search."
+
+        mock_llm_service.generate_stream = stream_triage
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream("I want to find someone", "sess"):
+            pass
+
+        set_stage_calls = [c[0][0] for c in mock_conversation_service.set_stage.call_args_list]
+        assert ConversationStage.TRIAGE in set_stage_calls
+
+    async def test_no_re_pitch_after_record_provider_interest_not_now(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """record_provider_interest('not_now') must update in-memory user_context
+        so that when signal_transition('completed') fires next, _should_pitch_provider
+        returns False and the pitch is NOT re-triggered."""
+        from datetime import datetime, timezone, timedelta
+
+        # User is pitch-eligible: non-provider, asked 60 days ago
+        sixty_days_ago = datetime.now(timezone.utc) - timedelta(days=60)
+        context = {
+            "user_context": {
+                "is_service_provider": False,
+                "last_time_asked_being_provider": sixty_days_ago,
+            }
+        }
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_PITCH
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+        }
+
+        async def stream_with_record(*args, **kwargs):
+            yield {"type": "function_call", "name": "record_provider_interest",
+                   "args": {"decision": "not_now"}}
+
+        mock_llm_service.generate_stream = stream_with_record
+        mock_tool_registry.execute = AsyncMock(return_value={"status": "not_now"})
+
+        from unittest.mock import patch
+        with patch("ai_assistant.services.response_orchestrator.is_legal_transition", return_value=True):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("not now", "sess", context=context):
+                pass
+
+        # last_time_asked must have been refreshed to ~now (within last 5 seconds)
+        updated = context["user_context"].get("last_time_asked_being_provider")
+        assert updated is not None
+        assert (datetime.now(timezone.utc) - updated).total_seconds() < 5, (
+            "In-memory last_time_asked_being_provider must be refreshed after 'not_now' "
+            "so _should_pitch_provider won't re-fire on the next COMPLETED transition"
         )

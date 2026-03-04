@@ -90,3 +90,45 @@ class TestUserSeedingService:
             # Assert 8: Default friend added
             mock_firestore.update_user.assert_any_call("user_alice_001", ANY)
             mock_firestore.add_favorite.assert_called_with(user_id, "user_alice_001")
+
+    @pytest.mark.asyncio
+    async def test_seed_new_user_with_enricher(self, seeding_service, mock_firestore, mock_user_template):
+        """Enricher path: enrich() is called per competency, summary persisted to Firestore."""
+        user_id = "new_user"
+        mock_enricher = AsyncMock()
+        mock_enricher.enrich = AsyncMock(return_value={
+            "title": "Flutter",
+            "description": "Mobile app development using Flutter.",
+            "category": "IT",
+            "price_range": "$90-$180/hour",
+            "year_of_experience": 3,
+            "feedback_positive": [],
+            "feedback_negative": [],
+            "search_optimized_summary": "Expert Flutter developer for cross-platform mobile apps.",
+            "skills_list": ["flutter", "dart", "mobile development"],
+            "price_per_hour": 135.0,
+        })
+        mock_firestore.update_competence = AsyncMock(return_value={"competence_id": "comp_123"})
+
+        with patch('ai_assistant.services.user_seeding_service.HubSpokeIngestion.create_user_with_competencies') as mock_hub_spoke:
+            mock_hub_spoke.return_value = {"user_uuid": "test_uuid", "competence_uuids": ["comp_uuid_1"]}
+
+            await seeding_service.seed_new_user(user_id, "New", "n@e.com", enricher=mock_enricher)
+
+            # Enricher called once per template competency
+            mock_enricher.enrich.assert_called_once()
+
+            # Enriched fields persisted back to Firestore
+            mock_firestore.update_competence.assert_called_once_with(
+                user_id,
+                "comp_123",
+                ANY,  # dict with search_optimized_summary / skills_list / price_per_hour
+            )
+            update_kwargs = mock_firestore.update_competence.call_args[0][2]
+            assert update_kwargs.get("search_optimized_summary") == "Expert Flutter developer for cross-platform mobile apps."
+            assert "flutter" in update_kwargs.get("skills_list", [])
+
+            # Weaviate payload contains enriched summary
+            hub_call_competencies = mock_hub_spoke.call_args[1]["competencies_data"]
+            assert hub_call_competencies[0]["search_optimized_summary"] == \
+                "Expert Flutter developer for cross-platform mobile apps."

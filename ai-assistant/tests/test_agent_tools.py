@@ -343,6 +343,31 @@ class TestProviderOnboardingTools:
         assert isinstance(result, dict)
         assert result.get("signal_transition") == "provider_onboarding"
 
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_record_interest_accepted_syncs_is_service_provider_to_weaviate(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """Accepting provider pitch must immediately mirror is_service_provider=True to
+        the Weaviate User hub so search filters can see the change before the next request."""
+        ctx = self._ctx(mock_firestore)
+        await registry.execute(
+            "record_provider_interest", {"decision": "accepted"}, ctx
+        )
+        mock_hub.update_user_hub_properties.assert_called_once_with(
+            "user-x", {"is_service_provider": True}
+        )
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_record_interest_not_now_does_not_touch_weaviate(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """Non-acceptance decisions must NOT touch the Weaviate User hub."""
+        ctx = self._ctx(mock_firestore)
+        await registry.execute(
+            "record_provider_interest", {"decision": "not_now"}, ctx
+        )
+        mock_hub.update_user_hub_properties.assert_not_called()
+
     async def test_record_interest_not_now_sets_current_timestamp(
         self, registry, mock_firestore
     ):
@@ -424,6 +449,26 @@ class TestProviderOnboardingTools:
         update_call = mock_firestore.update_user.call_args
         data = update_call.args[1] if len(update_call.args) > 1 else update_call.kwargs.get("update_data", {})
         assert data.get("is_service_provider") is True
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_syncs_is_service_provider_to_weaviate(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """After marking is_service_provider=True in Firestore, the Weaviate User hub
+        must also be updated immediately so that provider search filters (which filter
+        on the Weaviate User hub) can find the new provider without delay.
+
+        Regression for: provider onboarding via AI chat sets is_service_provider=True
+        in Firestore but Weaviate User hub retains False, making the provider invisible
+        to all search_providers queries.
+        """
+        ctx = self._ctx(mock_firestore)
+        avail = {"friday_time_ranges": [{"start_time": "09:00", "end_time": "17:00"}]}
+        skills = [{"title": "Inline Skating Lessons", "price_range": "€30/h", "availability_time": avail}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        mock_hub.update_user_hub_properties.assert_called_once_with(
+            "user-x", {"is_service_provider": True}
+        )
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
     async def test_save_competence_batch_updates_existing_entry(self, mock_hub, registry, mock_firestore):

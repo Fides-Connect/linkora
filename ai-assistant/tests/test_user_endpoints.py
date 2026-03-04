@@ -1,10 +1,11 @@
 """Unit tests for user management endpoints."""
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from aiohttp.web import Request, Response
 from datetime import datetime
 
 from ai_assistant.api.v1.endpoints.auth import user_sync, user_logout
+from ai_assistant.api.v1.endpoints.me import create_my_competence
 
 
 class TestUserSyncEndpoint:
@@ -233,3 +234,77 @@ class TestSettingsEndpoints:
         assert response.status == 200
         body = json.loads(response.body)
         assert body['notifications_enabled'] is False
+
+
+class TestCreateMyCompetenceEndpoint:
+    """Tests for create_my_competence — focused on the Weaviate self-heal path."""
+
+    def _make_request(self, user_id: str = "user-123"):
+        request = Mock(spec=Request)
+        request.json = AsyncMock(return_value={"competence": {"title": "Flutter Development"}})
+        request.app = {}
+        return request
+
+    @pytest.mark.asyncio
+    async def test_create_competence_syncs_to_weaviate_when_user_exists(self):
+        """Happy path: Weaviate user found → create_competence called directly."""
+        request = self._make_request()
+
+        mock_user_obj = MagicMock()
+        mock_user_obj.uuid = "weaviate-uuid-1"
+        mock_weaviate_res = MagicMock()
+        mock_weaviate_res.objects = [mock_user_obj]
+
+        with patch("ai_assistant.api.v1.endpoints.me.get_current_user_id", new_callable=AsyncMock, return_value="user-123"), \
+             patch("ai_assistant.api.v1.endpoints.me.firestore_service") as mock_fs, \
+             patch("ai_assistant.api.v1.endpoints.me.get_user_collection") as mock_coll_fn, \
+             patch("ai_assistant.api.v1.endpoints.me.HubSpokeIngestion") as mock_hub:
+
+            mock_fs.get_user = AsyncMock(return_value={"user_id": "user-123", "name": "Test"})
+            mock_fs.create_competence = AsyncMock(return_value={"competence_id": "c1", "title": "Flutter Development"})
+
+            mock_coll = MagicMock()
+            mock_coll.query.fetch_objects.return_value = mock_weaviate_res
+            mock_coll_fn.return_value = mock_coll
+
+            response = await create_my_competence(request)
+
+        assert response.status == 200
+        mock_hub.create_competence.assert_called_once()
+        # create_user (self-heal) must NOT have been called
+        mock_hub.create_user.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_competence_self_heals_when_weaviate_user_missing(self):
+        """Self-heal path: Weaviate user missing → create_user called, then create_competence."""
+        request = self._make_request()
+
+        # First fetch_objects call returns empty (user not in Weaviate)
+        empty_res = MagicMock()
+        empty_res.objects = []
+        # After self-heal (create_user), second fetch returns the new user
+        healed_obj = MagicMock()
+        healed_obj.uuid = "weaviate-uuid-healed"
+        healed_res = MagicMock()
+        healed_res.objects = [healed_obj]
+
+        with patch("ai_assistant.api.v1.endpoints.me.get_current_user_id", new_callable=AsyncMock, return_value="user-123"), \
+             patch("ai_assistant.api.v1.endpoints.me.firestore_service") as mock_fs, \
+             patch("ai_assistant.api.v1.endpoints.me.get_user_collection") as mock_coll_fn, \
+             patch("ai_assistant.api.v1.endpoints.me.HubSpokeIngestion") as mock_hub:
+
+            mock_fs.get_user = AsyncMock(return_value={"user_id": "user-123", "name": "Test"})
+            mock_fs.create_competence = AsyncMock(return_value={"competence_id": "c1", "title": "Flutter Development"})
+
+            mock_coll = MagicMock()
+            # First call → empty; second call (after self-heal) → healed
+            mock_coll.query.fetch_objects.side_effect = [empty_res, healed_res]
+            mock_coll_fn.return_value = mock_coll
+
+            response = await create_my_competence(request)
+
+        assert response.status == 200
+        # Self-heal: create_user must have been called exactly once
+        mock_hub.create_user.assert_called_once()
+        # Competence must still be synced after self-heal
+        mock_hub.create_competence.assert_called_once()

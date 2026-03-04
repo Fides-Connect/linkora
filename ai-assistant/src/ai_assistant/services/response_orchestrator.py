@@ -190,7 +190,10 @@ class ResponseOrchestrator:
             }))
 
         elif target_stage == ConversationStage.TRIAGE:
-            if previous_stage in (ConversationStage.COMPLETED, ConversationStage.FINALIZE):
+            if previous_stage in (
+                ConversationStage.COMPLETED, ConversationStage.FINALIZE,
+                ConversationStage.PROVIDER_ONBOARDING, ConversationStage.PROVIDER_PITCH,
+            ):
                 self.conversation_service.reset_request_context()
             pending.append(("signal_transition", {"stage": "triage"}))
 
@@ -323,36 +326,18 @@ class ResponseOrchestrator:
                     fu_target = fu_args.get("target_stage", "")
                     current = self.conversation_service.get_current_stage()
                     _write_tools = ("save_competence_batch", "delete_competences")
-                    # Honour the PROVIDER_ONBOARDING guard in follow-up streams too
                     if (
                         current == ConversationStage.PROVIDER_ONBOARDING
-                        and fu_target != ConversationStage.COMPLETED.value
+                        and fu_target == ConversationStage.COMPLETED.value
+                        and not any(n in _write_tools for n, _ in pending)
                     ):
-                        logger.warning(
-                            "Blocked signal_transition(%r) from PROVIDER_ONBOARDING "
-                            "in follow-up stream.",
-                            fu_target,
+                        logger.info(
+                            "signal_transition('completed') from PROVIDER_ONBOARDING "
+                            "in follow-up without a write — user chose no changes."
                         )
-                        new_pending.append(("signal_transition", {
-                            "error": (
-                                "ERROR: You called signal_transition with an invalid "
-                                f"target ({fu_target!r}) while in PROVIDER_ONBOARDING. "
-                                "Call save_competence_batch or delete_competences instead."
-                            )
-                        }))
-                    else:
-                        if (
-                            current == ConversationStage.PROVIDER_ONBOARDING
-                            and fu_target == ConversationStage.COMPLETED.value
-                            and not any(n in _write_tools for n, _ in pending)
-                        ):
-                            logger.info(
-                                "signal_transition('completed') from PROVIDER_ONBOARDING "
-                                "in follow-up without a write — user chose no changes."
-                            )
-                        await self._apply_signal_transition_with_payload(
-                            fu_target, session_id, context, new_pending
-                        )
+                    await self._apply_signal_transition_with_payload(
+                        fu_target, session_id, context, new_pending
+                    )
                 else:
                     tool_result = None
                     async for tc in self.dispatch_tool(fu_name, fu_args, context or {}):
@@ -461,31 +446,7 @@ class ResponseOrchestrator:
                         self.runtime_fsm.transition("tool_call")
                         target = fn_args.get("target_stage", "")
 
-                        # Guard: block any signal_transition from PROVIDER_ONBOARDING
-                        # other than "completed" — those are leaked TRIAGE behaviour.
                         _write_tools = ("save_competence_batch", "delete_competences")
-                        if (
-                            current_stage == ConversationStage.PROVIDER_ONBOARDING
-                            and target != ConversationStage.COMPLETED.value
-                        ):
-                            logger.warning(
-                                "Blocked signal_transition(target_stage=%r) from "
-                                "PROVIDER_ONBOARDING — only 'completed' is valid here.",
-                                target,
-                            )
-                            pending_tool_results.append(("signal_transition", {
-                                "error": (
-                                    "ERROR: You called signal_transition with an invalid "
-                                    f"target ({target!r}) while in PROVIDER_ONBOARDING stage. "
-                                    "Do NOT call signal_transition here. "
-                                    "The user has confirmed the details — your only correct "
-                                    "action is to call save_competence_batch (for ADD/UPDATE) "
-                                    "or delete_competences (for REMOVE). Call the write tool now."
-                                )
-                            }))
-                            self.runtime_fsm.transition("tool_done")
-                            continue
-
                         if (
                             current_stage == ConversationStage.PROVIDER_ONBOARDING
                             and target == ConversationStage.COMPLETED.value
@@ -526,6 +487,19 @@ class ResponseOrchestrator:
                                 # Surface provider list for stage-context use
                                 if fn_name == "search_providers" and isinstance(tool_result, list):
                                     self.conversation_service.context["providers_found"] = tool_result
+                                # Sync in-memory user_context after provider pitch response so
+                                # _should_pitch_provider won't re-fire when stage hits COMPLETED.
+                                if fn_name == "record_provider_interest" and isinstance(tool_result, dict):
+                                    status = tool_result.get("status")
+                                    if context and "user_context" in context:
+                                        from datetime import datetime as _dt, timezone as _tz
+                                        from ..firestore_schemas import PROVIDER_PITCH_OPT_OUT_SENTINEL
+                                        if status == "never":
+                                            context["user_context"]["last_time_asked_being_provider"] = PROVIDER_PITCH_OPT_OUT_SENTINEL
+                                        elif status in ("not_now", "accepted"):
+                                            context["user_context"]["last_time_asked_being_provider"] = _dt.now(_tz.utc)
+                                        if status == "accepted":
+                                            context["user_context"]["is_service_provider"] = True
                                 # Link created service request to conversation
                                 if fn_name == "create_service_request" and self.ai_conversation_service:
                                     req_id = (

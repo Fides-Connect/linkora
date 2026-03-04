@@ -89,13 +89,18 @@ def enrich_text(text: str, category: str) -> str:
         Enriched text with parent category terms
     """
     # Category enrichment map: category -> parent terms
+    _IT_TERMS = ["Technician", "Technology", "Computer", "Software", "Hardware"]
     enrichment_map = {
         "Electrical": ["Electrician", "Electrical", "Lighting", "Wiring", "Power"],
         "Plumbing": ["Plumber", "Plumbing", "Pipes", "Water", "Drain"],
         "Gardening": ["Gardener", "Gardening", "Landscaping", "Plants", "Outdoor"],
         "Carpentry": ["Carpenter", "Carpentry", "Woodwork", "Construction"],
         "Cleaning": ["Cleaner", "Cleaning", "Housekeeping", "Janitorial"],
-        "IT": ["Technician", "Technology", "Computer", "Software", "Hardware"],
+        "IT": _IT_TERMS,
+        # Aliases — all map to the same IT bucket
+        "Technology": _IT_TERMS + ["Mobile", "App", "Development"],
+        "App Development": _IT_TERMS + ["Mobile", "App", "Development", "Flutter", "React", "Android", "iOS"],
+        "Mobile Development": _IT_TERMS + ["Mobile", "App", "Development", "Flutter", "Android", "iOS"],
     }
     
     # Get parent terms for category
@@ -167,7 +172,50 @@ class HubSpokeIngestion:
         except Exception as e:
             logger.error(f"Error creating user: {e}")
             return None
-    
+
+    @staticmethod
+    def update_user_hub_properties(user_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update specific properties of a User hub node in Weaviate.
+
+        Uses the hub-spoke schema User collection (not the legacy
+        ``UserModelWeaviate`` collection) so that changes are visible to the
+        search filters that traverse ``owned_by`` cross-references.
+
+        Args:
+            user_id:     Firestore / Firebase user identifier.
+            update_data: Dict of property names → new values to merge into the
+                         existing Weaviate object.
+
+        Returns:
+            True on success, False when the user node was not found or an error
+            occurred.
+        """
+        try:
+            user_collection = get_user_collection()
+            result = user_collection.query.fetch_objects(
+                filters=Filter.by_property("user_id").equal(user_id),
+                limit=1,
+            )
+            if not result.objects:
+                logger.warning(
+                    "update_user_hub_properties: no Weaviate User found for user_id=%s",
+                    user_id,
+                )
+                return False
+            user_uuid = str(result.objects[0].uuid)
+            user_collection.data.update(uuid=user_uuid, properties=update_data)
+            logger.info(
+                "Updated Weaviate User hub for user_id=%s: %s",
+                user_id,
+                list(update_data.keys()),
+            )
+            return True
+        except Exception as e:
+            logger.error(
+                "Error updating Weaviate User hub properties for %s: %s", user_id, e
+            )
+            return False
+
     @staticmethod
     def create_competence(
         competence_data: Dict[str, Any],
@@ -236,6 +284,7 @@ class HubSpokeIngestion:
                     "availability_tags": derive_availability_tags(
                         competence_data.get("availability_time") or {}
                     ),
+                    "availability_text": competence_data.get("availability_text", ""),
                 },
                 references={
                     "owned_by": user_uuid  # Link to User (Spoke → Hub)
@@ -389,7 +438,7 @@ class HubSpokeIngestion:
     @staticmethod
     def update_competencies_by_user_id(
         user_id: str,
-        competencies: List[Dict[str, Any]],
+        competencies: "str | List[str] | List[Dict[str, Any]]",
     ) -> Dict[str, Any]:
         """Replace all Weaviate competencies for a user with fresh enriched data.
 
@@ -400,10 +449,11 @@ class HubSpokeIngestion:
 
         Args:
             user_id:      Firestore / Firebase user identifier.
-            competencies: List of competence dicts, each should contain at minimum
-                          ``title``.  Enriched fields (search_optimized_summary,
-                          skills_list, price_per_hour, availability_tags, …) are
-                          written when present.
+            competencies: Accepts any of:
+                          - A single string (converted to one competence dict).
+                          - A list of strings (each converted to a competence dict).
+                          - A list of dicts (preferred; enriched fields are written
+                            as-is so the full Weaviate index is populated).
 
         Returns:
             Dict with ``success``, ``updated_uuids``, and ``count`` keys.
@@ -425,6 +475,31 @@ class HubSpokeIngestion:
             
             user_uuid = str(result.objects[0].uuid)
             logger.info(f"Found user {user_uuid} for user_id {user_id}")
+
+            # Normalise input to List[Dict] so the loop below is uniform.
+            if isinstance(competencies, str):
+                competencies_to_insert: List[Dict[str, Any]] = [
+                    {"title": competencies, "description": competencies}
+                ]
+            elif isinstance(competencies, list):
+                competencies_to_insert = []
+                for item in competencies:
+                    if isinstance(item, dict):
+                        competencies_to_insert.append(item)
+                    elif isinstance(item, str):
+                        competencies_to_insert.append(
+                            {"title": item, "description": item}
+                        )
+                    else:
+                        logger.warning(
+                            "update_competencies_by_user_id: skipping unsupported entry type %r",
+                            type(item),
+                        )
+            else:
+                logger.warning(
+                    "update_competencies_by_user_id: unexpected competencies type %r", type(competencies)
+                )
+                competencies_to_insert = []
             
             # Delete all existing competencies
             from weaviate.classes.query import QueryReference
@@ -448,12 +523,7 @@ class HubSpokeIngestion:
             
             # Add new competencies — pass full dicts so all enriched fields are written.
             updated_uuids = []
-            for comp_dict in competencies:
-                if not isinstance(comp_dict, dict):
-                    # Defensive: skip non-dict entries (legacy callers).
-                    logger.warning("update_competencies_by_user_id: skipping non-dict entry: %r", comp_dict)
-                    continue
-
+            for comp_dict in competencies_to_insert:
                 comp_uuid = HubSpokeIngestion.create_competence(
                     competence_data=comp_dict,
                     user_uuid=user_uuid,

@@ -413,7 +413,18 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         self.assertIn("Electrician", enriched, "Should contain 'Electrician'")
         self.assertIn("Lighting", enriched, "Should contain 'Lighting'")
         logger.info("  ✓ Enrichment working")
-        
+
+        # Test Technology / App Development aliases
+        logger.info("\nTesting enrich_text() with Technology category aliases:")
+        flutter_text = "Mobile app development using Flutter framework."
+        for cat in ("Technology", "App Development", "Mobile Development"):
+            enriched_tech = enrich_text(flutter_text, cat)
+            self.assertIn(flutter_text, enriched_tech, f"{cat}: original text should be preserved")
+            self.assertIn("Software", enriched_tech, f"{cat}: should contain 'Software'")
+            self.assertIn("Mobile", enriched_tech, f"{cat}: should contain 'Mobile'")
+            logger.info(f"  [{cat}] '{enriched_tech[:80]}...'")
+        logger.info("  ✓ Technology aliases working")
+
         logger.info("✓ All helper functions working correctly")
     
     def test_update_competencies_by_user_id(self):

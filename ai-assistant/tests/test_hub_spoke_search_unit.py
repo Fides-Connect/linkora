@@ -114,6 +114,86 @@ class TestBuildFiltersAndQuery:
             )
             assert available_time == "weekend"
 
+    def _make_filter_mock(self):
+        """Create a fully-chained mock_fi + MockFilter pair for _build_filters_and_query."""
+        mock_fi = MagicMock()
+        mock_fi.__and__ = MagicMock(return_value=mock_fi)
+        mock_fi.__or__ = MagicMock(return_value=mock_fi)
+        mock_fi.by_property.return_value = mock_fi
+        mock_fi.greater_or_equal.return_value = mock_fi
+        mock_fi.is_none.return_value = mock_fi
+        mock_fi.equal.return_value = mock_fi
+        mock_fi.contains_any.return_value = mock_fi
+        return mock_fi
+
+    def test_unnormalizable_availability_skips_filter(self):
+        """Free-form LLM strings with no known token must NOT add an availability filter.
+
+        Regression: before Bug-5 fix, the raw string was passed directly to
+        contains_any([available_time]), which never matched stored normalised tags
+        and silently returned zero results.
+        """
+        for unrecognised in ["n\u00e4chste Woche", "next week", "asap", "2026-03-10", "xyz"]:
+            with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+                mock_fi = self._make_filter_mock()
+                MockFilter.by_property.return_value = mock_fi
+                MockFilter.by_ref.return_value = mock_fi
+
+                HubSpokeSearch._build_filters_and_query(
+                    {"available_time": unrecognised, "category": "Plumber", "criterions": []},
+                    max_inactive_days=90,
+                )
+
+                property_names_used = [
+                    c.args[0] for c in MockFilter.by_property.call_args_list
+                ]
+                assert "availability_tags" not in property_names_used, (
+                    f"Unrecognised string {unrecognised!r} should not add an availability_tags filter"
+                )
+
+    def test_known_tokens_in_availability_string_applied(self):
+        """A string containing known token(s) must filter using only those tokens."""
+        with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+            mock_fi = self._make_filter_mock()
+            MockFilter.by_property.return_value = mock_fi
+            MockFilter.by_ref.return_value = mock_fi
+
+            HubSpokeSearch._build_filters_and_query(
+                {"available_time": "Monday morning", "category": "Plumber", "criterions": []},
+                max_inactive_days=90,
+            )
+
+            property_names_used = [
+                c.args[0] for c in MockFilter.by_property.call_args_list
+            ]
+            assert "availability_tags" in property_names_used
+
+            contains_any_calls = mock_fi.contains_any.call_args_list
+            assert contains_any_calls, "contains_any must have been called"
+            tokens_used = set(contains_any_calls[0].args[0])
+            assert tokens_used <= {"monday", "morning"}, f"Unexpected tokens: {tokens_used}"
+            assert len(tokens_used) >= 1
+
+    def test_null_safe_last_sign_in_uses_is_none(self):
+        """_build_filters_and_query must use is_none(True) | greater_or_equal(cutoff) so
+        that providers whose Weaviate User hub has no last_sign_in (e.g. created before
+        the field was tracked) are NOT silently excluded from search results.
+
+        The User collection schema already has indexNullState:true (hub_spoke_schema.py)
+        which is required for is_none() to work at query time.
+        """
+        with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+            mock_fi = self._make_filter_mock()
+            MockFilter.by_ref.return_value = mock_fi
+            MockFilter.by_property.return_value = mock_fi
+
+            HubSpokeSearch._build_filters_and_query(
+                {"category": "Electrician", "criterions": []}, max_inactive_days=180,
+            )
+
+            # is_none(True) must have been called so null last_sign_in values are included.
+            mock_fi.is_none.assert_called_with(True)
+
 
 class TestHybridSearchHydeParameter:
     """Tests verifying that hyde_text is used as the Weaviate query when provided."""
