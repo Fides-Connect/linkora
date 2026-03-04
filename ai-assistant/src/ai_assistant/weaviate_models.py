@@ -39,7 +39,7 @@ class UserModelWeaviate:
                     "average_rating": user_data.get("average_rating", 0.0),
                     "review_count": user_data.get("review_count", 0),
                     "created_at": user_data.get("created_at", datetime.now(UTC)),
-                    "last_sign_in": user_data.get("last_sign_in", datetime.now(UTC).isoformat()),
+                    "last_sign_in": user_data.get("last_sign_in", datetime.now(UTC)),
                 }
             )
             

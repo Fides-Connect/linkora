@@ -315,12 +315,34 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
             )
         }
 
+    from pydantic import ValidationError as _ValidationError
+
     for skill in skills:
         skill_copy = dict(skill)  # don't mutate caller's dict
 
         # Pop availability_time before hitting Firestore — it's written to the
         # 'availability_time' subcollection separately, not onto the competence doc.
         availability_time_data: Optional[dict] = skill_copy.pop("availability_time", None)
+
+        # Validate availability_time BEFORE any Firestore write so that an invalid
+        # structured-time payload is rejected before the competence doc is persisted,
+        # avoiding partial state (competence saved but subcollection unreachable).
+        if availability_time_data:
+            try:
+                fs._validate_data(availability_time_data, AvailabilityTimeSchema)
+            except _ValidationError as avail_err:
+                field_errors = fs._format_validation_errors(avail_err)
+                return {
+                    "error": (
+                        "availability_time contains invalid data. "
+                        "Fix the highlighted fields and retry."
+                    ),
+                    "field_errors": field_errors,
+                    "hint": (
+                        "time ranges: use HH:MM format (e.g. '09:00'), "
+                        "absence_days: use YYYY-MM-DD (e.g. '2026-03-15')"
+                    ),
+                }
 
         # Legacy normalisation: if the LLM sent 'availability' as a plain string,
         # keep it in skill_copy so CompetenceEnricher can use it for context, but
@@ -354,10 +376,8 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
             else None
         )
         if availability_time_data and saved_id:
-            from pydantic import ValidationError as _ValidationError
             try:
-                # Validate the structured time data before writing.
-                fs._validate_data(availability_time_data, AvailabilityTimeSchema)
+                # availability_time_data was already validated above — write directly.
                 # Check whether a doc already exists to decide create vs. update.
                 existing_avail = await fs.get_availability_times(
                     user_id, competence_id=saved_id
@@ -374,19 +394,10 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
                 logger.info(
                     "Wrote availability_time for competence %s (user %s)", saved_id, user_id
                 )
-            except _ValidationError as avail_err:
-                field_errors = fs._format_validation_errors(avail_err)
-                return {
-                    "error": (
-                        "availability_time contains invalid data. "
-                        "Fix the highlighted fields and retry."
-                    ),
-                    "field_errors": field_errors,
-                    "hint": (
-                        "time ranges: use HH:MM format (e.g. '09:00'), "
-                        "absence_days: use YYYY-MM-DD (e.g. '2026-03-15')"
-                    ),
-                }
+            except Exception as avail_exc:
+                logger.error(
+                    "Failed to write availability_time for competence %s: %s", saved_id, avail_exc
+                )
 
         # ── LLM enrichment ───────────────────────────────────────────────────
         if enricher is not None:
@@ -710,7 +721,7 @@ def build_default_registry() -> AgentToolRegistry:
                                 },
                                 "year_of_experience": {"type": "integer"},
                             },
-                            "required": ["title", "price_range"],
+                            "required": ["title"],
                         },
                     },
                 },

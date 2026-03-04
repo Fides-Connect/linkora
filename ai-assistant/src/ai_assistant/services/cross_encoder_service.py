@@ -25,10 +25,11 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-try:
-    from sentence_transformers import CrossEncoder  # type: ignore
-except ImportError:  # pragma: no cover
-    CrossEncoder = None  # type: ignore  # filled in tests via patch
+# sentence_transformers is intentionally NOT imported at module scope.
+# Importing it at startup pulls in torch and other heavy deps even though the
+# model is lazy-loaded.  The import is deferred to _load_model() so that the
+# module is importable without triggering those side-effects.
+CrossEncoder = None  # filled at first use via _load_model()
 
 logger = logging.getLogger(__name__)
 
@@ -106,13 +107,18 @@ class CrossEncoderService:
 
     def _load_model(self) -> Any:
         """Load the cross-encoder model (called once on first use)."""
+        global CrossEncoder  # noqa: PLW0603 — populated lazily so startup is cheap
         if self._model is None:
             logger.info("Loading cross-encoder model '%s' …", self._model_name)
             if CrossEncoder is None:
-                raise RuntimeError(
-                    "sentence-transformers is not installed. "
-                    "Run: pip install sentence-transformers"
-                )
+                try:
+                    from sentence_transformers import CrossEncoder as _CE  # type: ignore
+                except ImportError as exc:  # pragma: no cover
+                    raise RuntimeError(
+                        "sentence-transformers is not installed. "
+                        "Run: pip install sentence-transformers"
+                    ) from exc
+                CrossEncoder = _CE  # cache at module scope so tests can patch it
             self._model = CrossEncoder(self._model_name)
             logger.info("Cross-encoder model loaded successfully")
         return self._model
@@ -146,7 +152,7 @@ class CrossEncoderService:
 
         pairs = [(query, _candidate_to_text(c)) for c in candidates]
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         try:
             model = self._load_model()
             scores: List[float] = await loop.run_in_executor(

@@ -371,8 +371,9 @@ class HubSpokeSearch:
             competence_collection = get_competence_collection()
 
             # ── DEBUG Step 0: total collection size ──────────────────────────
-            total = competence_collection.aggregate.over_all(total_count=True).total_count
-            logger.debug("[HyDE Step 0] Total competencies in Weaviate collection: %d", total or 0)
+            if logger.isEnabledFor(logging.DEBUG):
+                total = competence_collection.aggregate.over_all(total_count=True).total_count
+                logger.debug("[HyDE Step 0] Total competencies in Weaviate collection: %d", total or 0)
 
             # Build filters and query text
             filter_clause, structured_query_text, available_time = HubSpokeSearch._build_filters_and_query(
@@ -380,21 +381,23 @@ class HubSpokeSearch:
             )
 
             # ── DEBUG Step 1: unfiltered fetch (raw collection state) ────────
-            unfiltered = competence_collection.query.fetch_objects(limit=5)
-            logger.debug(
-                "[HyDE Step 1] Unfiltered sample (%d objects): %s",
-                len(unfiltered.objects),
-                [o.properties.get("title") for o in unfiltered.objects],
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                unfiltered = competence_collection.query.fetch_objects(limit=5)
+                logger.debug(
+                    "[HyDE Step 1] Unfiltered sample (%d objects): %s",
+                    len(unfiltered.objects),
+                    [o.properties.get("title") for o in unfiltered.objects],
+                )
 
             # ── DEBUG Step 2: filter-only fetch (is_service_provider guard) ──
-            sp_filter = Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
-            sp_results = competence_collection.query.fetch_objects(filters=sp_filter, limit=20)
-            logger.debug(
-                "[HyDE Step 2] is_service_provider=True fetch: %d objects → %s",
-                len(sp_results.objects),
-                [o.properties.get("title") for o in sp_results.objects],
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                sp_filter = Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
+                sp_results = competence_collection.query.fetch_objects(filters=sp_filter, limit=20)
+                logger.debug(
+                    "[HyDE Step 2] is_service_provider=True fetch: %d objects → %s",
+                    len(sp_results.objects),
+                    [o.properties.get("title") for o in sp_results.objects],
+                )
 
             # HyDE: prefer the hypothetical profile text as the Weaviate query when
             # available — it produces a richer vector representation that bridges the
@@ -416,17 +419,18 @@ class HubSpokeSearch:
             fetch_limit = min(limit * 5, 30)
 
             # ── DEBUG Step 4: hybrid search WITHOUT full filter ───────────────
-            no_filter_response = competence_collection.query.hybrid(
-                query=query_text,
-                limit=5,
-                alpha=alpha,
-                query_properties=["title^2", "category^2", "description", "search_optimized_summary", "availability_text"],
-                return_metadata=MetadataQuery(score=True),
-            )
-            logger.debug(
-                "[HyDE Step 4] Hybrid search NO-FILTER top-5: %s",
-                [(o.properties.get("title"), round(o.metadata.score or 0, 4)) for o in no_filter_response.objects],
-            )
+            if logger.isEnabledFor(logging.DEBUG):
+                no_filter_response = competence_collection.query.hybrid(
+                    query=query_text,
+                    limit=5,
+                    alpha=alpha,
+                    query_properties=["title^2", "category^2", "description", "search_optimized_summary", "availability_text"],
+                    return_metadata=MetadataQuery(score=True),
+                )
+                logger.debug(
+                    "[HyDE Step 4] Hybrid search NO-FILTER top-5: %s",
+                    [(o.properties.get("title"), round(o.metadata.score or 0, 4)) for o in no_filter_response.objects],
+                )
 
             # Execute hybrid search
             # STRATEGY: Use query_properties to boost title and category matches.

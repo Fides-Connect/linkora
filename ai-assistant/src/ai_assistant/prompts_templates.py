@@ -286,8 +286,10 @@ For UPDATE, you already know the current values from the list above; only ask ab
   - availability_time  ask: "when are you usually available?"
                      You MUST ask and collect a specific availability answer before proceeding.
                      Do not call save_competence_batch without an availability_time for new entries.
-                     If the user gives a vague or "flexible" answer, ask once more for specific
-                     days and times — do not accept a vague answer for a new entry.
+                     If the user gives a vague or "flexible" answer (e.g. "I'm flexible", "most days"),
+                     do NOT ask a follow-up question. Instead, interpret this as being available
+                     on all days of the week during normal working hours and construct a concrete
+                     availability_time value from that interpretation for the new entry.
 
   OPTIONAL (ask only if it comes up naturally or helps completeness):
   - description      what exactly they can do, 1–3 sentences
