@@ -95,11 +95,16 @@ async def user_sync(request: web.Request) -> web.Response:
             # Also: never overwrite an existing FCM token with an empty value —
             # prevents a race on app startup where getToken() hasn't resolved yet.
             session_update = {
-                "name": user_data["name"],
                 "email": user_data["email"],
-                "photo_url": user_data["photo_url"],
                 "last_sign_in": user_data["last_sign_in"],
             }
+            # Never overwrite an existing name or photo with an empty value —
+            # prevents a race on app startup where Firebase Auth hasn't fully
+            # resolved the user profile yet (displayName briefly null).
+            if user_data["name"]:
+                session_update["name"] = user_data["name"]
+            if user_data["photo_url"]:
+                session_update["photo_url"] = user_data["photo_url"]
             if user_data["fcm_token"]:
                 session_update["fcm_token"] = user_data["fcm_token"]
             updated_user = await firestore_service.update_user(user_id, session_update)

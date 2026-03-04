@@ -5,6 +5,23 @@
 - **Stack**: `connectx/` (Flutter), `ai-assistant/` (Python/aiohttp), `weaviate/` (vector DB)
 - **AI persona**: "Elin" — `AGENT_NAME = "Elin"` in `ai_assistant.py`
 
+## Living Requirements Reference
+
+`linkora_usecases.md` at the **repo root** is the authoritative, ever-growing collection of all platform behaviors, use cases, edge cases, and invariants that every agent must respect.
+
+### Structure
+The file is divided into top-level domain sections (e.g. `## Overall Goal`, `## Database`, `## Flutter App`, `## Use Cases`). Each section is independently loadable — do not load the entire file unless the task spans multiple domains.
+
+### How agents must use this file
+1. **Mandatory first step — read before acting**: use a file-read tool to load the section(s) of `linkora_usecases.md` relevant to the current task. Load only the top-level section(s) that apply — do not load the whole file unless the task spans multiple domains. Do not proceed without doing this.
+2. **During work**: entries in `linkora_usecases.md` take precedence over assumptions. If the file and the code disagree, flag it — do not silently pick one.
+3. **Mandatory last step — update after every task**: before ending the session, ask: *"Did this task surface any new behavior, edge case, invariant, or change to existing behavior?"* If yes, append a concise bullet to the appropriate section in `linkora_usecases.md`. If an existing entry is now incorrect, update it. Format: what triggers it → expected behavior → which file/layer owns it.
+
+### Maintenance rules
+- One section per domain. Do not create new top-level sections without user confirmation.
+- Each use-case entry should be a concise bullet: what triggers it, what the expected behavior is, and which file/layer owns it.
+- The file is enriched incrementally — every agent session that surfaces a new insight should leave the file better than it found it.
+
 ## Architecture
 
 ```

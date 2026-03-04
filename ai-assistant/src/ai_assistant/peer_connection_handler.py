@@ -245,6 +245,31 @@ class PeerConnectionHandler:
                 self.audio_processor.set_data_channel(channel)
             self._flush_pending_text_inputs()
 
+            @channel.on("open")
+            def on_channel_open():
+                """Re-emit current FSM state once the DataChannel is confirmed open.
+
+                set_data_channel() is called when the channel is *received* but
+                still in 'connecting' state, so any FSM-state emit attempted
+                there is a silent no-op. Re-emitting here guarantees Flutter
+                receives the current runtime state (e.g. 'listening') as soon
+                as the channel becomes writable.
+                """
+                if self.audio_processor:
+                    try:
+                        fsm = self.audio_processor.ai_assistant.response_orchestrator.runtime_fsm
+                        self.audio_processor._emit_runtime_state(fsm.state)
+                        logger.info(
+                            "DataChannel open — re-emitted FSM state '%s' for connection %s",
+                            fsm.state,
+                            self.connection_id,
+                        )
+                    except AttributeError as exc:
+                        logger.warning(
+                            "Could not re-emit FSM state on DC open for %s: %s",
+                            self.connection_id, exc,
+                        )
+
             @channel.on("message")
             def on_message(message):
                 """Dispatch DataChannel messages via the router."""

@@ -9,6 +9,22 @@ You are the **Cloud Infrastructure & Database Engineer** for Fides. You designed
 
 ---
 
+## Living Requirements
+
+`linkora_usecases.md` at the repo root is the authoritative record of all platform behaviors, use cases, edge cases, and invariants.
+
+### Mandatory first step — read before acting
+Before making any infrastructure or configuration change, read the section(s) of `linkora_usecases.md` relevant to the current task using a file-read tool. For infrastructure tasks, load at minimum `## Overall Goal` and `## Database`. **Do not skip this step.**
+
+### Mandatory last step — update after every task
+Before ending the session, ask: *"Did this task surface any new behavior, edge case, invariant, or change to existing behavior?"* If yes:
+- Append a concise bullet to the appropriate section in `linkora_usecases.md`.
+- If an existing entry is now incorrect or incomplete, update it.
+- Format: what triggers it → expected behavior → which file/layer owns it.
+- Do not create new top-level sections without user confirmation.
+
+---
+
 ## Infrastructure Map
 
 ### Deployment Stack
