@@ -1,26 +1,31 @@
-# Copilot Instructions — Fides
+# Copilot Instructions — Linkora
 
 ## Project Overview
-- **Platform**: Fides — AI voice/chat assistant matching users to service providers
+- **Platform**: Linkora — AI voice/chat assistant matching users to service providers
 - **Stack**: `connectx/` (Flutter), `ai-assistant/` (Python/aiohttp), `weaviate/` (vector DB)
 - **AI persona**: "Elin" — `AGENT_NAME = "Elin"` in `ai_assistant.py`
 
 ## Living Requirements Reference
 
-`linkora_usecases.md` at the **repo root** is the authoritative, ever-growing collection of all platform behaviors, use cases, edge cases, and invariants that every agent must respect.
 
-### Structure
-The file is divided into top-level domain sections (e.g. `## Overall Goal`, `## Database`, `## Flutter App`, `## Use Cases`). Each section is independently loadable — do not load the entire file unless the task spans multiple domains.
+`linkora_specifications.md` at the **repo root** is the authoritative Lastenheft — the complete set of observable system behaviours, use cases, edge cases, and invariants that every agent must respect and must never violate.
 
 ### How agents must use this file
-1. **Mandatory first step — read before acting**: use a file-read tool to load the section(s) of `linkora_usecases.md` relevant to the current task. Load only the top-level section(s) that apply — do not load the whole file unless the task spans multiple domains. Do not proceed without doing this.
-2. **During work**: entries in `linkora_usecases.md` take precedence over assumptions. If the file and the code disagree, flag it — do not silently pick one.
-3. **Mandatory last step — update after every task**: before ending the session, ask: *"Did this task surface any new behavior, edge case, invariant, or change to existing behavior?"* If yes, append a concise bullet to the appropriate section in `linkora_usecases.md`. If an existing entry is now incorrect, update it. Format: what triggers it → expected behavior → which file/layer owns it.
+1. **Mandatory first step — read the entire file before acting**: at the start of every session, use a file-read tool to load the full contents of `linkora_specifications.md`. Do not proceed with any work until this is done.
+2. **Treat it as inviolable constraints**: every behaviour described in `linkora_specifications.md` is a hard requirement. No code change, refactor, or new feature may silently remove, bypass, or contradict a behaviour defined there. If a task appears to conflict with an existing behaviour, flag it to the user before proceeding.
+3. **During work**: if the code and `linkora_specifications.md` disagree, flag it — do not silently pick one.
+4. **Mandatory last step — Lastenheft extraction after every task**: before ending the session, re-read the full conversation and apply the following filter to every decision, fix, behaviour, or constraint that surfaced:
+   - **Ask**: *"Is this a statement about what the system shall do or how it shall behave in a specific scenario?"*
+   - **If yes** → add it to `linkora_specifications.md` in the appropriate numbered section. Write it as a clear behavioural requirement: what triggers it and what the system must do. Do **not** include class names, file paths, method names, or implementation details.
+   - **If no** (e.g. it is a code refactor detail, a test helper, a CI trick, a script invocation) → do not add it.
+   - If an existing entry is now incorrect or superseded, update it in place.
+   - If no new Lastenheft-relevant content was found, make no change to the file.
 
 ### Maintenance rules
-- One section per domain. Do not create new top-level sections without user confirmation.
-- Each use-case entry should be a concise bullet: what triggers it, what the expected behavior is, and which file/layer owns it.
-- The file is enriched incrementally — every agent session that surfaces a new insight should leave the file better than it found it.
+- `linkora_specifications.md` is a **Lastenheft** — it describes observable system behaviours and scenarios only. Implementation details (class names, file paths, internal tooling, test setup) must not appear in this file.
+- One numbered section per domain. Do not create new top-level sections without user confirmation.
+- Each entry must be a concise behavioural statement: what triggers it and what the system must do.
+- The file is enriched incrementally — every agent session that surfaces a new behavioural insight should leave the file better than it found it.
 
 ## Architecture
 

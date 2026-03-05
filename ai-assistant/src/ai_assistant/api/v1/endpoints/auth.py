@@ -116,6 +116,30 @@ async def user_sync(request: web.Request) -> web.Response:
             # Keep the hub-spoke Weaviate User node in sync with Firestore's
             # is_service_provider so provider-search filters stay correct.
             is_sp = existing_firestore_user.get("is_service_provider", False)
+
+            # Self-healing guard: if Firestore says False but the user already
+            # has competencies (e.g. added via dev script or a previous session
+            # where the Firestore write was missed), auto-upgrade to True so
+            # they appear in provider searches without manual intervention.
+            if not is_sp:
+                try:
+                    competencies = await firestore_service.get_competencies(user_id)
+                    if competencies:
+                        is_sp = True
+                        await firestore_service.update_user(user_id, {"is_service_provider": True})
+                        logger.info(
+                            "user_sync: auto-upgraded is_service_provider=True for %s "
+                            "(has %d competencies but flag was False)",
+                            user_id,
+                            len(competencies),
+                        )
+                except Exception as upgrade_exc:
+                    logger.error(
+                        "user_sync: failed to auto-upgrade is_service_provider for %s: %s",
+                        user_id,
+                        upgrade_exc,
+                    )
+
             hub_updated = HubSpokeIngestion.update_user_hub_properties(
                 user_id, {"is_service_provider": is_sp}
             )
@@ -149,6 +173,13 @@ async def user_sync(request: web.Request) -> web.Response:
                     )
 
             if UserModelWeaviate.get_user_by_id(user_id):
+                # Ensure the Firestore-authoritative is_service_provider value
+                # (not the client-sent default=False) is written to Weaviate.
+                # Without this fixup, user_data["is_service_provider"] == False
+                # (from the Flutter request body) would silently overwrite the
+                # True that HubSpokeIngestion.update_user_hub_properties set
+                # a few lines above — making the provider invisible in search.
+                user_data["is_service_provider"] = is_sp
                 if not UserModelWeaviate.update_user(user_id, user_data):
                     return web.json_response({
                         "error": "Failed to update Weaviate user"

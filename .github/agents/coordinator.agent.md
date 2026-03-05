@@ -156,13 +156,6 @@ For dependent sub-tasks: call `runSubagent` only after prerequisites have return
 
 ---
 
-## Self-Improvement
-
-- After **any user correction**: append to `tasks/lessons.md`:
-  `### [Coordinator] — [date] | Mistake: … | Rule: …`
-- Review `tasks/lessons.md` at the start of each session.
-- If the same class of mistake recurs, promote it to a Phase 1 checklist item.
-
 ## Core Principles
 
 - **Clarity over speed**: a plan understood by everyone moves faster than code written under ambiguity.

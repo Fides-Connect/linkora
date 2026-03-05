@@ -192,12 +192,6 @@ Key test files:
 
 ---
 
-## Self-Improvement
-
-- After **any user correction**: append to `tasks/lessons.md`:
-  `### [Flutter] — [date] | Mistake: … | Rule: …`
-- Review relevant lessons at the start of any session in this domain.
-
 ## Core Principles
 
 - **TDD always**: the test is the specification. If you can't write the test first, the requirement isn't clear enough yet.

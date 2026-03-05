@@ -73,14 +73,20 @@ class AIConversationService:
             logger.error("AIConversationService.save_message error: %s", exc, exc_info=True)
 
     async def set_topic_title(self, title: str) -> None:
-        """Update the topic title on the conversation document."""
+        """Update the topic title on the conversation document.
+
+        The Firestore schema enforces max_length=300 on topic_title.
+        We truncate here so the Pydantic validation never fails on a long
+        LLM-generated summary being used as the title.
+        """
         if self._conversation_id is None:
             return
         if self._firestore is None:
             return
         try:
+            truncated = title[:300]
             await self._firestore.update_ai_conversation(
-                self._user_id, self._conversation_id, {"topic_title": title}
+                self._user_id, self._conversation_id, {"topic_title": truncated}
             )
         except Exception as exc:
             logger.error("AIConversationService.set_topic_title error: %s", exc, exc_info=True)

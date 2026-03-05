@@ -7,8 +7,10 @@ Usage:
 
 What it does:
 1. Reads the user doc from Firestore (ground truth).
+1b. Auto-upgrades is_service_provider=True in Firestore if the flag is False but
+    the user already has competencies (self-healing guard).
 2. Creates or updates the Weaviate User hub node (incl. is_service_provider flag).
-3. Re-reads ALL competencies (with availability_time) from Firestore.
+3. Enriches all competencies with availability_time from Firestore.
 4. Performs a full Weaviate competency re-sync via HubSpokeIngestion.update_competencies_by_user_id.
 
 Run this against any user who is not appearing in provider search results.
@@ -58,6 +60,19 @@ async def repair(user_id: str) -> None:
 
     user_data.setdefault("user_id", user_id)
 
+    # ── 1b. Load competencies early to check auto-upgrade eligibility ─────────
+    # Do this before the Weaviate writes so the correct flag is used throughout.
+    all_competencies = await fs.get_competencies(user_id) or []
+    if not user_data.get("is_service_provider") and all_competencies:
+        logger.warning(
+            "Auto-upgrading is_service_provider=True for %s: Firestore flag was False "
+            "but user has %d competencies.",
+            user_id,
+            len(all_competencies),
+        )
+        user_data["is_service_provider"] = True
+        await fs.update_user(user_id, {"is_service_provider": True})
+
     # ── 2. Create or update Weaviate User hub ─────────────────────────────────
     from ai_assistant.hub_spoke_schema import get_user_collection
     from weaviate.classes.query import Filter
@@ -88,8 +103,8 @@ async def repair(user_id: str) -> None:
             logger.error("Failed to create Weaviate User hub. Aborting.")
             sys.exit(1)
 
-    # ── 3. Load competencies + availability_time from Firestore ──────────────
-    all_competencies = await fs.get_competencies(user_id) or []
+    # ── 3. Enrich competencies with availability_time from Firestore ─────────
+    # (list was already fetched in step 1b above)
     logger.info("Found %d competencies in Firestore.", len(all_competencies))
 
     for comp in all_competencies:

@@ -138,6 +138,18 @@ class TestSetTopicTitle:
         await svc.set_topic_title("something")
         fs.update_ai_conversation.assert_not_called()
 
+    async def test_set_topic_title_truncates_to_300_chars(self):
+        """Titles longer than 300 chars must be truncated before Firestore write."""
+        fs = _make_fs("conv_2")
+        svc = AIConversationService(firestore_service=fs)
+        await svc.open_session(user_id="u1", session_id="s1")
+        long_title = "x" * 400
+        await svc.set_topic_title(long_title)
+        args = fs.update_ai_conversation.call_args[0]
+        stored = args[2].get("topic_title", "")
+        assert len(stored) == 300
+        assert stored == "x" * 300
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # close_session

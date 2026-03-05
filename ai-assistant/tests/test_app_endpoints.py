@@ -402,6 +402,51 @@ class TestUserSyncProviderTimestamp:
             "new_user_123", {"is_service_provider": True}
         )
 
+    async def test_user_sync_weaviate_update_uses_firestore_is_service_provider(
+        self, mock_request, mock_firestore_auth
+    ):
+        """UserModelWeaviate.update_user must NOT overwrite is_service_provider
+        with the client-sent False value when Firestore says True.
+
+        The Flutter client always sends is_service_provider=False in the sync
+        body. auth/sync builds user_data from the request and later calls
+        UserModelWeaviate.update_user(user_id, user_data). Without a fixup,
+        user_data["is_service_provider"] == False and the UserModelWeaviate write
+        silently clears the flag in Weaviate — making the provider invisible in
+        search even though HubSpokeIngestion.update_user_hub_properties set True
+        a few lines earlier.
+        """
+        from ai_assistant.api.v1.endpoints import auth as auth_module
+
+        existing = {
+            "user_id": "new_user_123",
+            "name": "Old Name",
+            "email": "new@example.com",
+            "is_service_provider": True,
+        }
+        mock_firestore_auth.get_user = AsyncMock(return_value=existing)
+        mock_firestore_auth.update_user = AsyncMock(return_value=existing)
+
+        with patch('ai_assistant.api.v1.endpoints.auth.UserModelWeaviate') as mock_weaviate, \
+             patch('ai_assistant.api.v1.endpoints.auth.HubSpokeIngestion') as mock_hub:
+            mock_weaviate.get_user_by_id.return_value = existing
+            mock_weaviate.update_user.return_value = True
+            mock_hub.update_user_hub_properties.return_value = True
+            response = await auth_module.user_sync(mock_request)
+
+        assert response.status == 200
+
+        # The data passed to UserModelWeaviate.update_user must carry
+        # is_service_provider=True (the Firestore-authoritative value),
+        # NOT the False that arrived in the request body.
+        update_calls = mock_weaviate.update_user.call_args_list
+        assert update_calls, "UserModelWeaviate.update_user must be called"
+        weaviate_data = update_calls[0].args[1] if update_calls[0].args else {}
+        assert weaviate_data.get("is_service_provider") is True, (
+            "UserModelWeaviate.update_user must propagate Firestore's "
+            "is_service_provider=True, not the client-sent False"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Auth endpoint — user_sync Weaviate hub self-heal

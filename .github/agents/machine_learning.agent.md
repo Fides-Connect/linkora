@@ -177,7 +177,7 @@ LLM history is **in-memory** per `session_id` in `LLMService.session_store`. Not
 
 Run from `ai-assistant/` with the project venv:
 ```bash
-/Users/vc/Codes/fides/.venv/bin/python -m pytest tests/ -x -q
+/Users/vc/Codes/Linkora/.venv/bin/python -m pytest tests/ -x -q
 ```
 
 **TDD workflow for every change:**
@@ -193,12 +193,6 @@ Run from `ai-assistant/` with the project venv:
 Key test files: `test_response_orchestrator.py`, `test_agent_runtime_fsm.py`, `test_agent_tools.py`, `test_audio_processor.py`, `test_conversation_service.py`, `test_firestore_schemas.py`
 
 ---
-
-## Self-Improvement
-
-- After **any user correction**: append to `tasks/lessons.md`:
-  `### [ML] — [date] | Mistake: … | Rule: …`
-- Review relevant lessons at the start of any session in this domain.
 
 ## Core Principles
 

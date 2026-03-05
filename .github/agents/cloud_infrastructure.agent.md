@@ -153,12 +153,6 @@ docker push gcr.io/<PROJECT_ID>/ai-assistant:<tag>
 
 ---
 
-## Self-Improvement
-
-- After **any user correction**: append to `tasks/lessons.md`:
-  `### [Infra] — [date] | Mistake: … | Rule: …`
-- Review relevant lessons at the start of any session in this domain.
-
 ## Core Principles
 
 - **TDD always**: even infra scripts deserve tests. If you can't test it, make it testable first.
