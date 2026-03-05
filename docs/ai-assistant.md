@@ -614,7 +614,7 @@ gcloud run deploy ai-assistant \
 
 **Production (Cloud Run):**
 ```
-WEAVIATE_URL: http://<WEAVIATE_VM_IP>:8080
+WEAVIATE_URL: http://<WEAVIATE_VM_IP>:8090
 GEMINI_MODEL: gemini-2.5-flash
 MIN_INSTANCES: 1 / MAX_INSTANCES: 3
 MEMORY: 1Gi / CPU: 1
