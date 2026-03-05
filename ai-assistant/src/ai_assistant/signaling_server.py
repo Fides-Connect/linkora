@@ -93,14 +93,10 @@ class SignalingServer:
         language = request.query.get('language', 'de')  # Default to German
         raw_mode = request.query.get('mode', 'voice')
 
-        # If a Firebase ID token is present, verify it and extract the uid.
-        # Accept the token from either the Authorization: Bearer header (preferred,
-        # avoids logging credentials) or the ?token= query param (legacy fallback).
-        # Cloud Run connections must supply a token; local/dev connections without
-        # a token fall through to the plain user_id query param.
+        # If a Firebase ID token is present in the Authorization: Bearer header, verify it and extract the uid.
         auth_header = request.headers.get('Authorization', '')
-        token = auth_header[len('Bearer '):] if auth_header.startswith('Bearer ') else request.query.get('token')
-        if token:
+        if auth_header.startswith('Bearer '):
+            token = auth_header[len('Bearer '):]
             try:
                 decoded_token = firebase_auth.verify_id_token(token)
                 user_id = decoded_token['uid']

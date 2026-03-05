@@ -4,7 +4,7 @@ Unit tests for Peer Connection Handler functionality.
 import asyncio
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc import RTCPeerConnection, RTCSessionDescription, RTCConfiguration, RTCIceServer
 
 from ai_assistant.peer_connection_handler import PeerConnectionHandler
 
@@ -393,5 +393,72 @@ class TestRuntimeFsmAdvancesToListening:
 
         assert AgentRuntimeState.DATA_CHANNEL_WAIT in emitted
         assert AgentRuntimeState.LISTENING in emitted
+
+
+class TestBuildRtcConfig:
+    """Unit tests for PeerConnectionHandler._build_rtc_config (static method)."""
+
+    def test_none_input_returns_none(self):
+        """None input should return None, letting aiortc use its built-in defaults."""
+        assert PeerConnectionHandler._build_rtc_config(None) is None
+
+    def test_empty_list_returns_none(self):
+        """An empty list should also return None."""
+        assert PeerConnectionHandler._build_rtc_config([]) is None
+
+    def test_single_server_with_url_as_string(self):
+        """A single ICE server dict with urls as a plain string is wrapped correctly."""
+        result = PeerConnectionHandler._build_rtc_config([
+            {"urls": "stun:stun.l.google.com:19302"}
+        ])
+        assert isinstance(result, RTCConfiguration)
+        assert len(result.iceServers) == 1
+        assert result.iceServers[0].urls == "stun:stun.l.google.com:19302"
+
+    def test_single_server_with_urls_as_list_expands_to_multiple_ice_servers(self):
+        """When urls is a list, each URL becomes its own RTCIceServer entry."""
+        result = PeerConnectionHandler._build_rtc_config([
+            {"urls": ["stun:stun1.example.com", "stun:stun2.example.com"]}
+        ])
+        assert isinstance(result, RTCConfiguration)
+        assert len(result.iceServers) == 2
+        assert result.iceServers[0].urls == "stun:stun1.example.com"
+        assert result.iceServers[1].urls == "stun:stun2.example.com"
+
+    def test_turn_server_with_username_and_credential(self):
+        """username and credential are forwarded to RTCIceServer."""
+        result = PeerConnectionHandler._build_rtc_config([
+            {
+                "urls": "turn:turn.metered.ca:80",
+                "username": "testuser",
+                "credential": "testcred",
+            }
+        ])
+        assert isinstance(result, RTCConfiguration)
+        assert len(result.iceServers) == 1
+        ice = result.iceServers[0]
+        assert ice.urls == "turn:turn.metered.ca:80"
+        assert ice.username == "testuser"
+        assert ice.credential == "testcred"
+
+    def test_server_without_username_credential_passes_none(self):
+        """Missing username/credential keys result in None being passed (not raising)."""
+        result = PeerConnectionHandler._build_rtc_config([
+            {"urls": "stun:stun.example.com"}
+        ])
+        assert isinstance(result, RTCConfiguration)
+        ice = result.iceServers[0]
+        assert ice.username is None
+        assert ice.credential is None
+
+    def test_multiple_servers_produce_correct_count(self):
+        """Multiple server dicts are all converted and included."""
+        result = PeerConnectionHandler._build_rtc_config([
+            {"urls": "stun:stun.example.com"},
+            {"urls": "turn:turn.example.com", "username": "u", "credential": "c"},
+        ])
+        assert isinstance(result, RTCConfiguration)
+        assert len(result.iceServers) == 2
+
 
 

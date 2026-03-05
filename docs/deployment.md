@@ -149,7 +149,21 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${RT_SA}" \
   --role="roles/datastore.user"
 
-# Firebase Auth: verify_id_token
+# Firebase Auth: verify_id_token with check_revoked=True
+# Requires a custom role — firebaseauth.users.get is not included in any
+# predefined role smaller than roles/firebaseauth.admin.
+gcloud iam roles create firebaseAuthTokenChecker \
+  --project=$PROJECT_ID \
+  --title="Firebase Auth Token Revocation Checker" \
+  --description="Allows verify_id_token with check_revoked=True" \
+  --permissions=firebaseauth.users.get \
+  --stage=GA
+
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${RT_SA}" \
+  --role="projects/${PROJECT_ID}/roles/firebaseAuthTokenChecker"
+
+# Firebase Auth: verify_id_token (crypto verification only — no user lookup)
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${RT_SA}" \
   --role="roles/firebaseauth.viewer"
@@ -278,7 +292,7 @@ Wait ~3 minutes for the startup script to finish, then verify via IAP:
 gcloud compute ssh weaviate-vm-dev --zone=europe-west3-a --tunnel-through-iap
 
 # Inside VM — check Weaviate is healthy
-curl http://localhost:8080/v1/.well-known/ready
+curl http://localhost:8090/v1/.well-known/ready
 ```
 
 ### 7. Initialize Weaviate schema
@@ -346,10 +360,10 @@ Add these in **Settings → Secrets and variables → Actions**:
 | `WEAVIATE_VPC_CONNECTOR` | `ai-assistant-connect-dev` |
 | `GEMINI_API_KEY` | Your Gemini API key — synced to Secret Manager by the workflow |
 | `ADMIN_SECRET_KEY` | Your admin API secret — synced to Secret Manager by the workflow |
-| `METERED_APP_NAME` | Your Metered.ca application name (subdomain of `metered.live`) |
+| `METERED_APP_NAME` | Your Metered.ca application name (subdomain of `metered.live`) — synced to Secret Manager by the workflow |
 | `METERED_API_KEY` | Your Metered.ca API key — synced to Secret Manager by the workflow |
 
-The workflow syncs `GEMINI_API_KEY`, `ADMIN_SECRET_KEY`, and `METERED_API_KEY` into Secret Manager on every deploy. Cloud Run injects them at runtime via `--set-secrets` (never in plain environment variables).
+The workflow syncs `GEMINI_API_KEY`, `ADMIN_SECRET_KEY`, `METERED_API_KEY`, and `METERED_APP_NAME` into Secret Manager on every deploy. Cloud Run injects them at runtime via `--set-secrets` (never in plain environment variables).
 
 ---
 

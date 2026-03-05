@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch, AsyncMock
 from aiohttp.web import Request, Response
 from datetime import datetime
 
-from ai_assistant.api.v1.endpoints.auth import user_sync, user_logout
+from ai_assistant.api.v1.endpoints.auth import user_sync, user_logout, sign_in_google
 
 
 class TestUserSyncEndpoint:
@@ -233,3 +233,70 @@ class TestSettingsEndpoints:
         assert response.status == 200
         body = json.loads(response.body)
         assert body['notifications_enabled'] is False
+
+
+class TestSignInGoogleEndpoint:
+    """Tests for sign_in_google endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_sign_in_google_success(self):
+        """Valid token returns user info with status 200."""
+        request = Mock(spec=Request)
+        request.json = AsyncMock(return_value={"id_token": "valid-token"})
+        decoded = {"uid": "user123", "email": "user@example.com", "name": "Test User"}
+
+        with patch('ai_assistant.api.v1.endpoints.auth.firebase_auth') as mock_auth:
+            mock_auth.verify_id_token.return_value = decoded
+            response = await sign_in_google(request)
+
+        import json
+        assert response.status == 200
+        body = json.loads(response.body)
+        assert body["user_id"] == "user123"
+        assert body["is_valid"] is True
+        mock_auth.verify_id_token.assert_called_once_with("valid-token", check_revoked=True)
+
+    @pytest.mark.asyncio
+    async def test_sign_in_google_revoked_token_returns_401(self):
+        """Revoked token returns 401 with a clear error message."""
+        request = Mock(spec=Request)
+        request.json = AsyncMock(return_value={"id_token": "revoked-token"})
+
+        with patch('ai_assistant.api.v1.endpoints.auth.firebase_auth') as mock_auth:
+            mock_auth.RevokedIdTokenError = Exception
+            mock_auth.verify_id_token.side_effect = mock_auth.RevokedIdTokenError("Token revoked")
+            response = await sign_in_google(request)
+
+        import json
+        assert response.status == 401
+        body = json.loads(response.body)
+        assert "revoked" in body["error"].lower()
+
+    @pytest.mark.asyncio
+    async def test_sign_in_google_invalid_token_returns_401(self):
+        """Cryptographically invalid token returns 401."""
+        request = Mock(spec=Request)
+        request.json = AsyncMock(return_value={"id_token": "bad-token"})
+
+        with patch('ai_assistant.api.v1.endpoints.auth.firebase_auth') as mock_auth:
+            mock_auth.RevokedIdTokenError = type('RevokedIdTokenError', (ValueError,), {})
+            mock_auth.verify_id_token.side_effect = ValueError("Invalid token")
+            response = await sign_in_google(request)
+
+        import json
+        assert response.status == 401
+        body = json.loads(response.body)
+        assert body["error"] == "Invalid token"
+
+    @pytest.mark.asyncio
+    async def test_sign_in_google_missing_token_returns_400(self):
+        """Missing id_token field returns 400."""
+        request = Mock(spec=Request)
+        request.json = AsyncMock(return_value={})
+
+        response = await sign_in_google(request)
+
+        import json
+        assert response.status == 400
+        body = json.loads(response.body)
+        assert "id_token" in body["error"]

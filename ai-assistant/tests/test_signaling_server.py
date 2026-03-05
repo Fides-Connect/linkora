@@ -7,7 +7,8 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from aiohttp import web, WSMsgType
 from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
 
-from ai_assistant.signaling_server import SignalingServer
+import ai_assistant.signaling_server as sig_mod
+from ai_assistant.signaling_server import SignalingServer, _fetch_ice_servers
 
 
 @pytest.fixture
@@ -278,3 +279,197 @@ class TestTokenAuthentication:
             mock_verify.assert_not_called()
             _, kwargs = mock_handler_class.call_args
             assert kwargs['user_id'] == 'local-dev-uid'
+
+    @pytest.mark.asyncio
+    async def test_valid_bearer_token_in_authorization_header_overrides_user_id(
+        self, signaling_server
+    ):
+        """A valid Bearer token in the Authorization header should replace the
+        client-supplied user_id (preferred path — avoids token in server logs)."""
+        mock_ws = Mock(spec=web.WebSocketResponse)
+        mock_ws.prepare = AsyncMock()
+
+        async def mock_ws_iter():
+            return
+            yield
+
+        mock_ws.__aiter__ = lambda self: mock_ws_iter()
+
+        mock_request = self._make_request({
+            'user_id': 'spoofed-uid',
+            'language': 'en',
+            'mode': 'text',
+        })
+        # No ?token= param — token supplied only via the Authorization header
+        mock_request.headers = {'Authorization': 'Bearer valid-bearer-token'}
+
+        with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
+             patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
+                   return_value={'uid': 'real-uid-from-header'}) as mock_verify, \
+             patch('ai_assistant.signaling_server.PeerConnectionHandler') as mock_handler_class:
+
+            mock_handler = Mock()
+            mock_handler.close = AsyncMock()
+            mock_handler.send_ice_config = AsyncMock()
+            mock_handler_class.return_value = mock_handler
+
+            await signaling_server.handle_websocket(mock_request)
+
+            mock_verify.assert_called_once_with('valid-bearer-token')
+            _, kwargs = mock_handler_class.call_args
+            assert kwargs['user_id'] == 'real-uid-from-header'
+
+    @pytest.mark.asyncio
+    async def test_invalid_bearer_token_in_authorization_header_closes_websocket_with_4401(
+        self, signaling_server
+    ):
+        """An invalid token in the Authorization header should close the WebSocket
+        with code 4401, identical to behaviour for an invalid ?token= value."""
+        mock_ws = Mock(spec=web.WebSocketResponse)
+        mock_ws.prepare = AsyncMock()
+        mock_ws.close = AsyncMock()
+
+        mock_request = self._make_request({'user_id': 'any-uid'})
+        mock_request.headers = {'Authorization': 'Bearer bad-bearer-token'}
+
+        with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
+             patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
+                   side_effect=Exception('Token expired')):
+
+            await signaling_server.handle_websocket(mock_request)
+
+            mock_ws.close.assert_called_once_with(code=4401, message=b'Unauthorized')
+
+
+class TestFetchIceServers:
+    """Unit tests for the module-level _fetch_ice_servers() TTL cache helper."""
+
+    @pytest.fixture(autouse=True)
+    def reset_ice_cache(self):
+        """Reset the module-level ICE cache before every test so tests are isolated."""
+        sig_mod._ICE_CACHE = None
+        sig_mod._ICE_CACHE_TIMESTAMP = 0.0
+        sig_mod._ICE_CACHE_LOCK = None
+        yield
+        sig_mod._ICE_CACHE = None
+        sig_mod._ICE_CACHE_TIMESTAMP = 0.0
+        sig_mod._ICE_CACHE_LOCK = None
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_returns_cached_servers_without_http_call(self):
+        """When the cache is fresh, _fetch_ice_servers returns cached data immediately."""
+        import time
+        cached = [{"urls": "turn:cached.example.com", "username": "u", "credential": "p"}]
+        sig_mod._ICE_CACHE = cached
+        sig_mod._ICE_CACHE_TIMESTAMP = time.monotonic()  # just fetched
+
+        with patch('ai_assistant.signaling_server.aiohttp.ClientSession') as mock_session_class:
+            result = await _fetch_ice_servers()
+
+        assert result == cached
+        mock_session_class.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_fetches_from_metered_and_caches_result(self):
+        """On a cold cache with env vars set, a successful HTTP call is cached."""
+        metered_servers = [
+            {"urls": "turn:turn.metered.ca:80", "username": "user1", "credential": "cred1"}
+        ]
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=metered_servers)
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_resp)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with patch('ai_assistant.signaling_server.aiohttp.ClientSession', return_value=mock_session), \
+             patch.dict('os.environ', {'METERED_APP_NAME': 'myapp', 'METERED_API_KEY': 'key123'}):
+            result = await _fetch_ice_servers()
+
+        assert result == metered_servers
+        assert sig_mod._ICE_CACHE == metered_servers
+        assert sig_mod._ICE_CACHE_TIMESTAMP > 0
+
+    @pytest.mark.asyncio
+    async def test_ttl_expiry_triggers_refetch(self):
+        """After the TTL expires the function re-fetches instead of returning stale data."""
+        import time
+        stale = [{"urls": "stun:stun.stale.example.com"}]
+        sig_mod._ICE_CACHE = stale
+        # Simulate a timestamp older than the TTL
+        sig_mod._ICE_CACHE_TIMESTAMP = time.monotonic() - sig_mod._ICE_CACHE_TTL - 1.0
+
+        fresh_servers = [{"urls": "turn:fresh.example.com", "username": "u", "credential": "p"}]
+        mock_resp = AsyncMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=fresh_servers)
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_resp)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with patch('ai_assistant.signaling_server.aiohttp.ClientSession', return_value=mock_session), \
+             patch.dict('os.environ', {'METERED_APP_NAME': 'myapp', 'METERED_API_KEY': 'key123'}):
+            result = await _fetch_ice_servers()
+
+        assert result == fresh_servers
+        assert sig_mod._ICE_CACHE == fresh_servers
+
+    @pytest.mark.asyncio
+    async def test_missing_env_vars_returns_default_stun(self):
+        """Returns the fallback STUN server when METERED_APP_NAME or METERED_API_KEY is absent."""
+        import os
+        env = {k: v for k, v in os.environ.items()
+               if k not in ('METERED_APP_NAME', 'METERED_API_KEY')}
+
+        with patch.dict('os.environ', env, clear=True), \
+             patch('ai_assistant.signaling_server.aiohttp.ClientSession') as mock_session_class:
+            result = await _fetch_ice_servers()
+
+        assert result == sig_mod._DEFAULT_ICE_SERVERS
+        mock_session_class.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_http_non_200_returns_default_stun(self):
+        """A non-200 response from Metered.ca causes graceful fallback to default STUN."""
+        mock_resp = AsyncMock()
+        mock_resp.status = 503
+        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_resp.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(return_value=mock_resp)
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with patch('ai_assistant.signaling_server.aiohttp.ClientSession', return_value=mock_session), \
+             patch.dict('os.environ', {'METERED_APP_NAME': 'myapp', 'METERED_API_KEY': 'key'}):
+            result = await _fetch_ice_servers()
+
+        assert result == sig_mod._DEFAULT_ICE_SERVERS
+        assert sig_mod._ICE_CACHE is None  # nothing was cached
+
+    @pytest.mark.asyncio
+    async def test_network_exception_returns_default_stun(self):
+        """A network error (timeout, DNS failure, etc.) falls back to default STUN."""
+        import aiohttp
+
+        mock_session = AsyncMock()
+        mock_session.get = Mock(side_effect=aiohttp.ClientError("connection refused"))
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        with patch('ai_assistant.signaling_server.aiohttp.ClientSession', return_value=mock_session), \
+             patch.dict('os.environ', {'METERED_APP_NAME': 'myapp', 'METERED_API_KEY': 'key'}):
+            result = await _fetch_ice_servers()
+
+        assert result == sig_mod._DEFAULT_ICE_SERVERS
+        assert sig_mod._ICE_CACHE is None
+
