@@ -219,7 +219,7 @@ class _ConnectXAppState extends State<ConnectXApp> {
       ],
       home: Consumer<UserProvider>(
         builder: (context, userProvider, child) {
-          if (userProvider.isLoading) {
+          if (userProvider.isLoading && userProvider.user == null) {
             return const Scaffold(
               body: Center(child: CircularProgressIndicator()),
             );

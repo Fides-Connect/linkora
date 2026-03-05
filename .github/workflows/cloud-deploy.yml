@@ -157,7 +157,7 @@ jobs:
           [[ -z "${{ secrets.WIF_CI_SERVICE_ACCOUNT }}" ]] && MISSING="$MISSING WIF_CI_SERVICE_ACCOUNT"
           if [[ -n "$MISSING" ]]; then
             echo "::error::Missing required GitHub secrets:$MISSING"
-            echo "See docs/deployment.md#github-secrets for setup instructions."
+            echo "See docs/deployment.md for setup instructions."
             exit 1
           fi
 
