@@ -276,7 +276,7 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
         skill.get("title", "(untitled)")
         for skill in skills
         if not skill.get("competence_id")
-        and not skill.get("price_range", "").strip()
+        and not str(skill.get("price_range", "")).strip()
     ]
     if missing_price:
         return {
@@ -665,7 +665,7 @@ def build_default_registry() -> AgentToolRegistry:
         description=(
             "Create or update one or more service competencies for the user. "
             "Each skill dict may include 'competence_id' for updates, or omit it for new entries. "
-            "Required fields per skill: 'title' and 'price_range' (e.g. '€30–€50/h' or 'fixed price €200'). "
+            "Required fields per skill: 'title' and 'price_range' (e.g. '€30–€50/h', 'fixed price €200', or 'free' / '0' for volunteer work). "
             "price_range is MANDATORY for new entries — never create a competence without it. "
             "For UPDATE (competence_id provided), price_range is optional. "
             "Optional fields: 'description', 'category', 'year_of_experience', "
@@ -689,7 +689,7 @@ def build_default_registry() -> AgentToolRegistry:
                                 "category": {"type": "string"},
                                 "price_range": {
                                     "type": "string",
-                                    "description": "Pricing information, e.g. '€30–€50/h' or 'fixed price €200'. REQUIRED for new entries.",
+                                    "description": "Pricing information, e.g. '€30–€50/h', 'fixed price €200', or 'free' / '0' for volunteer work. REQUIRED for new entries.",
                                 },
                                 "availability": {
                                     "type": "string",

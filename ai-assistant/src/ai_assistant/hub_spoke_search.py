@@ -504,4 +504,11 @@ class HubSpokeSearch:
             
         except Exception as e:
             logger.error(f"Error in hybrid_search_providers: {e}", exc_info=True)
+            # Distinguish connectivity failures from data/logic errors so callers
+            # can route to RECOVERY instead of silently presenting zero results.
+            err_lower = (type(e).__name__ + " " + str(e)).lower()
+            _conn_hints = ("connect", "timeout", "unavailable", "refused", "unreachable")
+            if any(h in err_lower for h in _conn_hints):
+                from .data_provider import SearchUnavailableError
+                raise SearchUnavailableError(str(e)) from e
             return []

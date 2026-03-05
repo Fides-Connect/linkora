@@ -11,6 +11,14 @@ from abc import ABC, abstractmethod
 logger = logging.getLogger(__name__)
 
 
+class SearchUnavailableError(Exception):
+    """Raised when the search backend (Weaviate) is temporarily unreachable.
+
+    Callers that detect this exception must route the conversation to the RECOVERY
+    stage and must not present the zero-result response as a genuine empty match.
+    """
+
+
 class DataProvider(ABC):
     """Abstract base class for data providers."""
     

@@ -14,6 +14,8 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 
 logger = logging.getLogger(__name__)
 
+from ..prompts_templates import get_fallback_error_message  # noqa: E402 (after logger)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # signal_transition — Gemini function-calling schema
@@ -48,7 +50,8 @@ class LLMService:
     """Service for language model interactions using LangChain and Gemini."""
     
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash",
-                 temperature: float = 0.2, max_output_tokens: int = 2048):
+                 temperature: float = 0.2, max_output_tokens: int = 2048,
+                 language: str = "de"):
         """
         Initialize LLM service.
         
@@ -57,6 +60,8 @@ class LLMService:
             model: Model name to use
             temperature: Sampling temperature
             max_output_tokens: Maximum output tokens
+            language: Session language code ('de' or 'en'). Used for fallback
+                      error messages when the LLM fails to produce a response.
         """
         self.llm = ChatGoogleGenerativeAI(
             model=model,
@@ -71,6 +76,7 @@ class LLMService:
         self.session_store: Dict[str, BaseChatMessageHistory] = {}
         # Per-session Gemini function schemas (empty = no function calling).
         self._session_functions: Dict[str, List[Dict[str, Any]]] = {}
+        self.language: str = language
         logger.info(f"LLM service initialized with model: {model}")
     
     def get_session_history(self, session_id: str) -> BaseChatMessageHistory:
@@ -285,7 +291,7 @@ class LLMService:
             
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)
-            yield "Entschuldigung, ich konnte keine Antwort generieren."
+            yield get_fallback_error_message(self.language)
     
     async def generate(self, messages: list) -> str:
         """
@@ -308,4 +314,4 @@ class LLMService:
             
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)
-            return "Entschuldigung, ich konnte keine Antwort generieren."
+            return get_fallback_error_message(self.language)

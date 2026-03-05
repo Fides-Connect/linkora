@@ -59,6 +59,7 @@
 ### 2.7 Search Cache Outage
 
 - If Weaviate is entirely unreachable during login or search, the system must not fail the entire user session. It must degrade gracefully: login succeeds with a logged warning, and searches return a standardized "Search temporarily unavailable" error to the AI to handle via `RECOVERY`.
+- When the provider search backend is unreachable specifically during the `FINALIZE` stage, the system must immediately transition to `RECOVERY` rather than presenting zero results as a genuine empty-match outcome. The `RECOVERY` message must indicate that the search was temporarily unavailable, not that no matching provider was found.
 
 ---
 
@@ -205,7 +206,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 ### 5.1 Skill Batch Validation
 
 - For every new skill in a save batch (a skill with no existing identifier), `price_range` is required. If any new skill is missing `price_range`, the entire batch is rejected. The error must name the affected skill titles and instruct that pricing information is required before the batch can be saved.
-- If a user wishes to offer a service for free, the `price_range` validation must accept an explicit `0` or `'free'` token. It must not strictly require a monetary range if the intent is volunteer work.
+- If a user wishes to offer a service for free, the `price_range` validation must accept an explicit `0` (integer or string) or `'free'` token. It must not strictly require a monetary range if the intent is volunteer work. A numeric zero value must not raise an error during validation.
 - For every new skill, `availability_time` is also required. If any new skill is missing it, the batch is rejected with the affected titles identified.
 - If a batch is rejected for missing fields (like `price_range` or `availability_time`), the in-memory session draft must retain the valid skill data. The AI will prompt the user specifically for the missing fields on the failing items.
 - `availability_time` is validated against the schema before any data is written. If validation fails, field-level error details and time-format hints are returned, and no partial state is written.
@@ -425,7 +426,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 
 ## 13. Edge Cases & Invariants
 
-- The system must never hardcode a language string. Language must flow from the session parameter through every layer of processing.
+- The system must never hardcode a language string. Language must flow from the session parameter through every layer of processing. This invariant applies to **all** user-visible output paths without exception, including LLM error fallback messages (e.g. when the LLM fails to generate a response) and greeting fallback strings generated when the LLM call fails during session initialisation. There is no user-facing string that is exempt from this rule.
 - Text-mode sessions must never attempt to play audio or send a greeting.
 - If the AI is speaking and new input arrives, the current speech output must be interrupted before processing the new input. The interrupted state must be handled gracefully with no orphaned history entries.
 - The permanent opt-out sentinel for the provider pitch must be treated as a special value — never as a real date — throughout all date comparisons.

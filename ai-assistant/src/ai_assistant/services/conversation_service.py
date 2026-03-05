@@ -11,7 +11,7 @@ from typing import Optional, AsyncIterator, Dict, Any, List
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage
 
-from ..data_provider import DataProvider
+from ..data_provider import DataProvider, SearchUnavailableError
 from ..prompts_templates import (
     GREETING_AND_TRIAGE_PROMPT,
     TRIAGE_CONVERSATION_PROMPT,
@@ -22,7 +22,8 @@ from ..prompts_templates import (
     LOOP_BACK_PROMPT,
     PROVIDER_PITCH_PROMPT,
     PROVIDER_ONBOARDING_PROMPT,
-    get_language_instruction
+    get_language_instruction,
+    get_greeting_fallback,
 )
 from .cross_encoder_service import CrossEncoderService
 
@@ -457,11 +458,18 @@ class ConversationService:
         # Stage 3: wide-net retrieval (fetch_limit is computed inside
         # HubSpokeSearch as min(limit * 5, 30)).
         fetch_limit = min(self.max_providers * 5, 30)
-        providers = await self.data_provider.search_providers(
-            query_text=query_text,
-            limit=fetch_limit,
-            hyde_text=hyde_text,
-        )
+        try:
+            providers = await self.data_provider.search_providers(
+                query_text=query_text,
+                limit=fetch_limit,
+                hyde_text=hyde_text,
+            )
+        except SearchUnavailableError as exc:
+            logger.warning(
+                "Search index unreachable during provider search — routing to RECOVERY. (%s)", exc
+            )
+            self.context["search_error"] = "unavailable"
+            return
 
         # Stage 4: cross-encoder reranking.
         if self.cross_encoder_service and providers:
@@ -525,4 +533,4 @@ class ConversationService:
 
         except Exception as e:
             logger.error(f"Error generating greeting text: {e}", exc_info=True)
-            return "Hallo! Wie kann ich dir heute helfen?"
+            return get_greeting_fallback(self.language)

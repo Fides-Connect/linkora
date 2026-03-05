@@ -15,6 +15,8 @@ from .conversation_service import ConversationService, ConversationStage, is_leg
 from .llm_service import LLMService, SIGNAL_TRANSITION_SCHEMA
 from .agent_runtime_fsm import AgentRuntimeFSM
 from .agent_tools import AgentToolRegistry, ToolPermissionError
+from ..prompts_templates import get_fallback_error_message
+from ..data_provider import SearchUnavailableError  # noqa: F401 (used below)
 
 logger = logging.getLogger(__name__)
 
@@ -141,9 +143,19 @@ class ResponseOrchestrator:
                 logger.warning("Skipping provider search: previous stage was PROVIDER_ONBOARDING")
                 providers: list = []
             else:
-                providers = await self.conversation_service.search_providers_for_request(session_id) or []
-            # Cache the result so any redundant search_providers tool calls in
-            # FINALIZE can return this list without a second Weaviate round-trip.
+                await self.conversation_service.search_providers_for_request(session_id)
+                # Divert to RECOVERY if Weaviate was unreachable. This prevents the
+                # system from presenting zero results as if no provider matched.
+                if self.conversation_service.context.pop("search_error", None) == "unavailable":
+                    logger.warning(
+                        "Weaviate unavailable during FINALIZE provider search — diverting to RECOVERY."
+                    )
+                    self.handle_signal_transition("recovery")
+                    return True
+                # Read providers stored by search_providers_for_request; avoids
+                # the previous `await … or []` pattern that overwrote context.
+                providers: list = self.conversation_service.context.get("providers_found", [])
+            # Keep context cache in sync for follow-up stream cache-hit logic.
             self.conversation_service.context["providers_found"] = providers
             # Update topic title as soon as we enter FINALIZE
             if self.ai_conversation_service:
@@ -770,4 +782,4 @@ class ResponseOrchestrator:
 
         except Exception as exc:
             logger.error("Error in response orchestration: %s", exc, exc_info=True)
-            yield "Entschuldigung, ich konnte keine Antwort generieren."
+            yield get_fallback_error_message(self.conversation_service.language)

@@ -30,6 +30,27 @@ def get_language_instruction(language: str = 'de', fallback_from: str = "") -> s
     return base + cross_lingual + fallback_notice
 
 
+_FALLBACK_ERROR_MESSAGES: dict = {
+    "de": "Entschuldigung, ich konnte keine Antwort generieren.",
+    "en": "I'm sorry, I was unable to generate a response.",
+}
+
+_GREETING_FALLBACK_MESSAGES: dict = {
+    "de": "Hallo! Wie kann ich dir heute helfen?",
+    "en": "Hello! How can I help you today?",
+}
+
+
+def get_fallback_error_message(language: str = "de") -> str:
+    """Return a language-aware LLM failure message."""
+    return _FALLBACK_ERROR_MESSAGES.get(language, _FALLBACK_ERROR_MESSAGES["en"])
+
+
+def get_greeting_fallback(language: str = "de") -> str:
+    """Return a language-aware session greeting fallback."""
+    return _GREETING_FALLBACK_MESSAGES.get(language, _GREETING_FALLBACK_MESSAGES["en"])
+
+
 GREETING_AND_TRIAGE_PROMPT = """
 You are {agent_name}, a friendly and helpful assistant for {company_name}.
 Your goal is to greet the user personally by name and triage their need. You will be given the user's name as `{user_name}` (may be empty or None) and 
