@@ -1,16 +1,11 @@
-name: Deploy to Google Cloud
+name: Deploy AI-Assistant
 
-# AI-Assistant deploy: triggered after tests pass on main (see ai-assistant-test.yml).
-# Weaviate deploy: triggered directly on push to main when weaviate/** changes.
+# Triggered after the AI Assistant Tests workflow passes on main.
 on:
   workflow_run:
     workflows: ["AI Assistant Tests"]
     types: [completed]
     branches: [main]
-  push:
-    branches: [main]
-    paths:
-      - 'weaviate/**'
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -19,7 +14,6 @@ env:
   AR_REPO: ai-assistant-dev  # Artifact Registry repository name
 
 jobs:
-  # ── Deploy AI-Assistant to Cloud Run ────────────────────────────────────────
   deploy-ai-assistant:
     name: Deploy AI-Assistant to Cloud Run
     if: github.event.workflow_run.conclusion == 'success'
@@ -90,6 +84,7 @@ jobs:
             --allow-unauthenticated \
             --service-account "${{ secrets.WIF_RT_SERVICE_ACCOUNT }}" \
             --update-env-vars "WEAVIATE_URL=http://${{ secrets.WEAVIATE_VM_IP }}:${{ secrets.WEAVIATE_VM_PORT }}" \
+            --update-env-vars "WEAVIATE_SYNC_ON_STARTUP=true" \
             --update-env-vars "GEMINI_MODEL=gemini-2.5-flash" \
             --update-env-vars "LANGUAGE_CODE_DE=de-DE" \
             --update-env-vars "VOICE_NAME_DE=de-DE-Chirp3-HD-Sulafat" \
@@ -122,69 +117,3 @@ jobs:
           echo "- **URL**: $URL" >> $GITHUB_STEP_SUMMARY
           echo "- **Image**: ${{ env.IMAGE }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.event.workflow_run.head_sha }}" >> $GITHUB_STEP_SUMMARY
-
-  # ── Deploy Weaviate to Compute Engine VM ────────────────────────────────────
-  deploy-weaviate:
-    name: Deploy Weaviate to Compute Engine VM
-    # Only run when triggered directly by a push (not by workflow_run).
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Validate required secrets
-        run: |
-          MISSING=""
-          [[ -z "${{ secrets.WEAVIATE_VM_NAME }}" ]] && MISSING="$MISSING WEAVIATE_VM_NAME"
-          [[ -z "${{ secrets.WEAVIATE_VM_ZONE }}" ]] && MISSING="$MISSING WEAVIATE_VM_ZONE"
-          if [[ -n "$MISSING" ]]; then
-            echo "::error::Missing required GitHub secrets:$MISSING"
-            echo "See docs/deployment.md for setup instructions."
-            exit 1
-          fi
-
-      - name: Authenticate to GCP
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.WIF_CI_SERVICE_ACCOUNT }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ env.PROJECT_ID }}
-
-      - name: Copy docker-compose.yml to VM
-        run: |
-          # scp to home dir (no root permissions needed), then sudo mv into place
-          gcloud compute scp weaviate/docker-compose.yml \
-            ${{ secrets.WEAVIATE_VM_NAME }}:~/docker-compose.yml \
-            --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
-            --tunnel-through-iap \
-            --quiet
-          gcloud compute ssh ${{ secrets.WEAVIATE_VM_NAME }} \
-            --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
-            --tunnel-through-iap \
-            --quiet \
-            --command="sudo mkdir -p /opt/weaviate && sudo mv ~/docker-compose.yml /opt/weaviate/docker-compose.yml"
-
-      - name: Restart Weaviate on VM
-        run: |
-          gcloud compute ssh ${{ secrets.WEAVIATE_VM_NAME }} \
-            --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
-            --tunnel-through-iap \
-            --quiet \
-            --command="cd /opt/weaviate && sudo docker compose pull && sudo docker compose up -d"
-
-      - name: Print deployment summary
-        run: |
-          echo "## Weaviate Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **VM**: ${{ secrets.WEAVIATE_VM_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Zone**: ${{ secrets.WEAVIATE_VM_ZONE }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
