@@ -88,23 +88,26 @@ class SignalingServer:
         connection_id = id(ws)
         client_ip = request.remote
         
-        # Extract user_id, language, and session mode from query parameters
-        user_id = request.query.get('user_id')
+        # Extract language and session mode from query parameters.
+        # user_id is always taken from the verified Firebase ID token — never trusted from the client.
         language = request.query.get('language', 'de')  # Default to German
         raw_mode = request.query.get('mode', 'voice')
 
-        # If a Firebase ID token is present in the Authorization: Bearer header, verify it and extract the uid.
+        # Require a valid Firebase ID token in the Authorization: Bearer header for all connections.
         auth_header = request.headers.get('Authorization', '')
-        if auth_header.startswith('Bearer '):
-            token = auth_header[len('Bearer '):]
-            try:
-                decoded_token = firebase_auth.verify_id_token(token)
-                user_id = decoded_token['uid']
-                logger.debug(f"Token verified for uid: {user_id}")
-            except Exception as e:
-                logger.warning(f"WebSocket auth failed — invalid token: {e}")
-                await ws.close(code=4401, message=b'Unauthorized')
-                return ws
+        if not auth_header.startswith('Bearer '):
+            logger.warning(f"WebSocket auth failed — missing token from {client_ip}")
+            await ws.close(code=4401, message=b'Unauthorized')
+            return ws
+        token = auth_header[len('Bearer '):]
+        try:
+            decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
+            user_id = decoded_token['uid']
+            logger.debug(f"Token verified for uid: {user_id}")
+        except Exception as e:
+            logger.warning(f"WebSocket auth failed — invalid token: {e}")
+            await ws.close(code=4401, message=b'Unauthorized')
+            return ws
         if raw_mode not in ('voice', 'text'):
             logger.warning(
                 f"Invalid session mode '{raw_mode}' from {client_ip}; defaulting to 'voice'"

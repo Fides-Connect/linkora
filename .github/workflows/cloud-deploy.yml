@@ -106,6 +106,7 @@ jobs:
             --vpc-egress private-ranges-only \
             --min-instances 1 \
             --max-instances 3 \
+            --concurrency 10 \
             --memory 1Gi \
             --cpu 1 \
             --port 8080 \
@@ -136,6 +137,17 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          MISSING=""
+          [[ -z "${{ secrets.WEAVIATE_VM_NAME }}" ]] && MISSING="$MISSING WEAVIATE_VM_NAME"
+          [[ -z "${{ secrets.WEAVIATE_VM_ZONE }}" ]] && MISSING="$MISSING WEAVIATE_VM_ZONE"
+          if [[ -n "$MISSING" ]]; then
+            echo "::error::Missing required GitHub secrets:$MISSING"
+            echo "See docs/deployment.md#github-secrets for setup instructions."
+            exit 1
+          fi
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
