@@ -15,7 +15,7 @@
 - Every user interaction either ends with a matched provider list, a submitted service request, or an onboarding of the user as a new provider.
 - The system supports two interaction modes:
   - **Voice mode**: the user speaks; the AI responds with synthesised speech and text.
-  - **Text mode**: the user types; the AI responds with text only. No greeting is played on connection.
+  - **Text mode**: the user types; the AI responds with text only. No audio greeting is synthesized or played on connection, but a text greeting is still dispatched.
 - All AI responses and prompts are language-aware. The language is set per session by the client and must be respected throughout the entire conversation. It must never be hardcoded.
 
 ---
@@ -72,6 +72,8 @@
 
 ### 3.2 Conversation Stages
 
+
+
 The conversation progresses through a finite set of named stages. Each stage represents a distinct phase of the dialogue with its own prompt behaviour and transition rules.
 
 | Stage                 | Purpose                                                                                                                                                       |
@@ -108,10 +110,10 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - `COMPLETED → PROVIDER_PITCH`: fires automatically (without an explicit LLM call) when the user is pitch-eligible (see §4). The LLM never needs to call this transition itself.
 - `FINALIZE → TRIAGE`: triggered when the user explicitly cancels the entire provider search. If `FINALIZE` yields exactly 0 search results, the AI must explicitly inform the user, apologize, and transition immediately back to `TRIAGE` to prompt the user to broaden their criteria. Any previously created service request is cancelled before the transition.
 - `FINALIZE → RECOVERY` (safety fallback): the system runs exactly three streaming passes (main stream + two follow-up streams) before triggering this fallback to explain the failure, then runs a fourth catch-up pass after the forced transition.
-- `COMPLETED → TRIAGE`: triggered when the user indicates they have another need after the current flow concludes. The request context is cleared before entering `TRIAGE`.
+- `COMPLETED → TRIAGE`: triggered when the user indicates they have another need after the current flow concludes.
 - `PROVIDER_PITCH → TRIAGE`: triggered when the user, during the pitch, says they actually want to find a service provider rather than become one.
 - `PROVIDER_ONBOARDING → TRIAGE`: triggered when the user declines the provider role (STEP 0 "no") or switches intent to finding a service instead of managing their own skills.
-- Any back-transition to `TRIAGE` from `COMPLETED`, `FINALIZE`, `PROVIDER_PITCH`, or `PROVIDER_ONBOARDING` clears the per-request context so the new scoping session starts clean.
+- Any back-transition to `TRIAGE` from `COMPLETED`, `FINALIZE`, `PROVIDER_PITCH`, or `PROVIDER_ONBOARDING` clears the per-request context so the new scoping session starts clean. **However, the exact user utterance that triggered the back-transition must be preserved and injected as the first prompt of the new `TRIAGE` session.**
 - A stage transition that targets the stage the conversation is already in is silently ignored (self-loop guard).
 
 ### 3.3 Streaming Delivery
@@ -133,13 +135,14 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - Empty or noise-only audio that does not produce a valid text transcript must not trigger an interrupt of the AI's current response.
 - When a response is interrupted, any partial user input that triggered the interrupt must be preserved and prepended to the user's next message, so the full accumulated request is processed coherently in the following turn.
 - The system must not produce a situation where the conversation history contains consecutive user messages with no AI reply between them, as this causes the AI to lose conversational context.
-- **Interrupting State-Mutating Tools:** Data mutation tools (e.g., executing a `cancel_service_request` during `TOOL_EXECUTION`) must execute atomically. Once triggered, they cannot be rolled back by a user interrupt. The interrupt should only cancel the text/voice response generation, not the backend execution.
+- **Interrupting State-Mutating Tools:** Data mutation tools (e.g., executing a `cancel_service_request` during `TOOL_EXECUTION`) must execute atomically. Once triggered by the backend, they cannot be rolled back by a user interrupt. However, if an interrupt arrives *before* the tool-call chunk is completely parsed and executed by the backend, the tool execution is safely aborted. 
 - If a state-mutating tool fails to execute on the backend, but the user has already interrupted the AI's response acknowledging the tool use, the system must forcefully inject the error context into the user's new interrupted prompt so the AI can inform the user that their previous action actually failed.
 
 ### 3.6 Rapid Message Bursts
 
 - When a user sends multiple messages in rapid succession (voice or text), each new message cancels the previous in-flight response.
 - The system must coalesce all interrupted fragments so that the final response addresses the full intent of all the burst messages, not just the last one.
+- The LLM prompt must be instructed to prioritize the chronological end of the coalesced string when deriving the final intent (e.g., if the user says "I need a plumber" then immediately "Cancel that, I need an electrician").
 
 ### 3.7 Session Initialisation Delay
 
@@ -176,13 +179,12 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 
 | Response   | System Action                                                              |
 |------------|----------------------------------------------------------------------------|
-| `accepted` | Mark user as service provider; transition to `PROVIDER_ONBOARDING`.        |
+| `accepted` | Mark user as service provider in authoritative DB; transition to `PROVIDER_ONBOARDING`. **Note:** Mirroring `is_service_provider = true` to the search index is deferred until the user successfully saves their first competency batch to prevent surfacing blank profiles in search. |
 | `not_now`  | Reset the 30-day cooldown clock (user may be asked again later).           |
 | `never`    | Store permanent opt-out; the user is never asked again.                    |
 
 - Any `decision` value that is not `"accepted"` or `"never"` is treated as `"not_now"`.
 - After a pitch response is recorded, the in-session user context is immediately updated in memory so that the pitch eligibility check will not re-evaluate as eligible during the same conversation.
-- When a user accepts the pitch, the `is_service_provider` flag is immediately mirrored to the search index — without waiting for the next login — so the user becomes visible in provider searches from that point in the same session.
 
 ---
 
@@ -195,6 +197,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 - Onboarding draft state is session-scoped. If the session drops, the draft is lost and onboarding must restart.
 - **Concurrent Sessions Draft Invalidation:** If a user completes onboarding in one session, any pending onboarding draft in a concurrent session must be invalidated upon the next data sync to prevent stale data overwriting the fresh authoritative data.
 - Existing providers may also enter onboarding to update their skills (triggered from the triage stage).
+- **Mid-Onboarding Abandonment:** If a user becomes a provider but closes the app before adding any skills, their profile remains invisible in search. On their next login, if they have exactly 0 competencies, the system must prompt them immediately to finish onboarding or temporarily toggle their search visibility off.
 
 ### 5.1 Skill Batch Validation
 
@@ -250,6 +253,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 ### 6.4 Service Request Linkage
 
 - When a service request is created through the AI assistant, the resulting service request identifier is immediately written to the active AI conversation document. This linkage persists after the session ends.
+- **Orphaned Service Requests:** If the linked AI conversation document expires (after 30 days) and is automatically deleted, the service request retains a nullified conversation ID and the chat history simply becomes inaccessible from the request view. The request itself is not deleted.
 
 ### 6.5 Simultaneous REST and AI Cancellation
 
@@ -308,7 +312,8 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 
 ### 7.7 Connection Failure Handling
 
-- If the WebRTC peer connection reaches a failed, disconnected, or closed state, or the WebSocket signaling channel closes or errors while a session is active, the client automatically tears down the session and returns the UI to its idle state.
+- If the WebRTC peer connection experiences network disruption, there is a short grace period (e.g., 5 seconds) allowing for ICE restarts or reconnection (e.g. Wi-Fi to Cellular handoff).
+- If the peer connection reaches a failed, disconnected, or closed state and the grace period expires, or the WebSocket signaling channel closes or errors while a session is active, the client automatically tears down the session and returns the UI to its idle state.
 - If a session start fails for any reason (microphone permission denied, server unreachable, or any other error), the UI returns to idle, the mode is reset, the pending message buffer is cleared, and an error is made available for display.
 - If a session start is already in progress, any subsequent start request must be silently ignored until the in-flight start completes or fails.
 - The WebSocket connection URL must include the authenticated user's identifier as a query parameter. If no authenticated user is present, the connection attempt must fail immediately before any network call is made.
@@ -361,7 +366,8 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 
 ### 8.7 Competence Creation via REST
 
-- When a competence is created via the REST API, the system triggers an LLM enrichment step that extracts `skills_list`, `search_optimized_summary`, `price_per_hour`, `availability_tags`, `availability_text`, and `category` from the raw data. These enriched fields are written back to the data store and synced to the search index. Enrichment failure is non-fatal; the competence is still created.
+- When a competence is created via the REST API, the system triggers an LLM enrichment step that extracts `skills_list`, `search_optimized_summary`, `price_per_hour`, `availability_tags`, `availability_text`, and `category` from the raw data. These enriched fields are written back to the data store and synced to the search index.
+- Enrichment failure is non-fatal; the competence is still created. In this case, the raw description is indexed into Weaviate as a fallback, and default empty tags are applied to ensure the competence remains searchable.
 - Creating any competence via the REST API immediately sets `is_service_provider = True` on the user in both the data store and the search index.
 - If the user's search-index node is missing at the time of competence creation, it is self-healed by recreating it from authoritative data before the new competence is synced.
 
@@ -387,6 +393,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 - TTS synthesis runs per sentence. Multiple sentences are synthesised concurrently; however, audio chunks are played back in the order they appear in the LLM stream, regardless of which sentence finishes synthesis first.
 - Sentences shorter than 15 characters are merged with the next sentence before being sent for TTS synthesis, to avoid overly short, choppy audio segments.
 - **End-of-Stream (EOF) Flush for Short Sentences:** Because sentences shorter than 15 characters are merged with the next, an EOF marker from the LLM stream must immediately force the synthesis and playback of the buffer, even if it contains fewer than 15 characters (e.g., "Thank you.").
+- **No Punctuation Timeout:** To handle cases where the LLM generates long text blocks without valid punctuation marks, a hard character limit fallback is applied: if no punctuation is detected within 200 characters, the sentence buffer is forcefully split at the nearest space to ensure streaming audio is not indefinitely blocked.
 - Each audio chunk has a cosine fade-in (10 ms) and fade-out (3 ms) applied to prevent audible click or crackle artefacts.
 - TTS playback waits at most 30 seconds for all pending sentence synthesis tasks to complete. If the timeout is exceeded, remaining unplayed chunks are silently abandoned and the pipeline proceeds.
 
