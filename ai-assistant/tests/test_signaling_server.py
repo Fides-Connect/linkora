@@ -182,15 +182,22 @@ class TestConnectionManagement:
 class TestTokenAuthentication:
     """Test Firebase ID token authentication on WebSocket connections."""
 
-    def _make_request(self, query_params: dict) -> Mock:
-        """Helper to build a mock aiohttp request with query params."""
+    def _make_request(self, query_params: dict = None, auth_token: str = None) -> Mock:
+        """Helper to build a mock aiohttp request.
+
+        Args:
+            query_params: URL query parameters (user_id, language, mode, etc.).
+            auth_token: If provided, sets the Authorization: Bearer header. Kept separate
+                        from query_params because the server authenticates exclusively via
+                        the Authorization header (or a first web-auth message), never via
+                        query params.
+        """
         mock_request = Mock(spec=web.Request)
         mock_request.remote = '127.0.0.1'
-        mock_request.query = query_params
+        mock_request.query = query_params or {}
         mock_request.headers = {}
-        # If 'token' is present, set Authorization header
-        if 'token' in query_params:
-            mock_request.headers['Authorization'] = f"Bearer {query_params['token']}"
+        if auth_token:
+            mock_request.headers['Authorization'] = f'Bearer {auth_token}'
         return mock_request
 
     @pytest.mark.asyncio
@@ -205,12 +212,10 @@ class TestTokenAuthentication:
 
         mock_ws.__aiter__ = lambda self: mock_ws_iter()
 
-        mock_request = self._make_request({
-            'user_id': 'spoofed-uid',
-            'token': 'valid-token',
-            'language': 'en',
-            'mode': 'text',
-        })
+        mock_request = self._make_request(
+            {'user_id': 'spoofed-uid', 'language': 'en', 'mode': 'text'},
+            auth_token='valid-token',
+        )
 
         with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
              patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
@@ -242,10 +247,7 @@ class TestTokenAuthentication:
 
         mock_ws.__aiter__ = lambda self: mock_ws_iter()
 
-        mock_request = self._make_request({
-            'user_id': 'any-uid',
-            'token': 'bad-token',
-        })
+        mock_request = self._make_request({'user_id': 'any-uid'}, auth_token='bad-token')
 
         with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
              patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
@@ -257,15 +259,18 @@ class TestTokenAuthentication:
 
     @pytest.mark.asyncio
     async def test_no_token_closes_websocket_with_4401(self, signaling_server):
-        """When no Authorization header is present, the connection must be rejected with 4401."""
+        """When no Authorization header is present and the first message is not a valid
+        web-auth message, the connection must be rejected with 4401."""
         mock_ws = Mock(spec=web.WebSocketResponse)
         mock_ws.prepare = AsyncMock()
         mock_ws.close = AsyncMock()
+        # Simulate a client that skips auth and sends an offer directly.
+        mock_ws.receive = AsyncMock(return_value=Mock(
+            type=WSMsgType.TEXT,
+            data=json.dumps({'type': 'offer', 'sdp': 'v=0'}),
+        ))
 
-        mock_request = self._make_request({
-            'language': 'de',
-            'mode': 'voice',
-        })
+        mock_request = self._make_request({'language': 'de', 'mode': 'voice'})
         mock_request.headers = {}
 
         with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
@@ -331,6 +336,64 @@ class TestTokenAuthentication:
         with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
              patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
                    side_effect=Exception('Token expired')):
+
+            await signaling_server.handle_websocket(mock_request)
+
+            mock_ws.close.assert_called_once_with(code=4401, message=b'Unauthorized')
+
+    @pytest.mark.asyncio
+    async def test_web_auth_message_valid_token_authenticates(self, signaling_server):
+        """A valid {"type": "auth", "token": "..."} first message authenticates web clients
+        that cannot set Authorization headers on the WebSocket upgrade request."""
+        mock_ws = Mock(spec=web.WebSocketResponse)
+        mock_ws.prepare = AsyncMock()
+        mock_ws.receive = AsyncMock(return_value=Mock(
+            type=WSMsgType.TEXT,
+            data=json.dumps({'type': 'auth', 'token': 'web-id-token'}),
+        ))
+
+        async def mock_ws_iter():
+            return
+            yield
+
+        mock_ws.__aiter__ = lambda self: mock_ws_iter()
+
+        mock_request = self._make_request({'language': 'en', 'mode': 'text'})
+        mock_request.headers = {}
+
+        with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
+             patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
+                   return_value={'uid': 'web-user-uid'}) as mock_verify, \
+             patch('ai_assistant.signaling_server.PeerConnectionHandler') as mock_handler_class:
+
+            mock_handler = Mock()
+            mock_handler.close = AsyncMock()
+            mock_handler.send_ice_config = AsyncMock()
+            mock_handler_class.return_value = mock_handler
+
+            await signaling_server.handle_websocket(mock_request)
+
+            mock_verify.assert_called_once_with('web-id-token', check_revoked=True)
+            _, kwargs = mock_handler_class.call_args
+            assert kwargs['user_id'] == 'web-user-uid'
+
+    @pytest.mark.asyncio
+    async def test_web_auth_message_invalid_token_closes_with_4401(self, signaling_server):
+        """An invalid token in the web-auth first message must close with 4401."""
+        mock_ws = Mock(spec=web.WebSocketResponse)
+        mock_ws.prepare = AsyncMock()
+        mock_ws.close = AsyncMock()
+        mock_ws.receive = AsyncMock(return_value=Mock(
+            type=WSMsgType.TEXT,
+            data=json.dumps({'type': 'auth', 'token': 'bad-web-token'}),
+        ))
+
+        mock_request = self._make_request({'language': 'de', 'mode': 'voice'})
+        mock_request.headers = {}
+
+        with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
+             patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
+                   side_effect=Exception('Token invalid')):
 
             await signaling_server.handle_websocket(mock_request)
 

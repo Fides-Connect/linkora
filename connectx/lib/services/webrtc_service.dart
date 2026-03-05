@@ -69,6 +69,7 @@ class WebRTCService {
   // ICE server config received from backend (includes TURN credentials)
   List<Map<String, dynamic>>? _iceServers;
   Completer<void>? _iceConfigCompleter;
+  final Duration _iceConfigTimeout;
 
   // Language configuration
   final String _languageCode;
@@ -89,6 +90,7 @@ class WebRTCService {
     AudioRoutingService Function()? audioRoutingServiceFactory,
     String? serverUrl,
     String? languageCode,
+    Duration iceConfigTimeout = const Duration(seconds: 5),
   }) : _webRTCWrapper = webRTCWrapper ?? WebRTCWrapper(),
        _webSocketFactory =
            webSocketFactory ??
@@ -97,6 +99,7 @@ class WebRTCService {
                    : IOWebSocketChannel.connect(uri, headers: headers)),
        _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper(),
        _audioRoutingServiceFactory = audioRoutingServiceFactory,
+       _iceConfigTimeout = iceConfigTimeout,
        _languageCode = languageCode ?? 'de' {
     // Load server URL from environment variable
     final String? rawServer =
@@ -191,7 +194,7 @@ class WebRTCService {
       // peer connection.  The backend sends 'ice-config' immediately on WS
       // connect; we give it up to 5 s before falling back to plain STUN.
       try {
-        await _iceConfigCompleter!.future.timeout(const Duration(seconds: 5));
+        await _iceConfigCompleter!.future.timeout(_iceConfigTimeout);
       } on TimeoutException {
         debugPrint(
           'WebRTC: Ice-config not received in time — using default STUN',
@@ -406,8 +409,10 @@ class WebRTCService {
         'mode': _sessionMode,
       };
 
+      // Non-web platforms support custom headers on the WebSocket upgrade request.
+      // Always authenticate regardless of transport security (ws:// local dev or wss:// prod).
       final Map<String, dynamic> wsHeaders = {};
-      if (_isSecure) {
+      if (!kIsWeb) {
         final String? idToken = await _firebaseAuthWrapper.getIdToken();
         if (idToken == null || idToken.isEmpty) {
           throw Exception('Could not retrieve Firebase ID token for authenticated request');
@@ -419,6 +424,16 @@ class WebRTCService {
         queryParameters: queryParams,
       );
       _signaling = _webSocketFactory(wsUri, wsHeaders);
+
+      // Web browsers cannot set custom headers on WebSocket upgrade requests (browser security
+      // restriction). Send the Firebase ID token as the first message so the server can
+      // authenticate the web connection before processing any signaling messages.
+      if (kIsWeb && _isSecure) {
+        final String? idToken = await _firebaseAuthWrapper.getIdToken();
+        if (idToken != null && idToken.isNotEmpty) {
+          _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
+        }
+      }
 
       _signaling!.stream.listen(
         _handleSignalingMessage,

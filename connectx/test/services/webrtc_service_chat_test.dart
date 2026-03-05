@@ -38,6 +38,7 @@ void main() {
         ),
         firebaseAuthWrapper: mockFirebaseAuthWrapper,
         serverUrl: 'localhost:8000',
+        iceConfigTimeout: Duration.zero,
       );
 
   setUp(() async {
@@ -62,6 +63,7 @@ void main() {
 
     when(mockFirebaseAuthWrapper.currentUser).thenReturn(mockUser);
     when(mockUser.uid).thenReturn('test_user_id');
+    when(mockFirebaseAuthWrapper.getIdToken()).thenAnswer((_) async => 'test-id-token');
 
     when(mockWebRTCWrapper.getUserMedia(any))
         .thenAnswer((_) async => mockLocalStream);

@@ -4,14 +4,13 @@ name: Deploy to Google Cloud
 # Weaviate deploy: triggered directly on push to main when weaviate/** changes.
 on:
   workflow_run:
-    workflows: ["AI Assistant Integration Test"]
+    workflows: ["AI Assistant Tests"]
     types: [completed]
     branches: [main]
   push:
     branches: [main]
     paths:
       - 'weaviate/**'
-      - '.github/workflows/cloud-deploy.yml'
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}

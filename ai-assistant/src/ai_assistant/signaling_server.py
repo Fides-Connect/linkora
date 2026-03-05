@@ -93,21 +93,46 @@ class SignalingServer:
         language = request.query.get('language', 'de')  # Default to German
         raw_mode = request.query.get('mode', 'voice')
 
-        # Require a valid Firebase ID token in the Authorization: Bearer header for all connections.
+        # Authenticate the connection. Non-web clients send the Firebase ID token in the
+        # Authorization: Bearer header. Web browsers cannot set WebSocket upgrade headers
+        # (browser security restriction), so they send {"type": "auth", "token": "..."} as the
+        # first WebSocket message instead.
         auth_header = request.headers.get('Authorization', '')
-        if not auth_header.startswith('Bearer '):
-            logger.warning(f"WebSocket auth failed — missing token from {client_ip}")
-            await ws.close(code=4401, message=b'Unauthorized')
-            return ws
-        token = auth_header[len('Bearer '):]
-        try:
-            decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
-            user_id = decoded_token['uid']
-            logger.debug(f"Token verified for uid: {user_id}")
-        except Exception as e:
-            logger.warning(f"WebSocket auth failed — invalid token: {e}")
-            await ws.close(code=4401, message=b'Unauthorized')
-            return ws
+        if auth_header.startswith('Bearer '):
+            token = auth_header[len('Bearer '):]
+            try:
+                decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
+                user_id = decoded_token['uid']
+                logger.debug(f"Token verified for uid: {user_id}")
+            except Exception as e:
+                logger.warning(f"WebSocket auth failed — invalid token: {e}")
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
+        else:
+            # No Authorization header — expect {"type": "auth", "token": "..."} as the
+            # first message within 10 s (used by web browsers which cannot set WS headers).
+            try:
+                first_msg = await asyncio.wait_for(ws.receive(), timeout=10.0)
+            except Exception as e:
+                logger.warning(f"WebSocket auth failed — no auth message from {client_ip}: {e}")
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
+            if first_msg.type != WSMsgType.TEXT:
+                logger.warning(f"WebSocket auth failed — unexpected message type from {client_ip}")
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
+            try:
+                auth_data = json.loads(first_msg.data)
+                if auth_data.get('type') != 'auth' or not auth_data.get('token'):
+                    raise ValueError('First message is not an auth message')
+                token = auth_data['token']
+                decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
+                user_id = decoded_token['uid']
+                logger.info(f"WebSocket web-auth from {client_ip} for uid: {user_id}")
+            except Exception as e:
+                logger.warning(f"WebSocket auth failed — invalid web auth message from {client_ip}: {e}")
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
         if raw_mode not in ('voice', 'text'):
             logger.warning(
                 f"Invalid session mode '{raw_mode}' from {client_ip}; defaulting to 'voice'"
@@ -116,10 +141,7 @@ class SignalingServer:
         else:
             session_mode = raw_mode
         
-        if user_id:
-            logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (user: {user_id}, language: {language}, mode: {session_mode})")
-        else:
-            logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (no user_id, language: {language}, mode: {session_mode})")
+        logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (user: {user_id}, language: {language}, mode: {session_mode})")
         
         # Create peer connection handler
         logger.debug(f"Creating PeerConnectionHandler for {connection_id}")

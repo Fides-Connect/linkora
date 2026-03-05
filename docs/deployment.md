@@ -125,6 +125,7 @@ gcloud iam service-accounts add-iam-policy-binding \
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${CI_SA}" \
   --role="roles/secretmanager.secretVersionAdder"
+```
 
 **Runtime service account** (`linkora-rt-service-account-dev`) — attached to Cloud Run; used at runtime.
 
