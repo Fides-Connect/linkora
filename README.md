@@ -107,7 +107,7 @@ cd connectx
 flutter pub get
 
 # Configure environment
-cp template.env .env
+cp .env.template .env
 # Edit .env with server URL
 
 # Run on device

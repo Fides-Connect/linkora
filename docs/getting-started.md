@@ -83,7 +83,7 @@ cd connectx
 flutter pub get
 
 # Copy environment template
-cp template.env .env
+cp .env.template .env
 
 # Configure server URL (use your machine's IP for Android emulator)
 # Edit .env and set:
