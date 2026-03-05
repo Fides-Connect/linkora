@@ -90,17 +90,17 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --service-account "${{ secrets.WIF_RT_SERVICE_ACCOUNT }}" \
-            --set-env-vars "WEAVIATE_URL=http://${{ secrets.WEAVIATE_VM_IP }}:${{ secrets.WEAVIATE_VM_PORT }},\
-              GEMINI_MODEL=gemini-2.5-flash,\
-              LANGUAGE_CODE_DE=de-DE,\
-              VOICE_NAME_DE=de-DE-Chirp3-HD-Sulafat,\
-              LANGUAGE_CODE_EN=en-US,\
-              VOICE_NAME_EN=en-US-Chirp3-HD-Sulafat,\
-              HOST=0.0.0.0,\
-              LOG_LEVEL=INFO,\
-              GOOGLE_TTS_API_CONCURRENCY=5,\
-              FIRESTORE_DATABASE_NAME=(default),\
-              DEBUG_RECORD_AUDIO=false" \
+            --update-env-vars "WEAVIATE_URL=http://${{ secrets.WEAVIATE_VM_IP }}:${{ secrets.WEAVIATE_VM_PORT }}" \
+            --update-env-vars "GEMINI_MODEL=gemini-2.5-flash" \
+            --update-env-vars "LANGUAGE_CODE_DE=de-DE" \
+            --update-env-vars "VOICE_NAME_DE=de-DE-Chirp3-HD-Sulafat" \
+            --update-env-vars "LANGUAGE_CODE_EN=en-US" \
+            --update-env-vars "VOICE_NAME_EN=en-US-Chirp3-HD-Sulafat" \
+            --update-env-vars "HOST=0.0.0.0" \
+            --update-env-vars "LOG_LEVEL=INFO" \
+            --update-env-vars "GOOGLE_TTS_API_CONCURRENCY=5" \
+            --update-env-vars "FIRESTORE_DATABASE_NAME=(default)" \
+            --update-env-vars "DEBUG_RECORD_AUDIO=false" \
             --set-secrets "GEMINI_API_KEY=gemini-api-key:latest,ADMIN_SECRET_KEY=admin-secret-key:latest,METERED_API_KEY=metered-api-key:latest,METERED_APP_NAME=metered-app-name:latest" \
             --vpc-connector "${{ secrets.WEAVIATE_VPC_CONNECTOR }}" \
             --vpc-egress private-ranges-only \
