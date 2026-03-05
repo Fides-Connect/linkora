@@ -22,23 +22,21 @@ from weaviate.classes.query import Filter
 logger = logging.getLogger(__name__)
 
 
-def sanitize_input(text: str, max_unique_words: int = 20) -> str:
+def sanitize_input(text: str, max_unique_words: int = 20, max_chars: int = 200) -> str:
     """
     SEO Spam Defense: Strip keyword stuffing from input text.
-    
+
     Strategy:
     1. Extract unique words (case-insensitive)
-    2. If unique word count > threshold, it's likely spam
-    3. Truncate or reject the text
-    
-    Example:
-        Input: "Plumber Electrician Driver Nurse Teacher Plumber Driver"
-        Output: Returns only first 20 unique words
-        
+    2. If unique word count > threshold, it's likely spam — truncate to first N unique words
+    3. Cap result at max_chars to prevent a single massive word from
+       overloading the embedding model (e.g. a 10 000-char wordless blob).
+
     Args:
         text: Input text to sanitize
         max_unique_words: Maximum unique words allowed before truncation
-        
+        max_chars: Hard character-length cap applied after word deduplication.
+
     Returns:
         Sanitized text
     """
@@ -60,10 +58,22 @@ def sanitize_input(text: str, max_unique_words: int = 20) -> str:
     if len(unique_words) > max_unique_words:
         logger.warning(f"Keyword stuffing detected: {len(unique_words)} unique words. Truncating.")
         # Reconstruct from original text to maintain case and punctuation
-        truncated = ' '.join(unique_words[:max_unique_words])
-        return truncated
-    
-    return text
+        result = ' '.join(unique_words[:max_unique_words])
+    else:
+        result = text
+
+    # B5: Hard character-length cap to prevent a single massive word (or long
+    # concatenated tokens) from overloading the embedding model.
+    if len(result) > max_chars:
+        # Truncate at nearest space before the limit to avoid mid-word cuts.
+        truncated_at_space = result[:max_chars + 1].rsplit(' ', 1)[0]
+        result = truncated_at_space if truncated_at_space else result[:max_chars]
+        logger.warning(
+            "sanitize_input: text exceeded %d chars after dedup — truncated to %d chars",
+            max_chars, len(result),
+        )
+
+    return result
 
 
 def enrich_text(text: str, category: str) -> str:

@@ -51,6 +51,7 @@ class AudioProcessor:
         input_track: Optional[MediaStreamTrack] = None,
         user_id: Optional[str] = None,
         language: str = "de",
+        language_fallback_from: str = "",
     ):
         self.connection_id = connection_id
         self.input_track = input_track
@@ -77,6 +78,12 @@ class AudioProcessor:
 
         # Create language-specific AI assistant for this connection
         self.ai_assistant = self._create_language_specific_assistant(language)
+
+        # B2: If the client requested an unsupported language, inject a fallback
+        # note into the conversation context so the greeting prompt can inform
+        # the user in the first turn.
+        if language_fallback_from:
+            self.ai_assistant.conversation_service.context["language_fallback_from"] = language_fallback_from
 
         logger.info(
             "AudioProcessor created for connection %s with language: %s",
@@ -284,6 +291,16 @@ class AudioProcessor:
         self.running = False
         await self.audio_queue.put(None)
 
+        # B7: Cancel the active response task (may hold a FINALIZE provider search)
+        # so it doesn't continue running in the background after disconnect.
+        if self._response_task and not self._response_task.done():
+            self._response_task.cancel()
+            try:
+                await self._response_task
+            except asyncio.CancelledError:
+                pass
+            self._response_task = None
+
         for task_attr in ("stt_task", "processing_task"):
             task = getattr(self, task_attr)
             if task:
@@ -448,7 +465,15 @@ class AudioProcessor:
         Fires partial-transcript interrupt checks inline, delegates final
         transcripts to :meth:`_handle_final_transcript`, then refills the
         queue sentinel so the next session starts cleanly.
+
+        B6: Forces a final-transcript event after MAX_UTTERANCE_DURATION seconds
+        of continuous speech to prevent the pipeline stalling on extremely long
+        utterances (e.g. user leaves mic open).
         """
+        MAX_UTTERANCE_DURATION = 60.0  # seconds
+        utterance_start: Optional[float] = None
+        last_partial: str = ""
+
         async for transcript, is_final in self.transcript_processor.process_audio_stream(
             self._make_audio_chunks()
         ):
@@ -456,6 +481,26 @@ class AudioProcessor:
                 logger.info("Interrupt detected: '%s'", transcript)
                 await self._trigger_interrupt()
                 await asyncio.sleep(0.05)
+                # Reset utterance timer after interrupt so the next speech
+                # segment is tracked independently.
+                utterance_start = None
+                last_partial = ""
+
+            # Track utterance duration on non-final partials.
+            if transcript and not is_final:
+                last_partial = transcript
+                now = asyncio.get_event_loop().time()
+                if utterance_start is None:
+                    utterance_start = now
+                elif now - utterance_start > MAX_UTTERANCE_DURATION:
+                    logger.warning(
+                        "Utterance exceeded %.0fs — force-finalising partial: '%s'",
+                        MAX_UTTERANCE_DURATION,
+                        last_partial[:120],
+                    )
+                    await self.audio_queue.put(None)
+                    await self._handle_final_transcript(last_partial)
+                    break
 
             if is_final:
                 # Reset the queue so the *next* _stt_session starts from an

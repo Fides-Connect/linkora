@@ -29,11 +29,13 @@ class PeerConnectionHandler:
         user_id: str = None,
         language: str = 'de',
         session_mode: str = 'voice',
+        language_fallback_from: str = "",
     ):
         self.connection_id = connection_id
         self.websocket = websocket
         self.user_id = user_id
         self.language = language
+        self.language_fallback_from = language_fallback_from
         # Store as SessionMode enum; backward-compat: == "voice" still works.
         self.session_mode = SessionMode(session_mode)
         self.pc = RTCPeerConnection()
@@ -174,6 +176,7 @@ class PeerConnectionHandler:
             input_track=track,
             user_id=self.user_id,
             language=self.language,
+            language_fallback_from=self.language_fallback_from,
         )
         # Wire activity hook so STT transcripts reset the idle timer
         self.audio_processor.on_activity = self._reset_idle_timer
@@ -333,6 +336,7 @@ class PeerConnectionHandler:
                 input_track=None,
                 user_id=self.user_id,
                 language=self.language,
+                language_fallback_from=self.language_fallback_from,
             )
             self.audio_processor.on_activity = self._reset_idle_timer
             self._wire_runtime_fsm(self.audio_processor)

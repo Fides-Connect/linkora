@@ -26,6 +26,7 @@ class AIConversationService:
         self._conversation_id: Optional[str] = None
         self._user_id: Optional[str] = None
         self._sequence: int = 0
+        self._request_id: Optional[str] = None
 
     @property
     def conversation_id(self) -> Optional[str]:
@@ -75,16 +76,23 @@ class AIConversationService:
     async def set_topic_title(self, title: str) -> None:
         """Update the topic title on the conversation document.
 
-        The Firestore schema enforces max_length=300 on topic_title.
-        We truncate here so the Pydantic validation never fails on a long
-        LLM-generated summary being used as the title.
+        A5: Truncated gracefully at the nearest word boundary before 300 characters
+        so no multi-byte character or word is split.
         """
         if self._conversation_id is None:
             return
         if self._firestore is None:
             return
         try:
-            truncated = title[:300]
+            # Graceful word-boundary truncation at 300 characters (A5)
+            if len(title) > 300:
+                truncated = title[:301].rsplit(None, 1)[0]  # split at last space within 301 chars
+                if not truncated or len(truncated) > 300:
+                    # Fallback: encode/decode to ensure we don't split a multi-byte char
+                    encoded = title.encode("utf-8")[:300]
+                    truncated = encoded.decode("utf-8", errors="ignore")
+            else:
+                truncated = title
             await self._firestore.update_ai_conversation(
                 self._user_id, self._conversation_id, {"topic_title": truncated}
             )
@@ -95,6 +103,7 @@ class AIConversationService:
         """Link a service request ID to this conversation."""
         if self._conversation_id is None:
             return
+        self._request_id = request_id  # cache in memory for get_request_id()
         if self._firestore is None:
             return
         try:
@@ -103,6 +112,10 @@ class AIConversationService:
             )
         except Exception as exc:
             logger.error("AIConversationService.set_request_id error: %s", exc, exc_info=True)
+
+    async def get_request_id(self) -> Optional[str]:
+        """Return the service request ID linked to this conversation (in-memory cache)."""
+        return self._request_id
 
     async def close_session(self, final_stage: ConversationStage) -> None:
         """Mark the conversation as closed with the final stage."""

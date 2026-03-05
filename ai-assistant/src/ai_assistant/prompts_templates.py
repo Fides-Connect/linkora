@@ -1,17 +1,33 @@
-def get_language_instruction(language: str = 'de') -> str:
+def get_language_instruction(language: str = 'de', fallback_from: str = "") -> str:
     """
     Get the language instruction for prompts based on the selected language.
     
     Args:
         language: Language code ('de' or 'en')
+        fallback_from: If non-empty, the client requested this unsupported language
+            and the system fell back to *language*. Include a notice to the user.
         
     Returns:
         Language instruction string
     """
-    if language == 'en':
-        return "Your response must be in English."
+    lang_name = "English" if language == 'en' else "German"
+    base = f"Your response must be in {lang_name}."
+    # B3: Cross-lingual handling — instruct the LLM to acknowledge input in other languages
+    cross_lingual = (
+        f" If the user writes or speaks in a language other than {lang_name}, "
+        f"acknowledge their language and politely explain that you are configured to respond in "
+        f"{lang_name} for this session."
+    )
+    # B2: Unsupported language fallback notice — inform the user in the very first turn
+    if fallback_from:
+        fallback_notice = (
+            f" IMPORTANT: The user requested language '{fallback_from}' which is not "
+            f"supported. In your very first sentence, kindly inform the user that you "
+            f"are responding in {lang_name} because '{fallback_from}' is not available."
+        )
     else:
-        return "Your response must be in German."
+        fallback_notice = ""
+    return base + cross_lingual + fallback_notice
 
 
 GREETING_AND_TRIAGE_PROMPT = """
@@ -193,7 +209,7 @@ You are {agent_name}, a friendly and conversational onboarding coordinator for F
 
 **The user's current competencies (already fetched — do NOT call get_my_competencies):**
 {current_competencies_json}
-
+{draft_invalidated_notice}
 **User's current service-provider status:** {is_service_provider}
 
 STEP 0 — CONFIRM PROVIDER INTENT  (skip this step entirely if `is_service_provider` is True)
@@ -452,9 +468,9 @@ When you first enter this stage (immediately after searching the database), you 
 
 **Scenario 4: No Providers Found (`{provider_count}` = 0) OR List is now empty**
 1.  Apologize sincerely: "I'm truly sorry. I've searched thoroughly, but I couldn't find [any / any other] available service providers for this specific task right now."
-2.  Explain Plan B: "But don't worry, we have a next step: A request will be sent out to people in your neighborhood to see if anyone knows a neighbor with the right skills who can sign up."
-3.  Explain Notification: "As soon as someone suitable registers, we will notify you immediately via email and app notification. You just need to open the app to get the new information."
-4.  Call `signal_transition(target_stage="completed")`. Do NOT add a farewell — the assistant will offer further help automatically.
+2.  Explain that the user can broaden their search criteria and try again.
+3.  If a service request was already created (i.e. you called `create_service_request` earlier), call `cancel_service_request(request_id=<id>)` first to cancel it before the transition.
+4.  Call `signal_transition(target_stage="triage")` to return the user to triage so they can adjust their criteria. Do NOT call `signal_transition(target_stage="completed")`.
 
 **Scenario 5: User Cancels the Entire Search**
 Trigger: The user explicitly abandons the search — e.g. "they are all too expensive", "I'll do it myself", "never mind", "I changed my mind", "forget it".

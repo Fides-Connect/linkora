@@ -175,21 +175,42 @@ async def user_sync(request: web.Request) -> web.Response:
             if UserModelWeaviate.get_user_by_id(user_id):
                 # Ensure the Firestore-authoritative is_service_provider value
                 # (not the client-sent default=False) is written to Weaviate.
-                # Without this fixup, user_data["is_service_provider"] == False
-                # (from the Flutter request body) would silently overwrite the
-                # True that HubSpokeIngestion.update_user_hub_properties set
-                # a few lines above — making the provider invisible in search.
                 user_data["is_service_provider"] = is_sp
                 if not UserModelWeaviate.update_user(user_id, user_data):
-                    return web.json_response({
-                        "error": "Failed to update Weaviate user"
-                    }, status=500)
+                    # A6: Weaviate outage must not fail login — log and continue.
+                    logger.warning(
+                        "user_sync: Weaviate update_user failed for %s — "
+                        "search index may be stale; will self-heal on next login",
+                        user_id,
+                    )
             else:
                 if not UserModelWeaviate.create_user(user_data):
-                    return web.json_response({
-                        "error": "Failed to self-heal/create Weaviate user"
-                    }, status=500)
-            
+                    # A6: Weaviate outage must not fail login — log and continue.
+                    logger.warning(
+                        "user_sync: Weaviate create_user failed for %s — "
+                        "search index node missing; will retry on next login",
+                        user_id,
+                    )
+
+            # B10: Detect mid-onboarding abandonment: user is marked as provider
+            # but has zero competencies (closed app before completing onboarding).
+            onboarding_incomplete = False
+            if is_sp:
+                try:
+                    existing_comps = await firestore_service.get_competencies(user_id)
+                    if len(existing_comps) == 0:
+                        onboarding_incomplete = True
+                        logger.info(
+                            "user_sync: user %s is a provider with 0 competencies — "
+                            "onboarding_incomplete=True in response",
+                            user_id,
+                        )
+                except Exception as comp_check_exc:
+                    logger.warning(
+                        "user_sync: could not check competencies for %s: %s",
+                        user_id, comp_check_exc,
+                    )
+
             logger.info(f"Updated user: {user_id}")
             status = "updated"
         else:
@@ -221,9 +242,11 @@ async def user_sync(request: web.Request) -> web.Response:
             
             logger.info(f"Created new user: {user_id}")
             status = "created"
+            onboarding_incomplete = False  # new users always start clean
         
         return web.json_response({
             "status": status,
+            "onboarding_incomplete": onboarding_incomplete,
             "user": {
                 "user_id": user_id,
                 "name": user_data["name"],

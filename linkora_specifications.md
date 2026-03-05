@@ -17,6 +17,7 @@
   - **Voice mode**: the user speaks; the AI responds with synthesised speech and text.
   - **Text mode**: the user types; the AI responds with text only. No audio greeting is synthesized or played on connection, but a text greeting is still dispatched.
 - All AI responses and prompts are language-aware. The language is set per session by the client and must be respected throughout the entire conversation. It must never be hardcoded.
+- **Demo / Seeding Mode**: In development and demo environments, the system may pre-populate the search index with synthetic provider profiles to enable end-to-end testing of the provider-search flow. This is a demo-only behavior; production environments must never seed synthetic data.
 
 ---
 
@@ -26,6 +27,7 @@
 
 - Firestore is the authoritative data store. All persistent state (users, service requests, competencies, reviews, AI conversations) is written there first.
 - The search index (Weaviate) is a read-optimised cache. It mirrors provider competencies for vector and hybrid search. It is never the source of truth.
+- **Name Lookup Precedence**: The user's display name shown in AI greetings and conversation history is always read from Firestore, which is the authoritative record. Client-supplied name fields in login sync requests are only applied as updates when the incoming value is non-empty and are never used as the name for live session greeting without first reading the Firestore record.
 
 ### 2.2 Provider Visibility in Search
 
@@ -113,12 +115,13 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - `COMPLETED → TRIAGE`: triggered when the user indicates they have another need after the current flow concludes.
 - `PROVIDER_PITCH → TRIAGE`: triggered when the user, during the pitch, says they actually want to find a service provider rather than become one.
 - `PROVIDER_ONBOARDING → TRIAGE`: triggered when the user declines the provider role (STEP 0 "no") or switches intent to finding a service instead of managing their own skills.
+- `PROVIDER_ONBOARDING → COMPLETED`: in addition to the standard stage transition, the system resets the per-request context (problem description, scoped request, provider results) so that the follow-up `COMPLETED` flow starts without stale service-request state from any prior session.
 - Any back-transition to `TRIAGE` from `COMPLETED`, `FINALIZE`, `PROVIDER_PITCH`, or `PROVIDER_ONBOARDING` clears the per-request context so the new scoping session starts clean. **However, the exact user utterance that triggered the back-transition must be preserved and injected as the first prompt of the new `TRIAGE` session.**
 - A stage transition that targets the stage the conversation is already in is silently ignored (self-loop guard).
 
 ### 3.3 Streaming Delivery
 
-- Before each autonomous follow-up sub-stream (triggered after a stage transition), the server emits a `new_bubble` sentinel event to the client. The client must treat this as an instruction to open a new chat bubble rather than appending to the current one.
+- Each autonomous follow-up sub-stream (triggered after a stage transition) is delivered as an independent series of `chat` protocol messages. The client opens a new chat bubble for each logically distinct server response. A new bubble boundary is signalled by the server beginning a new sequence of `chat` messages; specifically, a complete (non-chunk) message (`isChunk: false`) always starts its own bubble, and a fresh sequence of `isChunk: true` fragments following a prior completed message starts a new bubble.
 - If the LLM output contains verbatim tool-call invocations as text (e.g. `signal_transition(target_stage="finalize")`), those patterns must be stripped from the streamed text before delivery to the client. Only text matching a registered tool name is stripped.
 - When the `FINALIZE` provider-search is actively running, any new user input (voice or text) must be rejected. The system sends a bilingual acknowledgement (German and English) informing the user that the search is still in progress, and does not interrupt the search.
 - If the user disconnects or the session is intentionally terminated while a `FINALIZE` search is actively running, the background search tasks must be aborted to free system resources.
@@ -195,7 +198,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 - All collected skill data is held in the session draft until the user confirms.
 - The session ends with the AI presenting a Markdown summary of collected skills, followed by saving the full batch.
 - Onboarding draft state is session-scoped. If the session drops, the draft is lost and onboarding must restart.
-- **Concurrent Sessions Draft Invalidation:** If a user completes onboarding in one session, any pending onboarding draft in a concurrent session must be invalidated upon the next data sync to prevent stale data overwriting the fresh authoritative data.
+- **Concurrent Sessions Draft Invalidation:** At the start of every `PROVIDER_ONBOARDING` turn, the system refreshes the user's competency list from the authoritative data store. If the count of live competencies differs from the count at the time the draft was created (indicating that another session or the REST API modified the data), the in-memory onboarding draft is immediately discarded. The user is informed of the external change before the turn continues, so they can start the draft anew with accurate data.
 - Existing providers may also enter onboarding to update their skills (triggered from the triage stage).
 - **Mid-Onboarding Abandonment:** If a user becomes a provider but closes the app before adding any skills, their profile remains invisible in search. On their next login, if they have exactly 0 competencies, the system must prompt them immediately to finish onboarding or temporarily toggle their search visibility off.
 
@@ -262,6 +265,8 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 ### 6.6 Service Request Cancellation via AI
 
 - A service request can be cancelled through the AI conversation (using the cancel intent within the assistant) in addition to direct REST API calls.
+- When the AI transitions from `FINALIZE` back to `TRIAGE` (either due to zero results or user cancellation), any service request that was created during the current scoping flow must be cancelled automatically by the system before the transition completes. The AI does not need to prompt the user to confirm the cancellation; it is implicit in the transition.
+- The `cancel_service_request` tool is available to the AI with write permission over service requests. It takes the current request identifier as a parameter. Calling it when no active request exists is a no-op.
 
 ---
 
@@ -274,7 +279,6 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 | Client → Server | `{"type": "text-input", "text": "…"}`                                                      |
 | Client → Server | `{"type": "mode-switch", "mode": "text" | "voice"}`                                        |
 | Server → Client | `{"type": "chat", "text": "…", "isUser": bool, "isChunk": bool}`                           |
-| Server → Client | `{"type": "new_bubble"}` — instructs the client to open a new chat bubble                  |
 | Server → Client | `{"type": "runtime-state", "runtimeState": "<state>"}` — current agent runtime FSM state  |
 
 - `isChunk: true` means the message is a streaming fragment. The client must accumulate all fragments before treating the message as complete and displaying it.
@@ -385,6 +389,13 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 - The idle timer is reset on every user activity event. Empty audio chunks or audio classified purely as background noise by the VAD (Voice Activity Detection) must not reset the 10-minute idle timer.
 - When a connection is closed (intentional or timeout), the current conversation stage is written as the final stage to the active AI conversation document (if one is open), and the runtime state machine is transitioned to its terminal state.
 - An invalid `mode` query parameter (any value other than `"voice"` or `"text"`) on a WebSocket connection is silently coerced to `"text"` to prevent unintended audio playback in inappropriate environments.
+
+### 9.1 Runtime FSM Bootstrap Sequence
+
+- When a new session is established, the server-side agent runtime FSM is initialised in the `BOOTSTRAP` state.
+- The FSM advances to `DATA_CHANNEL_WAIT` as soon as the WebRTC peer connection is negotiated and the data channel attachment is confirmed.
+- Once the data channel is confirmed open, the FSM transitions to `LISTENING` (voice mode) or dispatches the text greeting and transitions to `LISTENING` (text mode).
+- The current FSM state is emitted as a `runtime-state` message on both the initial data-channel attachment and again when the channel open event fires, ensuring the client always receives the correct state even if it connects after the FSM has already advanced past `BOOTSTRAP`.
 
 ---
 

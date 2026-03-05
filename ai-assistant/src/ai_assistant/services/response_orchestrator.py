@@ -102,6 +102,7 @@ class ResponseOrchestrator:
         session_id: str,
         context: Optional[dict],
         pending: list,
+        user_input: str = "",
     ) -> bool:
         """Apply a stage transition, run its side effects, and append a structured
         payload to *pending* so the follow-up LLM stream has full context.
@@ -167,6 +168,9 @@ class ResponseOrchestrator:
                         "Failed to fetch competencies for PROVIDER_ONBOARDING payload: %s", exc
                     )
             self.conversation_service.context["current_competencies"] = comps
+            # Record the baseline count so ongoing turns can detect concurrent
+            # modifications from another session (B11).
+            self.conversation_service.context["onboarding_baseline_count"] = len(comps)
             # Mirror is_service_provider so STEP 0 in the prompt renders correctly.
             _user_ctx = (context or {}).get("user_context", {})
             self.conversation_service.context["is_service_provider"] = (
@@ -184,7 +188,7 @@ class ResponseOrchestrator:
             if previous_stage == ConversationStage.PROVIDER_ONBOARDING:
                 self.conversation_service.reset_request_context()
                 logger.info("Request context cleared after PROVIDER_ONBOARDING → COMPLETED")
-            pitch_eligible = self._should_pitch_provider(context)
+            pitch_eligible = await self._should_pitch_provider_async(context)
             if pitch_eligible:
                 pitch_applied = self.handle_signal_transition("provider_pitch")
                 if not pitch_applied:
@@ -202,7 +206,44 @@ class ResponseOrchestrator:
                 ConversationStage.COMPLETED, ConversationStage.FINALIZE,
                 ConversationStage.PROVIDER_ONBOARDING, ConversationStage.PROVIDER_PITCH,
             ):
+                # B9: preserve the triggering utterance BEFORE wiping context so it
+                # can be re-injected as the first problem entry of the new TRIAGE session.
+                triggering_utterance = user_input.strip() if user_input else ""
                 self.conversation_service.reset_request_context()
+                if triggering_utterance:
+                    self.conversation_service.context["user_problem"].append(triggering_utterance)
+                    logger.info(
+                        "Preserved triggering utterance '%s...' for new TRIAGE session",
+                        triggering_utterance[:50],
+                    )
+
+                # B12: programmatic cancel of service request when FINALIZE→TRIAGE.
+                if (
+                    previous_stage == ConversationStage.FINALIZE
+                    and self.tool_registry
+                    and self.ai_conversation_service
+                ):
+                    req_id = None
+                    try:
+                        req_id = await self.ai_conversation_service.get_request_id()
+                    except Exception:
+                        pass
+                    if req_id:
+                        try:
+                            await self.tool_registry.execute(
+                                "cancel_service_request",
+                                {"request_id": req_id},
+                                context or {},
+                            )
+                            logger.info(
+                                "Programmatically cancelled service request %s on FINALIZE→TRIAGE",
+                                req_id,
+                            )
+                        except Exception as cancel_exc:
+                            logger.warning(
+                                "Failed to cancel service request %s on FINALIZE→TRIAGE: %s",
+                                req_id, cancel_exc,
+                            )
             pending.append(("signal_transition", {"stage": "triage"}))
 
         else:
@@ -242,6 +283,38 @@ class ResponseOrchestrator:
         if last_asked.tzinfo is None:
             last_asked = last_asked.replace(tzinfo=timezone.utc)
         return (now - last_asked) >= timedelta(days=30)
+
+    async def _should_pitch_provider_async(self, context: Optional[dict]) -> bool:
+        """Async variant of _should_pitch_provider that adds a real-time Firestore
+        sanity check just before entering PROVIDER_PITCH.
+
+        In-memory check runs first (cheap); only on success does it hit Firestore
+        to guard against a concurrent session that already made the user a provider.
+        """
+        if not self._should_pitch_provider(context):
+            return False
+        # B1: real-time authoritative check so we don't pitch a user who became
+        # a provider in another concurrent session between session start and now.
+        fs = (context or {}).get("firestore_service")
+        user_id = (context or {}).get("user_id")
+        if fs and user_id:
+            try:
+                fresh_user = await fs.get_user(user_id)
+                if fresh_user and fresh_user.get("is_service_provider", False):
+                    logger.info(
+                        "Real-time check: user %s is already a provider — skipping provider pitch",
+                        user_id,
+                    )
+                    # Sync in-memory context so we don't re-check next turn
+                    if context and "user_context" in context:
+                        context["user_context"]["is_service_provider"] = True
+                    return False
+            except Exception as exc:
+                logger.warning(
+                    "Real-time is_service_provider check failed for %s: %s — proceeding with in-memory value",
+                    user_id, exc,
+                )
+        return True
 
     # ── Tool dispatch ──────────────────────────────────────────────────────────
 
@@ -454,6 +527,33 @@ class ResponseOrchestrator:
                         "Pre-fetched %d competencies for PROVIDER_ONBOARDING",
                         len(self.conversation_service.context["current_competencies"]),
                     )
+                    # B11: Detect concurrent-session competency changes and
+                    # discard the in-memory draft so the user is not silently
+                    # overwritten by a stale onboarding conversation.
+                    _baseline = self.conversation_service.context.get(
+                        "onboarding_baseline_count"
+                    )
+                    _live_count = len(
+                        self.conversation_service.context["current_competencies"]
+                    )
+                    if _baseline is not None and _live_count != _baseline:
+                        logger.info(
+                            "Concurrent modification detected: competency count "
+                            "changed from %d → %d; discarding onboarding draft",
+                            _baseline,
+                            _live_count,
+                        )
+                        self.conversation_service.context["onboarding_draft"] = []
+                        self.conversation_service.context["onboarding_baseline_count"] = (
+                            _live_count
+                        )
+                        self.conversation_service.context[
+                            "onboarding_draft_invalidated"
+                        ] = True
+                    else:
+                        self.conversation_service.context.pop(
+                            "onboarding_draft_invalidated", None
+                        )
                 except Exception as exc:  # pragma: no cover
                     logger.warning("Failed to pre-fetch competencies: %s", exc)
 
@@ -492,7 +592,8 @@ class ResponseOrchestrator:
                             )
 
                         await self._apply_signal_transition_with_payload(
-                            target, session_id, context, pending_tool_results
+                            target, session_id, context, pending_tool_results,
+                            user_input=user_input,
                         )
                         self.runtime_fsm.transition("tool_done")
 
@@ -638,16 +739,16 @@ class ResponseOrchestrator:
 
             # ── Safety fallback: stuck-in-FINALIZE guard ─────────────────────────
             # If all follow-up rounds are exhausted and the stage is still FINALIZE
-            # (the LLM never called signal_transition("completed")), force the
-            # transition so the conversation does not get permanently stuck.
+            # (the LLM never called a transition), force a transition to RECOVERY so
+            # Elin can calmly acknowledge the failure and steer back to TRIAGE.
             if self.conversation_service.get_current_stage() == ConversationStage.FINALIZE:
                 logger.warning(
                     "Safety fallback: conversation still in FINALIZE after all follow-up "
-                    "streams — forcing transition to COMPLETED."
+                    "streams — forcing transition to RECOVERY."
                 )
                 fallback_pending: list[tuple[str, object]] = []
                 await self._apply_signal_transition_with_payload(
-                    "completed", session_id, context, fallback_pending
+                    "recovery", session_id, context, fallback_pending
                 )
                 async for chunk in self._run_follow_up_stream(
                     fallback_pending, user_input, session_id, context,

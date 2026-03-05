@@ -17,6 +17,7 @@ Context shape expected by all execute() functions::
         "firestore_service": FirestoreService,
     }
 """
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -124,6 +125,11 @@ class AgentToolRegistry:
             raise ToolPermissionError(name, tool.required_capability)
 
         logger.info("Executing tool '%s' for user '%s'", name, context.get("user_id"))
+        # B13: Shield the batch-save so a mid-write WebSocket disconnect cannot
+        # cancel the coroutine and leave the user's Firestore data in a partial
+        # state.
+        if name == "save_competence_batch":
+            return await asyncio.shield(tool.execute(params, context))
         return await tool.execute(params, context)
 
     def all_schemas(self) -> List[Dict[str, Any]]:
@@ -219,9 +225,10 @@ async def _record_provider_interest(params: dict, context: dict) -> Any:
             "is_service_provider": True,
             "last_time_asked_being_provider": now,
         })
-        # Immediately mirror the flag to Weaviate so the is_service_provider==True
-        # filter in provider searches is visible before the next request.
-        HubSpokeIngestion.update_user_hub_properties(user_id, {"is_service_provider": True})
+        # NOTE: We deliberately do NOT mirror is_service_provider=True to Weaviate
+        # here.  Mirroring is deferred until the user successfully saves their first
+        # competency batch (in _save_competence_batch) to prevent surfacing a blank
+        # profile in provider searches before any skills are listed (spec §4.3).
         return {"signal_transition": "provider_onboarding", "status": "accepted"}
     elif decision == "never":
         await fs.update_user(user_id, {

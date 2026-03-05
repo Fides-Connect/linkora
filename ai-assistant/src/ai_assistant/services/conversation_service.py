@@ -155,7 +155,10 @@ class ConversationService:
             ChatPromptTemplate for the stage
         """
         if stage == ConversationStage.GREETING:
-            language_instruction = get_language_instruction(self.language)
+            # B2: Pass any unsupported-language fallback note on the first turn only,
+            # then clear it so subsequent prompts don't repeat it.
+            fallback_from = self.context.pop("language_fallback_from", "")
+            language_instruction = get_language_instruction(self.language, fallback_from=fallback_from)
             user_name = self.context.get("user_name", "")
             has_open_request = "Yes" if self.context.get("has_open_request", False) else "No"
             return ChatPromptTemplate.from_messages([
@@ -243,12 +246,22 @@ class ConversationService:
                 ensure_ascii=False,
                 default=json_serializer,
             )
+            draft_invalidated = self.context.pop("onboarding_draft_invalidated", False)
+            draft_invalidated_notice = (
+                "\n**NOTICE:** Your competency list was updated from another session "
+                "since this conversation started. The previous draft has been discarded "
+                "and the list above reflects the current saved state. "
+                "Inform the user briefly before continuing.\n"
+                if draft_invalidated
+                else ""
+            )
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(PROVIDER_ONBOARDING_PROMPT).format(
                     agent_name=self.agent_name,
                     language_instruction=language_instruction,
                     current_competencies_json=current_competencies_json,
                     is_service_provider=self.context.get("is_service_provider", False),
+                    draft_invalidated_notice=draft_invalidated_notice,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
