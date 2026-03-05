@@ -446,21 +446,21 @@ class HubSpokeIngestion:
                     )
                     logger.info(f"Deleted old competence: {comp_uuid}")
             
-            # Add new competencies — pass full dicts so all enriched fields are written.
+            # Add new competencies — expects a list of dicts only
             updated_uuids = []
+            if not isinstance(competencies, list):
+                logger.error("update_competencies_by_user_id: competencies must be a list of dicts")
+                return {"success": False, "error": "Input must be a list of dicts", "updated_uuids": []}
             for comp_dict in competencies:
                 if not isinstance(comp_dict, dict):
-                    # Defensive: skip non-dict entries (legacy callers).
                     logger.warning("update_competencies_by_user_id: skipping non-dict entry: %r", comp_dict)
                     continue
-
                 comp_uuid = HubSpokeIngestion.create_competence(
                     competence_data=comp_dict,
                     user_uuid=user_uuid,
                     apply_sanitization=True,
                     apply_enrichment=True,
                 )
-                
                 if comp_uuid:
                     updated_uuids.append(comp_uuid)
                     logger.info(f"Created new competence: {comp_uuid}")

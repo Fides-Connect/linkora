@@ -185,6 +185,10 @@ class TestTokenAuthentication:
         mock_request = Mock(spec=web.Request)
         mock_request.remote = '127.0.0.1'
         mock_request.query = query_params
+        mock_request.headers = {}
+        # If 'token' is present, set Authorization header
+        if 'token' in query_params:
+            mock_request.headers['Authorization'] = f"Bearer {query_params['token']}"
         return mock_request
 
     @pytest.mark.asyncio
@@ -205,7 +209,6 @@ class TestTokenAuthentication:
             'language': 'en',
             'mode': 'text',
         })
-        mock_request.headers = {}
 
         with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
              patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
@@ -231,11 +234,16 @@ class TestTokenAuthentication:
         mock_ws.prepare = AsyncMock()
         mock_ws.close = AsyncMock()
 
+        async def mock_ws_iter():
+            for _ in []:
+                yield
+
+        mock_ws.__aiter__ = lambda: mock_ws_iter()
+
         mock_request = self._make_request({
             'user_id': 'any-uid',
             'token': 'bad-token',
         })
-        mock_request.headers = {}
 
         with patch('ai_assistant.signaling_server.web.WebSocketResponse', return_value=mock_ws), \
              patch('ai_assistant.signaling_server.firebase_auth.verify_id_token',
