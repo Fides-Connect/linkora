@@ -238,7 +238,7 @@ class TestTokenAuthentication:
             for _ in []:
                 yield
 
-        mock_ws.__aiter__ = lambda: mock_ws_iter()
+        mock_ws.__aiter__ = lambda self: mock_ws_iter()
 
         mock_request = self._make_request({
             'user_id': 'any-uid',

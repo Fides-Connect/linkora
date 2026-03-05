@@ -33,7 +33,7 @@ Local dev:
 ### GitHub Secrets
 - `GCP_PROJECT_ID`, `WIF_PROVIDER`, `WIF_CI_SERVICE_ACCOUNT`, `WIF_RT_SERVICE_ACCOUNT`
 - `WEAVIATE_VM_NAME`, `WEAVIATE_VM_ZONE`, `WEAVIATE_VM_IP`
-- `GEMINI_API_KEY` and `ADMIN_SECRET_KEY` are in **Secret Manager** (not GitHub secrets)
+- `GEMINI_API_KEY`, `ADMIN_SECRET_KEY` (GitHub Actions secrets, synced into GCP Secret Manager for Cloud Run)
 
 ### Communication Architecture
 ```
