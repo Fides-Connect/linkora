@@ -52,7 +52,11 @@
 
 ### 2.6 Topic Title Length
 
-- Automatically generated conversation topic titles must not exceed 300 characters before being stored. Titles exceeding this limit must be truncated silently.
+- Automatically generated conversation topic titles must not exceed 300 characters before being stored. Titles exceeding the 300-character limit must be truncated gracefully at the nearest word or valid Unicode character boundary. Hard truncation at exactly 300 bytes/characters must not split multi-byte characters, which would corrupt the string.
+
+### 2.7 Search Cache Outage
+
+- If Weaviate is entirely unreachable during login or search, the system must not fail the entire user session. It must degrade gracefully: login succeeds with a logged warning, and searches return a standardized "Search temporarily unavailable" error to the AI to handle via `RECOVERY`.
 
 ---
 
@@ -61,11 +65,10 @@
 ### 3.1 Session Start
 
 - **Voice mode**: the AI greets the user by his name immediately upon connection.
-- **Text mode**: The AI greets the user by his name immediately when the page Assistant is opened. The conversation starts at the triage stage.
+- **Text mode**: The AI starts in the `GREETING` stage just like Voice mode, dispatches the text greeting immediately on page load, and then autonomously transitions to `TRIAGE`.
 - **Language Enforcement**: If the WebSocket connection lacks a `language` parameter or provides an invalid one, the system defaults to the user's REST-stored settings language, or `"en"` if none exists. The language parameter provided by the client strictly overrides the REST-stored user setting for the duration of that session. The conversation language cannot be changed mid-session.
+- **Unsupported Client Language**: If the client requests a language via WebSocket that the LLM is not localized or tested for (e.g., passing a rare dialect code), the system must fallback to English (`"en"`) and inform the user of the fallback in the first turn.
 - **Cross-Lingual Handling**: The AI prompt must strictly enforce that all responses remain in the session-defined language. If the user speaks in a different language, the AI must explicitly translate or acknowledge the input in the configured system language (e.g., "I see you're speaking German, but I am configured for English right now. How can I help?").
-
-
 
 ### 3.2 Conversation Stages
 
@@ -76,7 +79,7 @@ The conversation progresses through a finite set of named stages. Each stage rep
 | `GREETING`            | **Welcome.** The AI greets the user by name and checks whether they have an open service request, then invites them to share their need.                      |
 | `TRIAGE`              | **Scoping.** The AI acts as a service coordinator: it asks focused questions to understand the user's need just well enough to find a matching provider. It also detects provider-management intent and routes accordingly. |
 | `CLARIFY`             | **Disambiguation.** Used when the request is too ambiguous to scope. The AI asks exactly one targeted question and immediately returns to `TRIAGE`.            |
-| `TOOL_EXECUTION`      | **Data retrieval.** An intermediate stage while a data operation runs (e.g. fetching open requests or favorites). Control returns to `TRIAGE` or `CONFIRMATION` once the tool completes. |
+| `TOOL_EXECUTION`      | **Data retrieval.** An intermediate stage while a data operation runs (e.g. fetching open requests or favorites). Control returns to `TRIAGE`, `CONFIRMATION`, or `FINALIZE` once the tool completes. |
 | `CONFIRMATION`        | **Pre-commit check.** The AI summarises the scoped request in 2–3 sentences and asks the user to confirm before proceeding to provider matching.               |
 | `FINALIZE`            | **Provider matching and presentation.** The system automatically searches for matching providers on stage entry and presents them one by one. The user accepts one or declines all. |
 | `RECOVERY`            | **Error / confusion recovery.** The AI calmly acknowledges the issue without asking the user to restart, then steers back to `TRIAGE` as soon as any service context is given. |
@@ -131,6 +134,7 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - When a response is interrupted, any partial user input that triggered the interrupt must be preserved and prepended to the user's next message, so the full accumulated request is processed coherently in the following turn.
 - The system must not produce a situation where the conversation history contains consecutive user messages with no AI reply between them, as this causes the AI to lose conversational context.
 - **Interrupting State-Mutating Tools:** Data mutation tools (e.g., executing a `cancel_service_request` during `TOOL_EXECUTION`) must execute atomically. Once triggered, they cannot be rolled back by a user interrupt. The interrupt should only cancel the text/voice response generation, not the backend execution.
+- If a state-mutating tool fails to execute on the backend, but the user has already interrupted the AI's response acknowledging the tool use, the system must forcefully inject the error context into the user's new interrupted prompt so the AI can inform the user that their previous action actually failed.
 
 ### 3.6 Rapid Message Bursts
 
@@ -161,7 +165,7 @@ The AI shall pitch the provider opportunity to a user only when **all four** of 
 3. The user has not permanently opted out (the timestamp must not equal the permanent opt-out sentinel).
 4. At least 30 days have elapsed since the user was last asked.
 
-New users have their timestamp pre-set to 60 days in the past, so the first eligible completed conversation triggers the pitch.
+New users have their timestamp pre-set to 60 days in the past, so the first eligible completed conversation triggers the pitch. Just before entering `PROVIDER_PITCH`, the system must perform a real-time check against the authoritative database to ensure `is_service_provider` is still false, overriding the in-memory session context.
 
 ### 4.2 Auto-Trigger
 
@@ -195,6 +199,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 ### 5.1 Skill Batch Validation
 
 - For every new skill in a save batch (a skill with no existing identifier), `price_range` is required. If any new skill is missing `price_range`, the entire batch is rejected. The error must name the affected skill titles and instruct that pricing information is required before the batch can be saved.
+- If a user wishes to offer a service for free, the `price_range` validation must accept an explicit `0` or `'free'` token. It must not strictly require a monetary range if the intent is volunteer work.
 - For every new skill, `availability_time` is also required. If any new skill is missing it, the batch is rejected with the affected titles identified.
 - If a batch is rejected for missing fields (like `price_range` or `availability_time`), the in-memory session draft must retain the valid skill data. The AI will prompt the user specifically for the missing fields on the failing items.
 - `availability_time` is validated against the schema before any data is written. If validation fails, field-level error details and time-format hints are returned, and no partial state is written.
@@ -207,6 +212,10 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 ### 5.3 Search Index Self-Heal During Onboarding
 
 - When a skill save or delete operation detects that the user's search-index node is missing, the system self-heals by recreating the node from authoritative data and re-syncing all skills before retrying the original operation. If self-healing fails, the error propagates.
+
+### 5.4 Dropped Connection During Batch Save
+
+- If the WebRTC/WebSocket connection drops exactly while a validated skill batch is being written to Firestore, the server must complete the atomic write. Upon reconnection, the system must not prompt the user to resume an onboarding draft that was already successfully committed.
 
 ---
 
@@ -242,7 +251,11 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 
 - When a service request is created through the AI assistant, the resulting service request identifier is immediately written to the active AI conversation document. This linkage persists after the session ends.
 
-### 6.5 Service Request Cancellation via AI
+### 6.5 Simultaneous REST and AI Cancellation
+
+- If a seeker cancels a request via the AI, and simultaneously a provider accepts it via REST API, the system must rely on Firestore transaction locks. The first to commit wins, and the AI must be informed of the state mismatch to gracefully explain the race condition to the user.
+
+### 6.6 Service Request Cancellation via AI
 
 - A service request can be cancelled through the AI conversation (using the cancel intent within the assistant) in addition to direct REST API calls.
 
@@ -373,6 +386,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 
 - TTS synthesis runs per sentence. Multiple sentences are synthesised concurrently; however, audio chunks are played back in the order they appear in the LLM stream, regardless of which sentence finishes synthesis first.
 - Sentences shorter than 15 characters are merged with the next sentence before being sent for TTS synthesis, to avoid overly short, choppy audio segments.
+- **End-of-Stream (EOF) Flush for Short Sentences:** Because sentences shorter than 15 characters are merged with the next, an EOF marker from the LLM stream must immediately force the synthesis and playback of the buffer, even if it contains fewer than 15 characters (e.g., "Thank you.").
 - Each audio chunk has a cosine fade-in (10 ms) and fade-out (3 ms) applied to prevent audible click or crackle artefacts.
 - TTS playback waits at most 30 seconds for all pending sentence synthesis tasks to complete. If the timeout is exceeded, remaining unplayed chunks are silently abandoned and the pipeline proceeds.
 
@@ -397,4 +411,4 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 - Text-mode sessions must never attempt to play audio or send a greeting.
 - If the AI is speaking and new input arrives, the current speech output must be interrupted before processing the new input. The interrupted state must be handled gracefully with no orphaned history entries.
 - The permanent opt-out sentinel for the provider pitch must be treated as a special value — never as a real date — throughout all date comparisons.
-- Search input is capped at 20 unique words before being written to the search index to prevent embedding noise.
+- Search input is capped at 20 unique words before being written to the search index to prevent embedding noise. While search input is capped at 20 unique words, it must also be capped at a maximum character length (e.g., 200 characters) to prevent a malicious user from submitting a single 10,000-character string without spaces to overload the embedding model.
