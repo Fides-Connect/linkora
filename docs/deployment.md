@@ -418,14 +418,18 @@ gcloud compute ssh weaviate-vm-dev --zone=europe-west3-a --tunnel-through-iap --
 1. Export data from the VM (or let Weaviate Cloud re-index from source data).
 2. Create a cluster on [Weaviate Cloud](https://console.weaviate.cloud).
 3. Run `scripts/init_database.py` pointing at the new cluster URL.
-4. Update the `WEAVIATE_VM_IP` GitHub secret to the Weaviate Cloud hostname:
+4. Add a **new** `WEAVIATE_URL` GitHub Actions secret with the full Weaviate Cloud URL:
    ```
-   WEAVIATE_URL = "https://your-cluster.weaviate.network"
+   WEAVIATE_URL=https://your-cluster.weaviate.network
    ```
-5. Redeploy AI-Assistant (see above).
-6. Shut down the VM:
+5. Update `cloud-deploy.yml` to pass `WEAVIATE_URL` directly instead of composing it from `WEAVIATE_VM_IP` and `WEAVIATE_VM_PORT`:
+   ```yaml
+   --set-env-vars "WEAVIATE_URL=${{ secrets.WEAVIATE_URL }}, ..."
+   ```
+6. Redeploy AI-Assistant (see above).
+7. Shut down the VM:
    ```bash
    gcloud compute instances delete weaviate-vm-dev --zone=europe-west3-a
    ```
 
-No code changes are needed — only the `WEAVIATE_URL` environment variable changes.
+No application code changes are needed — only `WEAVIATE_URL` and the CI workflow need to point at the Weaviate Cloud endpoint.

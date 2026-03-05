@@ -39,7 +39,6 @@ Fides/
 ├── docs/                 # 📖 This documentation directory
 ├── connectx/             # 📱 Flutter mobile application
 ├── ai-assistant/         # 🤖 Python WebRTC server
-├── weaviate/             # 🗄️ Vector database infrastructure
 ├── weaviate/             # 🗄️ Weaviate docker-compose + VM startup script
 └── .github/workflows/    # 🔄 CI/CD pipelines
 ```

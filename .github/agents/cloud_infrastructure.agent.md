@@ -113,9 +113,9 @@ gcloud run deploy ai-assistant \
 
 **Deploy Weaviate (manual):**
 ```bash
-gcloud compute scp weaviate/docker-compose.yml weaviate-vm:/opt/weaviate/docker-compose.yml --zone=europe-west3-a
-gcloud compute ssh weaviate-vm --zone=europe-west3-a -- \
-  "cd /opt/weaviate && docker compose pull && docker compose up -d"
+gcloud compute scp weaviate/docker-compose.yml weaviate-vm-dev:~/docker-compose.yml --tunnel-through-iap --zone=europe-west3-a
+gcloud compute ssh weaviate-vm-dev --tunnel-through-iap --zone=europe-west3-a -- \
+  "sudo mkdir -p /opt/weaviate && sudo mv ~/docker-compose.yml /opt/weaviate/docker-compose.yml && cd /opt/weaviate && sudo docker compose pull && sudo docker compose up -d"
 ```
 
 **Build and push Docker image:**

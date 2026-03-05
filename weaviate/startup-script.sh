@@ -118,5 +118,5 @@ docker compose pull
 docker compose up -d
 
 echo "=== Weaviate startup complete: $(date) ==="
-echo "Weaviate API: http://$(curl -s ifconfig.me):8080"
+echo "Weaviate API (VPC-internal): http://$(hostname -I | awk '{print $1}'):8090"
 echo "Check health: curl http://localhost:8080/v1/.well-known/ready"

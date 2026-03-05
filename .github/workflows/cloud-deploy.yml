@@ -167,9 +167,11 @@ jobs:
           gcloud compute scp weaviate/docker-compose.yml \
             ${{ secrets.WEAVIATE_VM_NAME }}:~/docker-compose.yml \
             --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
+            --tunnel-through-iap \
             --quiet
           gcloud compute ssh ${{ secrets.WEAVIATE_VM_NAME }} \
             --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
+            --tunnel-through-iap \
             --quiet \
             --command="sudo mkdir -p /opt/weaviate && sudo mv ~/docker-compose.yml /opt/weaviate/docker-compose.yml"
 
@@ -177,6 +179,7 @@ jobs:
         run: |
           gcloud compute ssh ${{ secrets.WEAVIATE_VM_NAME }} \
             --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
+            --tunnel-through-iap \
             --quiet \
             --command="cd /opt/weaviate && sudo docker compose pull && sudo docker compose up -d"
 
