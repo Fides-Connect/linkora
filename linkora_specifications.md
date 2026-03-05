@@ -100,28 +100,46 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - `TRIAGE → FINALIZE`: the system automatically performs a provider search in the same response stream; the result list is injected into the follow-up LLM call.
 - `COMPLETED → PROVIDER_PITCH`: fires automatically (without an explicit LLM call) when the user is pitch-eligible (see §4). The LLM never needs to call this transition itself.
 - `FINALIZE → TRIAGE`: triggered when the user explicitly cancels the entire provider search (e.g. "they are all too expensive", "never mind"). Any previously created service request is cancelled before the transition.
-- `FINALIZE → COMPLETED` (safety fallback): if all follow-up response streams are exhausted and the stage is still `FINALIZE`, the system force-advances to `COMPLETED` to prevent the conversation from getting permanently stuck.
+- `FINALIZE → COMPLETED` (safety fallback): the system runs exactly three streaming passes (main stream + two follow-up streams) before triggering this fallback, then runs a fourth catch-up pass after the forced transition.
 - `COMPLETED → TRIAGE`: triggered when the user indicates they have another need after the current flow concludes. The request context is cleared before entering `TRIAGE`.
 - `PROVIDER_PITCH → TRIAGE`: triggered when the user, during the pitch, says they actually want to find a service provider rather than become one.
 - `PROVIDER_ONBOARDING → TRIAGE`: triggered when the user declines the provider role (STEP 0 "no") or switches intent to finding a service instead of managing their own skills.
 - Any back-transition to `TRIAGE` from `COMPLETED`, `FINALIZE`, `PROVIDER_PITCH`, or `PROVIDER_ONBOARDING` clears the per-request context so the new scoping session starts clean.
+- When transitioning from `PROVIDER_ONBOARDING` to `FINALIZE`, the automatic provider-search step is skipped and an empty provider list is used.
+- A stage transition that targets the stage the conversation is already in is silently ignored (self-loop guard).
 
-### 3.3 Clarification
+### 3.3 Streaming Delivery
+
+- Before each autonomous follow-up sub-stream (triggered after a stage transition), the server emits a `new_bubble` sentinel event to the client. The client must treat this as an instruction to open a new chat bubble rather than appending to the current one.
+- If the LLM output contains verbatim tool-call invocations as text (e.g. `signal_transition(target_stage="finalize")`), those patterns must be stripped from the streamed text before delivery to the client. Only text matching a registered tool name is stripped.
+- When the `FINALIZE` provider-search is actively running, any new user input (voice or text) must be rejected. The system sends a bilingual acknowledgement (German and English) informing the user that the search is still in progress, and does not interrupt the search.
+
+### 3.4 Clarification
 
 - If the user's request lacks sufficient detail, the AI may enter `CLARIFY` to ask one targeted question before returning to `TRIAGE`.
 - The AI must not over-probe. If the user has already provided sufficient detail across multiple short messages, the AI must skip probing and proceed to summarise and confirm.
 - If the user signals that their description is complete (e.g. "do you know someone who can help me?"), the AI must immediately move to the summarise-and-confirm flow.
 
-### 3.4 Interrupt Handling
+### 3.5 Interrupt Handling
 
 - If the user speaks or sends a message while the AI is actively responding, the AI's current response must be cancelled before a new one is generated.
 - When a response is interrupted, any partial user input that triggered the interrupt must be preserved and prepended to the user's next message, so the full accumulated request is processed coherently in the following turn.
 - The system must not produce a situation where the conversation history contains consecutive user messages with no AI reply between them, as this causes the AI to lose conversational context.
 
-### 3.5 Rapid Message Bursts
+### 3.6 Rapid Message Bursts
 
 - When a user sends multiple messages in rapid succession (voice or text), each new message cancels the previous in-flight response.
 - The system must coalesce all interrupted fragments so that the final response addresses the full intent of all the burst messages, not just the last one.
+
+### 3.7 Session Initialisation Delay
+
+- When the first text message arrives in a session, the system waits up to 2 seconds for session initialisation (user data retrieval) to complete before processing the message. If the timeout is exceeded, the message is processed immediately without user context.
+
+### 3.8 Provider Onboarding Competency Injection
+
+- At the start of every `PROVIDER_ONBOARDING` turn, the system pre-fetches the user's current competency list from the authoritative data store and injects it into the LLM prompt context. The LLM must never call a competency-fetch tool explicitly during onboarding turns; the data is always pre-loaded.
+- After any competency write or delete operation during an onboarding turn, the competency list is immediately refreshed from the authoritative store before the follow-up LLM call.
+- If the AI signals `completed` at the end of a `PROVIDER_ONBOARDING` turn without having called any write operation in that turn, this is treated as "user chose no changes" and is processed normally with no error.
 
 ---
 
@@ -151,6 +169,10 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 | `not_now`  | Reset the 30-day cooldown clock (user may be asked again later).           |
 | `never`    | Store permanent opt-out; the user is never asked again.                    |
 
+- Any `decision` value that is not `"accepted"` or `"never"` is treated as `"not_now"`.
+- After a pitch response is recorded, the in-session user context is immediately updated in memory so that the pitch eligibility check will not re-evaluate as eligible during the same conversation.
+- When a user accepts the pitch, the `is_service_provider` flag is immediately mirrored to the search index — without waiting for the next login — so the user becomes visible in provider searches from that point in the same session.
+
 ---
 
 ## 5. Provider Onboarding Flow
@@ -161,6 +183,21 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 - The session ends with the AI presenting a Markdown summary of collected skills, followed by saving the full batch.
 - Onboarding draft state is session-scoped. If the session drops, the draft is lost and onboarding must restart.
 - Existing providers may also enter onboarding to update their skills (triggered from the triage stage).
+
+### 5.1 Skill Batch Validation
+
+- For every new skill in a save batch (a skill with no existing identifier), `price_range` is required. If any new skill is missing `price_range`, the entire batch is rejected. The error must name the affected skill titles and instruct that pricing information is required before the batch can be saved.
+- For every new skill, `availability_time` is also required. If any new skill is missing it, the batch is rejected with the affected titles identified.
+- `availability_time` is validated against the schema before any data is written. If validation fails, field-level error details and time-format hints are returned, and no partial state is written.
+- When writing availability data for a skill, if an existing availability record already exists for that skill, it is updated; otherwise a new record is created. At most one availability record exists per skill.
+
+### 5.2 Skill Deduplication
+
+- When a save batch includes a new skill whose title case-insensitively matches an existing skill for the same user, the system treats it as an update to the existing entry rather than creating a duplicate. No error is returned.
+
+### 5.3 Search Index Self-Heal During Onboarding
+
+- When a skill save or delete operation detects that the user's search-index node is missing, the system self-heals by recreating the node from authoritative data and re-syncing all skills before retrying the original operation. If self-healing fails, the error propagates.
 
 ---
 
@@ -180,11 +217,25 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 - A structured query with `available_time`, `location`, and `criterions` triggers a hybrid search.
 - If provider search results are already cached for the current `FINALIZE` stage, the system must return the cached results and not repeat the search.
 - Exception: if the first search returned zero results (e.g. due to stale index data), the next search attempt must perform a real search rather than returning the cached empty list.
+- The provider search pipeline in `FINALIZE` consists of four steps:
+  1. Structured query extraction: the LLM converts the problem summary into a structured object (`available_time`, `category`, `criterions`).
+  2. Hypothetical provider profile generation (HyDE): the LLM writes a description of the ideal provider as a vector query. Steps 1 and 2 run concurrently.
+  3. Wide-net hybrid retrieval from the search index using both the HyDE vector and the structured fields, returning up to `min(max_providers × 5, 30)` candidates.
+  4. Cross-encoder re-ranking of candidates against the original problem summary to select the final top-N results.
+- The "problem summary" used as the basis for provider search is the most recent AI response text. If no AI response has been generated yet, the concatenation of raw user inputs accumulated during `TRIAGE` is used instead.
 
 ### 6.3 Tool Execution
 
 - Tools that require specific permissions must not execute without those permissions. A permission failure must be surfaced as a handled error, not a silent skip.
 - A tool may signal a stage transition by including a `signal_transition` value in its result. This transition is handled by the conversation stream.
+
+### 6.4 Service Request Linkage
+
+- When a service request is created through the AI assistant, the resulting service request identifier is immediately written to the active AI conversation document. This linkage persists after the session ends.
+
+### 6.5 Service Request Cancellation via AI
+
+- A service request can be cancelled through the AI conversation (using the cancel intent within the assistant) in addition to direct REST API calls.
 
 ---
 
@@ -192,17 +243,56 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 
 ### 7.1 Message Format
 
-| Direction       | Message Structure                                                  |
-|-----------------|--------------------------------------------------------------------|
-| Client → Server | `{"type": "text-input", "text": "…"}`                              |
-| Server → Client | `{"type": "chat", "text": "…", "isUser": bool, "isChunk": bool}`   |
+| Direction       | Message Structure                                                                           |
+|-----------------|---------------------------------------------------------------------------------------------|
+| Client → Server | `{"type": "text-input", "text": "…"}`                                                      |
+| Client → Server | `{"type": "mode-switch", "mode": "text" | "voice"}`                                        |
+| Server → Client | `{"type": "chat", "text": "…", "isUser": bool, "isChunk": bool}`                           |
+| Server → Client | `{"type": "new_bubble"}` — instructs the client to open a new chat bubble                  |
+| Server → Client | `{"type": "runtime-state", "runtimeState": "<state>"}` — current agent runtime FSM state  |
 
 - `isChunk: true` means the message is a streaming fragment. The client must accumulate all fragments before treating the message as complete and displaying it.
+- The server emits a `runtime-state` message both when the DataChannel is first attached and again when it is confirmed open, so the client receives the correct state even if it connects after the FSM has already advanced.
+- The client maps incoming runtime-state values to UI conversation states: `bootstrap` / `data_channel_wait` → connecting; `thinking` / `llm_streaming` / `tool_executing` → processing; `listening` / `speaking` / `interrupting` / `mode_switch` → listening; `error_retryable` / `terminated` → idle. Unknown state values are silently ignored.
+- Text-input messages exceeding 10,000 characters are rejected by the server with a warning and are not processed.
 
 ### 7.2 Connection Readiness Guard
 
 - The client must not send messages before the data channel is fully open.
 - Messages that arrive before the channel is ready must be buffered and sent immediately once the channel opens.
+
+### 7.3 Mode Switching Within a Session
+
+- Switching from voice to text mode within an active session does not require a new WebRTC connection. The client mutes the microphone and sends a `mode-switch: text` event, which causes the server to immediately interrupt any in-progress TTS output.
+- Switching from text to voice mode acquires microphone permission and renegotiates the existing WebRTC connection to add an audio track. If microphone permission is denied, the switch fails silently and the session remains in text mode.
+- If a voice track already exists but is muted (from a previous downgrade to text mode), switching back to voice unmutes the track and sends `mode-switch: voice` — no renegotiation is required.
+- If a new audio track arrives on an existing voice session (e.g. Bluetooth device swap), the system replaces the input track and restarts the audio sub-tasks without resetting conversation state.
+- If a text-to-voice upgrade is triggered but the audio track does not arrive within 5 seconds after the offer, the upgrade fails.
+
+### 7.4 Client-Side Idle Timeout
+
+- The client automatically terminates an active session after 10 consecutive minutes of inactivity (no incoming messages of any type). On timeout, the session is torn down, the full chat history is cleared, and the UI returns to its idle state.
+
+### 7.5 Optimistic Message Display
+
+- When a user submits a text message, the client adds it to the chat view immediately, before the server confirms receipt. If the server subsequently echoes the same message, the client must detect and discard the duplicate rather than displaying it twice.
+
+### 7.6 Microphone Mute Lifecycle
+
+- In voice mode, the microphone starts muted at session initiation and is unmuted only once the DataChannel is confirmed open.
+- The microphone is also unmuted each time the AI begins a new response, so the user can speak to interrupt.
+- In text mode, the microphone remains muted for the entire session duration.
+
+### 7.7 Connection Failure Handling
+
+- If the WebRTC peer connection reaches a failed, disconnected, or closed state, or the WebSocket signaling channel closes or errors while a session is active, the client automatically tears down the session and returns the UI to its idle state.
+- If a session start fails for any reason (microphone permission denied, server unreachable, or any other error), the UI returns to idle, the mode is reset, the pending message buffer is cleared, and an error is made available for display.
+- If a session start is already in progress, any subsequent start request must be silently ignored until the in-flight start completes or fails.
+- The WebSocket connection URL must include the authenticated user's identifier as a query parameter. If no authenticated user is present, the connection attempt must fail immediately before any network call is made.
+
+### 7.8 Audio Device Change During Voice Session
+
+- When an audio input device change is detected during a live voice session, the client must automatically recreate the audio track from the new device and renegotiate the peer connection, preserving the previous mute state. If a renegotiation is already in progress when the device change fires, the device change is deferred until the current renegotiation completes.
 
 ---
 
@@ -212,9 +302,85 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 - Write operations go to Firestore first; the search index is updated subsequently.
 - The login sync endpoint must be idempotent — repeated calls with the same user data must not degrade or corrupt existing data.
 
+### 8.1 Login Sync Field Update Rules
+
+- The login sync endpoint updates `email` and `last_sign_in` unconditionally for existing users.
+- `name` and `photo_url` are updated only when the incoming values are non-empty (to handle a race where the identity-provider profile has not fully resolved).
+- `fcm_token` is updated only when the incoming value is non-empty (to prevent overwriting an existing token with a blank value).
+- `is_service_provider` is never accepted from the client body; the authoritative value is always read from the data store before any search-index write.
+
+### 8.2 Sign-In Verification
+
+- The sign-in endpoint verifies the identity token (including revocation check) and returns `user_id`, `email`, and `name`. It does not create or modify any backend data; it is a pure token verification endpoint.
+
+### 8.3 Logout
+
+- The logout endpoint accepts a `user_id` and returns a success status. It performs no backend state changes (no session invalidation, no data-store writes).
+
+### 8.4 User Settings
+
+- The settings read endpoint returns `language` (validated to `"en"` or `"de"`; falls back to `"en"` if the stored value is invalid) and `notifications_enabled` (validated to boolean; falls back to `true` if invalid).
+- The settings update endpoint rejects any `language` value that is not `"en"` or `"de"` with HTTP 400. Settings are merged with existing values; unknown keys are ignored.
+
+### 8.5 Service Request Permissions and Status Transitions
+
+- Only the seeker (creator) of a service request may update or delete it via the REST API. Any other authenticated user receives HTTP 403.
+- Service request status transitions are enforced server-side with role-based rules:
+  - A provider may move a request from `pending` or `waitingForAnswer` to `accepted` or `rejected`, and from `accepted` to `serviceProvided`.
+  - A seeker may move a request from `pending`, `waitingForAnswer`, or `accepted` to `cancelled`, and from `serviceProvided` to `completed`.
+  - A user who is neither the seeker nor the selected provider is forbidden from any status change.
+  - Any other transition is rejected with HTTP 422.
+
+### 8.6 Push Notifications on Service Request Events
+
+- When a service request is created, a push notification is sent asynchronously to the selected provider. This is fire-and-forget and does not block the API response.
+- When a service request's status changes, push notifications are sent asynchronously to both the seeker and the provider, identifying who made the change.
+
+### 8.7 Competence Creation via REST
+
+- When a competence is created via the REST API, the system triggers an LLM enrichment step that extracts `skills_list`, `search_optimized_summary`, `price_per_hour`, `availability_tags`, `availability_text`, and `category` from the raw data. These enriched fields are written back to the data store and synced to the search index. Enrichment failure is non-fatal; the competence is still created.
+- Creating any competence via the REST API immediately sets `is_service_provider = True` on the user in both the data store and the search index.
+- If the user's search-index node is missing at the time of competence creation, it is self-healed by recreating it from authoritative data before the new competence is synced.
+
+### 8.8 Reviews
+
+- Review ratings must be between 1 and 5 inclusive.
+- The reviews list endpoint requires at least one filter parameter (`user_id`, `reviewer_id`, or `service_request_id`). If no filter is provided, an empty list is returned.
+
 ---
 
-## 9. Edge Cases & Invariants
+## 9. Connection Lifecycle
+
+- Each WebRTC connection has a 10-minute server-side idle timer. If no user activity (voice transcript finalisation, text input, or mode switch) is detected within this window, the connection is automatically closed and all associated resources are released.
+- The idle timer is reset on every user activity event.
+- When a connection is closed (intentional or timeout), the current conversation stage is written as the final stage to the active AI conversation document (if one is open), and the runtime state machine is transitioned to its terminal state.
+- An invalid `mode` query parameter (any value other than `"voice"` or `"text"`) on a WebSocket connection is silently coerced to `"voice"`.
+
+---
+
+## 10. Voice Output Pipeline
+
+- TTS synthesis runs per sentence. Multiple sentences are synthesised concurrently; however, audio chunks are played back in the order they appear in the LLM stream, regardless of which sentence finishes synthesis first.
+- Sentences shorter than 15 characters are merged with the next sentence before being sent for TTS synthesis, to avoid overly short, choppy audio segments.
+- Each audio chunk has a cosine fade-in (10 ms) and fade-out (3 ms) applied to prevent audible click or crackle artefacts.
+- TTS playback waits at most 30 seconds for all pending sentence synthesis tasks to complete. If the timeout is exceeded, remaining unplayed chunks are silently abandoned and the pipeline proceeds.
+
+---
+
+## 11. Search Index Enrichment
+
+- When provider competency descriptions are written to the search index, the category name is expanded with a set of related parent terms (e.g. "Electrical" expands to include "Electrician", "Lighting", "Wiring", "Power"). This improves recall for broad searches.
+- Availability data for a provider is converted to filter tokens before being written to the search index: individual day names, aggregate tokens (`weekday`, `weekend`), time-of-day tokens (`morning`, `afternoon`, `evening` derived from HH:MM time ranges), and absence tokens for blocked days.
+
+---
+
+## 12. Health Endpoint
+
+- The server exposes a health endpoint that returns `{"status": "healthy", "active_connections": N}`. This endpoint does not require authentication.
+
+---
+
+## 13. Edge Cases & Invariants
 
 - The system must never hardcode a language string. Language must flow from the session parameter through every layer of processing.
 - Text-mode sessions must never attempt to play audio or send a greeting.
