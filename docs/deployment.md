@@ -126,12 +126,6 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${CI_SA}" \
   --role="roles/secretmanager.secretVersionAdder"
 
-# Speech-to-Text for integration tests (test_client.py runs STT during CI)
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${CI_SA}" \
-  --role="roles/speech.client"
-```
-
 **Runtime service account** (`linkora-rt-service-account-dev`) — attached to Cloud Run; used at runtime.
 
 ```bash
