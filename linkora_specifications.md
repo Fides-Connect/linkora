@@ -80,7 +80,7 @@ The conversation progresses through a finite set of named stages. Each stage rep
 | Stage                 | Purpose                                                                                                                                                       |
 |-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `GREETING`            | **Welcome.** The AI greets the user by name and checks whether they have an open service request, then invites them to share their need.                      |
-| `TRIAGE`              | **Scoping.** The AI acts as a service coordinator: it asks focused questions to understand the user's need just well enough to find a matching provider. It also detects provider-management intent and routes accordingly. |
+| `TRIAGE`              | **Scoping.** The AI acts as a service coordinator. It must collect a strict minimum set of requirements (defined in Section 3.4) before it is permitted to transition to CONFIRMATION. It also detects provider-management intent and routes accordingly. |
 | `CLARIFY`             | **Disambiguation.** Used when the request is too ambiguous to scope. The AI asks exactly one targeted question and immediately returns to `TRIAGE`.            |
 | `TOOL_EXECUTION`      | **Data retrieval.** An intermediate stage while a data operation runs (e.g. fetching open requests or favorites). Control returns to `TRIAGE`, `CONFIRMATION`, or `FINALIZE` once the tool completes. |
 | `CONFIRMATION`        | **Pre-commit check.** The AI summarises the scoped request in 2–3 sentences and asks the user to confirm before proceeding to provider matching.               |
@@ -130,11 +130,25 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - If the user disconnects or the session is intentionally terminated while a `FINALIZE` search is actively running, the background search tasks must be aborted to free system resources.
 - **Silent Tool Execution**: The LLM must never narrate or announce internal state transitions, database searches, or tool executions in natural language (e.g., 'Let me search the database'). If a transition or search is required, the LLM must emit the transition signal silently. Status updates regarding searches are handled exclusively by the client UI interpreting the `runtime-state`.
 
-### 3.4 Clarification
+### 3.4 Clarification & Minimum Required Information (MRI)
 
-- If the user's request lacks sufficient detail, the AI may enter `CLARIFY` to ask one targeted question before returning to `TRIAGE`.
-- The AI must not over-probe. If the user has already provided sufficient detail across multiple short messages, the AI must skip probing and proceed to summarise and confirm.
-- If the user signals that their description is complete (e.g. "do you know someone who can help me?"), the AI must immediately move to the summarise-and-confirm flow.
+The AI must not transition from TRIAGE (or CLARIFY) to CONFIRMATION until the user's request contains sufficient detail.
+
+Sufficient detail is strictly defined as successfully collecting ALL of the following:
+
+- **Core Intent**: The primary service required (e.g., installing lights, fixing a leak).
+- **Contextual Details (Minimum 3)**: At least three specific details defining the scope of the work (e.g., for lighting: indoor vs. outdoor, type of fixtures, ceiling height, current wiring status, number of rooms).
+- **Availability or Urgency**: The user's preferred time slot (e.g., "next Tuesday morning", "weekends") OR the urgency of the request (e.g., "emergency", "flexible").
+
+**Probing Rules:**
+- If the initial user request lacks any of these MRI elements, the AI must remain in TRIAGE (or use CLARIFY) to ask targeted questions to gather the missing data.
+- To avoid overwhelming the user, the AI must ask a maximum of 1 to 2 questions per turn. It must weave these naturally into the conversation rather than presenting a robotic checklist.
+- Only once all MRI criteria are met should the AI move to the CONFIRMATION stage to summarise the fully fleshed-out request.
+
+**User Override Exception:**
+- If the user explicitly refuses to provide more details or forces the search (e.g., "I don't know the details, just find me someone right now!"), the AI must immediately skip the remaining MRI checks and proceed to CONFIRMATION.
+
+For ambiguity resolution, the AI may enter CLARIFY to ask one targeted question before returning to TRIAGE.
 
 ### 3.5 Interrupt Handling
 

@@ -5,7 +5,7 @@
 - **Stack**: `connectx/` (Flutter), `ai-assistant/` (Python/aiohttp), `weaviate/` (vector DB)
 - **AI persona**: "Elin" — `AGENT_NAME = "Elin"` in `ai_assistant.py`
 
-## Living Requirements Reference
+## Living Specifications / Requirements Reference
 
 
 `linkora_specifications.md` at the **repo root** is the authoritative Lastenheft — the complete set of observable system behaviours, use cases, edge cases, and invariants that every agent must respect and must never violate.
