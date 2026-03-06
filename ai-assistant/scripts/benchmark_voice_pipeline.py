@@ -55,6 +55,7 @@ load_dotenv(ROOT / ".env")
 from ai_assistant.services.speech_to_text_service import SpeechToTextService
 from ai_assistant.services.llm_service import LLMService
 from ai_assistant.services.text_to_speech_service import TextToSpeechService
+from ai_assistant.services.tts_playback_manager import SentenceParser
 from ai_assistant.prompts_templates import (
     TRIAGE_CONVERSATION_PROMPT,
     get_language_instruction,
@@ -191,24 +192,46 @@ async def run_once(
 
     llm_elapsed = time.perf_counter() - llm_start
 
-    # Trim to first sentence for TTS so the benchmark is stable across runs
-    first_sentence = (llm_full.split(".")[0] + ".").strip() if "." in llm_full else llm_full[:120]
     print(f"  [run {run_index}] LLM  → TTFT {_fmt(llm_ttft)}, total {_fmt(llm_elapsed)}")
-    print(f"             response preview: '{first_sentence[:80]}'")
+    print(f"             response: '{llm_full[:80]}{'…' if len(llm_full)>80 else ''}'")
 
     # ── TTS ──────────────────────────────────────────────────────────────────
+    # Mirror the production path: split LLM response into sentences using the
+    # same SentenceParser used by TTSPlaybackManager, synthesize all sentences
+    # concurrently, and report the first-chunk latency of the first sentence
+    # (= perceived start-of-speech latency).
+    sentences = SentenceParser.merge_short_sentences(
+        SentenceParser.split_into_sentences(llm_full)
+    )
+    if not sentences:
+        sentences = [llm_full]
+
     tts_start       = time.perf_counter()
     tts_first_chunk = None
     tts_total_bytes = 0
 
-    async for chunk in tts.synthesize_stream(llm_full):
-        if chunk:
-            if tts_first_chunk is None:
-                tts_first_chunk = time.perf_counter() - tts_start
-            tts_total_bytes += len(chunk)
+    async def _synthesize_sentence(sentence: str) -> tuple[float | None, int]:
+        """Synthesize one sentence; return (first_chunk_latency, total_bytes)."""
+        first = None
+        nbytes = 0
+        async for chunk in tts.synthesize_stream(sentence):
+            if chunk:
+                if first is None:
+                    first = time.perf_counter() - tts_start
+                nbytes += len(chunk)
+        return first, nbytes
+
+    # Synthesize all sentences concurrently — same as production.
+    tts_results = await asyncio.gather(*(_synthesize_sentence(s) for s in sentences))
+
+    for first, nbytes in tts_results:
+        tts_total_bytes += nbytes
+        if first is not None and (tts_first_chunk is None or first < tts_first_chunk):
+            tts_first_chunk = first
 
     tts_elapsed = time.perf_counter() - tts_start
-    print(f"  [run {run_index}] TTS  → first chunk {_fmt(tts_first_chunk)}, total {_fmt(tts_elapsed)} ({tts_total_bytes//1024} KB)")
+    print(f"  [run {run_index}] TTS  → first chunk {_fmt(tts_first_chunk)}, total {_fmt(tts_elapsed)} "
+          f"({tts_total_bytes//1024} KB, {len(sentences)} sentence(s))")
 
     e2e = stt_first_final + llm_ttft + tts_first_chunk
     print(f"  [run {run_index}] E2E* → {_fmt(e2e)}  (STT→FINAL + LLM→TTFT + TTS→first chunk)\n")
