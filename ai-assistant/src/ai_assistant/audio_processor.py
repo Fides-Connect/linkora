@@ -457,6 +457,7 @@ class AudioProcessor:
         # Stop TTS and clear audio output immediately so the user hears silence.
         self.tts_manager.interrupt()
         await self.output_track.clear_queue()
+        logger.info("🔇 is_ai_speaking → False (interrupt triggered)")
         self.is_ai_speaking = False
         self.interrupt_event.set()
         # Cancel the ongoing LLM/TTS response task (fire-and-forget; the task
@@ -560,6 +561,7 @@ class AudioProcessor:
             
             # Reset interrupt event and set speaking flag
             self.interrupt_event.clear()
+            logger.info("🔊 is_ai_speaking → True (response started)")
             self.is_ai_speaking = True
             
             # Performance tracking
@@ -609,10 +611,12 @@ class AudioProcessor:
         except asyncio.CancelledError:
             # User interrupted — reset state and let the task exit cleanly.
             logger.info(f"Response generation interrupted for: '{transcript}'")
+            logger.info("🔇 is_ai_speaking → False (task cancelled)")
             self.is_ai_speaking = False
             raise
         except Exception as e:
             logger.error(f"Error processing final transcript: {e}", exc_info=True)
+            logger.info("🔇 is_ai_speaking → False (exception in pipeline)")
             self.is_ai_speaking = False
     
     async def _queue_audio_for_playback(self, audio_data: bytes):
@@ -647,29 +651,35 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Error queueing audio for playback: {e}", exc_info=True)
     
-    async def _monitor_playback_completion(self):
-        """Monitor the audio queue and clear speaking flag when playback is done."""
+    async def _monitor_playback_completion(self, total_audio_bytes: int = 0):
+        """Wait until the device has finished playing all queued audio, then clear is_ai_speaking.
+
+        Estimates playback duration from the total number of PCM bytes queued to
+        the output track (int16 mono @ 48 kHz).  This is exact — no polling, no
+        guessing — because the server controls every byte that goes into the WebRTC
+        stream.  A small fixed tail (200 ms) is added for the WebRTC jitter buffer
+        and platform audio pipeline on the device side.
+        """
         try:
-            # Wait a bit for audio to start queueing
-            await asyncio.sleep(0.1)
-            
-            # Monitor queue size - when it stays at 0 for a bit, we're done playing
-            empty_count = 0
-            while self.is_ai_speaking and not self.interrupt_event.is_set():
-                queue_size = self.output_track.audio_queue.qsize()
-                buffer_size = len(self.output_track._buffer)
-                
-                if queue_size == 0 and buffer_size == 0:
-                    empty_count += 1
-                    # If queue and buffer are empty for 5 consecutive checks (100ms), we're done
-                    if empty_count >= 5:
-                        self.is_ai_speaking = False
-                        break
-                else:
-                    empty_count = 0
-                
-                await asyncio.sleep(0.02)  # Check every 20ms
-            
+            if total_audio_bytes > 0:
+                # int16 mono @ 48 kHz → 2 bytes per sample, 48 000 samples/s
+                duration_s = total_audio_bytes / (48_000 * 2)
+                tail_s = 0.2  # WebRTC jitter buffer + device audio pipeline
+                wait_s = duration_s + tail_s
+                logger.debug(
+                    "Playback monitor: %.3f s audio + %.3f s tail = %.3f s total",
+                    duration_s, tail_s, wait_s,
+                )
+                try:
+                    await asyncio.wait_for(self.interrupt_event.wait(), timeout=wait_s)
+                except asyncio.TimeoutError:
+                    pass  # Normal completion — not interrupted
+            # else: no audio was queued (e.g. text-mode or empty response) — fall through
+
+            logger.info("🔇 is_ai_speaking → False (playback complete)")
+            self.is_ai_speaking = False
+
         except Exception as e:
             logger.error(f"Error in playback monitor: {e}", exc_info=True)
+            logger.info("🔇 is_ai_speaking → False (monitor exception)")
             self.is_ai_speaking = False

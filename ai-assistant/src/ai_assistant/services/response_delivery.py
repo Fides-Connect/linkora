@@ -19,7 +19,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from typing import Callable, Awaitable
+from typing import Callable, Awaitable, Optional
 
 from .data_channel_bridge import DataChannelBridge
 from .session_mode import SessionMode
@@ -49,7 +49,7 @@ class VoiceResponseDelivery(ResponseDelivery):
         tts_manager: TTSPlaybackManager,
         dc_bridge: DataChannelBridge,
         on_speaking_change: Callable[[bool], None],
-        monitor_playback_fn: Callable[[], Awaitable[None]],
+        monitor_playback_fn: Callable[[int], Awaitable[None]],
     ) -> None:
         self._tts_manager = tts_manager
         self._dc_bridge = dc_bridge
@@ -60,8 +60,8 @@ class VoiceResponseDelivery(ResponseDelivery):
         self._dc_bridge.send_chat(transcript, is_user=True, is_chunk=False)
 
     async def stream_response(self, llm_stream: AsyncIterator[str]) -> None:
-        asyncio.create_task(self._monitor_playback_fn())
-        await self._tts_manager.process_llm_stream(llm_stream)
+        total_bytes = await self._tts_manager.process_llm_stream(llm_stream)
+        asyncio.create_task(self._monitor_playback_fn(total_bytes or 0))
 
 
 class TextResponseDelivery(ResponseDelivery):
@@ -93,7 +93,7 @@ class ResponseDeliveryFactory:
         tts_manager: TTSPlaybackManager,
         dc_bridge: DataChannelBridge,
         on_speaking_change: Callable[[bool], None],
-        monitor_playback_fn: Callable[[], Awaitable[None]],
+        monitor_playback_fn: Callable[[int], Awaitable[None]],
     ) -> ResponseDelivery:
         if mode == SessionMode.VOICE:
             return VoiceResponseDelivery(

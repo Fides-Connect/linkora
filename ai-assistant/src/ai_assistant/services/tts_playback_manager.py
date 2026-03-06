@@ -130,6 +130,7 @@ class TTSPlaybackManager:
         self._chunk_ready = asyncio.Event()
         self._processing = False
         self._interrupted = False
+        self._total_audio_bytes = 0  # accumulated across the current turn
     
     async def process_llm_stream(
         self,
@@ -150,7 +151,8 @@ class TTSPlaybackManager:
         self._interrupted = False
         self._chunks.clear()
         self._next_to_play = 0
-        
+        self._total_audio_bytes = 0
+
         accumulated_text = ""
         sentence_order = 0
         
@@ -187,12 +189,14 @@ class TTSPlaybackManager:
             # Wait for all chunks to be played
             if not self._interrupted:
                 await self._wait_for_completion()
-                
+
         except Exception as e:
             logger.error(f"Error in TTS playback: {e}", exc_info=True)
             raise
         finally:
             self._processing = False
+
+        return self._total_audio_bytes
     
     async def _synthesize_and_queue(self, text: str, order: int):
         """
@@ -233,6 +237,7 @@ class TTSPlaybackManager:
                 if order in self._chunks:
                     self._chunks[order].audio_data = audio_data
                     self._chunks[order].is_ready = True
+                    self._total_audio_bytes += len(audio_data)
                     logger.info(f"Audio ready for chunk {order} ({len(audio_data)} bytes)")
             
             # Try to play chunks in order
