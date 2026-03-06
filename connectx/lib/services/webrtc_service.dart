@@ -271,7 +271,6 @@ class WebRTCService {
             'googEchoCancellation': 'true',
             'googEchoCancellation2': 'true',
             'googAutoGainControl': 'true',
-            'googAutoGainControl2': 'true',
             'googNoiseSuppression': 'true',
             'googHighpassFilter': 'true',
             'googTypingNoiseDetection': 'true',
