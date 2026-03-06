@@ -80,7 +80,7 @@ class TestOrchestratorOwnsFSMs:
 class TestHandleSignalTransition:
 
     def test_legal_target_calls_set_stage(self, orchestrator, mock_conversation_service):
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
         orchestrator.handle_signal_transition("finalize")
         mock_conversation_service.set_stage.assert_called_once_with(ConversationStage.FINALIZE)
 
@@ -112,7 +112,7 @@ class TestHandleSignalTransition:
         stage but does NOT trigger provider search.  Side effects (search,
         competency fetch, context reset) are handled by
         _apply_signal_transition_with_payload inside generate_response_stream."""
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
         result = await orchestrator.handle_signal_transition_async("finalize")
         assert result is True
         mock_conversation_service.search_providers_for_request.assert_not_called()
@@ -128,7 +128,7 @@ class TestHandleSignalTransition:
         self, orchestrator, mock_conversation_service
     ):
         """_apply_signal_transition_with_payload triggers search and forwards session_id."""
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
         pending: list = []
         await orchestrator._apply_signal_transition_with_payload(
             "finalize", "sess-42", None, pending
@@ -243,7 +243,7 @@ class TestProviderSearchViaSignalTransition:
     async def test_search_called_when_signal_transition_finalize_received(
         self, orchestrator, mock_conversation_service, mock_llm_service
     ):
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
         call_count = 0
 
         async def stream_with_transition(*args, **kwargs):
@@ -627,7 +627,7 @@ class TestAIConversationServiceIntegration:
     async def test_set_topic_title_called_on_finalize_transition(
         self, mock_llm_service, mock_conversation_service
     ):
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
         mock_conversation_service.get_problem_summary = Mock(return_value="Elektriker")
 
         ai_conv = self._make_ai_conv_svc()

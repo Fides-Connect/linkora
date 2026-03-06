@@ -42,7 +42,7 @@ class TestIsLegalTransition:
 
     @pytest.mark.parametrize("from_s,to_s", [
         (ConversationStage.GREETING,  ConversationStage.TRIAGE),
-        (ConversationStage.TRIAGE,    ConversationStage.FINALIZE),
+        (ConversationStage.TRIAGE,    ConversationStage.CONFIRMATION),
         (ConversationStage.TRIAGE,    ConversationStage.CLARIFY),
         (ConversationStage.TRIAGE,    ConversationStage.TOOL_EXECUTION),
         (ConversationStage.TRIAGE,    ConversationStage.RECOVERY),
@@ -68,6 +68,7 @@ class TestIsLegalTransition:
     @pytest.mark.parametrize("from_s,to_s", [
         (ConversationStage.GREETING,       ConversationStage.COMPLETED),
         (ConversationStage.TRIAGE,         ConversationStage.GREETING),
+        (ConversationStage.TRIAGE,         ConversationStage.FINALIZE),
         (ConversationStage.COMPLETED,      ConversationStage.GREETING),
     ])
     def test_illegal_pairs_return_false(self, from_s, to_s):
@@ -404,8 +405,18 @@ class TestStageManagement:
         assert conversation_service.get_current_stage() == ConversationStage.TOOL_EXECUTION
 
     def test_legal_transition_applied_via_set_stage(self, conversation_service):
-        """set_stage + is_legal_transition work end-to-end."""
+        """set_stage + is_legal_transition work end-to-end: TRIAGE → CONFIRMATION → FINALIZE."""
         conversation_service.set_stage(ConversationStage.TRIAGE)
+        # Direct TRIAGE → FINALIZE is now illegal
+        assert is_legal_transition(
+            conversation_service.get_current_stage(), ConversationStage.FINALIZE
+        ) is False
+        # Mandatory confirmation gate: TRIAGE → CONFIRMATION is legal
+        assert is_legal_transition(
+            conversation_service.get_current_stage(), ConversationStage.CONFIRMATION
+        ) is True
+        conversation_service.set_stage(ConversationStage.CONFIRMATION)
+        # CONFIRMATION → FINALIZE is legal
         assert is_legal_transition(
             conversation_service.get_current_stage(), ConversationStage.FINALIZE
         ) is True
@@ -418,14 +429,25 @@ class TestConversationFlow:
     
     @pytest.mark.asyncio
     async def test_complete_triage_to_finalize_flow(self, conversation_service, mock_data_provider):
-        """Stage is set via set_stage (driven by orchestrator signal_transition) then search runs."""
+        """Stage advances TRIAGE → CONFIRMATION → FINALIZE via two orchestrator signal_transitions."""
         # Accumulate problem descriptions during TRIAGE
         conversation_service.set_stage(ConversationStage.TRIAGE)
         await conversation_service.accumulate_problem_description("Mein Wasserhahn tropft")
         await conversation_service.accumulate_problem_description("Es ist im Badezimmer")
         mock_data_provider.search_providers.assert_not_called()
 
-        # Orchestrator calls set_stage when signal_transition("finalize") is received
+        # Orchestrator calls set_stage when signal_transition("confirmation") is received
+        assert is_legal_transition(
+            conversation_service.get_current_stage(), ConversationStage.CONFIRMATION
+        ) is True
+        conversation_service.set_stage(ConversationStage.CONFIRMATION)
+
+        # TRIAGE → FINALIZE is now illegal
+        assert is_legal_transition(
+            ConversationStage.TRIAGE, ConversationStage.FINALIZE
+        ) is False
+
+        # Orchestrator calls set_stage when signal_transition("finalize") is received from CONFIRMATION
         assert is_legal_transition(
             conversation_service.get_current_stage(), ConversationStage.FINALIZE
         ) is True

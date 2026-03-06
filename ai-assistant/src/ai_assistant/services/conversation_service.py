@@ -55,7 +55,7 @@ class ConversationStage(str, Enum):
 # Legal stage transitions: { from_stage: { allowed_to_stages } }
 _LEGAL_TRANSITIONS: Dict["ConversationStage", List["ConversationStage"]] = {
     ConversationStage.GREETING:       [ConversationStage.TRIAGE],
-    ConversationStage.TRIAGE:         [ConversationStage.FINALIZE, ConversationStage.CLARIFY,
+    ConversationStage.TRIAGE:         [ConversationStage.CONFIRMATION, ConversationStage.CLARIFY,
                                        ConversationStage.TOOL_EXECUTION, ConversationStage.RECOVERY,
                                        ConversationStage.PROVIDER_ONBOARDING],
     ConversationStage.CLARIFY:        [ConversationStage.TRIAGE],

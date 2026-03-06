@@ -55,7 +55,7 @@ ConnectX (Flutter) ──WS signaling──► SignalingServer
 | From | To (allowed) |
 |---|---|
 | `GREETING` | `TRIAGE` |
-| `TRIAGE` | `FINALIZE`, `CLARIFY`, `TOOL_EXECUTION`, `RECOVERY`, `PROVIDER_ONBOARDING` |
+| `TRIAGE` | `CONFIRMATION`, `CLARIFY`, `TOOL_EXECUTION`, `RECOVERY`, `PROVIDER_ONBOARDING` |
 | `CLARIFY` | `TRIAGE` |
 | `TOOL_EXECUTION` | `TRIAGE`, `CONFIRMATION`, `FINALIZE` |
 | `CONFIRMATION` | `FINALIZE`, `TRIAGE` |
@@ -65,7 +65,7 @@ ConnectX (Flutter) ──WS signaling──► SignalingServer
 | `PROVIDER_PITCH` | `PROVIDER_ONBOARDING`, `COMPLETED` |
 | `PROVIDER_ONBOARDING` | `COMPLETED` |
 
-Auto-triggers: `TRIAGE → FINALIZE` runs Weaviate search in the same stream; `COMPLETED → PROVIDER_PITCH` fires when user is eligible.
+Auto-triggers: `CONFIRMATION → FINALIZE` runs Weaviate search in the same stream; `COMPLETED → PROVIDER_PITCH` fires when user is eligible. Direct `TRIAGE → FINALIZE` is **illegal** — the mandatory confirmation gate requires passing through `CONFIRMATION` first.
 
 ### Provider Pitch Eligibility
 All conditions must be true:

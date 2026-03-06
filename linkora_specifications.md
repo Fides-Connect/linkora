@@ -75,8 +75,6 @@
 
 ### 3.2 Conversation Stages
 
-
-
 The conversation progresses through a finite set of named stages. Each stage represents a distinct phase of the dialogue with its own prompt behaviour and transition rules.
 
 | Stage                 | Purpose                                                                                                                                                       |
@@ -97,7 +95,7 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 | Current Stage         | Allowed Next Stages                                                                         |
 |-----------------------|---------------------------------------------------------------------------------------------|
 | `GREETING`            | `TRIAGE`                                                                                    |
-| `TRIAGE`              | `FINALIZE`, `CLARIFY`, `TOOL_EXECUTION`, `RECOVERY`, `PROVIDER_ONBOARDING`                 |
+| `TRIAGE`              | `CONFIRMATION`, `CLARIFY`, `TOOL_EXECUTION`, `RECOVERY`, `PROVIDER_ONBOARDING`              |
 | `CLARIFY`             | `TRIAGE`                                                                                    |
 | `TOOL_EXECUTION`      | `TRIAGE`, `CONFIRMATION`, `FINALIZE`                                                        |
 | `CONFIRMATION`        | `FINALIZE`, `TRIAGE`                                                                        |
@@ -109,7 +107,8 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 
 **Transition notes:**
 
-- `TRIAGE → FINALIZE`: the system automatically performs a provider search in the same response stream; the result list is injected into the follow-up LLM call.
+- **Strict Confirmation Gate**: The system must strictly enforce that `FINALIZE` can only be entered from `CONFIRMATION` or `TOOL_EXECUTION`. The AI is mathematically forbidden from transitioning directly from `TRIAGE` to `FINALIZE` without user approval.
+- `CONFIRMATION → FINALIZE`: the system automatically performs a provider search in the same response stream; the result list is injected into the follow-up LLM call.
 - `COMPLETED → PROVIDER_PITCH`: fires automatically (without an explicit LLM call) when the user is pitch-eligible (see §4). The LLM never needs to call this transition itself.
 - `FINALIZE → TRIAGE`: triggered when the user explicitly cancels the entire provider search. If `FINALIZE` yields exactly 0 search results, the AI must explicitly inform the user, apologize, and transition immediately back to `TRIAGE` to prompt the user to broaden their criteria. Any previously created service request is cancelled before the transition.
 - `FINALIZE → RECOVERY` (safety fallback): the system runs exactly three streaming passes (main stream + two follow-up streams) before triggering this fallback to explain the failure, then runs a fourth catch-up pass after the forced transition.
@@ -126,6 +125,7 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - If the LLM output contains verbatim tool-call invocations as text (e.g. `signal_transition(target_stage="finalize")`), those patterns must be stripped from the streamed text before delivery to the client. Only text matching a registered tool name is stripped.
 - When the `FINALIZE` provider-search is actively running, any new user input (voice or text) must be rejected. The system sends a bilingual acknowledgement (German and English) informing the user that the search is still in progress, and does not interrupt the search.
 - If the user disconnects or the session is intentionally terminated while a `FINALIZE` search is actively running, the background search tasks must be aborted to free system resources.
+- **Silent Tool Execution**: The LLM must never narrate or announce internal state transitions, database searches, or tool executions in natural language (e.g., 'Let me search the database'). If a transition or search is required, the LLM must emit the transition signal silently. Status updates regarding searches are handled exclusively by the client UI interpreting the `runtime-state`.
 
 ### 3.4 Clarification
 
@@ -232,9 +232,11 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 
 1. User describes a need → stage: `TRIAGE`.
 2. AI optionally clarifies → stage: `CLARIFY → TRIAGE`.
-3. AI confirms the request with the user → stages: `TOOL_EXECUTION → CONFIRMATION`.
-4. User confirms → stage: `FINALIZE`.
-5. System performs provider search and presents results → stage: `COMPLETED`.
+3. AI confirms the request with the user → stages: `TRIAGE → CONFIRMATION` (or via `TOOL_EXECUTION`).
+4. User explicitly confirms the summary.
+5. System performs provider search and presents results → stages: `FINALIZE → COMPLETED`.
+
+- **Mandatory Confirmation Gate:** Regardless of how comprehensively the user defines their request in the initial prompt, the AI must summarize the understood requirements in the `CONFIRMATION` stage and receive an explicit affirmative response from the user before executing the provider search in `FINALIZE`.
 
 ### 6.2 Provider Search
 
