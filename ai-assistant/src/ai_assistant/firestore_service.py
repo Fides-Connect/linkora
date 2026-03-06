@@ -153,7 +153,7 @@ class FirestoreService:
                 request['seeker_user_initials'] = ''
         
         # Add provider user info
-        if 'selected_provider_user_id' in request:
+        if request.get('selected_provider_user_id'):
             provider = await self.get_user(request['selected_provider_user_id'])
             if provider and 'name' in provider:
                 request['selected_provider_user_name'] = provider['name']

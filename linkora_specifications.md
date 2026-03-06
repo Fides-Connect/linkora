@@ -107,6 +107,8 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 
 **Transition notes:**
 
+- **Atomic Stage Output**: When the system autonomously fast-paths through a stage — most commonly `TRIAGE → CONFIRMATION` because the user's initial request was already complete — the originating stage (`TRIAGE`) must emit only the `signal_transition` call and must not produce any natural-language response text. All user-facing communication is the sole responsibility of the destination stage (`CONFIRMATION`). This prevents stacking of redundant acknowledgements across consecutive stage outputs.
+
 - **Strict Confirmation Gate**: The system must strictly enforce that `FINALIZE` can only be entered from `CONFIRMATION` or `TOOL_EXECUTION`. The AI is mathematically forbidden from transitioning directly from `TRIAGE` to `FINALIZE` without user approval.
 - `CONFIRMATION → FINALIZE`: the system automatically performs a provider search in the same response stream; the result list is injected into the follow-up LLM call.
 - `COMPLETED → PROVIDER_PITCH`: fires automatically (without an explicit LLM call) when the user is pitch-eligible (see §4). The LLM never needs to call this transition itself.
@@ -121,7 +123,8 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 
 ### 3.3 Streaming Delivery
 
-- Each autonomous follow-up sub-stream (triggered after a stage transition) is delivered as an independent series of `chat` protocol messages. The client opens a new chat bubble for each logically distinct server response. A new bubble boundary is signalled by the server beginning a new sequence of `chat` messages; specifically, a complete (non-chunk) message (`isChunk: false`) always starts its own bubble, and a fresh sequence of `isChunk: true` fragments following a prior completed message starts a new bubble.
+- Each autonomous follow-up sub-stream (triggered after a stage transition) is delivered as an independent series of `chat` protocol messages. When a stage transition is silent (e.g. the fast-path `TRIAGE → CONFIRMATION`), the originating stage produces no chat messages at all; only the destination stage produces output. The client opens a new chat bubble for each logically distinct server response. A new bubble boundary is signalled by the server beginning a new sequence of `chat` messages; specifically, a complete (non-chunk) message (`isChunk: false`) always starts its own bubble, and a fresh sequence of `isChunk: true` fragments following a prior completed message starts a new bubble.
+- **Response Deduplication**: The system prompt for every stage must explicitly forbid repeating an acknowledgement of the user's request if that stage was reached via a silent fast-path transition from a previous stage. If the LLM's generated output for a given stage begins with a paraphrase of the user's request that was already acknowledged in the immediately preceding stage output, the duplicate sentence must be stripped before delivery. Each stage may only acknowledge the user's intent once per conversational turn across all sub-streams in that turn.
 - If the LLM output contains verbatim tool-call invocations as text (e.g. `signal_transition(target_stage="finalize")`), those patterns must be stripped from the streamed text before delivery to the client. Only text matching a registered tool name is stripped.
 - When the `FINALIZE` provider-search is actively running, any new user input (voice or text) must be rejected. The system sends a bilingual acknowledgement (German and English) informing the user that the search is still in progress, and does not interrupt the search.
 - If the user disconnects or the session is intentionally terminated while a `FINALIZE` search is actively running, the background search tasks must be aborted to free system resources.
@@ -153,7 +156,14 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - When the first text message arrives in a session, the system waits up to 2 seconds for session initialisation (user data retrieval) to complete before processing the message. If the timeout is exceeded, the message is processed immediately without user context.
 - If the 2-second timeout is exceeded but user data is returned successfully later, it must be injected into the in-memory session whenever it arrives, applying to all future turns.
 
-### 3.8 Provider Onboarding Competency Injection
+### 3.8 Response Conciseness and Deduplication
+
+- **Single Acknowledgement Rule**: The AI must acknowledge the user's request or intent at most once per conversational turn, across all stage sub-streams. Redundant re-phrasings of the same intent within the same turn are strictly forbidden.
+- **Direct Action**: The AI must not use repetitive conversational filler (e.g., "No problem at all, I can help! Alright, I can certainly help..."). After a single, brief acknowledgement (if any), the AI must proceed immediately to the required stage action — summarising, asking a clarifying question, or executing a tool.
+- **Pre-Commit Summary Consolidation**: During the `CONFIRMATION` stage, if the stage was reached via a fast-path transition from `TRIAGE`, the AI must combine any acknowledgement and the confirmation summary into a single cohesive statement. It must not open with a fresh greeting-like preamble before the summary.
+- **Silent Fast-Path Transitions**: When `TRIAGE` determines that the user's request is already complete and transitions immediately to `CONFIRMATION`, the `TRIAGE` LLM call must emit the `signal_transition` signal only and produce no natural-language output. The `CONFIRMATION` stage owns all user-visible text for that turn.
+
+### 3.9 Provider Onboarding Competency Injection
 
 - At the start of every `PROVIDER_ONBOARDING` turn, the system pre-fetches the user's current competency list from the authoritative data store and injects it into the LLM prompt context. The LLM must never call a competency-fetch tool explicitly during onboarding turns; the data is always pre-loaded.
 - After any competency write or delete operation during an onboarding turn, the competency list is immediately refreshed from the authoritative store before the follow-up LLM call.
@@ -232,7 +242,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 
 1. User describes a need → stage: `TRIAGE`.
 2. AI optionally clarifies → stage: `CLARIFY → TRIAGE`.
-3. AI confirms the request with the user → stages: `TRIAGE → CONFIRMATION` (or via `TOOL_EXECUTION`).
+3. AI confirms the request with the user → stages: `TRIAGE → CONFIRMATION`.
 4. User explicitly confirms the summary.
 5. System performs provider search and presents results → stages: `FINALIZE → COMPLETED`.
 

@@ -183,11 +183,11 @@ async def _get_open_requests(params: dict, context: dict) -> Any:
 
 async def _create_service_request(params: dict, context: dict) -> Any:
     fs = _require_fs(context)
-    return await fs.create_service_request(
-        user_id=context["user_id"],
-        title=params.get("title", ""),
-        description=params.get("description", ""),
-    )
+    return await fs.create_service_request({
+        "seeker_user_id": context["user_id"],
+        "title": params.get("title", ""),
+        "description": params.get("description", ""),
+    })
 
 
 async def _cancel_service_request(params: dict, context: dict) -> Any:
