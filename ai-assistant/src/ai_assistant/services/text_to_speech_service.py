@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 class TextToSpeechService:
     """Service for text-to-speech conversion using Google Cloud TTS API."""
-    
-    def __init__(self, language_code: str = 'de-DE', 
+
+    def __init__(self, language_code: str = 'de-DE',
                  voice_name: str = 'de-DE-Chirp3-HD-Sulafat',
                  max_concurrent_requests: int = 5):
         self.language_code = language_code
@@ -58,3 +58,4 @@ class TextToSpeechService:
         async for chunk in self.synthesize_stream(text):
             chunks.append(chunk)
         return b''.join(chunks)
+
