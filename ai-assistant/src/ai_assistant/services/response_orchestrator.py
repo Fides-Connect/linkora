@@ -3,6 +3,7 @@ Response Orchestration Service — Agentic Brain
 Handles LLM response generation with conversation stage management,
 signal_transition dispatch, tool dispatch, and FSM ownership.
 """
+import asyncio
 import re
 import json
 import logging
@@ -409,10 +410,12 @@ class ResponseOrchestrator:
                 user_input[:50], current_stage,
             )
 
-            # Persist the user turn before streaming starts
+            # Persist the user turn (fire-and-forget — don't block LLM start)
             if self.ai_conversation_service:
-                await self.ai_conversation_service.save_message(
-                    role="user", text=user_input, stage=current_stage
+                asyncio.create_task(
+                    self.ai_conversation_service.save_message(
+                        role="user", text=user_input, stage=current_stage
+                    )
                 )
 
             # Accumulate problem description only during triage

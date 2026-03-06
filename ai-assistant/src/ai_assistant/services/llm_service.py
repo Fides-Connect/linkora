@@ -62,7 +62,7 @@ class LLMService:
             model=model,
             google_api_key=api_key,
             temperature=temperature,
-            top_k=8,
+            top_k=4,
             top_p=0.9,
             max_output_tokens=max_output_tokens,
             streaming=True,

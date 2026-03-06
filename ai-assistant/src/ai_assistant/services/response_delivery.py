@@ -60,8 +60,8 @@ class VoiceResponseDelivery(ResponseDelivery):
         self._dc_bridge.send_chat(transcript, is_user=True, is_chunk=False)
 
     async def stream_response(self, llm_stream: AsyncIterator[str]) -> None:
-        await self._tts_manager.process_llm_stream(llm_stream)
         asyncio.create_task(self._monitor_playback_fn())
+        await self._tts_manager.process_llm_stream(llm_stream)
 
 
 class TextResponseDelivery(ResponseDelivery):

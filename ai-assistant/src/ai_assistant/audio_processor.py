@@ -61,6 +61,19 @@ class AudioProcessor:
         self.processing_task = None
         self.stt_task = None
 
+        # Client-side VAD: end-of-speech detection to bypass Google VAD latency.
+        # Tune via env vars; defaults work well for 48 kHz 16-bit mono audio.
+        self._vad_silence_rms: int = int(os.getenv("VAD_SILENCE_RMS", "300"))
+        self._vad_silence_ms: int = int(os.getenv("VAD_SILENCE_MS", "400"))
+        # Number of consecutive above-threshold frames required to arm VAD.
+        # Prevents a single noise burst / echo from arming and immediately firing.
+        self._vad_speech_confirm_frames: int = int(os.getenv("VAD_SPEECH_CONFIRM_FRAMES", "5"))
+        # Calculated at runtime per session:
+        self._vad_silence_frames: int = 0  # set in _process_audio
+        self._vad_silence_counter: int = 0
+        self._vad_speech_counter: int = 0
+        self._vad_speech_detected: bool = False
+
         # Session mode — derived from whether an audio track is provided.
         # The ``_is_text_mode`` property below provides backward compat.
         self.session_mode: SessionMode = (
@@ -330,7 +343,15 @@ class AudioProcessor:
         """Main audio processing loop - receives frames and queues them for STT."""
         try:
             frame_count = 0
-            
+
+            # How many consecutive silent frames = VAD_SILENCE_MS of silence.
+            # A WebRTC audio frame is 10 ms at 48 kHz (480 samples).
+            frame_duration_ms = 10
+            self._vad_silence_frames = max(1, self._vad_silence_ms // frame_duration_ms)
+            self._vad_silence_counter = 0
+            self._vad_speech_counter = 0
+            self._vad_speech_detected = False
+
             while self.running:
                 try:
                     frame_count += 1
@@ -350,7 +371,37 @@ class AudioProcessor:
                     self.debug_recorder.add_frame(audio_data)
                     audio_bytes = audio_data.tobytes()
                     await self.audio_queue.put(audio_bytes)
-                    
+
+                    # ── Client-side VAD ──────────────────────────────────────
+                    # Only act when the AI is silent (don't cut off the mic
+                    # echo while AI is speaking — that's handled by the
+                    # interrupt path).
+                    if not self.is_ai_speaking:
+                        rms = int(np.sqrt(np.mean(audio_data.astype(np.float32) ** 2)))
+                        if rms >= self._vad_silence_rms:
+                            # Count consecutive loud frames before arming.
+                            self._vad_speech_counter += 1
+                            self._vad_silence_counter = 0
+                            if self._vad_speech_counter >= self._vad_speech_confirm_frames:
+                                self._vad_speech_detected = True
+                        elif self._vad_speech_detected:
+                            # Silence after speech.
+                            self._vad_silence_counter += 1
+                            if self._vad_silence_counter >= self._vad_silence_frames:
+                                # End-of-speech: close audio stream so STT
+                                # returns FINAL immediately instead of waiting
+                                # for Google's server-side VAD timeout.
+                                logger.debug(
+                                    "VAD: end-of-speech after %d silent frames — "
+                                    "closing STT stream",
+                                    self._vad_silence_counter,
+                                )
+                                await self.audio_queue.put(None)
+                                self._vad_speech_detected = False
+                                self._vad_speech_counter = 0
+                                self._vad_silence_counter = 0
+                    # ────────────────────────────────────────────────────────
+
                 except asyncio.TimeoutError:
                     continue
                 except Exception as e:
@@ -446,7 +497,6 @@ class AudioProcessor:
         try:
             while self.running:
                 await self._stt_session()
-                await asyncio.sleep(0.1)
         except asyncio.CancelledError:
             logger.info("Continuous STT cancelled")
         except Exception as exc:
@@ -544,12 +594,14 @@ class AudioProcessor:
             if self.on_activity:
                 self.on_activity()
 
-            # Open AI conversation session on the first turn (idempotent after that)
+            # Open AI conversation session on the first turn (fire-and-forget)
             ai_conv = self.ai_assistant.response_orchestrator.ai_conversation_service
             if ai_conv is not None and self.user_id:
-                await ai_conv.open_session(
-                    user_id=self.user_id,
-                    session_id=self.connection_id,
+                asyncio.create_task(
+                    ai_conv.open_session(
+                        user_id=self.user_id,
+                        session_id=self.connection_id,
+                    )
                 )
 
             # Echo transcript to client — delivery strategy decides whether to send it.

@@ -624,20 +624,14 @@ class TestContinuousSttTaskScheduling:
         with patch.object(
             voice_proc, "_process_final_transcript", side_effect=fake_pft
         ):
-            # Run _continuous_stt for just long enough to issue the task
             voice_proc.running = True
-            stt_task = asyncio.create_task(voice_proc._continuous_stt())
-
-            # Wait for _process_final_transcript to be called
+            await voice_proc._stt_session()
+            # _handle_final_transcript schedules fake_pft via create_task;
+            # wait for it to be invoked (gives up to 1 s before failing).
             try:
                 await asyncio.wait_for(pft_started.wait(), timeout=1.0)
             finally:
                 voice_proc.running = False
-                stt_task.cancel()
-                try:
-                    await stt_task
-                except asyncio.CancelledError:
-                    pass
 
         assert pft_started.is_set(), "_process_final_transcript was never called"
 
@@ -665,14 +659,8 @@ class TestContinuousSttTaskScheduling:
             patch.object(voice_proc, "_process_final_transcript", new=AsyncMock()),
         ):
             voice_proc.running = True
-            stt_task = asyncio.create_task(voice_proc._continuous_stt())
-            await asyncio.sleep(0.05)
-            voice_proc.running = False
-            stt_task.cancel()
-            try:
-                await stt_task
-            except asyncio.CancelledError:
-                pass
+            await voice_proc._stt_session()
+            await asyncio.sleep(0)  # flush the create_task for _process_final_transcript
 
         assert interrupted, "_trigger_interrupt must be called before new response"
 

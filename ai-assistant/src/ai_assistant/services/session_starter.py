@@ -126,6 +126,11 @@ class VoiceSessionStarter(SessionStarter):
             # Push greeting bubble to Flutter.
             self._dc.send_chat(greeting_text, is_user=False, is_chunk=False)
 
+            # Advance stage GREETING → TRIAGE immediately so user messages
+            # aren't blocked while greeting audio plays.
+            await self._orchestrator.handle_signal_transition_async("triage")
+            self.initialized_event.set()
+
             # Stream TTS audio to output track, honouring interrupt.
             async for chunk in self._tts.synthesize_stream(
                 greeting_text, chunk_size=2048
@@ -138,9 +143,6 @@ class VoiceSessionStarter(SessionStarter):
                         )
                         break
                     await self._output_track.queue_audio(chunk)
-
-            # Advance stage GREETING → TRIAGE.
-            await self._orchestrator.handle_signal_transition_async("triage")
 
         except Exception as exc:
             logger.error(

@@ -123,7 +123,7 @@ class SpeechService {
 
     _webrtcService!.onRemoteStream = (MediaStream stream) {
       debugPrint('SpeechService: Received remote audio stream');
-      Future.microtask(() => _handleRemoteStream(stream));
+      _handleRemoteStream(stream);
     };
 
     _webrtcService!.onDataChannelOpen = () {

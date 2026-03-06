@@ -30,7 +30,7 @@ class SentenceParser:
     SENTENCE_END_PATTERN = re.compile(r'([.!?]+(?:\s+|$))')
     
     # Short sentence threshold
-    MIN_SENTENCE_LENGTH = 15
+    MIN_SENTENCE_LENGTH = 5
     
     @classmethod
     def split_into_sentences(cls, text: str) -> list[str]:
@@ -127,6 +127,7 @@ class TTSPlaybackManager:
         self._chunks: dict[int, SentenceChunk] = {}
         self._next_to_play = 0
         self._lock = asyncio.Lock()
+        self._chunk_ready = asyncio.Event()
         self._processing = False
         self._interrupted = False
     
@@ -236,6 +237,7 @@ class TTSPlaybackManager:
             
             # Try to play chunks in order
             await self._play_ready_chunks()
+            self._chunk_ready.set()
             
         except Exception as e:
             logger.error(f"Error synthesizing chunk {order}: {e}", exc_info=True)
@@ -260,7 +262,6 @@ class TTSPlaybackManager:
     async def _wait_for_completion(self):
         """Wait for all chunks to be played."""
         max_wait = 30  # Maximum wait time in seconds
-        wait_interval = 0.1
         waited = 0
         
         while waited < max_wait:
@@ -268,8 +269,11 @@ class TTSPlaybackManager:
                 if not self._chunks:
                     return
             
-            await asyncio.sleep(wait_interval)
-            waited += wait_interval
+            self._chunk_ready.clear()
+            try:
+                await asyncio.wait_for(self._chunk_ready.wait(), timeout=1.0)
+            except asyncio.TimeoutError:
+                waited += 1
         
         logger.warning(f"Timeout waiting for TTS completion, {len(self._chunks)} chunks pending")
     
