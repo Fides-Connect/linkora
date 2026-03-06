@@ -48,7 +48,7 @@ class LLMService:
     """Service for language model interactions using LangChain and Gemini."""
     
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash",
-                 temperature: float = 0.2, max_output_tokens: int = 2048):
+                 temperature: float = 0.2, max_output_tokens: int = 512):
         """
         Initialize LLM service.
         
