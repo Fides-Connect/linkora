@@ -67,7 +67,7 @@ Service `ai-assistant`, port `8080:8080`. Health check: `curl -f http://localhos
 | Variable | Default | Purpose |
 |---|---|---|
 | `GEMINI_API_KEY` | — | Required. Gemini LLM. |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | LLM model name |
+| `GEMINI_MODEL` | `gemini-2.5-flash-lite` | LLM model name |
 | `GOOGLE_SERVICE_ACCOUNT_JSON_PATH` | — | Optional; falls back to ADC |
 | `WEAVIATE_URL` | `http://weaviate:8080` | Local Weaviate |
 | `WEAVIATE_CLUSTER_URL` + `WEAVIATE_API_KEY` | — | Cloud Weaviate |

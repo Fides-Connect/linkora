@@ -160,7 +160,7 @@ All under `/api/v1/`, Firebase Bearer token required. Routes: `/auth/*`, `/me`, 
 
 | Service | Purpose | Env var |
 |---|---|---|
-| Google Gemini (`gemini-2.5-flash`) | LLM responses | `GEMINI_API_KEY` |
+| Google Gemini (`gemini-2.5-flash-lite`) | LLM responses | `GEMINI_API_KEY` |
 | Google Cloud Speech-to-Text (gRPC) | Audio → text, 30–50% lower latency than REST | GCP credentials |
 | Google Cloud TTS (Chirp3-HD) | Text → audio; voice: `de-DE-Chirp3-HD-Sulafat` / `en-US-Chirp3-HD-Sulafat` | GCP credentials |
 | Firebase Auth | JWT verification on all REST endpoints | GKE Workload Identity / ADC |

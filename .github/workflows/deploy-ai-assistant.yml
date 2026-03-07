@@ -85,7 +85,7 @@ jobs:
             --service-account "${{ secrets.WIF_RT_SERVICE_ACCOUNT }}" \
             --update-env-vars "WEAVIATE_URL=http://${{ secrets.WEAVIATE_VM_IP }}:${{ secrets.WEAVIATE_VM_PORT }}" \
             --update-env-vars "WEAVIATE_SYNC_ON_STARTUP=true" \
-            --update-env-vars "GEMINI_MODEL=gemini-2.5-flash" \
+            --update-env-vars "GEMINI_MODEL=gemini-2.5-flash-lite" \
             --update-env-vars "LANGUAGE_CODE_DE=de-DE" \
             --update-env-vars "VOICE_NAME_DE=de-DE-Chirp3-HD-Sulafat" \
             --update-env-vars "LANGUAGE_CODE_EN=en-US" \

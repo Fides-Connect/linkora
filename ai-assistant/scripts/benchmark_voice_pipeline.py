@@ -293,7 +293,7 @@ async def main(runs: int, wav_path: Path, lang: str) -> None:
     print(f"{len(pcm)//1024} KB  ({duration_s:.2f}s @ {STT_SAMPLE_RATE//1000}kHz mono 16-bit)")
 
     stt = SpeechToTextService(language_code=cfg["language_code"])
-    llm = LLMService(api_key=api_key, model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
+    llm = LLMService(api_key=api_key, model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite"))
     tts = TextToSpeechService(language_code=cfg["language_code"], voice_name=cfg["voice_name"])
 
     results = []

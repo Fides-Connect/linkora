@@ -54,7 +54,7 @@ async def greet_warmup(request: web.Request) -> web.Response:
         # Build language-specific service instances (lightweight, no shared state).
         language_code, voice_name = get_language_config(language)
         gemini_api_key = os.getenv("GEMINI_API_KEY", "")
-        gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
         llm_service = LLMService(
             api_key=gemini_api_key,

@@ -153,7 +153,7 @@ class AudioProcessor:
         assistant = AIAssistant(
             gemini_api_key=os.getenv('GEMINI_API_KEY'),
             language=language,
-            llm_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
+            llm_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-lite'),
             session_id=self.connection_id
         )
 
