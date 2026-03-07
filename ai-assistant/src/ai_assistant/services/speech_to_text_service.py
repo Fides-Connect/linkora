@@ -2,11 +2,12 @@
 Speech-to-Text Service
 Handles all speech recognition functionality.
 """
-import asyncio
 import logging
 from typing import AsyncIterator, Tuple
 from google.cloud import speech_v1 as speech
 from google.cloud.speech_v1 import SpeechAsyncClient
+from google.api_core import exceptions as google_exceptions
+
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +70,12 @@ class SpeechToTextService:
                         logger.debug(f"⚠️  STT result has no alternatives")
             
             logger.info(f"🏁 STT streaming recognition completed (processed {response_count} responses)")
-            
+        
+        except google_exceptions.OutOfRange as grpc_error:
+            logger.info(f"STT duration limit reached without audio. Refreshing stream.")
         except Exception as e:
             logger.error(f"STT streaming error: {e}", exc_info=True)
+        finally:
             yield ("", False)
     
     def _create_recognition_config(self) -> speech.RecognitionConfig:

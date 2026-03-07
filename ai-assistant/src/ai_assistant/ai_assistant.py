@@ -82,7 +82,7 @@ class AIAssistant:
             api_key=gemini_api_key,
             model=llm_model,
             temperature=0.2,
-            max_output_tokens=2048
+            max_output_tokens=512
         )
         
         self.conversation_service = ConversationService(
