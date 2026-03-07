@@ -140,6 +140,12 @@ class SignalingServer:
             session_mode = 'voice'
         else:
             session_mode = raw_mode
+
+        # hold_start=true: complete ICE/DC handshake but defer AudioProcessor start
+        # until a real voice offer (with audio track) arrives.  Used by the Flutter
+        # client's hollow pre-warm so the server doesn't spin up STT/LLM until
+        # the user actually taps the mic button.
+        hold_start = request.query.get('hold_start', 'false').lower() == 'true'
         
         logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (user: {user_id}, language: {language}, mode: {session_mode})")
         
@@ -153,6 +159,7 @@ class SignalingServer:
             language=language,
             session_mode=session_mode,
             ice_servers=ice_servers,
+            hold_start=hold_start,
         )
         self.active_connections[str(connection_id)] = handler
         logger.debug(f"Active connections: {len(self.active_connections)}")

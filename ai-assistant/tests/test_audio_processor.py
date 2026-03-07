@@ -454,6 +454,10 @@ class TestRuntimeStateEmission:
         dc.send = Mock(side_effect=lambda m: sent.append(m))
         audio_processor.data_channel = dc
 
+        # Setting data_channel re-emits the current FSM state (LISTENING) once.
+        # Clear that so we can assert only on the explicit _emit_runtime_state call.
+        sent.clear()
+
         audio_processor._emit_runtime_state(AgentRuntimeState.LISTENING)
 
         assert len(sent) == 1

@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:http/http.dart' as http;
+import 'package:permission_handler/permission_handler.dart';
 import 'webrtc_service.dart';
 import 'wrappers.dart';
 import '../models/app_types.dart';
@@ -17,6 +20,7 @@ class SpeechService {
 
   // Dependencies
   final PermissionWrapper _permissionWrapper;
+  final FirebaseAuthWrapper _firebaseAuthWrapper;
   final WebRTCService Function(String) _webRTCServiceFactory;
 
   // Language configuration
@@ -34,14 +38,71 @@ class SpeechService {
   SpeechService({
     PermissionWrapper? permissionWrapper,
     WebRTCService Function(String)? webRTCServiceFactory,
+    FirebaseAuthWrapper? firebaseAuthWrapper,
   }) : _permissionWrapper = permissionWrapper ?? PermissionWrapper(),
        _webRTCServiceFactory =
            webRTCServiceFactory ??
-           ((lang) => WebRTCService(languageCode: lang));
+           ((lang) => WebRTCService(languageCode: lang)),
+       _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper();
 
   /// Set the language code for the AI Assistant
   void setLanguageCode(String languageCode) {
     _languageCode = languageCode;
+  }
+
+  /// Pre-warm the WebSocket signaling connection and fetch ICE credentials.
+  ///
+  /// Call this as soon as the user opens the assistant tab.  By the time they
+  /// tap the mic button the WebRTC handshake overhead (~300–500 ms) is already
+  /// done.  Safe to call without awaiting — failures are silently absorbed.
+  Future<void> preWarmConnection() async {
+    if (_webrtcService == null) {
+      _initializeWebRTC();
+    }
+    try {
+      await _webrtcService!.preWarm();
+    } catch (e) {
+      debugPrint('SpeechService: preWarmConnection failed (non-critical): $e');
+    }
+  }
+
+  /// Pre-generate the personalised greeting (LLM + TTS) on the server.
+  ///
+  /// Calls ``POST /api/v1/assistant/greet-warmup`` so the server caches the
+  /// greeting audio before the user taps the mic.  When the voice session
+  /// starts the server plays the cached audio immediately (~0 ms) instead of
+  /// running LLM + TTS live (~1.5–2.5 s).
+  ///
+  /// Safe to call without awaiting — failures are silently absorbed.
+  Future<void> warmUpGreeting() async {
+    try {
+      final rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
+      if (rawServer == null || rawServer.isEmpty) return;
+
+      final httpBase = _toHttpUrl(rawServer);
+      final uri = Uri.parse('$httpBase/api/v1/assistant/greet-warmup');
+
+      final idToken = await _firebaseAuthWrapper.getIdToken();
+      if (idToken == null || idToken.isEmpty) return;
+
+      await http.post(
+        uri,
+        headers: {'Authorization': 'Bearer $idToken'},
+      );
+      debugPrint('SpeechService: Greeting warmup triggered');
+    } catch (e) {
+      debugPrint('SpeechService: warmUpGreeting failed (non-critical): $e');
+    }
+  }
+
+  /// Convert a raw server URL (as stored in [AI_ASSISTANT_SERVER_URL]) to an
+  /// HTTP/HTTPS base URL (strips any trailing path, converts ws/wss schemes).
+  static String _toHttpUrl(String raw) {
+    if (raw.startsWith('https://')) return raw;
+    if (raw.startsWith('http://')) return raw;
+    if (raw.startsWith('wss://')) return raw.replaceFirst('wss://', 'https://');
+    if (raw.startsWith('ws://')) return raw.replaceFirst('ws://', 'http://');
+    return 'http://$raw'; // bare host:port (local dev)
   }
 
   /// Check if microphone is currently muted

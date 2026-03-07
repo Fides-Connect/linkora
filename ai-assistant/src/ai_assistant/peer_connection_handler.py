@@ -32,6 +32,7 @@ class PeerConnectionHandler:
         language: str = 'de',
         session_mode: str = 'voice',
         ice_servers: list[dict] | None = None,
+        hold_start: bool = False,
     ):
         self.connection_id = connection_id
         self.websocket = websocket
@@ -48,6 +49,11 @@ class PeerConnectionHandler:
         self.track_update_ready = asyncio.Event()
         self.track_update_ready.set()  # Initially set - no update pending
         self.data_channel = None
+        # One-shot flag: when True, the first voice offer is a hollow pre-warm
+        # (no audio track).  We send the SDP answer immediately without waiting
+        # for on_track.  Cleared after the hollow answer is sent so the real
+        # renegotiation offer (with audio track) is processed normally.
+        self._hold_start_active = hold_start
         self._pending_text_inputs: list[str] = []
         self._idle_task: asyncio.Task = None  # 10-minute idle timeout task
 
@@ -332,7 +338,28 @@ class PeerConnectionHandler:
                 )
 
     async def _handle_initial_voice_offer(self) -> None:
-        """Complete initial voice offer: wait for track, add output, send answer."""
+        """Complete initial voice offer: wait for track, add output, send answer.
+
+        When ``_hold_start_active`` is True (hollow pre-warm), the client sent
+        an offer with no audio track so the full ICE + DC handshake can be
+        completed before the user taps the mic.  We send the answer immediately
+        without waiting for ``on_track``.  The flag is cleared after so the
+        next offer (the real voice offer with audio track sent on mic tap) is
+        processed via the normal path, which creates the AudioProcessor and
+        plays the cached greeting.
+        """
+        if self._hold_start_active:
+            self._hold_start_active = False  # one-shot
+            answer = await self.pc.createAnswer()
+            await self.pc.setLocalDescription(answer)
+            await self._send_message({'type': 'answer', 'sdp': self.pc.localDescription.sdp})
+            logger.info(
+                "Hollow pre-warm: SDP handshake complete for connection %s "
+                "(AudioProcessor deferred until real voice offer)",
+                self.connection_id,
+            )
+            return
+
         await asyncio.wait_for(self.track_ready.wait(), timeout=5.0)
         if self.audio_processor:
             output_track = self.audio_processor.get_output_track()

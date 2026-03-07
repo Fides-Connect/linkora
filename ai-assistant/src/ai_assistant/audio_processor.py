@@ -135,6 +135,14 @@ class AudioProcessor:
     def data_channel(self, channel) -> None:
         self._data_channel = channel
         self._dc_bridge.attach(channel)
+        # Re-emit the current FSM state so Flutter receives it even when the
+        # state was first emitted before the DataChannel existed (e.g. LISTENING
+        # fires before on_datachannel wires the channel).
+        try:
+            fsm = self.ai_assistant.response_orchestrator.runtime_fsm
+            self._dc_bridge.send_runtime_state(fsm.current_state)
+        except Exception:
+            pass  # AudioProcessor not fully initialised yet — safe to ignore
 
     # ── Factory ───────────────────────────────────────────────────────────────
 
