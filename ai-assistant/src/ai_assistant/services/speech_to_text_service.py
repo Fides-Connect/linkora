@@ -42,7 +42,7 @@ class SpeechToTextService:
             streaming_config = speech.StreamingRecognitionConfig(
                 config=config,
                 interim_results=True,
-                single_utterance=False,
+                single_utterance=True,
             )
             
             request_gen = self._create_request_generator(streaming_config, audio_generator)
