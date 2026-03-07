@@ -73,9 +73,9 @@ class SpeechToTextService:
         
         except google_exceptions.OutOfRange as grpc_error:
             logger.info(f"STT duration limit reached without audio. Refreshing stream.")
+            yield ("", False)
         except Exception as e:
             logger.error(f"STT streaming error: {e}", exc_info=True)
-        finally:
             yield ("", False)
     
     def _create_recognition_config(self) -> speech.RecognitionConfig:
