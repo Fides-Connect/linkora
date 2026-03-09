@@ -308,9 +308,10 @@ class AssistantTabViewModel extends ChangeNotifier {
   void switchToTextMode() {
     if (_isVoiceMode) {
       _isVoiceMode = false;
-      _speechService.setMicrophoneMuted(true);
-      // Notify server so ongoing TTS is interrupted immediately.
+      // Notify the server first so it can interrupt TTS immediately, then
+      // release the hardware so the OS clears the Android mic indicator.
       _speechService.notifyModeSwitch('text');
+      unawaited(_speechService.stopVoiceMode());
       notifyListeners();
     }
   }

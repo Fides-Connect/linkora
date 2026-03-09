@@ -665,13 +665,7 @@ class AudioProcessor:
         try:
             if total_audio_bytes > 0:
                 # int16 mono @ 48 kHz → 2 bytes per sample, 48 000 samples/s
-                duration_s = total_audio_bytes / (48_000 * 2)
-                tail_s = 0.2  # WebRTC jitter buffer + device audio pipeline
-                wait_s = duration_s + tail_s
-                logger.debug(
-                    "Playback monitor: %.3f s audio + %.3f s tail = %.3f s total",
-                    duration_s, tail_s, wait_s,
-                )
+                wait_s = total_audio_bytes / (48_000 * 2)
                 try:
                     await asyncio.wait_for(self.interrupt_event.wait(), timeout=wait_s)
                 except asyncio.TimeoutError:

@@ -196,6 +196,10 @@ class WebRTCService {
       validatedMode = 'voice';
     }
 
+    // Capture the mode the pre-warm was established for before overwriting it.
+    // The pre-warm mode check below compares this against the requested mode
+    // to decide whether the pre-warm can be activated or must be discarded.
+    final String prewarmedMode = _sessionMode;
     _sessionMode = validatedMode;
     _dataChannelOpenFired = false;
 
@@ -205,7 +209,7 @@ class WebRTCService {
     // track, and renegotiate — the server plays the greeting from cache the
     // moment it receives the audio track.
     if (_isPrewarmed) {
-      if (_sessionMode == validatedMode) {
+      if (prewarmedMode == validatedMode) {
         debugPrint('WebRTC: Activating hollow pre-warm (ICE + DC already established)');
         _isPrewarmed = false;
         _isConnecting = true;
@@ -585,14 +589,23 @@ class WebRTCService {
         }
       }
 
-      _signaling!.stream.listen(
+      // Capture the specific instance so the onDone guard below can detect
+      // whether this socket is still the active one.  If the connection was
+      // discarded (mode mismatch) and _signaling was nulled out before the
+      // server's close-frame arrives, the stale onDone must NOT trigger a
+      // disconnect() on a new connection that is already in progress.
+      final activeSignaling = _signaling!;
+      activeSignaling.stream.listen(
         _handleSignalingMessage,
         onError: (error) {
           debugPrint('WebRTC: Signaling error: $error');
           onError?.call('Signaling error: $error');
         },
         onDone: () {
-          if (_isConnected || _isConnecting) disconnect();
+          if (identical(_signaling, activeSignaling) &&
+              (_isConnected || _isConnecting)) {
+            disconnect();
+          }
         },
       );
     } catch (e) {
@@ -614,9 +627,14 @@ class WebRTCService {
         'sdpSemantics': 'unified-plan',
       };
 
-      _peerConnection = await _webRTCWrapper.createPeerConnection(
+      // Capture the PC in a local so that all closures below can guard against
+      // stale callbacks from a discarded pre-warm connection.  When a mode-
+      // mismatch discard replaces _peerConnection (or nulls it), these old
+      // callbacks check `identical(_peerConnection, createdPc)` before acting.
+      final createdPc = await _webRTCWrapper.createPeerConnection(
         configuration,
       );
+      _peerConnection = createdPc;
 
       final dataChannelInit = RTCDataChannelInit()..ordered = true;
       _dataChannel = await _peerConnection!.createDataChannel(
@@ -648,6 +666,7 @@ class WebRTCService {
 
       // Primary gate: fire when the data channel explicitly opens
       _dataChannel!.onDataChannelState = (RTCDataChannelState state) {
+        if (!identical(_peerConnection, createdPc)) return; // stale pre-warm
         if (state == RTCDataChannelState.RTCDataChannelOpen &&
             !_dataChannelOpenFired) {
           if (_isPrewarming) {
@@ -681,6 +700,7 @@ class WebRTCService {
 
       _peerConnection!
           .onConnectionState = (RTCPeerConnectionState state) async {
+        if (!identical(_peerConnection, createdPc)) return; // stale pre-warm
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           if (!_isPrewarming) {
             _isConnected = true;
@@ -879,6 +899,51 @@ class WebRTCService {
     } else {
       debugPrint('WebRTC: Cannot send mode-switch \u2014 data channel not open');
     }
+  }
+
+  /// Release the microphone when switching to text mode.
+  ///
+  /// Removes the audio sender from the peer connection, stops and disposes the
+  /// local audio stream so the OS releases the hardware (mic indicator gone),
+  /// then renegotiates so the server drops the audio track.  The server
+  /// receives a "mode-switch" → "text" message first so it can interrupt TTS
+  /// before the renegotiation arrives.
+  Future<void> stopVoiceMode() async {
+    if (!_isConnected || _peerConnection == null) return;
+    if (_audioTrack == null && _localStream == null) return; // already released
+
+    final trackToStop = _audioTrack;
+    final streamToStop = _localStream;
+    _audioTrack = null;
+    _localStream = null;
+
+    // Remove the sender so the server-side aiortc drops the audio track.
+    if (trackToStop != null) {
+      try {
+        final senders = await _peerConnection!.getSenders();
+        for (final sender in senders) {
+          if (sender.track?.id == trackToStop.id) {
+            await _peerConnection!.removeTrack(sender);
+            break;
+          }
+        }
+      } catch (e) {
+        debugPrint('WebRTC: Error removing audio sender: $e');
+      }
+    }
+
+    // Stop the OS capture — this is what clears the Android mic indicator.
+    if (streamToStop != null) {
+      streamToStop.getTracks().forEach((track) => track.stop());
+      await streamToStop.dispose();
+    }
+
+    // Release the AudioRoutingService device-change listener.
+    _audioRoutingService?.dispose();
+    _audioRoutingService = null;
+
+    // Renegotiate so the server's SDP no longer contains the audio m-line.
+    await _renegotiateConnection();
   }
 
   /// Upgrade a text session to voice by creating a local audio track and

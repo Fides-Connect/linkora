@@ -267,6 +267,14 @@ class SpeechService {
     _webrtcService?.sendModeSwitch(mode);
   }
 
+  /// Release the microphone so the OS clears the mic-in-use indicator.
+  ///
+  /// Removes the audio track from the WebRTC connection and disposes the
+  /// local audio stream.  Call when switching from voice to text mode.
+  Future<void> stopVoiceMode() async {
+    await _webrtcService?.stopVoiceMode();
+  }
+
   /// Upgrade the current text session to voice mode by acquiring the
   /// microphone and renegotiating the WebRTC connection.
   Future<void> enableVoiceMode() async {

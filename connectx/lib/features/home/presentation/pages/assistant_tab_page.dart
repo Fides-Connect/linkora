@@ -79,16 +79,17 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
   void _handleError(String error) {
     final localizations = AppLocalizations.of(context);
     if (localizations == null) return;
+    final vm = context.read<AssistantTabViewModel>();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: Text(localizations.errorTitle),
         content: Text('${localizations.errorOccurred}\n\n$error'),
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
-              context.read<AssistantTabViewModel>().clearError();
+              Navigator.pop(dialogContext);
+              vm.clearError();
             },
             child: Text(localizations.okButton),
           ),
