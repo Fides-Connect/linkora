@@ -225,6 +225,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 - Onboarding draft state is session-scoped. If the session drops, the draft is lost and onboarding must restart.
 - **Concurrent Sessions Draft Invalidation:** At the start of every `PROVIDER_ONBOARDING` turn, the system refreshes the user's competency list from the authoritative data store. If the count of live competencies differs from the count at the time the draft was created (indicating that another session or the REST API modified the data), the in-memory onboarding draft is immediately discarded. The user is informed of the external change before the turn continues, so they can start the draft anew with accurate data.
 - Existing providers may also enter onboarding to update their skills (triggered from the triage stage).
+- When a user who is already marked as a service provider enters the `PROVIDER_ONBOARDING` stage, the system skips the provider-intent confirmation step (STEP 0). The AI proceeds directly to reading and summarising the user's existing competencies.
 - **Mid-Onboarding Abandonment:** If a user becomes a provider but closes the app before adding any skills, their profile remains invisible in search. On their next login, if they have exactly 0 competencies, the system must prompt them immediately to finish onboarding or temporarily toggle their search visibility off.
 
 ### 5.1 Skill Batch Validation
@@ -247,6 +248,77 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 ### 5.4 Dropped Connection During Batch Save
 
 - If the WebRTC/WebSocket connection drops exactly while a validated skill batch is being written to Firestore, the server must complete the atomic write. Upon reconnection, the system must not prompt the user to resume an onboarding draft that was already successfully committed.
+
+### 5.5 Onboarding Turn Structure (Step Protocol)
+
+Every `PROVIDER_ONBOARDING` turn follows a deterministic five-step conversation protocol. The AI must not skip or reorder steps.
+
+- **STEP 0 — Provider Intent Gate** (only applies when `is_service_provider` is `False`; skipped entirely for existing providers):
+  - If the user's most recent message contains a clear offer signal (e.g. "I could help", "I want to offer my services", "I'd like to share my skills"), the AI calls `record_provider_interest(decision="accepted")` immediately without asking for confirmation.
+  - If intent is unclear or ambiguous, the AI asks exactly one direct question: "Would you like to offer your skills as a service provider on Linkora?" If the user answers no, the AI transitions immediately to `TRIAGE`.
+  - When `record_provider_interest("accepted")` is called within STEP 0, the AI must **not** call `signal_transition("provider_onboarding")` itself — the system handles re-entry into the next `PROVIDER_ONBOARDING` turn automatically.
+  - The `record_provider_interest` tool is called at most once per turn.
+
+- **STEP 1 — Situation Analysis**: The AI reads the pre-fetched competency list. If the list is empty, it welcomes the user as a new provider and moves immediately to collecting their first skill. If the list is non-empty, it summarises the existing skills naturally in 1–2 sentences and invites the user to state what they would like to do.
+
+- **STEP 2 — Intent Classification**: The AI maps the user's response to one of three action modes:
+  - `ADD`: registering a skill whose title does not match any existing competency. Before deciding `ADD`, the AI must compare the proposed title (case-insensitively) against every existing entry. A title collision redirects the intent to `UPDATE`.
+  - `UPDATE`: modifying an existing competency. The AI uses the `competence_id` from the pre-fetched list. It must never invent a `competence_id`.
+  - `REMOVE`: deleting one or more existing competencies by their `competence_id`. If the referenced title is ambiguous, the AI asks for clarification before proceeding.
+  - If the user expresses intent to find a service provider rather than manage their own skills, the AI acknowledges in one brief sentence and transitions immediately to `TRIAGE`.
+  - If the user states they want no changes, the AI calls `signal_transition(target_stage="completed")` immediately without calling any write tool.
+
+- **STEP 3 — Confirm Before Writing**: Before calling any write tool, the AI presents a plain-language summary of the proposed change and waits for explicit user confirmation. Raw JSON, field names, `competence_id` strings, and HH:MM time values are never surfaced to the user in this summary.
+
+- **STEP 4 — Execute on Confirmation**: When the user confirms, the AI calls the write tool (`save_competence_batch` or `delete_competences`) as the **first action** in that response — no leading text is emitted before the tool call. After the tool result is received:
+  - On success: the AI confirms the change warmly in 1–2 sentences. No follow-up question is issued in this same response.
+  - On error: the AI apologises briefly and reassures the user that their data has not been lost.
+
+- **STEP 5 — Continue or Complete**: After confirming the write result, the AI asks naturally whether the user wants to make additional changes. If the user says no (e.g. "that's all", "nothing else"), the AI calls `signal_transition(target_stage="completed")` with no additional message. The AI may handle multiple intents in one session (e.g. update one skill, then add another), resolving them one at a time.
+
+### 5.6 Two-Response Ordering Constraint
+
+- A `signal_transition` call and a write tool call (`save_competence_batch` or `delete_competences`) must never appear in the same LLM response.
+- The write tool is always emitted in **Response A** (STEP 4); the transition signal is always emitted in **Response B** (STEP 5).
+- Even if the user says "yes, that's all" when confirming a change, the write tool still executes first in Response A; the transition is deferred to Response B after the tool result is received.
+
+### 5.7 Availability Data Collection and Interpretation
+
+The AI collects availability for a new skill in a single conversation pass. It asks "when are you usually available?" exactly once and interprets the answer using the following fixed mapping, without asking follow-up questions for clarification of hours:
+
+| User says | Interpreted as |
+|---|---|
+| "morning" / "in the morning" | 08:00–12:00 on the mentioned day(s) |
+| "afternoon" | 12:00–17:00 on the mentioned day(s) |
+| "evening" / "after work" / "evenings" | 17:00–21:00 on the mentioned day(s) |
+| "from HH" / "after Xpm" with no end time | HH:00–21:00 (21:00 as default end-of-day) |
+| "whole day" / "all day" | 08:00–20:00 on the mentioned day(s) |
+| "weekdays" (no specific time) | 08:00–20:00 Mon–Fri |
+| "at the weekend" / "weekends" | 08:00–20:00 Sat and Sun |
+| "flexible" / "anytime" / "any time" / vague (NEW skill) | 08:00–20:00 on all seven days |
+| "flexible" / "anytime" / vague (UPDATE) | Omit `availability_time`; it is optional for updates |
+
+- All time values are zero-padded HH:MM (e.g. `09:00`, not `9:00`). Absence days use YYYY-MM-DD format.
+- Availability is always described to the user in natural language; raw time strings, field names, and JSON are never shown.
+- The AI must not add qualifiers like "a rough estimate is fine" or "no need to be precise" when asking about availability — it asks the question directly and trusts the user's answer.
+
+### 5.8 Competency Save Pipeline
+
+When `save_competence_batch` executes, the following steps occur in order:
+
+1. **Batch validation (price_range)**: `price_range` is required for every new skill (no `competence_id`). A free or volunteer offering must be expressed as `0` or `"free"` — a zero value must not raise a validation error. If any truly new skill is missing `price_range`, the entire batch is rejected; the error names the affected titles. No Firestore write occurs.
+2. **Server-side deduplication**: a skill submitted without a `competence_id` whose title case-insensitively matches an existing competency is silently promoted to an update of that entry. Such promoted entries are then exempt from the `availability_time` requirement check (step 3 below).
+3. **Batch validation (availability_time)**: `availability_time` is required for every truly new skill (one that is not deduplicated to an update). If any such skill is missing it, the entire batch is rejected with the affected titles named.
+4. **Availability schema validation**: the `availability_time` structure of each skill is validated against the schema before any Firestore write. An invalid structure rejects the batch with field-level error details and time-format hints; no partial state is written.
+5. **Per-skill Firestore write**: each skill is created or updated in Firestore.
+6. **Availability subcollection write**: the `availability_time` data is written to the skill's subcollection. If an existing record is present, it is updated; otherwise a new record is created. At most one availability record may exist per skill.
+7. **LLM enrichment** (non-blocking on failure): the enrichment step extracts `skills_list`, `search_optimized_summary`, `price_per_hour`, `availability_tags`, `availability_text`, and `category` from the raw data and writes them back to Firestore. **Crucially, to ensure optimal vector proximity with the search stage, `search_optimized_summary`, `skills_list`, and `availability_tags` must be generated strictly in English. The `search_optimized_summary` must be written in a third-person prose style (e.g., "This provider is...") to perfectly mirror the HyDE query structure, and `skills_list` must extract specific, actionable capabilities.** Enrichment failure is non-fatal; the skill remains saved with raw data intact.
+8. **Provider flag**: `is_service_provider = True` is written to both Firestore and the search index for the user.
+9. **Full search-index re-sync**: all of the user's competencies are read from Firestore (the authoritative source), availability tags are derived from the subcollection data for each skill, and the entire competency set is synced to the search index. If the user's search-index node is absent, it is self-healed by recreating it from Firestore before re-syncing.
+
+The `save_competence_batch` execution is **shielded** against mid-write WebSocket disconnections: the coroutine cannot be cancelled once started, ensuring Firestore writes complete atomically even if the session drops.
+
+For `delete_competences`: each deleted competency is removed from Firestore and then from the search index. Errors during search-index removal propagate to the caller.
 
 ---
 
@@ -273,6 +345,9 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
   2. Hypothetical provider profile generation (HyDE): the LLM writes a description of the ideal provider as a vector query. Steps 1 and 2 run concurrently.
   3. Wide-net hybrid retrieval from the search index using both the HyDE vector and the structured fields, returning up to `min(max_providers × 5, 30)` candidates.
   4. Cross-encoder re-ranking of candidates against the original problem summary to select the final top-N results.
+- The HyDE profile is always generated in English, regardless of the session language. It is used solely for vector embedding and is never shown to the user.
+- Provider candidates inactive for more than 180 consecutive days (no sign-in) are excluded from all search results.
+- Availability-based filtering is applied only when the user's stated `available_time` contains recognised tokens (specific day names, `weekday`, `weekend`, `morning`, `afternoon`, `evening`). If the stated availability uses unrecognised terms (e.g. "flexible", "any time", "next week") that do not map to a known token, no availability filter is applied and all matching providers are returned regardless of availability.
 - The "problem summary" used as the basis for provider search is the most recent AI response text. If no AI response has been generated yet, the concatenation of raw user inputs accumulated during `TRIAGE` is used instead.
 
 ### 6.3 Tool Execution
@@ -294,6 +369,51 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 - A service request can be cancelled through the AI conversation (using the cancel intent within the assistant) in addition to direct REST API calls.
 - When the AI transitions from `FINALIZE` back to `TRIAGE` (either due to zero results or user cancellation), any service request that was created during the current scoping flow must be cancelled automatically by the system before the transition completes. The AI does not need to prompt the user to confirm the cancellation; it is implicit in the transition.
 - The `cancel_service_request` tool is available to the AI with write permission over service requests. It takes the current request identifier as a parameter. Calling it when no active request exists is a no-op.
+
+### 6.7 HyDE — Hypothetical Document Embeddings
+
+Step 2 of the provider search pipeline generates a short hypothetical provider profile that bridges the vocabulary gap between the user's natural-language request and the terse competency bios stored in the search index.
+
+- The system calls the LLM with the problem summary and instructs it to write a **3–5 sentence prose profile** of a perfect service provider for that request.
+- The profile is written in the **third person** (e.g. "This provider is …") and must mention the specific skills, tools, experience, type of work, and any contextual constraints (timing, location, complexity) **using terminology that aligns with the provider enrichment phase**. It reads like a real provider bio, not a checklist.
+- The HyDE profile is **always generated in English**, regardless of the session language. It is a vector-search artefact and is never shown to the user.
+- When HyDE generation succeeds, the resulting text is used as the Weaviate query string, **overriding** the structured query text from Step 1. Both the vector component (bi-encoder embedding) and the BM25 component of the hybrid search benefit from the richer vocabulary in the hypothetical profile.
+- If HyDE generation fails for any reason (exception or empty output), the system falls back silently to the structured query text from Step 1. No error is surfaced to the user.
+- Steps 1 and 2 are fired as concurrent async tasks and awaited together, so structured-query extraction and HyDE generation do not block each other.
+
+#### Structured Query Extraction (Step 1 detail)
+
+- The LLM converts the problem summary into a structured JSON object with three fields: `available_time` (free-form time string), `category` (service category), and `criterions` (list of requirement strings).
+- The last 3 messages from the session's conversation history are appended to the extraction prompt so the LLM has richer context than the summary alone.
+- If the LLM returns malformed JSON or an exception is raised, the system falls back to the plain-text problem summary.
+- The structured query is combined into a single query string of the form `"<category>. Features: <criterion1>, <criterion2>"` for passing to the BM25 component.
+
+### 6.8 Hybrid Retrieval Parameters
+
+- The search index uses a **hub-spoke schema**: `User` nodes (hub) linked bidirectionally to `Competence` nodes (spokes). The hybrid search targets the `Competence` collection and resolves owning-user properties via the `owned_by` cross-reference.
+- Search mode: **hybrid** with `alpha = 0.5` (equal weight for vector similarity and BM25 keyword matching).
+- **Boosted query properties**: `title` carries a 2× BM25 boost. The `category`, `description`, `search_optimized_summary`, and `availability_text` fields are searched at standard weight. The `search_optimized_summary` field is the primary source for the vector component.
+- **Wide-net fetch**: `min(max_providers × 5, 30)` candidates are retrieved from the index before reranking. This oversampling gives the cross-encoder a diverse pool to score.
+- **Ghost filter**: providers inactive for more than 180 days (measured by `last_sign_in`) are excluded from all results. Providers whose `last_sign_in` is null (recorded before activity tracking was introduced) are treated as active and included.
+- **Provider flag filter**: only competencies whose owning user has `is_service_provider = True` in the search index are returned.
+- **Availability filter**: if the stated `available_time` contains at least one recognised time token (`monday`–`sunday`, `weekday`, `weekend`, `morning`, `afternoon`, `evening`), a filter is applied on `availability_tags`. If the value uses no recognised tokens (e.g. "flexible", "any time", "next week", or an unrecognised free-form phrase), the availability filter is **skipped entirely** — the system does not apply a filter that would silently return zero results.
+- **Client-side grouping**: results are grouped by provider. When a user has multiple matching competencies, only the highest-scoring one is retained. The final candidate list contains at most one entry per provider.
+- **Zero-result diagnostic**: when no providers are returned, the system logs the count of competencies with `is_service_provider = True` in the index, to distinguish between a vocabulary mismatch and a missing or stale provider-flag issue.
+
+### 6.9 Cross-Encoder Reranking
+
+Step 4 of the provider search pipeline re-scores the wide-net candidates using a cross-encoder that evaluates each (query, document) pair jointly, producing rankings more accurate than the bi-encoder used during retrieval.
+
+- **Model**: `cross-encoder/ms-marco-MiniLM-L-6-v2` — a lightweight MiniLM-backbone model trained on the MS MARCO passage-ranking dataset, optimised for matching natural-language queries against descriptive text.
+- The model is lazy-loaded on the first reranking request. A single shared instance is used across all concurrent sessions; the model is never constructed multiple times.
+- The model is bundled locally in the deployment package. If the bundled file is absent (e.g. before `git lfs pull`), the system downloads it from HuggingFace Hub on first use and logs a warning.
+- **Candidate text construction**: each provider candidate is represented as a single string: title (or category if title is absent), then `search_optimized_summary`, then `skills_list` items prefixed with "Skills: ", all joined with ". ". If all fields are empty, the text defaults to "No description available.".
+- **Query**: the original plain-language problem summary is used as the cross-encoder query, not the HyDE text or structured query.
+- **Execution**: scoring runs in a thread executor to keep the async event loop non-blocking.
+- Each returned provider dict is augmented with a `rerank_score` (float) field. Candidates are sorted by `rerank_score` descending and the list is sliced to `max_providers`.
+- If reranking fails for any reason (exception), the original Weaviate-ordered candidates are returned truncated to `max_providers`, with no error surfaced to the user.
+- If no `CrossEncoderService` is available, the Weaviate candidates are simply truncated to `max_providers` without reranking.
+- The same reranking step is applied when the `search_providers` tool is called explicitly mid-conversation (outside the `FINALIZE` pipeline), whenever a `CrossEncoderService` is available.
 
 ---
 
@@ -333,7 +453,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 
 ### 7.5 Optimistic Message Display
 
-- When a user submits a text message, the client adds it to the chat view immediately, before the server confirms receipt. If the server subsequently echoes the same message, the client must detect and discard the duplicate rather than displaying it twice.
+- When a user submits a text message, the client adds it to the chat view immediately, before the server confirms receipt. If the server subsequently echoes the same message, the client must detect and discard the duplicate using a unique message ID rather than relying purely on text matching, ensuring intentional user repetitions (e.g., 'Hello?') are not falsely dropped.
 
 ### 7.6 Microphone Mute Lifecycle
 
@@ -379,7 +499,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 ### 8.4 User Settings
 
 - The settings read endpoint returns `language` (validated to `"en"` or `"de"`; falls back to `"en"` if the stored value is invalid) and `notifications_enabled` (validated to boolean; falls back to `true` if invalid).
-- The settings update endpoint rejects any `language` value that is not `"en"` or `"de"` with HTTP 400. Settings are merged with existing values; unknown keys are ignored.
+- The settings update endpoint rejects any `language` value that is not `"en"` or `"de"` with HTTP 400. Settings are merged with existing values; unknown keys are ignored. Note that updating the language via REST will not affect any currently active WebSocket sessions; the new language will apply on the next session initialization.
 
 ### 8.5 Service Request Permissions and Status Transitions
 
@@ -453,7 +573,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 ## 13. Edge Cases & Invariants
 
 - The system must never hardcode a language string. Language must flow from the session parameter through every layer of processing. This invariant applies to **all** user-visible output paths without exception, including LLM error fallback messages (e.g. when the LLM fails to generate a response) and greeting fallback strings generated when the LLM call fails during session initialisation. There is no user-facing string that is exempt from this rule.
-- Text-mode sessions must never attempt to play audio or send a greeting.
+- Text-mode sessions must never attempt to play audio or synthesize a spoken greeting. However, they must still dispatch the initial text greeting as defined in the flow.
 - If the AI is speaking and new input arrives, the current speech output must be interrupted before processing the new input. The interrupted state must be handled gracefully with no orphaned history entries.
 - The permanent opt-out sentinel for the provider pitch must be treated as a special value — never as a real date — throughout all date comparisons.
-- Search input is capped at 20 unique words before being written to the search index to prevent embedding noise. While search input is capped at 20 unique words, it must also be capped at a maximum character length (e.g., 200 characters) to prevent a malicious user from submitting a single 10,000-character string without spaces to overload the embedding model.
+- Search input is capped at 20 unique words before being written to the search index to prevent embedding noise. While search input is capped at 20 unique words, it must also be capped at a maximum character length (e.g., 200 characters), truncating gracefully at the nearest word boundary to prevent a malicious user from submitting a single 10,000-character string without spaces to overload the embedding model and prevent accidental string corruption.
