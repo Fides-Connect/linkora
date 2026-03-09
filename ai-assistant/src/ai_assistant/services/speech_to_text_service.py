@@ -27,7 +27,7 @@ class SpeechToTextService:
         
         logger.info(f"STT service configured for language: {language_code}")
     
-    async def continuous_stream(self, audio_generator) -> AsyncIterator[Tuple[str, bool]]:
+    async def continuous_stream(self, audio_generator) -> AsyncIterator[Tuple[str, bool, float]]:
         """
         Continuously stream audio to STT using async gRPC.
         
@@ -35,7 +35,10 @@ class SpeechToTextService:
             audio_generator: Async generator yielding audio chunks
         
         Yields:
-            Tuple of (transcript, is_final) where is_final indicates if result is final
+            Tuple of (transcript, is_final, stability_or_confidence)
+            - For interim results: stability (0.0–1.0) indicating how likely
+              the transcript will change.
+            - For final results: confidence (0.0–1.0) of the recognition.
         """
         try:
             config = self._create_recognition_config()
@@ -59,13 +62,22 @@ class SpeechToTextService:
                 logger.debug(f"📨 STT response #{response_count}: {len(response.results)} results")
                 for result in response.results:
                     if result.alternatives:
-                        transcript = result.alternatives[0].transcript
+                        alt = result.alternatives[0]
+                        transcript = alt.transcript
                         is_final = result.is_final
                         if is_final:
-                            logger.info(f"✅ STT FINAL: '{transcript}'")
+                            logger.info(
+                                "✅ STT FINAL: '%s' (confidence=%.2f)",
+                                transcript, alt.confidence,
+                            )
+                            yield (transcript, is_final, alt.confidence)
                         else:
-                            logger.debug(f"⏳ STT interim: '{transcript}'")
-                        yield (transcript, is_final)
+                            stability = result.stability
+                            logger.info(
+                                "⏳ STT interim: '%s' (stability=%.2f)",
+                                transcript, stability,
+                            )
+                            yield (transcript, is_final, stability)
                     else:
                         logger.debug(f"⚠️  STT result has no alternatives")
             
@@ -73,10 +85,10 @@ class SpeechToTextService:
         
         except google_exceptions.OutOfRange as grpc_error:
             logger.info(f"STT duration limit reached without audio. Refreshing stream.")
-            yield ("", False)
+            yield ("", False, 0.0)
         except Exception as e:
             logger.error(f"STT streaming error: {e}", exc_info=True)
-            yield ("", False)
+            yield ("", False, 0.0)
     
     def _create_recognition_config(self) -> speech.RecognitionConfig:
         """

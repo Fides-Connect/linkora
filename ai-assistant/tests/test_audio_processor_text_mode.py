@@ -611,11 +611,11 @@ class TestContinuousSttTaskScheduling:
         )
 
         # Simulate one STT cycle: emit one final transcript then stop
-        transcripts = [("hello world", True)]
+        transcripts = [("hello world", True, 0.95)]
 
         async def fake_process_audio_stream(_):
-            for text, final in transcripts:
-                yield text, final
+            for text, final, score in transcripts:
+                yield text, final, score
 
         voice_proc.transcript_processor.process_audio_stream = Mock(
             return_value=fake_process_audio_stream(None)
@@ -645,7 +645,7 @@ class TestContinuousSttTaskScheduling:
             interrupted.append(1)
 
         async def fake_process_audio_stream(_):
-            yield "interrupt me", True
+            yield "interrupt me", True, 0.95
 
         voice_proc.is_ai_speaking = True
         voice_proc.transcript_processor.process_audio_stream = Mock(

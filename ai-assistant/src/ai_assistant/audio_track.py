@@ -36,10 +36,13 @@ class AudioOutputTrack(MediaStreamTrack):
         # Comfort noise parameters
         self._comfort_noise_amplitude = 20  # Very low amplitude for subtle background noise
         self._last_frame_was_silence = False
+        # Timing: track when the first real audio frame is served via recv()
+        self._first_real_frame_served = False
         
     async def queue_audio(self, audio_data: bytes):
         """Queue audio data for playback."""
         logger.debug(f"Queueing {len(audio_data)} bytes of audio, queue size before: {self.audio_queue.qsize()}")
+        self._first_real_frame_served = False  # reset on new audio burst
         await self.audio_queue.put(audio_data)
     
     async def clear_queue(self):
@@ -157,6 +160,9 @@ class AudioOutputTrack(MediaStreamTrack):
             if self._buffer_samples >= self.samples_per_frame:
                 audio_array = self._read_samples_from_buffer(self.samples_per_frame)
                 logger.debug(f"Extracted {self.samples_per_frame} samples, {self._buffer_samples} remain")
+                if not self._first_real_frame_served:
+                    self._first_real_frame_served = True
+                    logger.info("📡 First real audio frame sent to WebRTC")
                 self._last_frame_was_silence = False
 
             elif self._buffer_samples > 0:

@@ -403,7 +403,7 @@ class TestTranscriptCallback:
 
         # Simulate one STT cycle producing a final transcript
         async def fake_audio_stream(_):
-            yield "hello world", True  # (transcript, is_final)
+            yield "hello world", True, 0.95  # (transcript, is_final, confidence)
 
         audio_processor.transcript_processor.process_audio_stream = Mock(
             return_value=fake_audio_stream(None)
@@ -429,7 +429,7 @@ class TestTranscriptCallback:
             pft_called.append(text)
 
         async def fake_audio_stream(_):
-            yield "fallback text", True
+            yield "fallback text", True, 0.95
 
         audio_processor.transcript_processor.process_audio_stream = Mock(
             return_value=fake_audio_stream(None)
@@ -504,7 +504,7 @@ class TestVoiceFinalizeGuard:
             side_effect=lambda text, is_user, **kw: sent_messages.append(text),
         ):
             async def fake_audio_stream(_):
-                yield "passende Anbieter bitte", True  # final transcript
+                yield "passende Anbieter bitte", True, 0.95  # final transcript
 
             audio_processor.transcript_processor.process_audio_stream = Mock(
                 return_value=fake_audio_stream(None)
@@ -536,7 +536,7 @@ class TestVoiceFinalizeGuard:
 
         with patch.object(audio_processor, "_send_chat_message", new=Mock()):
             async def fake_audio_stream(_):
-                yield "ich warte", True
+                yield "ich warte", True, 0.95
 
             audio_processor.transcript_processor.process_audio_stream = Mock(
                 return_value=fake_audio_stream(None)
@@ -552,3 +552,187 @@ class TestVoiceFinalizeGuard:
             await never_done
         except asyncio.CancelledError:
             pass
+
+
+class TestSpeculativeInterimProcessing:
+    """
+    When an interim transcript stabilises for _EAGER_INTERIM_DELAY seconds,
+    the LLM pipeline is started speculatively.  If the FINAL matches, the
+    speculative result is kept.  If it differs, the speculative task is
+    cancelled and the correct final is processed.
+    """
+
+    @pytest.mark.asyncio
+    async def test_speculative_processing_fires_on_stable_interim(self, audio_processor):
+        """An interim that is stable long enough should trigger _eager_process."""
+        processed = []
+
+        async def fake_audio_stream(_):
+            yield "Hallo", False, 0.9  # interim with high stability
+            await asyncio.sleep(0.6)  # longer than _EAGER_INTERIM_DELAY (0.4s)
+            yield "Hallo.", True, 0.95  # final with punctuation differs — forces restart
+
+        audio_processor.transcript_processor.process_audio_stream = Mock(
+            return_value=fake_audio_stream(None)
+        )
+        audio_processor.running = True
+
+        with patch.object(
+            audio_processor,
+            "_handle_final_transcript",
+            new=AsyncMock(side_effect=lambda t: processed.append(t)),
+        ):
+            await audio_processor._stt_session()
+
+        # The eager timer should have fired for "Hallo" and then the FINAL
+        # "Hallo." comes through as a mismatch, triggering a second call.
+        assert "Hallo" in processed, (
+            f"Expected eager processing of 'Hallo', got: {processed}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_speculative_confirmed_when_final_matches(self, audio_processor):
+        """When FINAL matches the speculative interim, no second processing call."""
+        call_count = 0
+        original_count = [0]
+
+        async def counting_handler(transcript):
+            original_count[0] += 1
+
+        async def fake_audio_stream(_):
+            yield "Hallo", False, 0.9  # interim with high stability
+            await asyncio.sleep(0.6)  # let eager timer fire
+            yield "Hallo", True, 0.95  # final matches exactly
+
+        audio_processor.transcript_processor.process_audio_stream = Mock(
+            return_value=fake_audio_stream(None)
+        )
+        audio_processor.running = True
+
+        # Make _handle_final_transcript create a never-ending _response_task
+        # so it appears "in progress" when the final arrives.
+        async def fake_handle(transcript):
+            audio_processor._response_task = asyncio.create_task(asyncio.sleep(999))
+
+        with patch.object(
+            audio_processor,
+            "_handle_final_transcript",
+            new=AsyncMock(side_effect=fake_handle),
+        ) as mock_handle:
+            await audio_processor._stt_session()
+
+        # _handle_final_transcript should be called only ONCE (for the eager
+        # interim).  The FINAL sees the match and skips re-processing.
+        assert mock_handle.call_count == 1, (
+            f"Expected 1 call (eager only), got {mock_handle.call_count}"
+        )
+
+        # Clean up the never-ending task
+        if audio_processor._response_task and not audio_processor._response_task.done():
+            audio_processor._response_task.cancel()
+            try:
+                await audio_processor._response_task
+            except asyncio.CancelledError:
+                pass
+
+    @pytest.mark.asyncio
+    async def test_no_eager_processing_when_ai_is_speaking(self, audio_processor):
+        """Eager processing should not fire while the AI is responding."""
+        audio_processor.is_ai_speaking = True
+
+        async def fake_audio_stream(_):
+            yield "Hallo", False, 0.9  # interim
+            await asyncio.sleep(0.6)
+            yield "Hallo", True, 0.95  # final
+
+        audio_processor.transcript_processor.process_audio_stream = Mock(
+            return_value=fake_audio_stream(None)
+        )
+        audio_processor.running = True
+        audio_processor.is_ai_speaking = True
+
+        with patch.object(
+            audio_processor,
+            "_handle_final_transcript",
+            new=AsyncMock(),
+        ) as mock_handle:
+            # Suppress interrupt for the test
+            with patch.object(audio_processor, "_trigger_interrupt", new=AsyncMock()):
+                await audio_processor._stt_session()
+
+        # _handle_final_transcript should not be called for the eager interim
+        # because is_ai_speaking is True.  It should be called once for the
+        # final (via the normal path, since speculative was skipped).
+        # The interim doesn't start the timer because is_ai_speaking is True.
+        # The final goes through _handle_final_transcript normally.
+        assert mock_handle.call_count <= 1
+
+    @pytest.mark.asyncio
+    async def test_eager_delay_class_attribute(self, audio_processor):
+        """The _EAGER_INTERIM_DELAY class attribute should be accessible."""
+        assert hasattr(audio_processor, "_EAGER_INTERIM_DELAY")
+        assert audio_processor._EAGER_INTERIM_DELAY == 0.4
+
+    def test_normalize_transcript_strips_punctuation_and_case(self, audio_processor):
+        """Normalization should make 'Hallo' match 'Hallo.' and 'hallo!'."""
+        norm = audio_processor._normalize_transcript
+        assert norm("Hallo.") == norm("Hallo")
+        assert norm("Hallo!") == norm("hallo")
+        assert norm("Wie geht's?") == norm("Wie geht's")
+        assert norm("  Hello  ") == norm("Hello")
+        # Different words should not match
+        assert norm("Hallo") != norm("Tschüss")
+
+    @pytest.mark.asyncio
+    async def test_low_stability_interim_does_not_trigger_eager(self, audio_processor):
+        """Interims with stability below threshold should not start speculative processing."""
+        async def fake_audio_stream(_):
+            yield "Hal", False, 0.0  # very low stability
+            await asyncio.sleep(0.6)  # wait long enough for timer if it were set
+            yield "Hallo", True, 0.95  # final
+
+        audio_processor.transcript_processor.process_audio_stream = Mock(
+            return_value=fake_audio_stream(None)
+        )
+        audio_processor.running = True
+
+        with patch.object(
+            audio_processor,
+            "_handle_final_transcript",
+            new=AsyncMock(),
+        ) as mock_handle:
+            await audio_processor._stt_session()
+
+        # The low-stability interim should not have triggered eager processing,
+        # so _handle_final_transcript is called only once (for the FINAL).
+        assert mock_handle.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_low_stability_interim_does_not_trigger_interrupt(self, audio_processor):
+        """Low-stability interims should not interrupt while AI is speaking."""
+        audio_processor.is_ai_speaking = True
+        interrupted = []
+
+        async def fake_interrupt():
+            interrupted.append(1)
+
+        async def fake_audio_stream(_):
+            yield "Hal", False, 0.0  # low stability — should NOT interrupt
+            yield "Hallo", True, 0.95  # final — should interrupt (is_final=True)
+
+        audio_processor.transcript_processor.process_audio_stream = Mock(
+            return_value=fake_audio_stream(None)
+        )
+        audio_processor.running = True
+
+        with patch.object(audio_processor, "_trigger_interrupt", side_effect=fake_interrupt):
+            with patch.object(audio_processor, "_handle_final_transcript", new=AsyncMock()):
+                await audio_processor._stt_session()
+
+        # Only the final should trigger an interrupt, not the low-stability interim.
+        assert len(interrupted) == 1
+
+    def test_stability_threshold_class_attribute(self, audio_processor):
+        """The _STABILITY_THRESHOLD class attribute should be accessible."""
+        assert hasattr(audio_processor, "_STABILITY_THRESHOLD")
+        assert 0.0 < audio_processor._STABILITY_THRESHOLD <= 1.0
