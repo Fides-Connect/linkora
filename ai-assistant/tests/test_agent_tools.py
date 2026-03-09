@@ -344,18 +344,17 @@ class TestProviderOnboardingTools:
         assert result.get("signal_transition") == "provider_onboarding"
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
-    async def test_record_interest_accepted_syncs_is_service_provider_to_weaviate(
+    async def test_record_interest_accepted_does_not_sync_weaviate_yet(
         self, mock_hub, registry, mock_firestore
     ):
-        """Accepting provider pitch must immediately mirror is_service_provider=True to
-        the Weaviate User hub so search filters can see the change before the next request."""
+        """Accepting the provider pitch must NOT yet mirror is_service_provider=True to
+        Weaviate.  Mirroring is intentionally deferred until save_competence_batch so
+        the user is not surfaced in provider searches before any skills are listed."""
         ctx = self._ctx(mock_firestore)
         await registry.execute(
             "record_provider_interest", {"decision": "accepted"}, ctx
         )
-        mock_hub.update_user_hub_properties.assert_called_once_with(
-            "user-x", {"is_service_provider": True}
-        )
+        mock_hub.update_user_hub_properties.assert_not_called()
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
     async def test_record_interest_not_now_does_not_touch_weaviate(
