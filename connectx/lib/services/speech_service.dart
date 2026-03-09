@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
@@ -96,13 +95,25 @@ class SpeechService {
   }
 
   /// Convert a raw server URL (as stored in [AI_ASSISTANT_SERVER_URL]) to an
-  /// HTTP/HTTPS base URL (strips any trailing path, converts ws/wss schemes).
+  /// HTTP/HTTPS base URL, normalising the scheme (ws→http, wss→https).
+  ///
+  /// In release builds, plain HTTP and bare-host URLs are rejected to prevent
+  /// Firebase ID tokens from being sent over unencrypted connections.
   static String _toHttpUrl(String raw) {
+    // Secure schemes — always allowed.
     if (raw.startsWith('https://')) return raw;
-    if (raw.startsWith('http://')) return raw;
     if (raw.startsWith('wss://')) return raw.replaceFirst('wss://', 'https://');
+
+    // Insecure schemes — only permitted in non-release (local dev) builds.
+    if (kReleaseMode) {
+      throw StateError(
+        'AI_ASSISTANT_SERVER_URL must use https:// or wss:// in release builds. '
+        'Got: $raw',
+      );
+    }
+    if (raw.startsWith('http://')) return raw;
     if (raw.startsWith('ws://')) return raw.replaceFirst('ws://', 'http://');
-    return 'http://$raw'; // bare host:port (local dev)
+    return 'http://$raw'; // bare host:port — local dev only
   }
 
   /// Check if microphone is currently muted

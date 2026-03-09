@@ -19,7 +19,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from typing import Callable, Awaitable, Optional
+from typing import Callable, Awaitable
 
 from .data_channel_bridge import DataChannelBridge
 from .session_mode import SessionMode

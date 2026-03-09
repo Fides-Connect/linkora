@@ -25,7 +25,11 @@ class GreetingEntry:
 
 
 class GreetingCache:
-    """Thread-safe (asyncio-safe) in-memory greeting cache."""
+    """In-memory greeting cache for use on a single asyncio event-loop thread.
+
+    All access happens on the same event-loop thread as the rest of the server,
+    so no explicit locking is required.  Do not share across OS threads.
+    """
 
     TTL: float = 120.0  # seconds
 

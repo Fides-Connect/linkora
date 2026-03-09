@@ -263,12 +263,15 @@ class TTSPlaybackManager:
             # Wait until the next chunk has been registered
             while True:
                 async with self._lock:
+                    # Clear the event *inside* the lock so we cannot miss a
+                    # notification that fires between releasing the lock and
+                    # calling wait() below (classic check-then-act race).
+                    self._chunk_registered.clear()
                     chunk = self._chunks.get(order)
                 if chunk is not None:
                     break
                 if self._llm_stream_complete and order >= self._total_sentences:
                     return
-                self._chunk_registered.clear()
                 try:
                     await asyncio.wait_for(self._chunk_registered.wait(), timeout=1.0)
                 except asyncio.TimeoutError:

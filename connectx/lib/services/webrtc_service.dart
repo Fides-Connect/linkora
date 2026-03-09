@@ -555,13 +555,15 @@ class WebRTCService {
       // For secure (Cloud Run) connections, pass the Firebase ID token via the
       // Authorization header so it is never written to URL access logs.
       // For plain ws:// (local dev) we skip the token entirely.
+      // Tell the server to complete the SDP handshake without waiting for an
+      // audio track. Used by the hollow pre-warm so the server doesn't spin
+      // up STT/LLM before the user taps the mic button.
       final Map<String, String> queryParams = {
         'user_id': userId,
         'language': _languageCode,
-        'mode': _sessionMode,        // Tell the server to complete the SDP handshake without waiting for an
-        // audio track.  Used by the hollow pre-warm so the server doesn't spin
-        // up STT/LLM before the user taps the mic button.
-        if (_isPrewarming) 'hold_start': 'true',      };
+        'mode': _sessionMode,
+        if (_isPrewarming) 'hold_start': 'true',
+      };
 
       // Non-web platforms support custom headers on the WebSocket upgrade request.
       // Always authenticate regardless of transport security (ws:// local dev or wss:// prod).
