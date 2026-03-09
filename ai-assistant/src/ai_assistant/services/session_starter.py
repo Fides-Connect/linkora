@@ -207,6 +207,7 @@ class TextSessionStarter(SessionStarter):
         user_id: Optional[str],
         connection_id: str,
         firestore_service=None,
+        buffered_message: Optional[str] = None,
     ) -> None:
         super().__init__()
         self._conv = conversation_service
@@ -217,6 +218,7 @@ class TextSessionStarter(SessionStarter):
         self._user_id = user_id
         self._connection_id = connection_id
         self._firestore_service = firestore_service
+        self._buffered_message = buffered_message
 
     async def initialize(self) -> None:
         try:
@@ -227,6 +229,19 @@ class TextSessionStarter(SessionStarter):
             )
             self._conv.context["user_name"] = user_name
             self._conv.context["has_open_request"] = has_open_request
+
+            if self._buffered_message:
+                # A first user message arrived before the session was ready.
+                # Skip the standalone greeting so the LLM responds to the
+                # user's intent directly instead of producing two separate turns.
+                # The caller is responsible for injecting the buffered message
+                # as a system-tagged input after initialize() completes.
+                self._orchestrator.handle_signal_transition("triage")
+                logger.info(
+                    "TextSessionStarter: skipped greeting (buffered message) for %s",
+                    self._connection_id,
+                )
+                return
 
             greeting_text = await self._conv.generate_greeting_text(
                 user_name=user_name,
@@ -279,6 +294,7 @@ class SessionStarterFactory:
         interrupt_event: Optional[asyncio.Event] = None,
         on_speaking_change: Optional[Callable[[bool], None]] = None,
         firestore_service=None,
+        buffered_message: Optional[str] = None,
     ) -> SessionStarter:
         if mode == SessionMode.VOICE:
             return VoiceSessionStarter(
@@ -304,4 +320,5 @@ class SessionStarterFactory:
             user_id=user_id,
             connection_id=connection_id,
             firestore_service=firestore_service,
+            buffered_message=buffered_message,
         )

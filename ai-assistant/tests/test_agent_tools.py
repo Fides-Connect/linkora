@@ -262,6 +262,9 @@ class TestProviderOnboardingTools:
     def mock_firestore(self):
         fs = Mock()
         fs.update_user = AsyncMock(return_value={"user_id": "user-x"})
+        # Default: existing provider — prevents was_provider=False from triggering
+        # an unexpected extra update_user call in tests that don't care about it.
+        fs.get_user = AsyncMock(return_value={"is_service_provider": True})
         fs.get_competencies = AsyncMock(return_value=[
             {"competence_id": "c1", "title": "Plumbing"},
             {"competence_id": "c2", "title": "Electrical"},
@@ -322,16 +325,20 @@ class TestProviderOnboardingTools:
 
     # ── record_provider_interest ─────────────────────────────────────────────
 
-    async def test_record_interest_accepted_sets_is_service_provider(
+    async def test_record_interest_accepted_defers_firestore_write(
         self, registry, mock_firestore
     ):
+        """Accepting the provider pitch must NOT write to Firestore.
+
+        Both is_service_provider and last_time_asked_being_provider are deferred
+        until save_competence_batch so that users who abandon onboarding mid-way
+        remain pitch-eligible for a future re-pitch (spec §4.3).
+        """
         ctx = self._ctx(mock_firestore)
-        result = await registry.execute(
+        await registry.execute(
             "record_provider_interest", {"decision": "accepted"}, ctx
         )
-        update_call = mock_firestore.update_user.call_args
-        data = update_call.args[1] if len(update_call.args) > 1 else update_call.kwargs.get("update_data", {})
-        assert data.get("is_service_provider") is True
+        mock_firestore.update_user.assert_not_called()
 
     async def test_record_interest_accepted_returns_signal_transition(
         self, registry, mock_firestore
@@ -387,6 +394,44 @@ class TestProviderOnboardingTools:
         update_call = mock_firestore.update_user.call_args
         data = update_call.args[1] if len(update_call.args) > 1 else update_call.kwargs.get("update_data", {})
         assert data.get("last_time_asked_being_provider") == PROVIDER_PITCH_OPT_OUT_SENTINEL
+
+    # ── save_competence_batch cooldown reset ─────────────────────────────────
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_resets_cooldown_for_first_batch(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """First skill batch: pitch cooldown timestamp must be reset to now (spec §5.8.8)."""
+        mock_firestore.get_user = AsyncMock(return_value={"is_service_provider": False})
+        ctx = self._ctx(mock_firestore)
+        avail = {"monday_time_ranges": [{"start_time": "08:00", "end_time": "12:00"}]}
+        skills = [{"title": "Cooking", "description": "Great cook", "price_range": "€20/h", "availability_time": avail}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        all_update_data = [
+            call.args[1] if len(call.args) > 1 else call.kwargs.get("update_data", {})
+            for call in mock_firestore.update_user.call_args_list
+        ]
+        assert any("last_time_asked_being_provider" in d for d in all_update_data), (
+            "Expected last_time_asked_being_provider to be reset on first skill batch"
+        )
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_no_cooldown_reset_for_existing_provider(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """Existing provider adding more skills: cooldown timestamp must NOT change (spec §5.8.8)."""
+        mock_firestore.get_user = AsyncMock(return_value={"is_service_provider": True})
+        ctx = self._ctx(mock_firestore)
+        avail = {"monday_time_ranges": [{"start_time": "08:00", "end_time": "12:00"}]}
+        skills = [{"title": "Cooking", "description": "Great cook", "price_range": "€20/h", "availability_time": avail}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        all_update_data = [
+            call.args[1] if len(call.args) > 1 else call.kwargs.get("update_data", {})
+            for call in mock_firestore.update_user.call_args_list
+        ]
+        assert not any("last_time_asked_being_provider" in d for d in all_update_data), (
+            "Expected last_time_asked_being_provider to NOT be reset for an existing provider"
+        )
 
     # ── get_my_competencies ──────────────────────────────────────────────────
 

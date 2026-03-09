@@ -52,6 +52,7 @@ class AudioProcessor:
         user_id: Optional[str] = None,
         language: str = "de",
         language_fallback_from: str = "",
+        buffered_message: Optional[str] = None,
     ):
         self.connection_id = connection_id
         self.input_track = input_track
@@ -131,6 +132,7 @@ class AudioProcessor:
 
         # ── Response delivery strategy & session starter ─────────────────────
         # Swapped on mode switch via _make_delivery() / _make_session_starter().
+        self._buffered_message: Optional[str] = buffered_message
         self._delivery: ResponseDelivery = self._make_delivery(self.session_mode)
         self._session_starter: SessionStarter = self._make_session_starter(self.session_mode)
 
@@ -227,6 +229,7 @@ class AudioProcessor:
             interrupt_event=self.interrupt_event,
             on_speaking_change=lambda speaking: setattr(self, "is_ai_speaking", speaking),
             firestore_service=self.ai_assistant.firestore_service,
+            buffered_message=self._buffered_message,
         )
 
     # ── DataChannel send helpers (thin wrappers over DataChannelBridge) ───────
@@ -508,6 +511,13 @@ class AudioProcessor:
                 await self.audio_queue.put(None)
                 await self._handle_final_transcript(transcript)
                 break
+        else:
+            # The async-for exhausted naturally — the STT service closed its
+            # gRPC stream (e.g. idle-silence timeout). Drain _make_audio_chunks
+            # by posting a sentinel so the generator does not compete with the
+            # next _stt_session for frames from the shared audio queue.
+            await self.audio_queue.put(None)
+            logger.info("_stt_session: stream closed by STT service — restarting")
 
     async def _continuous_stt(self) -> None:
         """Outer loop — restarts :meth:`_stt_session` after each final transcript."""

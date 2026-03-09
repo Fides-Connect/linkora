@@ -154,6 +154,13 @@ class AssistantTabViewModel extends ChangeNotifier {
       _conversationState = _runtimeStateToConversationState(state);
       notifyListeners();
     };
+
+    _speechService.onVoiceUpgradeTimeout = () {
+      // The renegotiation did not produce a remote audio track in time.
+      // Revert to text mode so the user is not left without a working session.
+      _isVoiceMode = false;
+      notifyListeners();
+    };
   }
 
   /// Maps a backend [AgentRuntimeState] to the UI [ConversationState].

@@ -30,6 +30,9 @@ class SpeechService {
   OnChatMessageCallback? onChatMessage;
   OnRuntimeStateCallback? onRuntimeState;
   Function()? onDataChannelOpen;
+  /// Called when the voice upgrade (renegotiation) timed out without receiving
+  /// a remote audio track. The UI should revert to text mode.
+  Function()? onVoiceUpgradeTimeout;
 
   SpeechService({
     PermissionWrapper? permissionWrapper,
@@ -134,6 +137,11 @@ class SpeechService {
     _webrtcService!.onError = (String error) {
       debugPrint('SpeechService: WebRTC error: $error');
       onSpeechEnd?.call();
+    };
+
+    _webrtcService!.onVoiceUpgradeTimeout = () {
+      debugPrint('SpeechService: Voice upgrade timed out');
+      onVoiceUpgradeTimeout?.call();
     };
   }
 

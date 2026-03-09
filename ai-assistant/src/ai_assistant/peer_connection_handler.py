@@ -331,12 +331,27 @@ class PeerConnectionHandler:
     async def _handle_initial_text_offer(self) -> None:
         """Create a text-mode AudioProcessor and send answer (no audio track)."""
         if self.audio_processor is None:
+            # When the client sent a message before the session was fully ready,
+            # tag the first pending input as a system event so the LLM can
+            # respond to the user's intent immediately instead of showing a
+            # standalone greeting followed by a separate response.
+            buffered_message: str | None = None
+            if self._pending_text_inputs:
+                original = self._pending_text_inputs[0]
+                system_tagged = (
+                    f'[System Event: User reconnected and sent the following'
+                    f' message: "{original}"]'
+                )
+                self._pending_text_inputs[0] = system_tagged
+                buffered_message = original
+
             self.audio_processor = AudioProcessor(
                 connection_id=self.connection_id,
                 input_track=None,
                 user_id=self.user_id,
                 language=self.language,
                 language_fallback_from=self.language_fallback_from,
+                buffered_message=buffered_message,
             )
             self.audio_processor.on_activity = self._reset_idle_timer
             self._wire_runtime_fsm(self.audio_processor)

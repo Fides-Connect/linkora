@@ -221,14 +221,12 @@ async def _record_provider_interest(params: dict, context: dict) -> Any:
     now = datetime.now(timezone.utc)
 
     if decision == "accepted":
-        await fs.update_user(user_id, {
-            "is_service_provider": True,
-            "last_time_asked_being_provider": now,
-        })
-        # NOTE: We deliberately do NOT mirror is_service_provider=True to Weaviate
-        # here.  Mirroring is deferred until the user successfully saves their first
-        # competency batch (in _save_competence_batch) to prevent surfacing a blank
-        # profile in provider searches before any skills are listed (spec §4.3).
+        # Spec §4.3: Deliberately do NOT write to Firestore here.
+        # Both is_service_provider and last_time_asked_being_provider are deferred
+        # until _save_competence_batch completes so that:
+        #   1. Users who abandon onboarding mid-way remain pitch-eligible.
+        #   2. A blank provider profile is never surfaced in search before any
+        #      skills are listed (Weaviate mirroring is also deferred).
         return {"signal_transition": "provider_onboarding", "status": "accepted"}
     elif decision == "never":
         await fs.update_user(user_id, {
@@ -270,6 +268,19 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
     enricher: Optional[CompetenceEnricher] = context.get("competence_enricher")
     skills: List[dict] = params.get("skills", [])
     saved = []
+
+    # Spec §5.8.8: capture the user's pre-save provider status so we can
+    # conditionally reset the pitch cooldown timestamp after storing the
+    # first batch (only trigger when transitioning non-provider → provider).
+    try:
+        current_user = await fs.get_user(user_id) or {}
+        was_provider = current_user.get("is_service_provider", False)
+    except Exception as _was_prov_exc:  # pragma: no cover
+        logger.warning(
+            "Could not fetch user %s to check was_provider: %s — assuming existing provider",
+            user_id, _was_prov_exc,
+        )
+        was_provider = True  # Safe default: prevents spurious cooldown reset
 
     # Validate: price_range is mandatory for every NEW skill (no competence_id)
     missing_price = [
@@ -440,6 +451,13 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
             )
 
     await fs.update_user(user_id, {"is_service_provider": True})
+    # Spec §5.8.8: if this was the user's first skill batch (they were not a
+    # provider before this save), reset the pitch cooldown to now so they are
+    # not re-pitched for another 30 days.
+    if not was_provider:
+        await fs.update_user(user_id, {
+            "last_time_asked_being_provider": datetime.now(timezone.utc),
+        })
     # Immediately mirror the flag to the Weaviate User hub so that the
     # is_service_provider==True filter in provider searches becomes visible
     # before the next request.  (update_competencies_by_user_id only touches

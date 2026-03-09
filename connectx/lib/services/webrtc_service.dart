@@ -55,6 +55,12 @@ class WebRTCService {
   Function(String, bool, bool)? onChatMessage; // text, isUser, isChunk
   Function()? onDataChannelOpen;
   OnRuntimeStateCallback? onRuntimeState;
+  /// Called when the voice upgrade (renegotiation) does not produce a remote
+  /// audio track within 5 seconds — the client should revert to text mode.
+  Function()? onVoiceUpgradeTimeout;
+
+  // Voice upgrade timeout (cancelled when the remote audio track arrives)
+  Timer? _voiceUpgradeTimer;
 
   // Configuration
   late final String _serverUrl;
@@ -185,6 +191,8 @@ class WebRTCService {
     _isRenegotiating = false;
     _isRecreatingTrack = false;
     _iceCandidatesQueue.clear();
+    _voiceUpgradeTimer?.cancel();
+    _voiceUpgradeTimer = null;
 
     await _signaling?.sink.close();
     _signaling = null;
@@ -473,6 +481,9 @@ class WebRTCService {
 
       _peerConnection!.onTrack = (RTCTrackEvent event) async {
         if (event.track.kind == 'audio' && _remoteStream == null) {
+          // Remote audio track arrived — voice upgrade succeeded; cancel timeout.
+          _voiceUpgradeTimer?.cancel();
+          _voiceUpgradeTimer = null;
           _remoteStream = event.streams[0];
           onRemoteStream?.call(_remoteStream!);
         }
@@ -640,6 +651,13 @@ class WebRTCService {
       if (_audioTrack != null && _localStream != null) {
         await _peerConnection!.addTrack(_audioTrack!, _localStream!);
         await _renegotiateConnection();
+        // Start a 5-second guard: if no remote audio track arrives by then,
+        // the upgrade failed and the client must revert to text mode.
+        _voiceUpgradeTimer?.cancel();
+        _voiceUpgradeTimer = Timer(const Duration(seconds: 5), () {
+          debugPrint('WebRTC: Voice upgrade timed out — no remote audio track received');
+          onVoiceUpgradeTimeout?.call();
+        });
       }
     } catch (e) {
       debugPrint('WebRTC: Error enabling voice mode: $e');

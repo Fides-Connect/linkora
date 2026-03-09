@@ -384,6 +384,65 @@ class TestTextSessionStarterInitialize:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# TextSessionStarter — buffered message (early user input)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestTextSessionStarterWithBufferedMessage:
+    """When a user message arrives before the session is ready, the greeting
+    bubble must be skipped and the stage must advance directly to TRIAGE."""
+
+    def _buffered_starter(self, buffered_message: str = "I need a plumber"):
+        """Build a TextSessionStarter with a buffered_message set."""
+        data_provider = Mock()
+        data_provider.get_user_by_id = AsyncMock(return_value={"name": "Anna", "has_open_request": False})
+        conversation_service = Mock()
+        conversation_service.context = {}
+        conversation_service.generate_greeting_text = AsyncMock(return_value="Hallo!")
+        orchestrator = Mock()
+        orchestrator.handle_signal_transition = Mock()
+        llm_service = Mock()
+        dc_bridge = Mock()
+        dc_bridge.send_chat = Mock()
+        starter = TextSessionStarter(
+            conversation_service=conversation_service,
+            response_orchestrator=orchestrator,
+            data_provider=data_provider,
+            llm_service=llm_service,
+            dc_bridge=dc_bridge,
+            user_id="user-456",
+            connection_id="conn-2",
+            buffered_message=buffered_message,
+        )
+        return starter, conversation_service, orchestrator, dc_bridge
+
+    async def test_skips_greeting_bubble_when_buffered_message_set(self):
+        starter, conv, orch, dc = self._buffered_starter()
+        await starter.initialize()
+        dc.send_chat.assert_not_called()
+
+    async def test_skips_generate_greeting_text_when_buffered_message_set(self):
+        starter, conv, orch, dc = self._buffered_starter()
+        await starter.initialize()
+        conv.generate_greeting_text.assert_not_called()
+
+    async def test_advances_to_triage_when_buffered_message_set(self):
+        starter, conv, orch, dc = self._buffered_starter()
+        await starter.initialize()
+        orch.handle_signal_transition.assert_called_with("triage")
+
+    async def test_initialized_event_set_when_buffered_message_set(self):
+        starter, conv, orch, dc = self._buffered_starter()
+        await starter.initialize()
+        assert starter.initialized_event.is_set()
+
+    async def test_seeds_context_even_when_buffered_message_set(self):
+        starter, conv, orch, dc = self._buffered_starter()
+        await starter.initialize()
+        assert "user_name" in conv.context
+        assert "has_open_request" in conv.context
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SessionStarterFactory
 # ══════════════════════════════════════════════════════════════════════════════
 

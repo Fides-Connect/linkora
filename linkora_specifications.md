@@ -65,10 +65,12 @@
 
 ## 3. Conversation Flow
 
-### 3.1 Session Start
+### 3.1 Session Start & Dynamic Initialization
 
 - **Voice mode**: the AI greets the user by his name immediately upon connection.
-- **Text mode**: The AI starts in the `GREETING` stage just like Voice mode, dispatches the text greeting immediately on page load, and then autonomously transitions to `TRIAGE`.
+- **Text mode (LLM-Driven Initialization)**: The AI starts in the `GREETING` stage. Instead of dispatching a hardcoded text greeting immediately on page load, the system uses an LLM-driven initialization to provide a natural, dynamic greeting. 
+  - If the session is initiated with a buffered user message (e.g., from a dormant UI waking up), the system wraps the message in a silent system tag (e.g., `[System Event: User reconnected and sent the following message]`) and passes it directly to the LLM. The LLM processes the greeting and the user's intent simultaneously, skipping autonomous text emission, and transitioning to `TRIAGE`.
+  - If no message is buffered (a completely fresh start), the system prompts the LLM to generate a fresh, context-aware greeting to initiate the chat before autonomously transitioning to `TRIAGE`.
 - **Language Enforcement**: If the WebSocket connection lacks a `language` parameter or provides an invalid one, the system defaults to the user's REST-stored settings language, or `"en"` if none exists. The language parameter provided by the client strictly overrides the REST-stored user setting for the duration of that session. The conversation language cannot be changed mid-session.
 - **Unsupported Client Language**: If the client requests a language via WebSocket that the LLM is not localized or tested for (e.g., passing a rare dialect code), the system must fallback to English (`"en"`) and inform the user of the fallback in the first turn.
 - **Cross-Lingual Handling**: The AI prompt must strictly enforce that all responses remain in the session-defined language. If the user speaks in a different language, the AI must explicitly translate or acknowledge the input in the configured system language (e.g., "I see you're speaking German, but I am configured for English right now. How can I help?").
@@ -79,7 +81,7 @@ The conversation progresses through a finite set of named stages. Each stage rep
 
 | Stage                 | Purpose                                                                                                                                                       |
 |-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `GREETING`            | **Welcome.** The AI greets the user by name and checks whether they have an open service request, then invites them to share their need.                      |
+| `GREETING`            | **Welcome.** The AI greets the user by name (dynamically derived) and checks whether they have an open service request, then invites them to share their need.|
 | `TRIAGE`              | **Scoping.** The AI acts as a service coordinator. It must collect a strict minimum set of requirements (defined in Section 3.4) before it is permitted to transition to CONFIRMATION. It also detects provider-management intent and routes accordingly. |
 | `CLARIFY`             | **Disambiguation.** Used when the request is too ambiguous to scope. The AI asks exactly one targeted question and immediately returns to `TRIAGE`.            |
 | `TOOL_EXECUTION`      | **Data retrieval.** An intermediate stage while a data operation runs (e.g. fetching open requests or favorites). Control returns to `TRIAGE`, `CONFIRMATION`, or `FINALIZE` once the tool completes. |
@@ -108,7 +110,6 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 **Transition notes:**
 
 - **Atomic Stage Output**: When the system autonomously fast-paths through a stage — most commonly `TRIAGE → CONFIRMATION` because the user's initial request was already complete — the originating stage (`TRIAGE`) must emit only the `signal_transition` call and must not produce any natural-language response text. All user-facing communication is the sole responsibility of the destination stage (`CONFIRMATION`). This prevents stacking of redundant acknowledgements across consecutive stage outputs.
-
 - **Strict Confirmation Gate**: The system must strictly enforce that `FINALIZE` can only be entered from `CONFIRMATION` or `TOOL_EXECUTION`. The AI is mathematically forbidden from transitioning directly from `TRIAGE` to `FINALIZE` without user approval.
 - `CONFIRMATION → FINALIZE`: the system automatically performs a provider search in the same response stream; the result list is injected into the follow-up LLM call.
 - `COMPLETED → PROVIDER_PITCH`: fires automatically (without an explicit LLM call) when the user is pitch-eligible (see §4). The LLM never needs to call this transition itself.
@@ -154,6 +155,7 @@ For ambiguity resolution, the AI may enter CLARIFY to ask one targeted question 
 
 - If the user speaks or sends a message while the AI is actively responding, the AI's current response must be cancelled before a new one is generated.
 - Empty or noise-only audio that does not produce a valid text transcript must not trigger an interrupt of the AI's current response.
+- When the STT stream has received no non-empty transcript for 120 consecutive seconds (measured from the first empty final result), the system must close the current gRPC stream and open a fresh one. The idle timer is reset by any non-empty transcript (interim or final). This prevents reaching the STT service's hard 305-second stream-duration limit during prolonged silence.
 - When a response is interrupted, any partial user input that triggered the interrupt must be preserved and prepended to the user's next message, so the full accumulated request is processed coherently in the following turn.
 - The system must not produce a situation where the conversation history contains consecutive user messages with no AI reply between them, as this causes the AI to lose conversational context.
 - **Interrupting State-Mutating Tools:** Data mutation tools (e.g., executing a `cancel_service_request` during `TOOL_EXECUTION`) must execute atomically. Once triggered by the backend, they cannot be rolled back by a user interrupt. However, if an interrupt arrives *before* the tool-call chunk is completely parsed and executed by the backend, the tool execution is safely aborted. 
@@ -205,11 +207,23 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 
 ### 4.3 User Responses to the Pitch
 
-| Response   | System Action                                                              |
-|------------|----------------------------------------------------------------------------|
-| `accepted` | Mark user as service provider in authoritative DB; transition to `PROVIDER_ONBOARDING`. **Note:** Mirroring `is_service_provider = true` to the search index is deferred until the user successfully saves their first competency batch to prevent surfacing blank profiles in search. |
-| `not_now`  | Reset the 30-day cooldown clock (user may be asked again later).           |
-| `never`    | Store permanent opt-out; the user is never asked again.                    |
++------------+-----------------------------------------------------------------------------------+
+| Response   | System Action                                                                     |
++============+===================================================================================+
+| `accepted` | Transition to `PROVIDER_ONBOARDING`. **Crucially, the system does not write       |
+|            | `is_service_provider = true` to Firestore yet.** The provider flag and the        |
+|            | `provider_pitch_last_asked` timestamp are only updated upon the successful        |
+|            | database save of the user's first skill batch. If the user abandons onboarding    |
+|            | mid-way, they remain eligible for a future pitch.                                 |
++------------+-----------------------------------------------------------------------------------+
+| `not_now`  | Immediately update the `provider_pitch_last_asked` timestamp to the current time, |
+|            | resetting the 30-day cooldown clock.                                              |
++------------+-----------------------------------------------------------------------------------+
+| `never`    | If the user's intent is to stop being asked or they state they never want to      |
+|            | provide services, the system stores the permanent opt-out sentinel in             |
+|            | `provider_pitch_last_asked`. The user is rendered strictly ineligible for future  |
+|            | pitches and is never asked again.                                                 |
++------------+-----------------------------------------------------------------------------------+                                                                                      |
 
 - Any `decision` value that is not `"accepted"` or `"never"` is treated as `"not_now"`.
 - After a pitch response is recorded, the in-session user context is immediately updated in memory so that the pitch eligibility check will not re-evaluate as eligible during the same conversation.
@@ -313,7 +327,7 @@ When `save_competence_batch` executes, the following steps occur in order:
 5. **Per-skill Firestore write**: each skill is created or updated in Firestore.
 6. **Availability subcollection write**: the `availability_time` data is written to the skill's subcollection. If an existing record is present, it is updated; otherwise a new record is created. At most one availability record may exist per skill.
 7. **LLM enrichment** (non-blocking on failure): the enrichment step extracts `skills_list`, `search_optimized_summary`, `price_per_hour`, `availability_tags`, `availability_text`, and `category` from the raw data and writes them back to Firestore. **Crucially, to ensure optimal vector proximity with the search stage, `search_optimized_summary`, `skills_list`, and `availability_tags` must be generated strictly in English. The `search_optimized_summary` must be written in a third-person prose style (e.g., "This provider is...") to perfectly mirror the HyDE query structure, and `skills_list` must extract specific, actionable capabilities.** Enrichment failure is non-fatal; the skill remains saved with raw data intact.
-8. **Provider flag**: `is_service_provider = True` is written to both Firestore and the search index for the user.
+8. **Provider flag & Cooldown**: `is_service_provider = True` is written to both Firestore and the search index simultaneously. If this was the user's first competency (completing their initial onboarding), the system also updates their `provider_pitch_last_asked` timestamp to the current time to reset their pitch cooldown.
 9. **Full search-index re-sync**: all of the user's competencies are read from Firestore (the authoritative source), availability tags are derived from the subcollection data for each skill, and the entire competency set is synced to the search index. If the user's search-index node is absent, it is self-healed by recreating it from Firestore before re-syncing.
 
 The `save_competence_batch` execution is **shielded** against mid-write WebSocket disconnections: the coroutine cannot be cancelled once started, ensuring Firestore writes complete atomically even if the session drops.
@@ -436,8 +450,8 @@ Step 4 of the provider search pipeline re-scores the wide-net candidates using a
 
 ### 7.2 Connection Readiness Guard
 
-- The client must not send messages before the data channel is fully open.
-- Messages that arrive before the channel is ready must be buffered and sent immediately once the channel opens.
+- The client must not send messages over the network before the data channel is fully open.
+- Messages that arrive while the UI is in a dormant state (post-timeout) or before the channel is ready must be buffered and sent immediately once the background connection opens.
 
 ### 7.3 Mode Switching Within a Session
 
@@ -445,15 +459,17 @@ Step 4 of the provider search pipeline re-scores the wide-net candidates using a
 - Switching from text to voice mode acquires microphone permission and renegotiates the existing WebRTC connection to add an audio track. If microphone permission is denied, the switch fails silently and the session remains in text mode.
 - If a voice track already exists but is muted (from a previous downgrade to text mode), switching back to voice unmutes the track and sends `mode-switch: voice` — no renegotiation is required.
 - If a new audio track arrives on an existing voice session (e.g. Bluetooth device swap), the system replaces the input track and restarts the audio sub-tasks without resetting conversation state.
-- If a text-to-voice upgrade is triggered but the audio track does not arrive within 5 seconds after the offer, the upgrade fails.
+- If a text-to-voice upgrade is triggered but the audio track does not arrive within 5 seconds after the offer, the upgrade fails. The client must automatically revert the UI to text mode so the user is not left in a broken intermediate state.
 
-### 7.4 Client-Side Idle Timeout
+### 7.4 Client-Side Idle Timeout (Dormant UI State)
 
-- The client automatically terminates an active session after 10 consecutive minutes of inactivity (no incoming messages of any type). On timeout, the session is torn down, the full chat history is cleared, and the UI returns to its idle state.
+- The client automatically terminates an active WebRTC/WebSocket connection after 10 consecutive minutes of inactivity (no incoming messages of any type) to save device resources and server connections. 
+- On timeout, the network session is torn down, **and the visual chat history is cleared.** The UI returns to its default idle/start state.
+- If the user interacts again, it initiates a completely new session connection.
 
 ### 7.5 Optimistic Message Display
 
-- When a user submits a text message, the client adds it to the chat view immediately, before the server confirms receipt. If the server subsequently echoes the same message, the client must detect and discard the duplicate using a unique message ID rather than relying purely on text matching, ensuring intentional user repetitions (e.g., 'Hello?') are not falsely dropped.
+- When a user submits a text message, the client adds it to the chat view immediately, before the server confirms receipt. If the server subsequently echoes the same message, the client must detect and discard the duplicate using a unique message ID rather than relying purely on text matching, ensuring intentional user repetitions (e.g., 'Hello?') are not falsely dropped. Additionally, the server FSM must ensure that if the user's first message contains a standard greeting, the LLM does not double-greet if an autonomous system greeting was already dispatched (or vice versa, as greetings are now dynamically driven by the LLM).
 
 ### 7.6 Microphone Mute Lifecycle
 
@@ -541,8 +557,19 @@ Step 4 of the provider search pipeline re-scores the wide-net candidates using a
 
 - When a new session is established, the server-side agent runtime FSM is initialised in the `BOOTSTRAP` state.
 - The FSM advances to `DATA_CHANNEL_WAIT` as soon as the WebRTC peer connection is negotiated and the data channel attachment is confirmed.
-- Once the data channel is confirmed open, the FSM transitions to `LISTENING` (voice mode) or dispatches the text greeting and transitions to `LISTENING` (text mode).
+- Once the data channel is confirmed open, the FSM invokes the **Session Resumption (State-Aware Hydration)** check (see §9.2) to determine whether to restore previous context or start fresh, and then transitions to the appropriate state (e.g., `LISTENING`, `GREETING`, or `TRIAGE`).
 - The current FSM state is emitted as a `runtime-state` message on both the initial data-channel attachment and again when the channel open event fires, ensuring the client always receives the correct state even if it connects after the FSM has already advanced past `BOOTSTRAP`.
+
+### 9.2 Session Resumption (State-Aware Hydration)
+
+To ensure conversations feel natural across disconnects and timeouts, the system dynamically restores context based on the user's last known task state and explicit intent upon reconnection.
+
+When a new connection is established, the server must check Firestore for the user's most recent AI conversation document (restricted to the last 24 hours). 
+
+1. **Context Injection:** Regardless of how the last session ended, the system silently injects a lightweight summary of the previous session's final state (including the scoped request draft and final stage) into the LLM's initial system prompt (e.g., `[System Context: The user's previous session ended 15 minutes ago. Last discussed request: "Fixing a leaking pipe in the kitchen".]`).
+2. **Explicit Continuation:** If the user initiates the new session by explicitly asking to continue their last request (e.g., "Let's continue with the plumber search" or "Where were we?"), the AI uses the injected context to summarize the last known state to the user in 1-2 sentences and restores the previous request data into the active session memory. The FSM is then transitioned to the appropriate active stage (e.g., `TRIAGE` or `CONFIRMATION`) to resume the flow.
+3. **Fresh Start (Clean Break):** If the previous session ended in a terminal state (`COMPLETED`, `FINALIZE`, `PROVIDER_PITCH`, `PROVIDER_ONBOARDING`) and the user's new message introduces a *new* intent (or they simply say "Hello"), the AI ignores the previous context, leaves the FSM in the new session state, and boots into the standard `GREETING` or `TRIAGE` flow. 
+4. **Unfinished Business (Auto-Resume):** If the last session abruptly dropped mid-flow (e.g., during `TRIAGE`, `CLARIFY`, or `CONFIRMATION`), the system automatically restores the in-memory request draft and resumes the FSM at that exact stage, prompting the AI to naturally welcome the user back and acknowledge the interrupted task.
 
 ---
 
