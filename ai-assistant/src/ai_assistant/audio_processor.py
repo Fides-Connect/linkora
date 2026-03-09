@@ -627,33 +627,27 @@ class AudioProcessor:
             logger.info("🔇 is_ai_speaking → False (exception in pipeline)")
             self.is_ai_speaking = False
     
-    async def _queue_audio_for_playback(self, audio_data: bytes):
+    async def _queue_audio_for_playback(self, audio_data: bytes, is_first: bool = True, is_last: bool = True):
         """
-        Queue audio for playback with fade effects to prevent crackling.
-        
-        Args:
-            audio_data: Audio data as bytes (int16)
+        Queue audio for playback. Fades are applied only at sentence boundaries
+        (is_first / is_last) so intermediate streaming chunks pass through untouched,
+        preventing per-chunk amplitude discontinuities that cause crackling.
         """
         try:
-            # Convert to numpy array (make writable copy)
             audio_samples = np.frombuffer(audio_data, dtype=np.int16).copy()
-            
-            # Apply smooth fade-in at start and fade-out at end
-            # Using cosine curve for smoother transitions
-            fade_in_samples = min(480, len(audio_samples) // 2)  # 10ms at 48kHz
-            fade_out_samples = min(144, len(audio_samples) // 2)  # 3ms at 48kHz
-            
-            if fade_in_samples > 0:
-                # Cosine fade-in: 0 to 1
-                fade_in = (1.0 - np.cos(np.linspace(0, np.pi, fade_in_samples))) / 2.0
-                audio_samples[:fade_in_samples] = (audio_samples[:fade_in_samples] * fade_in).astype(np.int16)
-            
-            if fade_out_samples > 0:
-                # Cosine fade-out: 1 to 0
-                fade_out = (1.0 + np.cos(np.linspace(0, np.pi, fade_out_samples))) / 2.0
-                audio_samples[-fade_out_samples:] = (audio_samples[-fade_out_samples:] * fade_out).astype(np.int16)
-            
-            # Queue the processed audio
+
+            if is_first:
+                fade_in_samples = min(480, len(audio_samples) // 2)  # 10ms at 48kHz
+                if fade_in_samples > 0:
+                    fade_in = (1.0 - np.cos(np.linspace(0, np.pi, fade_in_samples))) / 2.0
+                    audio_samples[:fade_in_samples] = (audio_samples[:fade_in_samples] * fade_in).astype(np.int16)
+
+            if is_last:
+                fade_out_samples = min(144, len(audio_samples) // 2)  # 3ms at 48kHz
+                if fade_out_samples > 0:
+                    fade_out = (1.0 + np.cos(np.linspace(0, np.pi, fade_out_samples))) / 2.0
+                    audio_samples[-fade_out_samples:] = (audio_samples[-fade_out_samples:] * fade_out).astype(np.int16)
+
             await self.output_track.queue_audio(audio_samples.tobytes())
             
         except Exception as e:

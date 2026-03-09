@@ -95,23 +95,17 @@ class AudioOutputTrack(MediaStreamTrack):
                 await asyncio.sleep(self._next_frame_time - current_time)
             
             logger.debug(f"recv() called - queue size: {self.audio_queue.qsize()}, buffer size: {len(self._buffer)} samples")
-            
-            # Try to get audio from queue (non-blocking with short timeout)
-            try:
-                audio_data = await asyncio.wait_for(
-                    self.audio_queue.get(),
-                    timeout=0.001  # Very short timeout - don't wait long
-                )
-                logger.debug(f"Got {len(audio_data)} bytes from queue")
-                
-                # Convert bytes to numpy array and append to buffer
-                new_samples = np.frombuffer(audio_data, dtype=np.int16)
-                self._buffer = np.concatenate([self._buffer, new_samples])
-                logger.debug(f"Buffer now has {len(self._buffer)} samples")
-                
-            except asyncio.TimeoutError:
-                # No audio available - we'll send comfort noise
-                pass
+
+            # Drain all available items in one pass to keep the sample buffer
+            # full and prevent underruns caused by bursty TTS delivery.
+            while True:
+                try:
+                    audio_data = self.audio_queue.get_nowait()
+                    new_samples = np.frombuffer(audio_data, dtype=np.int16)
+                    self._buffer = np.concatenate([self._buffer, new_samples])
+                    logger.debug(f"Got {len(audio_data)} bytes from queue, buffer={len(self._buffer)} samples")
+                except asyncio.QueueEmpty:
+                    break
             
             # Check if we have enough samples for a frame
             if len(self._buffer) >= self.samples_per_frame:

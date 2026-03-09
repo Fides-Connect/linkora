@@ -5,7 +5,7 @@ Manages text-to-speech playback with sentence processing and ordering.
 import asyncio
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections.abc import AsyncIterator
 from typing import Optional, Callable, Awaitable
 
@@ -19,8 +19,7 @@ class SentenceChunk:
     """Represents a sentence chunk with order information."""
     order: int
     text: str
-    audio_data: Optional[bytes] = None
-    is_ready: bool = False
+    audio_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
 
 
 class SentenceParser:
@@ -112,7 +111,7 @@ class TTSPlaybackManager:
     def __init__(
         self,
         tts_service: TextToSpeechService,
-        on_audio_ready: Callable[[bytes], Awaitable[None]]
+        on_audio_ready: Callable[[bytes, bool, bool], Awaitable[None]]
     ):
         """
         Initialize TTS playback manager.
@@ -122,15 +121,17 @@ class TTSPlaybackManager:
             on_audio_ready: Callback for when audio is ready to play
         """
         self.tts_service = tts_service
-        self.on_audio_ready = on_audio_ready
+        self.on_audio_ready: Callable[[bytes, bool, bool], Awaitable[None]] = on_audio_ready
         
         self._chunks: dict[int, SentenceChunk] = {}
         self._next_to_play = 0
         self._lock = asyncio.Lock()
-        self._chunk_ready = asyncio.Event()
+        self._chunk_registered = asyncio.Event()
         self._processing = False
         self._interrupted = False
-        self._total_audio_bytes = 0  # accumulated across the current turn
+        self._total_audio_bytes = 0
+        self._total_sentences = 0
+        self._llm_stream_complete = False
     
     async def process_llm_stream(
         self,
@@ -152,46 +153,66 @@ class TTSPlaybackManager:
         self._chunks.clear()
         self._next_to_play = 0
         self._total_audio_bytes = 0
+        self._total_sentences = 0
+        self._llm_stream_complete = False
+        self._chunk_registered.clear()
 
         accumulated_text = ""
         sentence_order = 0
-        
+
+        playback_task = asyncio.create_task(self._playback_loop())
+
         try:
             async for chunk in llm_stream:
                 if self._interrupted:
                     logger.info("TTS playback interrupted")
                     break
-                
+
                 accumulated_text += chunk
-                
+
                 # Check if we have complete sentences
                 sentences = sentence_parser.split_into_sentences(accumulated_text)
-                
+
                 if len(sentences) > 1:
                     # Process all complete sentences (all but the last one)
                     complete_sentences = sentences[:-1]
-                    
+
                     # Merge short sentences
                     merged = sentence_parser.merge_short_sentences(complete_sentences)
-                    
+
                     # Create TTS tasks for complete sentences
                     for sentence in merged:
                         await self._synthesize_and_queue(sentence, sentence_order)
                         sentence_order += 1
-                    
+
                     # Keep the incomplete last sentence
                     accumulated_text = sentences[-1]
-            
+
             # Process any remaining text
             if accumulated_text.strip() and not self._interrupted:
                 await self._synthesize_and_queue(accumulated_text.strip(), sentence_order)
-            
-            # Wait for all chunks to be played
+                sentence_order += 1
+
+            self._total_sentences = sentence_order
+            self._llm_stream_complete = True
+            self._chunk_registered.set()  # wake up playback loop for completion check
+
             if not self._interrupted:
-                await self._wait_for_completion()
+                await playback_task
+            else:
+                playback_task.cancel()
+                try:
+                    await playback_task
+                except asyncio.CancelledError:
+                    pass
 
         except Exception as e:
             logger.error(f"Error in TTS playback: {e}", exc_info=True)
+            playback_task.cancel()
+            try:
+                await playback_task
+            except asyncio.CancelledError:
+                pass
             raise
         finally:
             self._processing = False
@@ -208,79 +229,81 @@ class TTSPlaybackManager:
         """
         logger.info(f"Synthesizing sentence {order}: {text[:50]}...")
         
-        # Create chunk entry
+        # Register chunk and start synthesis task
         chunk = SentenceChunk(order=order, text=text)
         async with self._lock:
             self._chunks[order] = chunk
-        
-        # Start synthesis task
+        self._chunk_registered.set()
+
         asyncio.create_task(self._synthesize_chunk(order, text))
-    
+
     async def _synthesize_chunk(self, order: int, text: str):
         """
-        Synthesize audio for a chunk and mark it ready.
-        
-        Args:
-            order: Chunk order
-            text: Text to synthesize
+        Synthesize audio and push bytes into the chunk's queue as they arrive.
+        Puts None as a sentinel when synthesis is complete or on error.
         """
+        chunk = self._chunks.get(order)
+        if not chunk:
+            return
         try:
-            # Collect all audio chunks from the stream
-            audio_chunks = []
-            async for audio_chunk in self.tts_service.synthesize_stream(text):
-                if audio_chunk:
-                    audio_chunks.append(audio_chunk)
-            
-            audio_data = b''.join(audio_chunks)
-            
-            async with self._lock:
-                if order in self._chunks:
-                    self._chunks[order].audio_data = audio_data
-                    self._chunks[order].is_ready = True
-                    self._total_audio_bytes += len(audio_data)
-                    logger.info(f"Audio ready for chunk {order} ({len(audio_data)} bytes)")
-            
-            # Try to play chunks in order
-            await self._play_ready_chunks()
-            self._chunk_ready.set()
-            
+            async for audio_bytes in self.tts_service.synthesize_stream(text):
+                if audio_bytes:
+                    self._total_audio_bytes += len(audio_bytes)
+                    await chunk.audio_queue.put(audio_bytes)
+            logger.info(f"Synthesis complete for chunk {order}")
         except Exception as e:
             logger.error(f"Error synthesizing chunk {order}: {e}", exc_info=True)
-    
-    async def _play_ready_chunks(self):
-        """Play chunks in order if they're ready."""
-        async with self._lock:
-            while self._next_to_play in self._chunks:
-                chunk = self._chunks[self._next_to_play]
-                
-                if not chunk.is_ready:
+        finally:
+            await chunk.audio_queue.put(None)  # sentinel: signals end of this chunk's audio
+
+    async def _playback_loop(self):
+        """Play chunks in order, forwarding bytes to on_audio_ready as synthesis produces them."""
+        order = 0
+        while not self._interrupted:
+            # Wait until the next chunk has been registered
+            while True:
+                async with self._lock:
+                    chunk = self._chunks.get(order)
+                if chunk is not None:
                     break
-                
-                if chunk.audio_data:
-                    logger.info(f"Playing chunk {chunk.order}")
-                    await self.on_audio_ready(chunk.audio_data)
-                
-                # Remove played chunk and move to next
-                del self._chunks[self._next_to_play]
-                self._next_to_play += 1
-    
-    async def _wait_for_completion(self):
-        """Wait for all chunks to be played."""
-        max_wait = 30  # Maximum wait time in seconds
-        waited = 0
-        
-        while waited < max_wait:
-            async with self._lock:
-                if not self._chunks:
+                if self._llm_stream_complete and order >= self._total_sentences:
                     return
-            
-            self._chunk_ready.clear()
-            try:
-                await asyncio.wait_for(self._chunk_ready.wait(), timeout=1.0)
-            except asyncio.TimeoutError:
-                waited += 1
-        
-        logger.warning(f"Timeout waiting for TTS completion, {len(self._chunks)} chunks pending")
+                self._chunk_registered.clear()
+                try:
+                    await asyncio.wait_for(self._chunk_registered.wait(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    if self._interrupted:
+                        return
+
+            # Stream bytes to output as synthesis produces them.
+            # Track first/last position so on_audio_ready can apply fades only at
+            # sentence boundaries and not on every intermediate streaming chunk.
+            prev_bytes: Optional[bytes] = None
+            is_first = True
+            while not self._interrupted:
+                try:
+                    audio_bytes = await asyncio.wait_for(chunk.audio_queue.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
+                if audio_bytes is None:  # sentinel: synthesis for this sentence is done
+                    # Flush the last buffered chunk as the sentence-final one
+                    if prev_bytes is not None:
+                        await self.on_audio_ready(prev_bytes, is_first=is_first, is_last=True)
+                    break
+                # Send the previously held chunk (now known not to be last)
+                if prev_bytes is not None:
+                    await self.on_audio_ready(prev_bytes, is_first=is_first, is_last=False)
+                    is_first = False
+                prev_bytes = audio_bytes
+
+            logger.info(f"Finished playing chunk {order}")
+            async with self._lock:
+                self._chunks.pop(order, None)
+            self._next_to_play = order + 1
+            order += 1
+
+            if self._llm_stream_complete and order >= self._total_sentences:
+                return
     
     def interrupt(self):
         """Interrupt current playback."""
