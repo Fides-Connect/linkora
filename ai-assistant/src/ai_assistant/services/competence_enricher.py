@@ -38,14 +38,19 @@ Given a service provider's raw competence data, output ONLY a single JSON object
 
 Rules:
 1. skills_list: extract BOTH explicit skills (directly stated) AND implicit skills
-   (strongly implied by the domain). Use lowercase English noun phrases.
+   (strongly implied by the domain). Focus on specific, actionable capabilities
+   (e.g. "install ceiling lights", "repair circuit breakers") rather than vague
+   category labels (e.g. "electrical work"). Use lowercase English noun phrases.
    Example: "12 years as an electrician doing house wiring"
    → ["house wiring", "residential wiring", "lighting installation",
-      "circuit breaker work", "electrical troubleshooting"]
+      "circuit breaker repair", "electrical fault diagnosis"]
 
 2. search_optimized_summary: rewrite the profile in 2–4 sentences specifically
    optimised for semantic vector search by potential customers. Include domain
-   keywords, key skills, experience level, and availability (if known). Write in English.
+   keywords, key skills, experience level, and availability (if known).
+   Write in English, in the third person starting with "This provider" (e.g.
+   "This provider is an experienced electrician …") to mirror the vocabulary
+   used in provider-search queries.
 
 3. category: use the most appropriate single category from this list:
    Handwerk, IT, Reinigung, Garten, Pflege, Transport, Bildung, Küche, Sonstiges.
@@ -110,10 +115,21 @@ class CompetenceEnricher:
             enriched = self._parse_response(full_text)
             result = {**raw}
             result.update(enriched)
+
+            # Derive availability_text deterministically from structured
+            # availability_time so it is persisted to Firestore and indexed
+            # in Weaviate for BM25 temporal-keyword searches.
+            avail_time = raw.get("availability_time")
+            if avail_time and isinstance(avail_time, dict):
+                avail_text = CompetenceEnricher._availability_time_to_text(avail_time)
+                if avail_text:
+                    result["availability_text"] = avail_text
+
             logger.info(
-                "Competence enriched — title=%r  skills=%d",
+                "Competence enriched — title=%r  skills=%d  availability_text=%r",
                 raw.get("title"),
                 len(enriched.get("skills_list", [])),
+                result.get("availability_text", "")[:60] if result.get("availability_text") else "",
             )
             return result
 

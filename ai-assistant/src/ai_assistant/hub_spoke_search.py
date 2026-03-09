@@ -424,7 +424,7 @@ class HubSpokeSearch:
                     query=query_text,
                     limit=5,
                     alpha=alpha,
-                    query_properties=["title^2", "category^2", "description", "search_optimized_summary", "availability_text"],
+                    query_properties=["title^2", "category", "description", "search_optimized_summary", "availability_text"],
                     return_metadata=MetadataQuery(score=True),
                 )
                 logger.debug(
@@ -443,10 +443,11 @@ class HubSpokeSearch:
                 limit=fetch_limit * 10,  # Fetch more for client-side grouping
                 filters=filter_clause,
                 alpha=alpha,
-                # Boost title and category to prioritize exact service matches over peripheral criteria.
+                # Boost title (2×) to prioritize exact service name matches. category, description,
+                # search_optimized_summary, and availability_text are searched at standard weight.
                 # search_optimized_summary is the primary vector source and also benefits BM25 recall
                 # for niche skills well-described in the summary but not literally in the title.
-                query_properties=["title^2", "category^2", "description", "search_optimized_summary", "availability_text"],
+                query_properties=["title^2", "category", "description", "search_optimized_summary", "availability_text"],
                 return_metadata=MetadataQuery(score=True),
                 return_references=QueryReference(
                     link_on="owned_by",
