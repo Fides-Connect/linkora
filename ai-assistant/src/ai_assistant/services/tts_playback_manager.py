@@ -306,11 +306,11 @@ class TTSPlaybackManager:
                 if audio_bytes is None:  # sentinel: synthesis for this sentence is done
                     # Flush the last buffered chunk as the sentence-final one
                     if prev_bytes is not None:
-                        await self.on_audio_ready(prev_bytes, is_first=is_first, is_last=True)
+                        await self.on_audio_ready(prev_bytes, is_first, True)
                     break
                 # Send the previously held chunk (now known not to be last)
                 if prev_bytes is not None:
-                    await self.on_audio_ready(prev_bytes, is_first=is_first, is_last=False)
+                    await self.on_audio_ready(prev_bytes, is_first, False)
                     is_first = False
                 prev_bytes = audio_bytes
 

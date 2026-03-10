@@ -607,16 +607,20 @@ class WebRTCService {
         // Local dev (debug/profile): send token as first WS message.
         // Browsers cannot set headers; non-web avoids plaintext header exposure.
         final String? idToken = await _firebaseAuthWrapper.getIdToken();
-        if (idToken != null && idToken.isNotEmpty) {
-          _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
+        if (idToken == null || idToken.isEmpty) {
+          await disconnect();
+          throw Exception('Cannot authenticate: Firebase ID token is unavailable.');
         }
+        _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
       } else if (kIsWeb) {
         // wss:// on web — headers are blocked by browser security; send token
         // as the first WS message instead.
         final String? idToken = await _firebaseAuthWrapper.getIdToken();
-        if (idToken != null && idToken.isNotEmpty) {
-          _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
+        if (idToken == null || idToken.isEmpty) {
+          await disconnect();
+          throw Exception('Cannot authenticate: Firebase ID token is unavailable.');
         }
+        _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
       }
 
       // Capture the specific instance so the onDone guard below can detect

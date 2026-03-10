@@ -199,7 +199,7 @@ class SpeechService {
 
     _webrtcService!.onRemoteStream = (MediaStream stream) {
       debugPrint('SpeechService: Received remote audio stream');
-      _handleRemoteStream(stream);
+      unawaited(_handleRemoteStream(stream));
     };
 
     _webrtcService!.onDataChannelOpen = () {

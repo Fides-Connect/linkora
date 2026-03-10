@@ -5,7 +5,7 @@ Pipeline Benchmark: STT → LLM → TTS
 Measures the latency of each stage using the real service implementations.
 
 Usage:
-    python scripts/benchmark_pipeline.py [--runs N] [--wav PATH] [--lang de|en]
+    python scripts/benchmark_voice_pipeline.py [--runs N] [--wav PATH] [--lang de|en]
 
 Metrics captured per run:
   STT  — time from first audio chunk sent  → first FINAL transcript
