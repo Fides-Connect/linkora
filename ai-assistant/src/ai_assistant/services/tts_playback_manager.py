@@ -234,14 +234,15 @@ class TTSPlaybackManager:
             # Cancel any synthesis tasks still running (occurs on interrupt or error).
             # This prevents stale gRPC streams from holding the TTS concurrency slot
             # and stops them from retaining a reference to this manager after it is done.
-            for t in self._synthesis_tasks:
+            tasks = list(self._synthesis_tasks)
+            for t in tasks:
                 if not t.done():
                     t.cancel()
-            if self._synthesis_tasks:
+            if tasks:
                 # Await all tasks so their CancelledError cleanup runs (e.g. the
                 # queue sentinel put in _synthesize_chunk that unblocks the playback
                 # loop) before we reset state.
-                await asyncio.gather(*self._synthesis_tasks, return_exceptions=True)
+                await asyncio.gather(*tasks, return_exceptions=True)
             self._synthesis_tasks = []
             self._processing = False
             self.on_audio_ready = _original_on_audio

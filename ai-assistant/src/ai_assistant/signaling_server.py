@@ -89,7 +89,6 @@ class SignalingServer:
         if not self.active_connections:
             return
         handlers = list(self.active_connections.values())
-        self.active_connections.clear()
         # Close WebSockets first so the handle_websocket message-loops exit
         # promptly — this unblocks AppRunner.cleanup() regardless of how long
         # handler teardown takes.  The per-connection finally blocks then call
@@ -223,7 +222,7 @@ class SignalingServer:
             logger.info(f"WebSocket connection closed: {connection_id}")
             logger.debug(f"Cleaning up connection {connection_id}")
             await handler.close()
-            del self.active_connections[str(connection_id)]
+            self.active_connections.pop(str(connection_id), None)
             logger.debug(f"Active connections after cleanup: {len(self.active_connections)}")
             
         return ws
