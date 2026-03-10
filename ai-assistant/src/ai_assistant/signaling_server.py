@@ -91,12 +91,19 @@ class SignalingServer:
         handlers = list(self.active_connections.values())
         # Tear down audio processors and peer connections first so no new
         # tasks are spawned after we close the WebSockets.
+        # PeerConnectionHandler.close() is idempotent, so the handle_websocket()
+        # finally block calling it again is a safe no-op.
         await asyncio.gather(*(h.close() for h in handlers), return_exceptions=True)
-        # Close the WebSocket of each handler so the handle_websocket
-        # message-loop exits and its finally-block (which calls handler.close()
-        # again — a safe no-op) can run.
+        # Close each open WebSocket so the handle_websocket message-loop exits
+        # and its finally block can run.
         await asyncio.gather(
-            *(h.websocket.close() for h in handlers if not h.websocket.closed),
+            *(
+                h.websocket.close()
+                for h in handlers
+                if hasattr(h, "websocket")
+                and h.websocket is not None
+                and not h.websocket.closed
+            ),
             return_exceptions=True,
         )
 

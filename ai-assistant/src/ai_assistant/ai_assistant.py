@@ -116,14 +116,24 @@ class AIAssistant:
     async def aclose(self) -> None:
         """Close all underlying Google API connections for graceful shutdown."""
         await self.llm_service.aclose()
-        try:
-            await self.stt_service.client.close()
-        except Exception:
-            pass
-        try:
-            await self.tts_service.client.close()
-        except Exception:
-            pass
+        # Google Cloud gRPC AsyncClients expose a synchronous close() that
+        # closes the underlying channel.  Awaiting its return value (None)
+        # would raise TypeError and leave the channel open.  We use
+        # iscoroutine() as a forward-compat guard in case a future SDK version
+        # makes it async, and log failures instead of silently swallowing them.
+        for label, client in [
+            ("STT", self.stt_service.client),
+            ("TTS", self.tts_service.client),
+        ]:
+            try:
+                result = client.close()
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as exc:
+                logger.warning(
+                    "AIAssistant.aclose: error closing %s client: %s",
+                    label, exc, exc_info=True,
+                )
 
     async def generate_llm_response_stream(
         self, prompt: str, user_id: Optional[str] = None

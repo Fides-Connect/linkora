@@ -64,6 +64,7 @@ class PeerConnectionHandler:
         # a text→voice upgrade.  Allows _handle_renegotiation_offer to answer
         # immediately without waiting for on_track.
         self._voice_to_text_downgrade_pending = False
+        self._closed = False  # idempotency guard for close()
 
         # DataChannel message dispatch table
         self._dc_router = DataChannelMessageRouter()
@@ -481,7 +482,16 @@ class PeerConnectionHandler:
             logger.error("Error sending message: %s", exc, exc_info=True)
 
     async def close(self):
-        """Close peer connection and cleanup resources."""
+        """Close peer connection and cleanup resources.
+
+        Safe to call multiple times — subsequent calls are no-ops.
+        This idempotency is relied on by close_all_connections() (which
+        eagerly tears down handlers) and the handle_websocket() finally
+        block (which also calls close() as a safety net).
+        """
+        if self._closed:
+            return
+        self._closed = True
         logger.info("Closing connection %s", self.connection_id)
 
         # Cancel idle timer
