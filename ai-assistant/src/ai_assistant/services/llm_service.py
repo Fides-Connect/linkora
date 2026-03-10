@@ -284,3 +284,34 @@ class LLMService:
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)
             return "Entschuldigung, ich konnte keine Antwort generieren."
+
+    async def prewarm(self) -> None:
+        """
+        Force LangChain's one-time per-process initialisation to run at server
+        startup rather than on the first real user utterance.
+
+        On the first call to ``RunnableWithMessageHistory.astream()`` LangChain
+        performs internal introspection (``asyncio.iscoroutinefunction`` checks,
+        callback-manager wiring, etc.) that adds noticeable latency.  Draining a
+        single minimal streaming request here moves that cost to startup.
+
+        The dummy session is removed from the store afterwards so it does not
+        consume memory.
+        """
+        _SESSION = "__prewarm__"
+        _PROMPT = ChatPromptTemplate.from_messages([
+            ("system", "Reply with exactly one word."),
+            MessagesPlaceholder(variable_name="history"),
+            ("human", "{input}"),
+        ])
+        try:
+            logger.info("LLM pre-warm: priming LangChain internals...")
+            async for _ in self.generate_stream("Hi", _PROMPT, _SESSION):
+                pass
+            logger.info("LLM pre-warm: complete.")
+        except Exception as exc:
+            # Pre-warm failures must never crash the server.
+            logger.warning("LLM pre-warm failed (non-fatal): %s", exc)
+        finally:
+            self.session_store.pop(_SESSION, None)
+            self._session_functions.pop(_SESSION, None)
