@@ -458,7 +458,7 @@ class TestRuntimeStateEmission:
         dc.readyState = "open"
         sent = []
         dc.send = Mock(side_effect=lambda m: sent.append(m))
-        audio_processor.data_channel = dc
+        audio_processor._dc_bridge.attach(dc)
 
         audio_processor._emit_runtime_state(AgentRuntimeState.LISTENING)
 
@@ -471,7 +471,7 @@ class TestRuntimeStateEmission:
     def test_emit_runtime_state_no_data_channel_does_not_crash(self, audio_processor):
         from ai_assistant.services.agent_runtime_fsm import AgentRuntimeState
 
-        audio_processor.data_channel = None
+        audio_processor._dc_bridge.attach(None)
         # Must not raise
         audio_processor._emit_runtime_state(AgentRuntimeState.THINKING)
 

@@ -443,6 +443,100 @@ class TestTextSessionStarterWithBufferedMessage:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# TextSessionStarter — late DataChannel message (initialization race)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestTextSessionStarterLateMessage:
+    """When a user's text message arrives via DataChannel AFTER the WebRTC
+    handshake (but before the 300 ms window closes), the system must skip the
+    autonomous greeting and go straight to TRIAGE, allowing the LLM to respond
+    to the user's intent directly.  This covers the log-observed race where
+    generate_greeting_text was called at T+0 ms and the client message arrived
+    at T+254 ms."""
+
+    def _late_starter(self, first_message_event: asyncio.Event):
+        """Build a TextSessionStarter wired with a first_message_event."""
+        data_provider = Mock()
+        data_provider.get_user_by_id = AsyncMock(return_value={"name": "Max", "has_open_request": False})
+        conversation_service = Mock()
+        conversation_service.context = {}
+        conversation_service.generate_greeting_text = AsyncMock(return_value="Hello Max!")
+        orchestrator = Mock()
+        orchestrator.handle_signal_transition = Mock()
+        llm_service = Mock()
+        llm_service.get_session_history = Mock(return_value=Mock(add_message=Mock()))
+        dc_bridge = Mock()
+        dc_bridge.send_chat = Mock()
+        starter = TextSessionStarter(
+            conversation_service=conversation_service,
+            response_orchestrator=orchestrator,
+            data_provider=data_provider,
+            llm_service=llm_service,
+            dc_bridge=dc_bridge,
+            user_id="user-99",
+            connection_id="conn-late",
+            first_message_event=first_message_event,
+        )
+        return starter, conversation_service, orchestrator, dc_bridge
+
+    async def test_skips_greeting_when_message_arrives_within_300ms(self):
+        """If a message is signalled before the 300 ms window expires, the
+        autonomous greeting must be skipped and stage must advance to TRIAGE."""
+        event = asyncio.Event()
+
+        async def _fire_soon():
+            await asyncio.sleep(0.05)  # well within 300 ms
+            event.set()
+
+        asyncio.create_task(_fire_soon())
+        starter, conv, orch, dc = self._late_starter(event)
+        await starter.initialize()
+
+        conv.generate_greeting_text.assert_not_called()
+        orch.handle_signal_transition.assert_called_with("triage")
+
+    async def test_no_dc_bubble_when_late_message_detected(self):
+        """No standalone greeting bubble must be sent when the late-message
+        path is taken."""
+        event = asyncio.Event()
+
+        async def _fire_soon():
+            await asyncio.sleep(0.05)
+            event.set()
+
+        asyncio.create_task(_fire_soon())
+        starter, conv, orch, dc = self._late_starter(event)
+        await starter.initialize()
+
+        dc.send_chat.assert_not_called()
+
+    async def test_initialized_event_set_after_late_message_skip(self):
+        """initialized_event must always be set, even on the late-message path."""
+        event = asyncio.Event()
+
+        async def _fire_soon():
+            await asyncio.sleep(0.05)
+            event.set()
+
+        asyncio.create_task(_fire_soon())
+        starter, conv, orch, dc = self._late_starter(event)
+        await starter.initialize()
+
+        assert starter.initialized_event.is_set()
+
+    async def test_generates_greeting_when_no_message_within_300ms(self):
+        """If no message arrives within 300 ms, the autonomous greeting must
+        be generated and sent normally."""
+        event = asyncio.Event()  # never set during this test
+        starter, conv, orch, dc = self._late_starter(event)
+        await starter.initialize()
+
+        conv.generate_greeting_text.assert_called_once()
+        dc.send_chat.assert_called_once()
+        orch.handle_signal_transition.assert_called_with("triage")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SessionStarterFactory
 # ══════════════════════════════════════════════════════════════════════════════
 

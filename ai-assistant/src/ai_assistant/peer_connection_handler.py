@@ -160,10 +160,10 @@ class PeerConnectionHandler:
             logger.warning("mode-switch received but audio processor not ready")
             return
         self._reset_idle_timer()
-        if mode == 'text' and not self.audio_processor._is_text_mode:
+        if mode == 'text' and self.audio_processor.session_mode != SessionMode.TEXT:
             logger.info("mode-switch → text: pausing voice pipeline")
             asyncio.create_task(self.audio_processor.disable_voice_mode())
-        elif mode == 'voice' and self.audio_processor._is_text_mode:
+        elif mode == 'voice' and self.audio_processor.session_mode == SessionMode.TEXT:
             logger.info("mode-switch → voice: resuming voice pipeline")
             asyncio.create_task(self.audio_processor.enable_voice_mode())
 
@@ -231,7 +231,7 @@ class PeerConnectionHandler:
             if track.kind != "audio":
                 return
 
-            if self.audio_processor is not None and self.audio_processor._is_text_mode:
+            if self.audio_processor is not None and self.audio_processor.session_mode == SessionMode.TEXT:
                 await self._on_text_to_voice_upgrade(track)
             elif self.audio_processor is not None:
                 await self._on_track_replacement(track)
@@ -368,7 +368,7 @@ class PeerConnectionHandler:
     async def _handle_renegotiation_offer(self) -> None:
         """Handle renegotiation: text→voice upgrade (hard wait) or track swap (soft wait)."""
         is_text_to_voice_upgrade = (
-            self.audio_processor is not None and self.audio_processor._is_text_mode
+            self.audio_processor is not None and self.audio_processor.session_mode == SessionMode.TEXT
         )
         if is_text_to_voice_upgrade:
             # Hard wait: on_track MUST fire to add the TTS output track before answer.
@@ -388,7 +388,7 @@ class PeerConnectionHandler:
                 "Handling %s offer%s",
                 "renegotiation" if is_renegotiation else "initial",
                 " (text→voice upgrade)" if (
-                    is_renegotiation and self.audio_processor._is_text_mode
+                    is_renegotiation and self.audio_processor.session_mode == SessionMode.TEXT
                 ) else "",
             )
 

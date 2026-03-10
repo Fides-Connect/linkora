@@ -248,6 +248,68 @@ class TestToolExecuteContracts:
             ctx,
         )
         mock_firestore.create_service_request.assert_called_once()
+        call_data = mock_firestore.create_service_request.call_args[0][0]
+        assert call_data["title"] == "Fix leaking tap"
+        assert call_data["description"] == "Bathroom tap drips"
+        assert call_data["seeker_user_id"] == "user-abc"
+
+    async def test_create_service_request_forwards_all_optional_fields(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {
+                "title": "Mobile App Development",
+                "description": "iOS and Android SaaS app",
+                "selected_provider_user_id": "provider-uid-456",
+                "location": "Munich",
+                "category": "IT",
+                "start_date": "2026-04-01",
+                "end_date": "2026-06-30",
+                "amount_value": 5000.0,
+                "currency": "EUR",
+                "requested_competencies": ["Flutter", "Firebase"],
+            },
+            ctx,
+        )
+        call_data = mock_firestore.create_service_request.call_args[0][0]
+        assert call_data["selected_provider_user_id"] == "provider-uid-456"
+        assert call_data["location"] == "Munich"
+        assert call_data["category"] == "IT"
+        assert call_data["amount_value"] == 5000.0
+        assert call_data["currency"] == "EUR"
+        assert call_data["requested_competencies"] == ["Flutter", "Firebase"]
+
+    async def test_create_service_request_converts_iso_dates(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        from datetime import datetime
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {"title": "Garden work", "start_date": "2026-05-10", "end_date": "2026-05-11"},
+            ctx,
+        )
+        call_data = mock_firestore.create_service_request.call_args[0][0]
+        assert isinstance(call_data["start_date"], datetime)
+        assert call_data["start_date"].year == 2026
+        assert call_data["start_date"].month == 5
+        assert call_data["start_date"].day == 10
+        assert isinstance(call_data["end_date"], datetime)
+        assert call_data["end_date"].day == 11
+
+    async def test_create_service_request_ignores_malformed_dates(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {"title": "Garden work", "start_date": "not-a-date"},
+            ctx,
+        )
+        call_data = mock_firestore.create_service_request.call_args[0][0]
+        assert "start_date" not in call_data
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Provider onboarding tools

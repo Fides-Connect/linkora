@@ -7,6 +7,7 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from aiortc import RTCPeerConnection, RTCSessionDescription
 
 from ai_assistant.peer_connection_handler import PeerConnectionHandler
+from ai_assistant.services.session_mode import SessionMode
 
 
 @pytest.fixture
@@ -188,7 +189,7 @@ class TestRenegotiation:
 
         # Renegotiation is now detected by audio_processor presence
         mock_audio_processor = Mock()
-        mock_audio_processor._is_text_mode = False
+        mock_audio_processor.session_mode = SessionMode.VOICE
         peer_handler.audio_processor = mock_audio_processor
 
         # track_update_ready is already set so wait_for doesn't block
@@ -220,7 +221,7 @@ class TestRenegotiation:
         mock_output_track = Mock()
         mock_output_track.id = 'output-track-123'
         mock_audio_processor.get_output_track = Mock(return_value=mock_output_track)
-        mock_audio_processor._is_text_mode = False
+        mock_audio_processor.session_mode = SessionMode.VOICE
         peer_handler.audio_processor = mock_audio_processor
 
         # track_update_ready already set so wait_for doesn't block
@@ -255,7 +256,7 @@ class TestRenegotiation:
         mock_output_track = Mock()
         mock_output_track.id = 'output-track-123'
         mock_audio_processor.get_output_track = Mock(return_value=mock_output_track)
-        mock_audio_processor._is_text_mode = False
+        mock_audio_processor.session_mode = SessionMode.VOICE
 
         # Simulate on_track: sets audio_processor then signals track_ready,
         # which is exactly what happens in the real WebRTC flow.
@@ -296,9 +297,9 @@ class TestRenegotiation:
         peer_handler.pc.localDescription = mock_answer
         peer_handler.pc.createAnswer.return_value = mock_answer
 
-        # Already in voice mode (audio_processor present, _is_text_mode=False)
+        # Already in voice mode (audio_processor present)
         mock_audio_processor = Mock()
-        mock_audio_processor._is_text_mode = False
+        mock_audio_processor.session_mode = SessionMode.VOICE
         peer_handler.audio_processor = mock_audio_processor
 
         # track_update_ready starts set (default); handle_offer will clear it

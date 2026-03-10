@@ -208,6 +208,7 @@ class TextSessionStarter(SessionStarter):
         connection_id: str,
         firestore_service=None,
         buffered_message: Optional[str] = None,
+        first_message_event: Optional[asyncio.Event] = None,
     ) -> None:
         super().__init__()
         self._conv = conversation_service
@@ -219,6 +220,7 @@ class TextSessionStarter(SessionStarter):
         self._connection_id = connection_id
         self._firestore_service = firestore_service
         self._buffered_message = buffered_message
+        self._first_message_event = first_message_event
 
     async def initialize(self) -> None:
         try:
@@ -242,6 +244,26 @@ class TextSessionStarter(SessionStarter):
                     self._connection_id,
                 )
                 return
+
+            # Wait up to 300 ms for a DataChannel message that arrives after the
+            # WebRTC handshake but before initialize() has committed to sending a
+            # standalone greeting.  This closes the race between the LLM call and
+            # a buffered client message delivered when the DataChannel first opens.
+            if self._first_message_event is not None:
+                try:
+                    await asyncio.wait_for(
+                        self._first_message_event.wait(), timeout=0.3
+                    )
+                    # A real message arrived in the window — skip the autonomous
+                    # greeting; process_text_input will handle the full response.
+                    self._orchestrator.handle_signal_transition("triage")
+                    logger.info(
+                        "TextSessionStarter: skipped greeting (late DC message) for %s",
+                        self._connection_id,
+                    )
+                    return
+                except asyncio.TimeoutError:
+                    pass  # No early message — proceed with autonomous greeting.
 
             greeting_text = await self._conv.generate_greeting_text(
                 user_name=user_name,
@@ -295,6 +317,7 @@ class SessionStarterFactory:
         on_speaking_change: Optional[Callable[[bool], None]] = None,
         firestore_service=None,
         buffered_message: Optional[str] = None,
+        first_message_event: Optional[asyncio.Event] = None,
     ) -> SessionStarter:
         if mode == SessionMode.VOICE:
             return VoiceSessionStarter(
@@ -321,4 +344,5 @@ class SessionStarterFactory:
             connection_id=connection_id,
             firestore_service=firestore_service,
             buffered_message=buffered_message,
+            first_message_event=first_message_event,
         )

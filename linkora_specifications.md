@@ -86,7 +86,7 @@ The conversation progresses through a finite set of named stages. Each stage rep
 | `CLARIFY`             | **Disambiguation.** Used when the request is too ambiguous to scope. The AI asks exactly one targeted question and immediately returns to `TRIAGE`.            |
 | `TOOL_EXECUTION`      | **Data retrieval.** An intermediate stage while a data operation runs (e.g. fetching open requests or favorites). Control returns to `TRIAGE`, `CONFIRMATION`, or `FINALIZE` once the tool completes. |
 | `CONFIRMATION`        | **Pre-commit check.** The AI summarises the scoped request in 2–3 sentences and asks the user to confirm before proceeding to provider matching.               |
-| `FINALIZE`            | **Provider matching and presentation.** The system automatically searches for matching providers on stage entry and presents them one by one. The user accepts one or declines all. |
+| `FINALIZE`            | **Provider matching and presentation.** A multi-turn stage where the system searches for providers, presents them, and waits for the user to accept, ask questions, or decline. |
 | `RECOVERY`            | **Error / confusion recovery.** The AI calmly acknowledges the issue without asking the user to restart, then steers back to `TRIAGE` as soon as any service context is given. |
 | `COMPLETED`           | **Post-request wrap-up.** The current service flow (request submitted or onboarding finished) has concluded. The AI asks warmly if the user needs anything else. |
 | `PROVIDER_PITCH`      | **Recruitment offer.** The AI invites the user—once per 30-day window—to join as a service provider. Fires automatically when the user is eligible and `COMPLETED` is reached. |
@@ -113,8 +113,8 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - **Strict Confirmation Gate**: The system must strictly enforce that `FINALIZE` can only be entered from `CONFIRMATION` or `TOOL_EXECUTION`. The AI is mathematically forbidden from transitioning directly from `TRIAGE` to `FINALIZE` without user approval.
 - `CONFIRMATION → FINALIZE`: the system automatically performs a provider search in the same response stream; the result list is injected into the follow-up LLM call.
 - `COMPLETED → PROVIDER_PITCH`: fires automatically (without an explicit LLM call) when the user is pitch-eligible (see §4). The LLM never needs to call this transition itself.
-- `FINALIZE → TRIAGE`: triggered when the user explicitly cancels the entire provider search. If `FINALIZE` yields exactly 0 search results, the AI must explicitly inform the user, apologize, and transition immediately back to `TRIAGE` to prompt the user to broaden their criteria. Any previously created service request is cancelled before the transition.
-- `FINALIZE → RECOVERY` (safety fallback): the system runs exactly three streaming passes (main stream + two follow-up streams) before triggering this fallback to explain the failure, then runs a fourth catch-up pass after the forced transition.
+- `FINALIZE → TRIAGE`: triggered when the user explicitly cancels the entire provider search. If `FINALIZE` yields exactly 0 search results, the AI must explicitly inform the user, apologize, and transition immediately back to `TRIAGE` to prompt the user to broaden their criteria. No service request cancellation is required on this back-transition, because the service request is only created upon provider acceptance (see §6.10).
+- `FINALIZE → RECOVERY` (safety fallback limitation): The safety fallback must **only** fire if the orchestrator exceeds 3 autonomous, uninterrupted stream loops without yielding to the user. **It must strictly NOT fire** if the LLM completes its stream by asking the user a question (e.g., "Are you happy with this provider?") and intentionally omits a `signal_transition`. Waiting for user input in `FINALIZE` is the expected happy path.
 - `COMPLETED → TRIAGE`: triggered when the user indicates they have another need after the current flow concludes.
 - `PROVIDER_PITCH → TRIAGE`: triggered when the user, during the pitch, says they actually want to find a service provider rather than become one.
 - `PROVIDER_ONBOARDING → TRIAGE`: triggered when the user declines the provider role (STEP 0 "no") or switches intent to finding a service instead of managing their own skills.
@@ -145,6 +145,12 @@ Sufficient detail is strictly defined as successfully collecting ALL of the foll
 - If the initial user request lacks any of these MRI elements, the AI must remain in TRIAGE (or use CLARIFY) to ask targeted questions to gather the missing data.
 - To avoid overwhelming the user, the AI must ask a maximum of 1 to 2 questions per turn. It must weave these naturally into the conversation rather than presenting a robotic checklist.
 - Only once all MRI criteria are met should the AI move to the CONFIRMATION stage to summarise the fully fleshed-out request.
+
+**Extended Context (soft-ask — collected after MRI is satisfied):**
+Once the three MRI elements are gathered, the AI opportunistically collects the following extras with at most one natural question each. None of these block the flow; the AI must not re-ask if the user dismisses or skips them.
+- **Location**: For in-person services (plumbing, cleaning, electrical work, etc.), the AI asks once: "Where is the work needed — which city or area?" Skipped entirely for remote/digital work.
+- **Budget**: The AI asks once if clearly relevant: "Do you have a rough budget in mind?" Any answer — including "no idea" or silence — is accepted without follow-up.
+- **Exact dates**: If the user stated a relative timeframe (e.g. "next Tuesday"), the AI resolves it to a concrete calendar date internally. The user is not asked to re-state it as an ISO date.
 
 **User Override Exception:**
 - If the user explicitly refuses to provide more details or forces the search (e.g., "I don't know the details, just find me someone right now!"), the AI must immediately skip the remaining MRI checks and proceed to CONFIRMATION.
@@ -223,7 +229,7 @@ New users have their timestamp pre-set to 60 days in the past, so the first elig
 |            | provide services, the system stores the permanent opt-out sentinel in             |
 |            | `provider_pitch_last_asked`. The user is rendered strictly ineligible for future  |
 |            | pitches and is never asked again.                                                 |
-+------------+-----------------------------------------------------------------------------------+                                                                                      |
++------------+-----------------------------------------------------------------------------------+
 
 - Any `decision` value that is not `"accepted"` or `"never"` is treated as `"not_now"`.
 - After a pitch response is recorded, the in-session user context is immediately updated in memory so that the pitch eligibility check will not re-evaluate as eligible during the same conversation.
@@ -344,7 +350,8 @@ For `delete_competences`: each deleted competency is removed from Firestore and 
 2. AI optionally clarifies → stage: `CLARIFY → TRIAGE`.
 3. AI confirms the request with the user → stages: `TRIAGE → CONFIRMATION`.
 4. User explicitly confirms the summary.
-5. System performs provider search and presents results → stages: `FINALIZE → COMPLETED`.
+5. System performs provider search and enters presentation loop → stage: `FINALIZE`.
+6. User explicitly accepts a presented provider → stage: `COMPLETED`.
 
 - **Mandatory Confirmation Gate:** Regardless of how comprehensively the user defines their request in the initial prompt, the AI must summarize the understood requirements in the `CONFIRMATION` stage and receive an explicit affirmative response from the user before executing the provider search in `FINALIZE`.
 
@@ -381,8 +388,8 @@ For `delete_competences`: each deleted competency is removed from Firestore and 
 ### 6.6 Service Request Cancellation via AI
 
 - A service request can be cancelled through the AI conversation (using the cancel intent within the assistant) in addition to direct REST API calls.
-- When the AI transitions from `FINALIZE` back to `TRIAGE` (either due to zero results or user cancellation), any service request that was created during the current scoping flow must be cancelled automatically by the system before the transition completes. The AI does not need to prompt the user to confirm the cancellation; it is implicit in the transition.
-- The `cancel_service_request` tool is available to the AI with write permission over service requests. It takes the current request identifier as a parameter. Calling it when no active request exists is a no-op.
+- Because service requests are only created at the moment the user accepts a provider (see §6.10), a `FINALIZE → TRIAGE` back-transition due to zero results or user cancellation never requires a cancellation step — no document exists yet at that point.
+- The `cancel_service_request` tool remains available for explicit AI-driven cancellation in other scenarios (e.g. user initiates cancellation from `TOOL_EXECUTION` or a post-creation flow). Calling it when no active request exists is a no-op.
 
 ### 6.7 HyDE — Hypothetical Document Embeddings
 
@@ -428,6 +435,63 @@ Step 4 of the provider search pipeline re-scores the wide-net candidates using a
 - If reranking fails for any reason (exception), the original Weaviate-ordered candidates are returned truncated to `max_providers`, with no error surfaced to the user.
 - If no `CrossEncoderService` is available, the Weaviate candidates are simply truncated to `max_providers` without reranking.
 - The same reranking step is applied when the `search_providers` tool is called explicitly mid-conversation (outside the `FINALIZE` pipeline), whenever a `CrossEncoderService` is available.
+
+### 6.10 Service Request Creation Semantics
+
+- A service request document is created **only at the moment the user explicitly accepts a provider** in the `FINALIZE` stage. It is never created before that point.
+- The service request must be fully populated at creation time. The AI must include all details gathered during `TRIAGE` and `CONFIRMATION`:
+  - `title`: a concise label for the job (e.g. "Mobile App Development").
+  - `description`: the full scope summary assembled during scoping.
+  - `selected_provider_user_id`: the Firebase UID (`user.user_id`) of the accepted provider as returned by the provider search results.
+  - `location`: the city or address provided by the user, if any.
+  - `category`: the service category as inferred by the AI from the conversation (e.g. "IT", "Handwerk", "Reinigung"). Never left blank if the category can be determined.
+  - `start_date` / `end_date`: concrete calendar dates if the user stated a timeframe; omitted otherwise.
+  - `amount_value`: the user's stated budget figure, if provided.
+  - `currency`: derived from the service `location` (Germany, Austria, Switzerland → `EUR`; UK → `GBP`; US → `USD`). Omitted if location is unknown or ambiguous. Never asked from the user.
+  - `requested_competencies`: list of specific skills or competencies mentioned during scoping.
+- Because the service request is only created on acceptance, a `FINALIZE → TRIAGE` back-transition (zero results or user cancellation) requires no cancellation step — no document exists at that point.
+- The `CONFIRMATION` stage summary must include location, timeframe, and budget **only when the user provided them**; it must not invent or approximate values that were not stated.
+
+### 6.11 FINALIZE Stage Multi-Turn Interaction
+
+The `FINALIZE` stage is a stateful, multi-turn interaction phase. Once the provider search completes, the orchestrator does **not** force an immediate transition. Instead, it enters a conversational sub-loop, waiting for user decisions.
+
+The AI manages the `FINALIZE` session using the following internal state logic:
+
+- **Initial Entry & Presentation**: 
+  - Upon entry to `FINALIZE`, the provider search runs. 
+  - **If results > 0**: The AI presents the top (first) result to the user, explicitly asks for their opinion (e.g., "Are you happy with this suggestion?"), and stops generating. **No `signal_transition` is emitted here.** The orchestrator waits for user input.
+  - **If results == 0**: The AI explicitly informs the user that no matching providers were found, apologizes, and emits `signal_transition(target_stage="triage")` immediately within the same turn to prompt the user to broaden their criteria.
+  - The AI explicitly asks the user for their opinion (e.g., "Are you happy with this suggestion?") and stops generating. 
+  - **No `signal_transition` is emitted here.** The orchestrator waits for user input.
+
+- **User Response A: Decline current, ask for another**:
+  - If the user rejects the current suggestion but still wants help (e.g., "No, someone else", "Too expensive"), the AI presents the next highest-ranked result from the active cached list.
+  - It asks for the user's opinion on the new candidate and stops generating.
+  - If the list of cached results is exhausted, the AI apologises, clears the cached search results, and emits `signal_transition(target_stage="triage")` to renegotiate the criteria.
+
+- **User Response B: Ask for more detail about the current result**:
+  - The user asks a specific question about the currently presented provider (e.g., "What are their exact hours?", "Do they speak German?").
+  - The AI answers based on the provider's `skills_list` and `search_optimized_summary` in the payload.
+  - The AI remains in `FINALIZE` and asks if the user wants to select them.
+
+- **User Response C: Accept current result**:
+  - The user explicitly accepts the current provider (e.g., "Yes, let's go with him", "Perfect").
+  - The AI calls `create_service_request` using the selected provider's ID.
+  - Upon successful creation, the AI emits `signal_transition(target_stage="completed")`.
+
+- **User Response D: Cancel the request**:
+  - The user aborts the flow entirely (e.g., "Nevermind", "Cancel the search").
+  - The AI acknowledges the cancellation. No service request cancellation tool is called (because none was created yet).
+  - The AI emits `signal_transition(target_stage="triage")`.
+
+- **User Response E: Disconnection**:
+  - If the user drops connection while in `FINALIZE`, background search tasks are aborted. 
+  - Session resumption rules (§9.2) apply on reconnect.
+
+- **User Response F: Referencing a previously presented result**:
+  - If the user asks about or decides to select a provider presented earlier in the current `FINALIZE` loop (e.g., "Let's go back to the first guy"), the AI accesses the cached search result to get information.
+  - The AI confirms the selection and proceeds to **Response C** (Acceptance).
 
 ---
 
@@ -559,6 +623,7 @@ Step 4 of the provider search pipeline re-scores the wide-net candidates using a
 - The FSM advances to `DATA_CHANNEL_WAIT` as soon as the WebRTC peer connection is negotiated and the data channel attachment is confirmed.
 - Once the data channel is confirmed open, the FSM invokes the **Session Resumption (State-Aware Hydration)** check (see §9.2) to determine whether to restore previous context or start fresh, and then transitions to the appropriate state (e.g., `LISTENING`, `GREETING`, or `TRIAGE`).
 - The current FSM state is emitted as a `runtime-state` message on both the initial data-channel attachment and again when the channel open event fires, ensuring the client always receives the correct state even if it connects after the FSM has already advanced past `BOOTSTRAP`.
+- **Text-mode initialization race guard**: After the FSM advances to `LISTENING`, a text-mode session applies a brief wait (up to 300 ms) before committing to an autonomous greeting. If the client delivers a text message within this window (e.g., a buffered message sent immediately after the DataChannel opens), the system skips the standalone greeting and transitions directly to `TRIAGE`, allowing the LLM to process greeting and user intent in a single combined turn. If no message arrives within 300 ms, the autonomous greeting is generated and dispatched normally.
 
 ### 9.2 Session Resumption (State-Aware Hydration)
 

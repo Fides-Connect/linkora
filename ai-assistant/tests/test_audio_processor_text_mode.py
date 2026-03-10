@@ -2,7 +2,7 @@
 Tests for AudioProcessor text-mode and mode-switching features.
 
 Covers:
-- Text-mode initialisation (_is_text_mode, _greeting_sent, _response_task)
+- Text-mode initialisation (session_mode, _greeting_sent, _response_task)
 - start() behaviour in text vs voice modes
 - enable_voice_mode() — fresh upgrade, resume, track replacement
 - disable_voice_mode() — pause-only semantics, idempotence
@@ -16,11 +16,12 @@ Covers:
 """
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
+from unittest.mock import AsyncMock, Mock, patch
+
+from ai_assistant.services.session_mode import SessionMode
 
 from ai_assistant.audio_processor import AudioProcessor
 from ai_assistant.services.conversation_service import ConversationStage
-from ai_assistant.services.session_mode import SessionMode
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -91,11 +92,11 @@ def voice_proc():
 
 class TestTextModeInitialisation:
 
-    def test_is_text_mode_true_when_no_track(self, text_proc):
-        assert text_proc._is_text_mode is True
+    def test_session_mode_text_when_no_track(self, text_proc):
+        assert text_proc.session_mode == SessionMode.TEXT
 
-    def test_is_text_mode_false_when_track_provided(self, voice_proc):
-        assert voice_proc._is_text_mode is False
+    def test_session_mode_voice_when_track_provided(self, voice_proc):
+        assert voice_proc.session_mode == SessionMode.VOICE
 
     def test_session_not_initialized_at_start(self, text_proc):
         assert text_proc._session_starter.initialized_event.is_set() is False
@@ -182,7 +183,7 @@ class TestEnableVoiceMode:
         ):
             await text_proc.enable_voice_mode(input_track=new_track)
 
-        assert text_proc._is_text_mode is False
+        assert text_proc.session_mode == SessionMode.VOICE
 
     async def test_fresh_upgrade_starts_stt_and_audio_tasks(self, text_proc):
         new_track = Mock()
@@ -220,7 +221,7 @@ class TestEnableVoiceMode:
 
         await voice_proc.enable_voice_mode()  # no track argument → resume path
 
-        assert voice_proc._is_text_mode is False
+        assert voice_proc.session_mode == SessionMode.VOICE
         # Tasks must be the SAME objects — not replaced
         assert voice_proc.processing_task is old_proc_task
         assert voice_proc.stt_task is old_stt_task
@@ -260,11 +261,11 @@ class TestEnableVoiceMode:
 
 class TestDisableVoiceMode:
 
-    async def test_flips_is_text_mode_to_true(self, voice_proc):
+    async def test_flips_session_mode_to_text(self, voice_proc):
         with patch.object(voice_proc, "_trigger_interrupt", new=AsyncMock()):
             await voice_proc.disable_voice_mode()
 
-        assert voice_proc._is_text_mode is True
+        assert voice_proc.session_mode == SessionMode.TEXT
 
     async def test_calls_trigger_interrupt(self, voice_proc):
         with patch.object(
@@ -482,8 +483,9 @@ class TestProcessFinalTranscript:
         text_proc.ai_assistant.generate_llm_response_stream = Mock(
             return_value=fake_llm()
         )
-        text_proc.data_channel = _open_data_channel()
-        text_proc.data_channel.send = Mock()
+        _dc = _open_data_channel()
+        text_proc._dc_bridge.attach(_dc)
+        _dc.send = Mock()
 
         await text_proc._process_final_transcript("hello")
 
@@ -497,8 +499,9 @@ class TestProcessFinalTranscript:
         voice_proc.ai_assistant.generate_llm_response_stream = Mock(
             return_value=fake_llm()
         )
-        voice_proc.data_channel = _open_data_channel()
-        voice_proc.data_channel.send = Mock()
+        _dc = _open_data_channel()
+        voice_proc._dc_bridge.attach(_dc)
+        _dc.send = Mock()
 
         with patch.object(
             voice_proc.tts_manager, "process_llm_stream", new=AsyncMock()
@@ -517,8 +520,9 @@ class TestProcessFinalTranscript:
         text_proc.ai_assistant.generate_llm_response_stream = Mock(
             return_value=fake_llm()
         )
-        text_proc.data_channel = _open_data_channel()
-        text_proc.data_channel.send = Mock()
+        _dc = _open_data_channel()
+        text_proc._dc_bridge.attach(_dc)
+        _dc.send = Mock()
 
         await text_proc._process_final_transcript("test")
 
@@ -544,11 +548,12 @@ class TestProcessFinalTranscript:
         """In text mode, _process_final_transcript must not send the user transcript
         to the data channel — Flutter adds it optimistically."""
         text_proc.running = True
-        text_proc.data_channel = _open_data_channel()
+        _dc = _open_data_channel()
+        text_proc._dc_bridge.attach(_dc)
         _advance_fsm_to_listening(text_proc)
 
         sent_messages = []
-        text_proc.data_channel.send = Mock(side_effect=lambda m: sent_messages.append(m))
+        _dc.send = Mock(side_effect=lambda m: sent_messages.append(m))
 
         # Patch LLM stream to return nothing
         text_proc.ai_assistant.generate_llm_response_stream = AsyncMock(
@@ -570,10 +575,11 @@ class TestProcessFinalTranscript:
     async def test_voice_mode_echoes_user_message(self, voice_proc):
         """In voice mode, _process_final_transcript sends the user transcript."""
         voice_proc.running = True
-        voice_proc.data_channel = _open_data_channel()
+        _dc = _open_data_channel()
+        voice_proc._dc_bridge.attach(_dc)
 
         sent_messages = []
-        voice_proc.data_channel.send = Mock(side_effect=lambda m: sent_messages.append(m))
+        _dc.send = Mock(side_effect=lambda m: sent_messages.append(m))
 
         voice_proc.ai_assistant.generate_llm_response_stream = AsyncMock(
             return_value=_empty_llm_stream()

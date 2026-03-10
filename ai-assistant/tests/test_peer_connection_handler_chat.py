@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, Mock, patch, MagicMock
 
 from aiortc import RTCSessionDescription
 from ai_assistant.peer_connection_handler import PeerConnectionHandler
+from ai_assistant.services.session_mode import SessionMode
 
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ def _mock_pc():
 
 def _mock_audio_processor(is_text_mode: bool = False) -> Mock:
     ap = Mock()
-    ap._is_text_mode = is_text_mode
+    ap.session_mode = SessionMode.TEXT if is_text_mode else SessionMode.VOICE
     ap._greeting_sent = False
     ap.stop = AsyncMock()
     ap.start = AsyncMock()

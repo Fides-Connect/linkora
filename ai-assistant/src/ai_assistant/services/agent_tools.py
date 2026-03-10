@@ -183,11 +183,27 @@ async def _get_open_requests(params: dict, context: dict) -> Any:
 
 async def _create_service_request(params: dict, context: dict) -> Any:
     fs = _require_fs(context)
-    return await fs.create_service_request({
+    data: dict = {
         "seeker_user_id": context["user_id"],
         "title": params.get("title", ""),
         "description": params.get("description", ""),
-    })
+    }
+    for field in ("selected_provider_user_id", "location", "category", "currency"):
+        if params.get(field) is not None:
+            data[field] = params[field]
+    for field in ("amount_value",):
+        if params.get(field) is not None:
+            data[field] = params[field]
+    if params.get("requested_competencies") is not None:
+        data["requested_competencies"] = params["requested_competencies"]
+    for date_field in ("start_date", "end_date"):
+        raw = params.get(date_field)
+        if raw:
+            try:
+                data[date_field] = datetime.fromisoformat(raw)
+            except (ValueError, TypeError):
+                pass  # skip malformed date; Firestore field remains unset
+    return await fs.create_service_request(data)
 
 
 async def _cancel_service_request(params: dict, context: dict) -> Any:
@@ -604,6 +620,40 @@ def build_default_registry() -> AgentToolRegistry:
                     "description": {
                         "type": "string",
                         "description": "Full description of the service needed.",
+                    },
+                    "selected_provider_user_id": {
+                        "type": "string",
+                        "description": "Firebase UID of the accepted provider (user.user_id from provider search results).",
+                    },
+                    "location": {
+                        "type": "string",
+                        "description": "City or address where the service is needed.",
+                    },
+                    "category": {
+                        "type": "string",
+                        "description": "Service category inferred from the conversation (e.g. 'IT', 'Handwerk', 'Reinigung', 'Garten').",
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Desired start date in ISO 8601 format YYYY-MM-DD.",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "Desired end date in ISO 8601 format YYYY-MM-DD.",
+                    },
+                    "amount_value": {
+                        "type": "number",
+                        "minimum": 0,
+                        "description": "User's budget or price estimate for the service.",
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "Currency code derived from the service location (e.g. 'EUR' for Germany/Austria/Switzerland, 'GBP' for UK, 'USD' for US). Omit if location is unknown.",
+                    },
+                    "requested_competencies": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of specific skills or competencies required for the job.",
                     },
                 },
                 "required": ["title"],

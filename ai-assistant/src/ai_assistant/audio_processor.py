@@ -64,7 +64,6 @@ class AudioProcessor:
         self.stt_task = None
 
         # Session mode — derived from whether an audio track is provided.
-        # The ``_is_text_mode`` property below provides backward compat.
         self.session_mode: SessionMode = (
             SessionMode.TEXT if input_track is None else SessionMode.VOICE
         )
@@ -96,10 +95,10 @@ class AudioProcessor:
         self.audio_queue: asyncio.Queue = asyncio.Queue()
         self.sample_rate = 48000  # WebRTC sends 48kHz
 
-        # ── Phase-1 services ──────────────────────────────────────────────────
+        # ── DataChannel service ────────────────────────────────────────────────
         self._dc_bridge = DataChannelBridge()
 
-        # ── Legacy services ───────────────────────────────────────────────────
+        # ── Audio services ───────────────────────────────────────────────────
         self.frame_converter = AudioFrameConverter(self.sample_rate)
         self.debug_recorder = DebugRecorder(connection_id, self.sample_rate)
         self.transcript_processor = TranscriptProcessor(self.ai_assistant.stt_service)
@@ -111,8 +110,12 @@ class AudioProcessor:
         # Interrupt handling
         self.is_ai_speaking = False  # True when generating OR playing AI response
         self.interrupt_event = asyncio.Event()
-        # data_channel exposed as property so assignment auto-wires _dc_bridge.
-        self._data_channel = None
+
+        # Fired by process_text_input when the first non-empty message is received.
+        # TextSessionStarter awaits this event (with a 300 ms timeout) so it can
+        # decide whether to skip the autonomous greeting when a buffered DataChannel
+        # message arrives shortly after the WebRTC handshake completes.
+        self._first_message_received: asyncio.Event = asyncio.Event()
 
         # Tracks the current LLM+TTS response task so it can be cancelled on
         # interrupt.
@@ -135,23 +138,6 @@ class AudioProcessor:
         self._buffered_message: Optional[str] = buffered_message
         self._delivery: ResponseDelivery = self._make_delivery(self.session_mode)
         self._session_starter: SessionStarter = self._make_session_starter(self.session_mode)
-
-    # ── Backward-compat properties ────────────────────────────────────────────
-
-    @property
-    def _is_text_mode(self) -> bool:
-        """Read-only compat view of session_mode."""
-        return self.session_mode == SessionMode.TEXT
-
-    @property
-    def data_channel(self):
-        """The active DataChannel (or ``None``).  Setting it also wires ``_dc_bridge``."""
-        return self._data_channel
-
-    @data_channel.setter
-    def data_channel(self, channel) -> None:
-        self._data_channel = channel
-        self._dc_bridge.attach(channel)
 
     # ── Factory ───────────────────────────────────────────────────────────────
 
@@ -190,7 +176,7 @@ class AudioProcessor:
         open (common in text-mode sessions where the DC opens after the FSM
         has already advanced past BOOTSTRAP/DATA_CHANNEL_WAIT).
         """
-        self.data_channel = channel  # property setter also wires _dc_bridge
+        self._dc_bridge.attach(channel)
         logger.info("Data channel set in AudioProcessor")
 
         # Re-emit the current FSM state so the client syncs even if it missed
@@ -230,6 +216,7 @@ class AudioProcessor:
             on_speaking_change=lambda speaking: setattr(self, "is_ai_speaking", speaking),
             firestore_service=self.ai_assistant.firestore_service,
             buffered_message=self._buffered_message,
+            first_message_event=self._first_message_received,
         )
 
     # ── DataChannel send helpers (thin wrappers over DataChannelBridge) ───────
@@ -578,11 +565,16 @@ class AudioProcessor:
         guards against provider search in progress, interrupts any in-flight
         response, then dispatches to _process_final_transcript.
         """
+        text = text.strip()
+        if not text:
+            logger.warning("process_text_input called with empty text — ignoring")
+            return
+        # Signal that a real message has arrived.  TextSessionStarter watches
+        # this latch (300 ms window) to decide whether to skip the autonomous
+        # greeting when the DataChannel delivers a buffered message right after
+        # the WebRTC handshake.
+        self._first_message_received.set()
         async with self._text_input_lock:
-            text = text.strip()
-            if not text:
-                logger.warning("process_text_input called with empty text — ignoring")
-                return
 
             # Await session initialization so the first message has user context.
             # Fast-path: skip wait_for entirely when already set — asyncio.wait_for
