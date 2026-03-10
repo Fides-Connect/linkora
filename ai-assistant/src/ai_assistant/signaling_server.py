@@ -89,13 +89,10 @@ class SignalingServer:
         if not self.active_connections:
             return
         handlers = list(self.active_connections.values())
-        # Tear down audio processors and peer connections first so no new
-        # tasks are spawned after we close the WebSockets.
-        # PeerConnectionHandler.close() is idempotent, so the handle_websocket()
-        # finally block calling it again is a safe no-op.
-        await asyncio.gather(*(h.close() for h in handlers), return_exceptions=True)
-        # Close each open WebSocket so the handle_websocket message-loop exits
-        # and its finally block can run.
+        # Close WebSockets first so the handle_websocket message-loops exit
+        # promptly — this unblocks AppRunner.cleanup() regardless of how long
+        # handler teardown takes.  The per-connection finally blocks then call
+        # handler.close() as a safety net (idempotent).
         await asyncio.gather(
             *(
                 h.websocket.close()
@@ -106,6 +103,10 @@ class SignalingServer:
             ),
             return_exceptions=True,
         )
+        # Tear down audio processors and peer connections in parallel.  We do
+        # this after closing websockets so no new tasks are spawned, but we
+        # don't let slow teardown block the WS close above.
+        await asyncio.gather(*(h.close() for h in handlers), return_exceptions=True)
 
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connection for signaling."""

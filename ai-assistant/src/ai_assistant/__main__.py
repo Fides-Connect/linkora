@@ -193,10 +193,20 @@ async def main():
         try:
             await asyncio.wait_for(signaling_server.close_all_connections(), timeout=5.0)
         except asyncio.TimeoutError:
-            pass
+            logger.warning(
+                "Timed out waiting for close_all_connections(); "
+                "some WebSocket connections may still be open."
+            )
         # Close the Weaviate connection before stopping the HTTP server.
         HubSpokeConnection.close()
-        await runner.cleanup()
+        try:
+            await asyncio.wait_for(runner.cleanup(), timeout=10.0)
+        except asyncio.TimeoutError:
+            logger.error(
+                "Timed out waiting for runner.cleanup(); "
+                "aborting to prevent hanging indefinitely."
+            )
+            raise
         # Close the google-genai async HTTP connection pool opened by the prewarm call
         await prewarm_llm.aclose()
         logger.info("Shutdown complete")

@@ -494,9 +494,18 @@ class PeerConnectionHandler:
         self._closed = True
         logger.info("Closing connection %s", self.connection_id)
 
+        # Each teardown step is wrapped in its own try/except so that a
+        # failure in one step (e.g. gRPC error, cancelled task) does not
+        # prevent the remaining steps from running.  _closed is set before
+        # any await to preserve idempotency — if a step raises/cancels we
+        # don't want a re-entrant close() to restart teardown from scratch.
+
         # Cancel idle timer
-        if self._idle_task and not self._idle_task.done():
-            self._idle_task.cancel()
+        try:
+            if self._idle_task and not self._idle_task.done():
+                self._idle_task.cancel()
+        except Exception as exc:
+            logger.warning("Error cancelling idle timer for %s: %s", self.connection_id, exc)
 
         if self.audio_processor:
             # Persist final conversation state before tearing down the processor.
@@ -515,6 +524,12 @@ class PeerConnectionHandler:
                     "Could not persist conversation on close for %s: %s",
                     self.connection_id, exc,
                 )
-            await self.audio_processor.stop()
+            try:
+                await self.audio_processor.stop()
+            except Exception as exc:
+                logger.warning("Error stopping audio processor for %s: %s", self.connection_id, exc)
 
-        await self.pc.close()
+        try:
+            await self.pc.close()
+        except Exception as exc:
+            logger.warning("Error closing peer connection for %s: %s", self.connection_id, exc)
