@@ -7,6 +7,7 @@ import asyncio
 import inspect
 import logging
 import os
+import sys
 import warnings
 
 # ── Python 3.14 compatibility patches (applied before any third-party imports) ─
@@ -16,7 +17,10 @@ import warnings
 # inspect.iscoroutinefunction() that emits a DeprecationWarning on every
 # invocation.  Replacing it process-wide with the non-deprecated equivalent
 # eliminates the per-call warning overhead for all LLMService instances.
-asyncio.iscoroutinefunction = inspect.iscoroutinefunction  # type: ignore[attr-defined]
+# The guard ensures no-op on Python 3.11/3.12/3.13 where the two functions
+# are already equivalent and asyncio does not yet emit the warning.
+if sys.version_info >= (3, 14):
+    asyncio.iscoroutinefunction = inspect.iscoroutinefunction  # type: ignore[attr-defined]
 
 # google-genai re-defines AiohttpClientSession (an aiohttp.ClientSession
 # subclass) inside a factory function, so aiohttp emits its "Inheritance …

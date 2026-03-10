@@ -586,20 +586,14 @@ class WebRTCService {
       );
       _signaling = _webSocketFactory(wsUri, wsHeaders);
 
-      // Web browsers cannot set custom headers on WebSocket upgrade requests (browser security
-      // restriction). Send the Firebase ID token as the first message so the server can
-      // authenticate the web connection before processing any signaling messages.
-      // Non-web on ws:// (local dev) also uses this path: bearer tokens must not be
-      // transmitted in headers over plaintext transport.
-      if (kIsWeb && _isSecure) {
-        final String? idToken = await _firebaseAuthWrapper.getIdToken();
-        if (idToken != null && idToken.isNotEmpty) {
-          _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
-        }
-      } else if (!kIsWeb && !_isSecure) {
-        // ws:// non-web — only allow in non-release (local dev) builds.
-        // In release builds, fail fast rather than proceeding unauthenticated
-        // over an unencrypted connection.
+      // Web browsers cannot set custom headers on WebSocket upgrade requests
+      // (browser security restriction). Send the Firebase ID token as the first
+      // message so the server can authenticate before processing any signaling.
+      // Non-web on ws:// (local dev) also uses this path: bearer tokens must
+      // not be transmitted in headers over plaintext transport.
+      if (!_isSecure) {
+        // ws:// — insecure connection (web or non-web).
+        // In release builds, fail fast: never allow unencrypted connections.
         if (kReleaseMode) {
           onError?.call(
             'Insecure ws:// connection is not permitted in release builds. '
@@ -610,7 +604,15 @@ class WebRTCService {
             'Insecure ws:// connection is not permitted in release builds.',
           );
         }
-        // Local dev: send token as the first WS message (never in headers).
+        // Local dev (debug/profile): send token as first WS message.
+        // Browsers cannot set headers; non-web avoids plaintext header exposure.
+        final String? idToken = await _firebaseAuthWrapper.getIdToken();
+        if (idToken != null && idToken.isNotEmpty) {
+          _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
+        }
+      } else if (kIsWeb) {
+        // wss:// on web — headers are blocked by browser security; send token
+        // as the first WS message instead.
         final String? idToken = await _firebaseAuthWrapper.getIdToken();
         if (idToken != null && idToken.isNotEmpty) {
           _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
