@@ -605,8 +605,10 @@ class WebRTCService {
             'Insecure ws:// connection is not permitted in release builds. '
             'Set AI_ASSISTANT_SERVER_URL to a wss:// or https:// address.',
           );
-          disconnect();
-          return;
+          await disconnect();
+          throw Exception(
+            'Insecure ws:// connection is not permitted in release builds.',
+          );
         }
         // Local dev: send token as the first WS message (never in headers).
         final String? idToken = await _firebaseAuthWrapper.getIdToken();
