@@ -3,6 +3,7 @@ AI Assistant
 Core orchestration layer that coordinates services.
 """
 import asyncio
+import inspect
 import logging
 import os
 from typing import AsyncIterator, Optional
@@ -134,7 +135,7 @@ class AIAssistant:
                     logger.debug("AIAssistant.aclose: %s client has no close(); skipping.", label)
                     continue
                 result = close_fn()
-                if asyncio.iscoroutine(result):
+                if inspect.isawaitable(result):
                     await result
             except Exception as exc:
                 logger.warning(

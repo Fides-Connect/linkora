@@ -264,7 +264,11 @@ class TTSPlaybackManager:
             self._chunks[order] = chunk
         self._chunk_registered.set()
 
-        self._synthesis_tasks.append(asyncio.create_task(self._synthesize_chunk(order, text)))
+        task = asyncio.create_task(self._synthesize_chunk(order, text))
+        self._synthesis_tasks.append(task)
+        task.add_done_callback(
+            lambda t, tasks=self._synthesis_tasks: tasks.remove(t) if t in tasks else None
+        )
 
     async def _synthesize_chunk(self, order: int, text: str):
         """
