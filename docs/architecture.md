@@ -156,7 +156,7 @@ Server → Network → RTC DataChannel → AudioTrack → Speaker
 
 ### Technology Stack
 - **Language**: Python 3.14+
-- **Framework**: FastAPI (async)
+- **Framework**: aiohttp (async, WebSocket + HTTP)
 - **WebRTC**: aiortc library
 - **APIs**: Google Cloud STT/TTS, Gemini
 - **Database**: Weaviate (vector search)
