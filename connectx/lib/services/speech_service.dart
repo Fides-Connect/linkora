@@ -84,11 +84,15 @@ class SpeechService {
       final idToken = await _firebaseAuthWrapper.getIdToken();
       if (idToken == null || idToken.isEmpty) return;
 
-      await http.post(
+      final response = await http.post(
         uri,
         headers: {'Authorization': 'Bearer $idToken'},
-      );
-      debugPrint('SpeechService: Greeting warmup triggered');
+      ).timeout(const Duration(seconds: 5));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint('SpeechService: warmUpGreeting got HTTP ${response.statusCode}');
+      } else {
+        debugPrint('SpeechService: Greeting warmup triggered');
+      }
     } catch (e) {
       debugPrint('SpeechService: warmUpGreeting failed (non-critical): $e');
     }

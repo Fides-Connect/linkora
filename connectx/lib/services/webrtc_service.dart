@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode, debugPrint;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/io.dart';
@@ -174,11 +174,14 @@ class WebRTCService {
     // If a deep pre-warm is still in flight, wait for it (user tapped early).
     if (_isPrewarming) {
       debugPrint('WebRTC: connect() called during pre-warm — waiting (up to 8 s)');
-      try {
-        await _prewarmReadyCompleter?.future.timeout(const Duration(seconds: 8));
-      } catch (_) {
-        // Pre-warm timed out or failed — fall through to normal connect.
-        _isPrewarmed = false;
+      final completer = _prewarmReadyCompleter;
+      if (completer != null) {
+        try {
+          await completer.future.timeout(const Duration(seconds: 8));
+        } catch (_) {
+          // Pre-warm timed out or failed — fall through to normal connect.
+          _isPrewarmed = false;
+        }
       }
       _isPrewarming = false;
     }
@@ -594,9 +597,14 @@ class WebRTCService {
         }
       } else if (!kIsWeb && !_isSecure) {
         // ws:// non-web (local dev) — send token as first message instead of header.
-        final String? idToken = await _firebaseAuthWrapper.getIdToken();
-        if (idToken != null && idToken.isNotEmpty) {
-          _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
+        // Firebase ID tokens must never be transmitted over an unencrypted ws://
+        // connection in production builds.
+        assert(!kReleaseMode, 'Firebase ID tokens must not be sent over ws:// in release builds.');
+        if (!kReleaseMode) {
+          final String? idToken = await _firebaseAuthWrapper.getIdToken();
+          if (idToken != null && idToken.isNotEmpty) {
+            _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
+          }
         }
       }
 

@@ -654,18 +654,27 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Error queueing audio for playback: {e}", exc_info=True)
     
-    async def _monitor_playback_completion(self, total_audio_bytes: int = 0):
+    async def _monitor_playback_completion(self, total_audio_bytes: int = 0, stream_start_time: float = 0.0):
         """Wait until the device has finished playing all queued audio, then clear is_ai_speaking.
 
         Estimates playback duration from the total number of PCM bytes queued to
-        the output track (int16 mono @ 48 kHz).  This is exact — no polling, no
-        guessing — because the server controls every byte that goes into the WebRTC
-        stream.
+        the output track (int16 mono @ 48 kHz).  The elapsed time since
+        ``stream_start_time`` is subtracted so that audio already playing while
+        TTS bytes were being streamed is accounted for, avoiding an artificially
+        long is_ai_speaking window.
         """
         try:
             if total_audio_bytes > 0:
                 # int16 mono @ 48 kHz → 2 bytes per sample, 48 000 samples/s
-                wait_s = total_audio_bytes / (48_000 * 2)
+                total_wait_s = total_audio_bytes / (48_000 * 2)
+                # Subtract time already elapsed since the first audio bytes were queued
+                # (audio plays in parallel with TTS streaming, so some portion has
+                # already played by the time this monitor task starts).
+                if stream_start_time > 0:
+                    elapsed_s = asyncio.get_event_loop().time() - stream_start_time
+                    wait_s = max(0.0, total_wait_s - elapsed_s)
+                else:
+                    wait_s = total_wait_s
                 try:
                     await asyncio.wait_for(self.interrupt_event.wait(), timeout=wait_s)
                 except asyncio.TimeoutError:

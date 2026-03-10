@@ -92,7 +92,7 @@ async def greet_warmup(request: web.Request) -> web.Response:
                     audio_chunks.append(chunk)
             audio_bytes = b"".join(audio_chunks)
         finally:
-            tts_service.client.transport.close()
+            await tts_service.client.transport.close()
 
         # Store in the process-wide cache.
         get_greeting_cache().store(user_id, language, greeting_text, audio_bytes)
