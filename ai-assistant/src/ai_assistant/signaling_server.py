@@ -79,7 +79,27 @@ class SignalingServer:
     
     def __init__(self):
         self.active_connections: Dict[str, PeerConnectionHandler] = {}
-        
+
+    async def close_all_connections(self) -> None:
+        """Close all active WebRTC/WebSocket connections for graceful shutdown.
+
+        Must be called before ``AppRunner.cleanup()`` to prevent it from
+        blocking indefinitely on open WebSocket handlers.
+        """
+        if not self.active_connections:
+            return
+        handlers = list(self.active_connections.values())
+        # Tear down audio processors and peer connections first so no new
+        # tasks are spawned after we close the WebSockets.
+        await asyncio.gather(*(h.close() for h in handlers), return_exceptions=True)
+        # Close the WebSocket of each handler so the handle_websocket
+        # message-loop exits and its finally-block (which calls handler.close()
+        # again — a safe no-op) can run.
+        await asyncio.gather(
+            *(h.websocket.close() for h in handlers if not h.websocket.closed),
+            return_exceptions=True,
+        )
+
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connection for signaling."""
         ws = web.WebSocketResponse()

@@ -42,6 +42,7 @@ from .services.admin_service import AdminService
 from .api.v1.router import register_v1_routes
 from .weaviate_sync import run_startup_sync
 from .services.llm_service import LLMService
+from .hub_spoke_schema import HubSpokeConnection
 
 # Configure logging
 logging.basicConfig(
@@ -142,23 +143,59 @@ async def main():
     logger.info("AI Assistant server is running")
     logger.info("=" * 60)
 
+    # Suppress the expected aiortc background-task ConnectionError that fires
+    # when RTCSctpTransport._data_channel_flush tries to send after the DTLS
+    # transport is already torn down.  This is a benign race inside aiortc
+    # during WebRTC teardown and does not affect correctness.
+    _orig_exc_handler = asyncio.get_running_loop().get_exception_handler()
+
+    def _task_exc_handler(lp: asyncio.AbstractEventLoop, context: dict) -> None:
+        exc = context.get("exception")
+        if isinstance(exc, ConnectionError):
+            return
+        if _orig_exc_handler is not None:
+            _orig_exc_handler(lp, context)
+        else:
+            lp.default_exception_handler(context)
+
+    asyncio.get_running_loop().set_exception_handler(_task_exc_handler)
+
     # Fire-and-forget: prime LangChain internals so the first real user
     # utterance doesn't pay the one-time initialisation cost.
-    asyncio.create_task(
-        LLMService(
-            api_key=os.getenv('GEMINI_API_KEY', ''),
-            model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-lite'),
-        ).prewarm()
+    prewarm_llm = LLMService(
+        api_key=os.getenv('GEMINI_API_KEY', ''),
+        model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-lite'),
     )
+    prewarm_task = asyncio.create_task(prewarm_llm.prewarm())
 
-    # Keep running
+    # Keep running until cancelled (Ctrl+C via asyncio.run triggers CancelledError,
+    # not KeyboardInterrupt, so we catch both defensively).
     try:
         await asyncio.Event().wait()
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        pass
     finally:
         logger.info("Cleanup started")
+        # Cancel prewarm if it never finished (e.g. Ctrl+C during startup).
+        if not prewarm_task.done():
+            prewarm_task.cancel()
+            try:
+                await prewarm_task
+            except asyncio.CancelledError:
+                pass
+        # Close all active WebRTC/WebSocket connections before stopping the
+        # HTTP server.  Without this, runner.cleanup() blocks indefinitely
+        # waiting for open WebSocket handlers to finish, requiring the user
+        # to press Ctrl+C multiple times.
+        try:
+            await asyncio.wait_for(signaling_server.close_all_connections(), timeout=5.0)
+        except asyncio.TimeoutError:
+            pass
+        # Close the Weaviate connection before stopping the HTTP server.
+        HubSpokeConnection.close()
         await runner.cleanup()
+        # Close the google-genai async HTTP connection pool opened by the prewarm call
+        await prewarm_llm.aclose()
         logger.info("Shutdown complete")
 
 

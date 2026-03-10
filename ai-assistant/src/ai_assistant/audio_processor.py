@@ -279,6 +279,7 @@ class AudioProcessor:
                     pass
 
         self.debug_recorder.save()
+        await self.ai_assistant.aclose()
         logger.info("Audio processor stopped for connection %s", self.connection_id)
 
     # ── Voice mode toggle ─────────────────────────────────────────────────────

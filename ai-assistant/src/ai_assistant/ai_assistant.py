@@ -112,7 +112,19 @@ class AIAssistant:
         )
         
         logger.info("AI Assistant initialized with service-oriented architecture")
-    
+
+    async def aclose(self) -> None:
+        """Close all underlying Google API connections for graceful shutdown."""
+        await self.llm_service.aclose()
+        try:
+            await self.stt_service.client.close()
+        except Exception:
+            pass
+        try:
+            await self.tts_service.client.close()
+        except Exception:
+            pass
+
     async def generate_llm_response_stream(
         self, prompt: str, user_id: Optional[str] = None
     ) -> AsyncIterator[str]:

@@ -72,6 +72,13 @@ class LLMService:
         # Per-session Gemini function schemas (empty = no function calling).
         self._session_functions: Dict[str, List[Dict[str, Any]]] = {}
         logger.info(f"LLM service initialized with model: {model}")
+
+    async def aclose(self) -> None:
+        """Close the underlying google-genai async HTTP client (connection pool)."""
+        try:
+            await self.llm.async_client.aclose()
+        except Exception:
+            pass
     
     def get_session_history(self, session_id: str) -> BaseChatMessageHistory:
         """
