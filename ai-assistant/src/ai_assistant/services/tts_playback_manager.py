@@ -241,9 +241,20 @@ class TTSPlaybackManager:
             if tasks:
                 # Await all tasks so their CancelledError cleanup runs (e.g. the
                 # queue sentinel put in _synthesize_chunk that unblocks the playback
-                # loop) before we reset state.  Shield the gather so that a pending
-                # cancellation of this coroutine does not interrupt cleanup.
-                await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
+                # loop) before we reset state.  We need synthesis tasks to fully
+                # finish even when this coroutine itself is being cancelled.
+                # asyncio.shield() prevents the inner gather from being cancelled,
+                # but the outer coroutine still receives CancelledError at the await.
+                # Catching it and awaiting the (now unshielded) task ensures all
+                # tasks finish before cancellation propagates.
+                cleanup = asyncio.ensure_future(
+                    asyncio.gather(*tasks, return_exceptions=True)
+                )
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    await cleanup
+                    raise
             self._synthesis_tasks = []
             self._processing = False
             self.on_audio_ready = _original_on_audio

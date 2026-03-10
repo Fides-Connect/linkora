@@ -485,11 +485,14 @@ class PeerConnectionHandler:
     async def close(self):
         """Close peer connection and cleanup resources.
 
-        Safe to call multiple times — subsequent calls are no-ops.
         Concurrent callers await the in-progress teardown via ``_close_lock``
-        rather than returning early, so all callers are guaranteed to unblock
-        only after cleanup is complete.  This is relied on by
-        close_all_connections() and the handle_websocket() finally block.
+        so all callers unblock only after cleanup is complete.
+
+        Idempotence: ``_closed`` is set only after ``pc.close()`` succeeds.
+        If ``pc.close()`` raises or the coroutine is cancelled mid-way,
+        ``_closed`` stays ``False`` so the call can be retried.  Concurrent
+        calls are still serialised by the lock and will not start a second
+        teardown while one is already in progress.
         """
         if self._closed:
             return

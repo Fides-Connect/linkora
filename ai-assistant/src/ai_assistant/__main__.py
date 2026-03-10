@@ -211,7 +211,13 @@ async def main():
                 "some WebSocket connections may still be open."
             )
         # Close the Weaviate connection before stopping the HTTP server.
-        HubSpokeConnection.close()
+        try:
+            HubSpokeConnection.close()
+        except Exception:
+            logger.warning(
+                "Failed to close HubSpokeConnection; continuing shutdown anyway.",
+                exc_info=True,
+            )
         try:
             await asyncio.wait_for(runner.cleanup(), timeout=10.0)
         except asyncio.TimeoutError:
