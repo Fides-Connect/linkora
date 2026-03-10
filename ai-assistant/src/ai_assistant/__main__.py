@@ -171,6 +171,15 @@ async def main():
     )
     prewarm_task = asyncio.create_task(prewarm_llm.prewarm())
 
+    def _on_prewarm_done(task: asyncio.Task) -> None:
+        """Consume the result so unhandled-exception warnings are never emitted."""
+        if not task.cancelled():
+            exc = task.exception()
+            if exc is not None:
+                logger.warning("LLM prewarm failed: %s", exc, exc_info=exc)
+
+    prewarm_task.add_done_callback(_on_prewarm_done)
+
     # Keep running until cancelled (Ctrl+C via asyncio.run triggers CancelledError,
     # not KeyboardInterrupt, so we catch both defensively).
     try:

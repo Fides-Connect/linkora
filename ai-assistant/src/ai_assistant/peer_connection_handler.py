@@ -500,10 +500,20 @@ class PeerConnectionHandler:
         # any await to preserve idempotency — if a step raises/cancels we
         # don't want a re-entrant close() to restart teardown from scratch.
 
-        # Cancel idle timer
+        # Cancel idle timer.
+        # Guard against self-cancellation when close() is called from within
+        # the idle task itself (e.g. _idle_timeout_task calls close() on expiry).
+        # Also await the cancellation to avoid 'Task exception was never retrieved'.
         try:
-            if self._idle_task and not self._idle_task.done():
-                self._idle_task.cancel()
+            idle_task = self._idle_task
+            if idle_task and not idle_task.done():
+                current = asyncio.current_task()
+                if idle_task is not current:
+                    idle_task.cancel()
+                    try:
+                        await idle_task
+                    except asyncio.CancelledError:
+                        pass
         except Exception as exc:
             logger.warning("Error cancelling idle timer for %s: %s", self.connection_id, exc)
 
