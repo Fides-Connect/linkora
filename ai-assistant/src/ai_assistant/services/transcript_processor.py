@@ -31,7 +31,7 @@ class TranscriptProcessor:
     async def process_audio_stream(
         self,
         audio_stream: AsyncIterator[bytes]
-    ) -> AsyncIterator[tuple[str, bool, float]]:
+    ) -> AsyncIterator[tuple[str, bool]]:
         """
         Process audio stream through STT and yield transcription results.
         
@@ -39,7 +39,7 @@ class TranscriptProcessor:
             audio_stream: Async iterator of audio data bytes
             
         Yields:
-            Tuple of (transcript_text, is_final, stability_or_confidence)
+            Tuple of (transcript_text, is_final)
             
         Raises:
             GoogleAPIError: If STT API fails
@@ -51,7 +51,7 @@ class TranscriptProcessor:
         
         try:
             result_count = 0
-            async for transcript, is_final, score in self.stt_service.continuous_stream(audio_stream):
+            async for transcript, is_final in self.stt_service.continuous_stream(audio_stream):
                 result_count += 1
                 if result_count == 1:
                     logger.info(f"✅ First transcript result received from STT!")
@@ -60,10 +60,10 @@ class TranscriptProcessor:
                     if is_final:
                         self._current_transcript = transcript
                         logger.info(f"Final transcript: {transcript}")
-                        yield transcript, True, score
+                        yield transcript, True
                     else:
                         logger.debug(f"Interim transcript: {transcript}")
-                        yield transcript, False, score
+                        yield transcript, False
                         
         except GoogleAPIError as e:
             logger.error(f"STT API error: {e}", exc_info=True)

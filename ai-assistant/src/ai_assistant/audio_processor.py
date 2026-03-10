@@ -6,7 +6,6 @@ import asyncio
 import logging
 import json
 import os
-import re
 import numpy as np
 from typing import AsyncGenerator, Optional
 from aiortc import MediaStreamTrack
@@ -434,129 +433,21 @@ class AudioProcessor:
         Fires partial-transcript interrupt checks inline, delegates final
         transcripts to :meth:`_handle_final_transcript`, then refills the
         queue sentinel so the next session starts cleanly.
-
-        **Speculative processing**: When an interim transcript stabilises (no
-        new STT result for ``_EAGER_INTERIM_DELAY`` seconds) the LLM pipeline
-        is started speculatively.  If the FINAL matches, we save ~0.8-1.2 s
-        of end-of-speech detection latency.  If it differs, the speculative
-        task is cancelled and the correct final is processed normally.
         """
-        # Speculative ("eager interim") state ──────────────────────────────
-        last_interim: Optional[str] = None
-        eager_timer: Optional[asyncio.TimerHandle] = None
-        self._speculative_transcript: Optional[str] = None
-        loop = asyncio.get_running_loop()
-
-        def _start_eager_timer(text: str) -> None:
-            """Schedule speculative processing after a stability window."""
-            nonlocal eager_timer
-            if eager_timer is not None:
-                eager_timer.cancel()
-            eager_timer = loop.call_later(
-                self._EAGER_INTERIM_DELAY,
-                lambda: asyncio.ensure_future(self._eager_process(text)),
-            )
-
-        async for transcript, is_final, stability in self.transcript_processor.process_audio_stream(
+        async for transcript, is_final in self.transcript_processor.process_audio_stream(
             self._make_audio_chunks()
         ):
-            # Interrupt check — but skip entirely while speculative processing
-            # is active.  All subsequent interims from this STT session belong
-            # to the same utterance that triggered the eager timer; they are
-            # STT revisions, not new user speech.
-            # Also require stability >= threshold for interims to trigger an
-            # interrupt — low-stability interims are still changing.
-            stable_enough = is_final or stability >= self._STABILITY_THRESHOLD
-            if (
-                transcript
-                and self.is_ai_speaking
-                and len(transcript.strip()) > 0
-                and self._speculative_transcript is None
-                and stable_enough
-            ):
-                logger.info("Interrupt detected: '%s' (stability=%.2f)", transcript, stability)
+            if transcript and self.is_ai_speaking and len(transcript.strip()) > 0:
+                logger.info("Interrupt detected: '%s'", transcript)
                 await self._trigger_interrupt()
                 await asyncio.sleep(0.05)
 
             if is_final:
-                # Cancel any pending eager timer — the real FINAL is here.
-                if eager_timer is not None:
-                    eager_timer.cancel()
-                    eager_timer = None
-
                 # Reset the queue so the *next* _stt_session starts from an
                 # empty FIFO rather than a stale sentinel.
                 await self.audio_queue.put(None)
-
-                speculative_match = (
-                    self._speculative_transcript is not None
-                    and self._normalize_transcript(self._speculative_transcript)
-                        == self._normalize_transcript(transcript)
-                    and self._response_task is not None
-                    and not self._response_task.done()
-                )
-                if speculative_match:
-                    logger.info(
-                        "🚀 Speculative processing confirmed — STT FINAL matches interim: '%s'",
-                        transcript,
-                    )
-                else:
-                    # FINAL differs from speculative (or none was started).
-                    if self._speculative_transcript is not None:
-                        logger.info(
-                            "⚠️  Speculative mismatch: interim='%s' final='%s' — restarting",
-                            self._speculative_transcript,
-                            transcript,
-                        )
-                        if self._response_task and not self._response_task.done():
-                            await self._trigger_interrupt()
-                    await self._handle_final_transcript(transcript)
+                await self._handle_final_transcript(transcript)
                 break
-            else:
-                # Interim result — (re)start the eager timer only when
-                # stability is high enough that the transcript is unlikely
-                # to change.
-                last_interim = transcript
-                if (
-                    transcript
-                    and transcript.strip()
-                    and not self.is_ai_speaking
-                    and stability >= self._STABILITY_THRESHOLD
-                ):
-                    _start_eager_timer(transcript)
-
-    # Delay (seconds) before treating a stable interim as ready for speculative
-    # LLM processing.  Set to 0 or negative to disable eager processing.
-    _EAGER_INTERIM_DELAY: float = 0.4
-
-    # Minimum stability (0.0–1.0) for an interim result to be considered
-    # reliable enough to trigger speculative processing or an interrupt.
-    _STABILITY_THRESHOLD: float = 0.1
-
-    # Punctuation/whitespace pattern used to normalize transcripts before
-    # comparing speculative interim vs. FINAL.
-    _NORM_RE = re.compile(r'[^\w\s]', re.UNICODE)
-
-    @classmethod
-    def _normalize_transcript(cls, text: str) -> str:
-        """Lowercase, strip punctuation & collapse whitespace for comparison."""
-        return cls._NORM_RE.sub('', text).strip().lower()
-
-    async def _eager_process(self, interim_text: str) -> None:
-        """Fire speculative LLM processing for a stable interim transcript.
-
-        Called by the eager timer.  The result is validated against the real
-        FINAL in ``_stt_session`` — if the texts don't match the task is
-        cancelled there.
-        """
-        if self.is_ai_speaking:
-            return  # Don't speculate while already responding.
-        logger.info("🚀 Eager processing stable interim: '%s'", interim_text)
-        # Store so _stt_session can compare with the FINAL.
-        self._speculative_transcript = interim_text
-        # We piggy-back on _handle_final_transcript which already manages
-        # _response_task creation and guards.
-        await self._handle_final_transcript(interim_text)
 
     async def _continuous_stt(self) -> None:
         """Outer loop — restarts :meth:`_stt_session` after each final transcript."""
