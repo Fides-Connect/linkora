@@ -100,7 +100,7 @@ class LLMService:
                 "LLMService.aclose: error closing async client %s: %s",
                 type(async_client).__name__,
                 exc,
-                exc_info=exc,
+                exc_info=True,
             )
     
     def get_session_history(self, session_id: str) -> BaseChatMessageHistory:
