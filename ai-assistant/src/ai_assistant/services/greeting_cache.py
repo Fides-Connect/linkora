@@ -32,9 +32,26 @@ class GreetingCache:
     """
 
     TTL: float = 120.0  # seconds
+    MAX_ENTRIES: int = 256  # hard cap — prevents unbounded memory growth
 
     def __init__(self) -> None:
         self._store: dict[tuple[str, str], GreetingEntry] = {}
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _evict(self) -> None:
+        """Drop expired entries first; if still at cap, remove the soonest-to-expire entry."""
+        now = time.monotonic()
+        expired = [k for k, v in self._store.items() if v.expires_at <= now]
+        for k in expired:
+            del self._store[k]
+        if len(self._store) >= self.MAX_ENTRIES:
+            # All entries are still live — evict the one expiring soonest.
+            oldest = min(self._store, key=lambda k: self._store[k].expires_at)
+            del self._store[oldest]
+            logger.debug("GreetingCache at capacity (%d) — evicted oldest entry", self.MAX_ENTRIES)
 
     def store(
         self,
@@ -44,6 +61,8 @@ class GreetingCache:
         audio_bytes: bytes,
     ) -> None:
         """Cache a pre-generated greeting for *user_id* / *language*."""
+        if len(self._store) >= self.MAX_ENTRIES:
+            self._evict()
         self._store[(user_id, language)] = GreetingEntry(
             text=text,
             audio_bytes=audio_bytes,

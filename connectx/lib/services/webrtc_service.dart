@@ -566,9 +566,10 @@ class WebRTCService {
       };
 
       // Non-web platforms support custom headers on the WebSocket upgrade request.
-      // Always authenticate regardless of transport security (ws:// local dev or wss:// prod).
+      // Only attach the Authorization header over secure (wss://) connections;
+      // never send bearer tokens over plaintext ws:// transport.
       final Map<String, dynamic> wsHeaders = {};
-      if (!kIsWeb) {
+      if (!kIsWeb && _isSecure) {
         final String? idToken = await _firebaseAuthWrapper.getIdToken();
         if (idToken == null || idToken.isEmpty) {
           throw Exception('Could not retrieve Firebase ID token for authenticated request');
@@ -584,7 +585,15 @@ class WebRTCService {
       // Web browsers cannot set custom headers on WebSocket upgrade requests (browser security
       // restriction). Send the Firebase ID token as the first message so the server can
       // authenticate the web connection before processing any signaling messages.
+      // Non-web on ws:// (local dev) also uses this path: bearer tokens must not be
+      // transmitted in headers over plaintext transport.
       if (kIsWeb && _isSecure) {
+        final String? idToken = await _firebaseAuthWrapper.getIdToken();
+        if (idToken != null && idToken.isNotEmpty) {
+          _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
+        }
+      } else if (!kIsWeb && !_isSecure) {
+        // ws:// non-web (local dev) — send token as first message instead of header.
         final String? idToken = await _firebaseAuthWrapper.getIdToken();
         if (idToken != null && idToken.isNotEmpty) {
           _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));

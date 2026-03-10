@@ -76,18 +76,23 @@ async def greet_warmup(request: web.Request) -> web.Response:
             has_open_request=has_open_request,
         )
 
-        # Synthesise TTS audio.
+        # Synthesise TTS audio.  Build a short-lived service and always close
+        # its gRPC transport afterwards to avoid leaking open channels.
         max_concurrency = int(os.getenv("GOOGLE_TTS_API_CONCURRENCY", "5"))
         tts_service = TextToSpeechService(
             language_code=language_code,
             voice_name=voice_name,
             max_concurrent_requests=max_concurrency,
         )
-        audio_chunks: list[bytes] = []
-        async for chunk in tts_service.synthesize_stream(greeting_text, chunk_size=2048):
-            if chunk:
-                audio_chunks.append(chunk)
-        audio_bytes = b"".join(audio_chunks)
+        audio_bytes = b""
+        try:
+            audio_chunks: list[bytes] = []
+            async for chunk in tts_service.synthesize_stream(greeting_text, chunk_size=2048):
+                if chunk:
+                    audio_chunks.append(chunk)
+            audio_bytes = b"".join(audio_chunks)
+        finally:
+            tts_service.client.transport.close()
 
         # Store in the process-wide cache.
         get_greeting_cache().store(user_id, language, greeting_text, audio_bytes)
@@ -104,4 +109,4 @@ async def greet_warmup(request: web.Request) -> web.Response:
         raise
     except Exception as exc:
         logger.error("Error in greet_warmup: %s", exc, exc_info=True)
-        return web.json_response({"error": str(exc)}, status=500)
+        return web.json_response({"error": "Internal server error"}, status=500)

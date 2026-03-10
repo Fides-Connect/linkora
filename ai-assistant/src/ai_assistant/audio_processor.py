@@ -552,14 +552,15 @@ class AudioProcessor:
             if self.on_activity:
                 self.on_activity()
 
-            # Open AI conversation session on the first turn (fire-and-forget)
+            # Open AI conversation session on the first turn.
+            # Awaited (not fire-and-forget) so _conversation_id is set before
+            # generate_response_stream() schedules save_message() — preventing
+            # the first user-turn message from being silently dropped.
             ai_conv = self.ai_assistant.response_orchestrator.ai_conversation_service
             if ai_conv is not None and self.user_id:
-                asyncio.create_task(
-                    ai_conv.open_session(
-                        user_id=self.user_id,
-                        session_id=self.connection_id,
-                    )
+                await ai_conv.open_session(
+                    user_id=self.user_id,
+                    session_id=self.connection_id,
                 )
 
             # Echo transcript to client — delivery strategy decides whether to send it.
@@ -659,8 +660,7 @@ class AudioProcessor:
         Estimates playback duration from the total number of PCM bytes queued to
         the output track (int16 mono @ 48 kHz).  This is exact — no polling, no
         guessing — because the server controls every byte that goes into the WebRTC
-        stream.  A small fixed tail (200 ms) is added for the WebRTC jitter buffer
-        and platform audio pipeline on the device side.
+        stream.
         """
         try:
             if total_audio_bytes > 0:
