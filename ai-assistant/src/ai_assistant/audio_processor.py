@@ -288,6 +288,13 @@ class AudioProcessor:
             except asyncio.CancelledError:
                 pass
 
+        if self._response_task and not self._response_task.done():
+            self._response_task.cancel()
+            try:
+                await self._response_task
+            except asyncio.CancelledError:
+                pass
+
         self.debug_recorder.save()
         await self.ai_assistant.aclose()
         logger.info("Audio processor stopped for connection %s", self.connection_id)

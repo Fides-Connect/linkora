@@ -64,8 +64,8 @@ class PeerConnectionHandler:
         # a text→voice upgrade.  Allows _handle_renegotiation_offer to answer
         # immediately without waiting for on_track.
         self._voice_to_text_downgrade_pending = False
-        self._closed = False   # True once teardown fully completes
-        self._closing = False  # True while teardown is in progress; prevents concurrent calls
+        self._closed = False      # True once teardown fully completes
+        self._close_lock = asyncio.Lock()  # serialises concurrent close() calls
 
         # DataChannel message dispatch table
         self._dc_router = DataChannelMessageRouter()
@@ -486,25 +486,25 @@ class PeerConnectionHandler:
         """Close peer connection and cleanup resources.
 
         Safe to call multiple times — subsequent calls are no-ops.
-        This idempotency is relied on by close_all_connections() (which
-        eagerly tears down handlers) and the handle_websocket() finally
-        block (which also calls close() as a safety net).
+        Concurrent callers await the in-progress teardown via ``_close_lock``
+        rather than returning early, so all callers are guaranteed to unblock
+        only after cleanup is complete.  This is relied on by
+        close_all_connections() and the handle_websocket() finally block.
         """
         if self._closed:
             return
-        if self._closing:
-            return  # concurrent close() already in progress; avoid re-entrant teardown
-        self._closing = True
-        logger.info("Closing connection %s", self.connection_id)
+        async with self._close_lock:
+            if self._closed:  # re-check after acquiring lock
+                return
+            logger.info("Closing connection %s", self.connection_id)
 
-        # _closing prevents concurrent/re-entrant calls while teardown is running.
-        # _closed is set only after all steps complete successfully — if this
-        # coroutine is cancelled mid-way (e.g. asyncio.wait_for timeout during
-        # shutdown), _closed stays False so a subsequent sequential call can retry.
-        # Each individual step is wrapped in try/except Exception to prevent a
-        # single failure from aborting subsequent steps.  CancelledError is
-        # BaseException (not Exception) in Python 3.8+ and propagates naturally.
-        try:
+            # _close_lock serialises concurrent calls so only one teardown runs
+            # at a time.  _closed is set only after all steps complete — if this
+            # coroutine is cancelled mid-way (e.g. asyncio.wait_for timeout
+            # during shutdown), _closed stays False and a subsequent sequential
+            # call can retry.  CancelledError (BaseException) propagates
+            # naturally out of the lock context; only Exception is caught below.
+
             # Cancel idle timer.
             # Guard against self-cancellation when close() is called from within
             # the idle task itself (e.g. _idle_timeout_task calls close() on expiry).
@@ -550,5 +550,3 @@ class PeerConnectionHandler:
                 logger.warning("Error closing peer connection for %s: %s", self.connection_id, exc)
 
             self._closed = True
-        finally:
-            self._closing = False
