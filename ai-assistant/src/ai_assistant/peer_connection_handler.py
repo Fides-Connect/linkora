@@ -64,7 +64,8 @@ class PeerConnectionHandler:
         # a text→voice upgrade.  Allows _handle_renegotiation_offer to answer
         # immediately without waiting for on_track.
         self._voice_to_text_downgrade_pending = False
-        self._closed = False  # idempotency guard for close()
+        self._closed = False   # True once teardown fully completes
+        self._closing = False  # True while teardown is in progress; prevents concurrent calls
 
         # DataChannel message dispatch table
         self._dc_router = DataChannelMessageRouter()
@@ -491,55 +492,63 @@ class PeerConnectionHandler:
         """
         if self._closed:
             return
-        self._closed = True
+        if self._closing:
+            return  # concurrent close() already in progress; avoid re-entrant teardown
+        self._closing = True
         logger.info("Closing connection %s", self.connection_id)
 
-        # Each teardown step is wrapped in its own try/except so that a
-        # failure in one step (e.g. gRPC error, cancelled task) does not
-        # prevent the remaining steps from running.  _closed is set before
-        # any await to preserve idempotency — if a step raises/cancels we
-        # don't want a re-entrant close() to restart teardown from scratch.
-
-        # Cancel idle timer.
-        # Guard against self-cancellation when close() is called from within
-        # the idle task itself (e.g. _idle_timeout_task calls close() on expiry).
-        # Also await the cancellation to avoid 'Task exception was never retrieved'.
+        # _closing prevents concurrent/re-entrant calls while teardown is running.
+        # _closed is set only after all steps complete successfully — if this
+        # coroutine is cancelled mid-way (e.g. asyncio.wait_for timeout during
+        # shutdown), _closed stays False so a subsequent sequential call can retry.
+        # Each individual step is wrapped in try/except Exception to prevent a
+        # single failure from aborting subsequent steps.  CancelledError is
+        # BaseException (not Exception) in Python 3.8+ and propagates naturally.
         try:
-            idle_task = self._idle_task
-            if idle_task and not idle_task.done():
-                current = asyncio.current_task()
-                if idle_task is not current:
-                    idle_task.cancel()
-                    try:
-                        await idle_task
-                    except asyncio.CancelledError:
-                        pass
-        except Exception as exc:
-            logger.warning("Error cancelling idle timer for %s: %s", self.connection_id, exc)
-
-        if self.audio_processor:
-            # Persist final conversation state before tearing down the processor.
+            # Cancel idle timer.
+            # Guard against self-cancellation when close() is called from within
+            # the idle task itself (e.g. _idle_timeout_task calls close() on expiry).
+            # Also await the cancellation to avoid 'Task exception was never retrieved'.
             try:
-                orchestrator = self.audio_processor.ai_assistant.response_orchestrator
-                ai_conv = orchestrator.ai_conversation_service
-                if ai_conv is not None:
-                    final_stage = (
-                        self.audio_processor.ai_assistant.conversation_service
-                        .get_current_stage()
+                idle_task = self._idle_task
+                if idle_task and not idle_task.done():
+                    current = asyncio.current_task()
+                    if idle_task is not current:
+                        idle_task.cancel()
+                        try:
+                            await idle_task
+                        except asyncio.CancelledError:
+                            pass
+            except Exception as exc:
+                logger.warning("Error cancelling idle timer for %s: %s", self.connection_id, exc)
+
+            if self.audio_processor:
+                # Persist final conversation state before tearing down the processor.
+                try:
+                    orchestrator = self.audio_processor.ai_assistant.response_orchestrator
+                    ai_conv = orchestrator.ai_conversation_service
+                    if ai_conv is not None:
+                        final_stage = (
+                            self.audio_processor.ai_assistant.conversation_service
+                            .get_current_stage()
+                        )
+                        await ai_conv.close_session(final_stage)
+                    orchestrator.runtime_fsm.transition("terminate")
+                except Exception as exc:
+                    logger.warning(
+                        "Could not persist conversation on close for %s: %s",
+                        self.connection_id, exc,
                     )
-                    await ai_conv.close_session(final_stage)
-                orchestrator.runtime_fsm.transition("terminate")
-            except Exception as exc:
-                logger.warning(
-                    "Could not persist conversation on close for %s: %s",
-                    self.connection_id, exc,
-                )
-            try:
-                await self.audio_processor.stop()
-            except Exception as exc:
-                logger.warning("Error stopping audio processor for %s: %s", self.connection_id, exc)
+                try:
+                    await self.audio_processor.stop()
+                except Exception as exc:
+                    logger.warning("Error stopping audio processor for %s: %s", self.connection_id, exc)
 
-        try:
-            await self.pc.close()
-        except Exception as exc:
-            logger.warning("Error closing peer connection for %s: %s", self.connection_id, exc)
+            try:
+                await self.pc.close()
+            except Exception as exc:
+                logger.warning("Error closing peer connection for %s: %s", self.connection_id, exc)
+
+            self._closed = True
+        finally:
+            self._closing = False
