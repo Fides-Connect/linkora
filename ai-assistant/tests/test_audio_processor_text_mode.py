@@ -468,7 +468,7 @@ class TestProcessFinalTranscript:
         )
 
         with patch.object(
-            text_proc.tts_manager, "process_llm_stream", new=AsyncMock(return_value=None)
+            text_proc.tts_manager, "process_llm_stream", new=AsyncMock(return_value=(0, 0.0))
         ) as mock_tts:
             await text_proc._process_final_transcript("hi")
 
@@ -501,7 +501,7 @@ class TestProcessFinalTranscript:
         voice_proc.data_channel.send = Mock()
 
         with patch.object(
-            voice_proc.tts_manager, "process_llm_stream", new=AsyncMock(return_value=None)
+            voice_proc.tts_manager, "process_llm_stream", new=AsyncMock(return_value=(0, 0.0))
         ) as mock_tts:
             await voice_proc._process_final_transcript("hello")
 
@@ -577,7 +577,7 @@ class TestProcessFinalTranscript:
 
         # Patch TTS manager so we don't need real audio
         voice_proc.tts_manager = AsyncMock()
-        voice_proc.tts_manager.process_llm_stream = AsyncMock(return_value=None)
+        voice_proc.tts_manager.process_llm_stream = AsyncMock(return_value=(0, 0.0))
 
         await voice_proc._process_final_transcript("I need a plumber")
 

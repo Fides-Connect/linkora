@@ -557,7 +557,8 @@ class WebRTCService {
 
       // For secure (Cloud Run) connections, pass the Firebase ID token via the
       // Authorization header so it is never written to URL access logs.
-      // For plain ws:// (local dev) we skip the token entirely.
+      // For plain ws:// (local dev, non-web), the token is sent as the first
+      // WebSocket message after the connection is established (never in headers).
       // Tell the server to complete the SDP handshake without waiting for an
       // audio track. Used by the hollow pre-warm so the server doesn't spin
       // up STT/LLM before the user taps the mic button.
@@ -596,15 +597,21 @@ class WebRTCService {
           _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
         }
       } else if (!kIsWeb && !_isSecure) {
-        // ws:// non-web (local dev) — send token as first message instead of header.
-        // Firebase ID tokens must never be transmitted over an unencrypted ws://
-        // connection in production builds.
-        assert(!kReleaseMode, 'Firebase ID tokens must not be sent over ws:// in release builds.');
-        if (!kReleaseMode) {
-          final String? idToken = await _firebaseAuthWrapper.getIdToken();
-          if (idToken != null && idToken.isNotEmpty) {
-            _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
-          }
+        // ws:// non-web — only allow in non-release (local dev) builds.
+        // In release builds, fail fast rather than proceeding unauthenticated
+        // over an unencrypted connection.
+        if (kReleaseMode) {
+          onError?.call(
+            'Insecure ws:// connection is not permitted in release builds. '
+            'Set AI_ASSISTANT_SERVER_URL to a wss:// or https:// address.',
+          );
+          disconnect();
+          return;
+        }
+        // Local dev: send token as the first WS message (never in headers).
+        final String? idToken = await _firebaseAuthWrapper.getIdToken();
+        if (idToken != null && idToken.isNotEmpty) {
+          _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
         }
       }
 

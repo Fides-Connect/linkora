@@ -156,7 +156,7 @@ class VoiceSessionStarter(SessionStarter):
             self.initialized_event.set()
 
             # Play audio.
-            if audio_bytes is not None:
+            if audio_bytes:  # treat empty bytes as a cache miss — fall through to TTS
                 # Fast path: replay pre-synthesised bytes from the cache.
                 for i in range(0, len(audio_bytes), 2048):
                     if self._interrupt_event.is_set():

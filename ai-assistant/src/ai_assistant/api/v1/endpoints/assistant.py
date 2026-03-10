@@ -94,6 +94,14 @@ async def greet_warmup(request: web.Request) -> web.Response:
         finally:
             await tts_service.client.transport.close()
 
+        if not audio_bytes:
+            logger.error(
+                "TTS synthesis returned empty audio for user=%s lang=%s — not caching",
+                user_id,
+                language,
+            )
+            return web.json_response({"error": "TTS synthesis returned no audio"}, status=500)
+
         # Store in the process-wide cache.
         get_greeting_cache().store(user_id, language, greeting_text, audio_bytes)
 

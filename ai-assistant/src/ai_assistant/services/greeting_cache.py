@@ -61,8 +61,9 @@ class GreetingCache:
         audio_bytes: bytes,
     ) -> None:
         """Cache a pre-generated greeting for *user_id* / *language*."""
-        if len(self._store) >= self.MAX_ENTRIES:
-            self._evict()
+        # Always evict expired entries first so they don't consume space and
+        # don't cause premature eviction of still-valid entries when at capacity.
+        self._evict()
         self._store[(user_id, language)] = GreetingEntry(
             text=text,
             audio_bytes=audio_bytes,

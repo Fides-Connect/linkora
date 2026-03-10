@@ -3,7 +3,7 @@ Unit tests for /api/v1/assistant/* endpoints.
 Covers the greet_warmup happy path and key failure cases.
 """
 import pytest
-from unittest.mock import AsyncMock, MagicMock, Mock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from aiohttp import web
 
 from ai_assistant.api.v1.endpoints import assistant
@@ -214,3 +214,33 @@ class TestGreetWarmup:
         # Language stored in cache should be the default 'en'
         args = mock_greeting_cache.store.call_args[0]
         assert args[1] == "en"
+
+    async def test_empty_tts_audio_returns_500_and_is_not_cached(self, mock_firestore, mock_greeting_cache):
+        """Empty TTS audio must not be cached and must return 500."""
+        mock_firestore.return_value = {"name": "Eva"}
+
+        # Synthesize stream that yields nothing (no audio bytes).
+        async def _empty_stream(*_a, **_kw):
+            return
+            yield  # make it an async generator
+
+        transport = _make_tts_transport()
+        tts_svc = MagicMock()
+        tts_svc.synthesize_stream = _empty_stream
+        tts_svc.client = _make_tts_client(transport)
+
+        with (
+            patch(
+                "ai_assistant.api.v1.endpoints.assistant.ConversationService.generate_greeting_text",
+                new_callable=AsyncMock,
+                return_value="Hallo Eva!",
+            ),
+            patch(
+                "ai_assistant.api.v1.endpoints.assistant.TextToSpeechService",
+                return_value=tts_svc,
+            ),
+        ):
+            response = await assistant.greet_warmup(_make_request())
+
+        assert response.status == 500
+        mock_greeting_cache.store.assert_not_called()

@@ -132,6 +132,7 @@ class TTSPlaybackManager:
         self._total_audio_bytes = 0
         self._total_sentences = 0
         self._llm_stream_complete = False
+        self._first_audio_at: float = 0.0  # monotonic time when first audio byte was forwarded
     
     async def process_llm_stream(
         self,
@@ -156,6 +157,19 @@ class TTSPlaybackManager:
         self._total_sentences = 0
         self._llm_stream_complete = False
         self._chunk_registered.clear()
+        self._first_audio_at = 0.0
+
+        # Wrap the audio callback to capture the timestamp of the very first
+        # audio byte forwarded.  This lets _monitor_playback_completion
+        # subtract actual elapsed playback time rather than guessing.
+        _original_on_audio = self.on_audio_ready
+
+        async def _timestamped_audio(*args, **kwargs):
+            if self._first_audio_at == 0.0:
+                self._first_audio_at = asyncio.get_event_loop().time()
+            await _original_on_audio(*args, **kwargs)
+
+        self.on_audio_ready = _timestamped_audio
 
         accumulated_text = ""
         sentence_order = 0
@@ -216,8 +230,9 @@ class TTSPlaybackManager:
             raise
         finally:
             self._processing = False
+            self.on_audio_ready = _original_on_audio
 
-        return self._total_audio_bytes
+        return (self._total_audio_bytes, self._first_audio_at)
     
     async def _synthesize_and_queue(self, text: str, order: int):
         """

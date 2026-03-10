@@ -654,14 +654,15 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Error queueing audio for playback: {e}", exc_info=True)
     
-    async def _monitor_playback_completion(self, total_audio_bytes: int = 0, stream_start_time: float = 0.0):
+    async def _monitor_playback_completion(self, total_audio_bytes: int = 0, first_audio_at: float = 0.0):
         """Wait until the device has finished playing all queued audio, then clear is_ai_speaking.
 
-        Estimates playback duration from the total number of PCM bytes queued to
-        the output track (int16 mono @ 48 kHz).  The elapsed time since
-        ``stream_start_time`` is subtracted so that audio already playing while
-        TTS bytes were being streamed is accounted for, avoiding an artificially
-        long is_ai_speaking window.
+        Computes the remaining playback time by subtracting the time already
+        elapsed since the first audio bytes were forwarded to the output track
+        (``first_audio_at``, recorded by ``TTSPlaybackManager``) from the
+        total theoretical duration.  This accounts for audio that was already
+        playing in parallel with TTS streaming and avoids keeping
+        ``is_ai_speaking`` set longer than necessary.
         """
         try:
             if total_audio_bytes > 0:
@@ -670,8 +671,8 @@ class AudioProcessor:
                 # Subtract time already elapsed since the first audio bytes were queued
                 # (audio plays in parallel with TTS streaming, so some portion has
                 # already played by the time this monitor task starts).
-                if stream_start_time > 0:
-                    elapsed_s = asyncio.get_event_loop().time() - stream_start_time
+                if first_audio_at > 0:
+                    elapsed_s = asyncio.get_event_loop().time() - first_audio_at
                     wait_s = max(0.0, total_wait_s - elapsed_s)
                 else:
                     wait_s = total_wait_s
