@@ -79,7 +79,7 @@ Fides/
 ### Prerequisites
 
 - **For Mobile App**: Flutter SDK (^3.9.2+), iOS/Android device
-- **For Backend**: Python 3.11+, Docker, Google Cloud account, Gemini API key
+- **For Backend**: Python 3.14+, Docker, Google Cloud account, Gemini API key
 
 ### 1. Start the Backend Server
 

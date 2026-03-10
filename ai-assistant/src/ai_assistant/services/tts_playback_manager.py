@@ -253,6 +253,15 @@ class TTSPlaybackManager:
                 try:
                     await asyncio.shield(cleanup)
                 except asyncio.CancelledError:
+                    # On Python 3.14, catching CancelledError does not clear
+                    # the cancellation state of the current task, so an
+                    # unshielded `await cleanup` would re-raise immediately and
+                    # skip synthesis task cleanup.  Call uncancel() to
+                    # temporarily clear the cancellation flag so we can
+                    # reliably drain all synthesis tasks, then re-raise.
+                    current_task = asyncio.current_task()
+                    if current_task is not None:
+                        current_task.uncancel()
                     await cleanup
                     raise
             self._synthesis_tasks = []
