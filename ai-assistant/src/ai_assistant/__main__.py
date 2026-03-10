@@ -147,11 +147,14 @@ async def main():
     # when RTCSctpTransport._data_channel_flush tries to send after the DTLS
     # transport is already torn down.  This is a benign race inside aiortc
     # during WebRTC teardown and does not affect correctness.
+    # We narrow suppression to the known aiortc message to avoid hiding real
+    # connection failures (e.g. outbound HTTP, Weaviate).
     _orig_exc_handler = asyncio.get_running_loop().get_exception_handler()
+    _AIORTC_CONN_ERR_MSG = "Cannot send encrypted data, not connected"
 
     def _task_exc_handler(lp: asyncio.AbstractEventLoop, context: dict) -> None:
         exc = context.get("exception")
-        if isinstance(exc, ConnectionError):
+        if isinstance(exc, ConnectionError) and _AIORTC_CONN_ERR_MSG in str(exc):
             return
         if _orig_exc_handler is not None:
             _orig_exc_handler(lp, context)

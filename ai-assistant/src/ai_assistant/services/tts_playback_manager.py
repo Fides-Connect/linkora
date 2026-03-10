@@ -237,6 +237,11 @@ class TTSPlaybackManager:
             for t in self._synthesis_tasks:
                 if not t.done():
                     t.cancel()
+            if self._synthesis_tasks:
+                # Await all tasks so their CancelledError cleanup runs (e.g. the
+                # queue sentinel put in _synthesize_chunk that unblocks the playback
+                # loop) before we reset state.
+                await asyncio.gather(*self._synthesis_tasks, return_exceptions=True)
             self._synthesis_tasks = []
             self._processing = False
             self.on_audio_ready = _original_on_audio
