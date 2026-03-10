@@ -546,7 +546,6 @@ class PeerConnectionHandler:
 
             try:
                 await self.pc.close()
+                self._closed = True
             except Exception as exc:
                 logger.warning("Error closing peer connection for %s: %s", self.connection_id, exc)
-
-            self._closed = True

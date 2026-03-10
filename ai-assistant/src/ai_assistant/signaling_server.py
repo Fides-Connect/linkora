@@ -107,6 +107,10 @@ class SignalingServer:
         # this after closing websockets so no new tasks are spawned, but we
         # don't let slow teardown block the WS close above.
         await asyncio.gather(*(h.close() for h in handlers), return_exceptions=True)
+        # Release all handler references now that teardown is complete.
+        # The handle_websocket() finally blocks use pop(key, None) so they
+        # are safe even if their entry has already been removed here.
+        self.active_connections.clear()
 
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connection for signaling."""
