@@ -2,6 +2,7 @@
 AI Assistant
 Core orchestration layer that coordinates services.
 """
+import asyncio
 import logging
 import os
 from typing import AsyncIterator, Optional
@@ -116,17 +117,23 @@ class AIAssistant:
     async def aclose(self) -> None:
         """Close all underlying Google API connections for graceful shutdown."""
         await self.llm_service.aclose()
-        # Google Cloud gRPC AsyncClients expose a synchronous close() that
-        # closes the underlying channel.  Awaiting its return value (None)
-        # would raise TypeError and leave the channel open.  We use
-        # iscoroutine() as a forward-compat guard in case a future SDK version
-        # makes it async, and log failures instead of silently swallowing them.
+        # Google Cloud gapic-generated async clients (SpeechAsyncClient,
+        # TextToSpeechAsyncClient) don't expose close() on the client itself —
+        # it lives on client.transport.  We use getattr chains so this stays
+        # correct if a future SDK version moves or adds a direct close().
         for label, client in [
             ("STT", self.stt_service.client),
             ("TTS", self.tts_service.client),
         ]:
             try:
-                result = client.close()
+                close_fn = getattr(client, "close", None)
+                if close_fn is None:
+                    transport = getattr(client, "transport", None)
+                    close_fn = getattr(transport, "close", None) if transport is not None else None
+                if not callable(close_fn):
+                    logger.debug("AIAssistant.aclose: %s client has no close(); skipping.", label)
+                    continue
+                result = close_fn()
                 if asyncio.iscoroutine(result):
                     await result
             except Exception as exc:
