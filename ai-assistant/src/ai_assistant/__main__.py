@@ -172,15 +172,28 @@ async def main():
     prewarm_task = asyncio.create_task(prewarm_llm.prewarm())
 
     def _on_prewarm_done(task: asyncio.Task) -> None:
-        """Consume the result so unhandled-exception warnings are never emitted."""
-        if not task.cancelled():
-            exc = task.exception()
-            if exc is not None:
-                logger.warning(
-                    "LLM prewarm failed: %s",
-                    exc,
-                    exc_info=(type(exc), exc, exc.__traceback__),
-                )
+        """Consume the result so unhandled-exception warnings are never emitted,
+        and close the one-off prewarm LLM client once it is no longer needed.
+        """
+        try:
+            if not task.cancelled():
+                exc = task.exception()
+                if exc is not None:
+                    logger.warning(
+                        "LLM prewarm failed: %s",
+                        exc,
+                        exc_info=(type(exc), exc, exc.__traceback__),
+                    )
+        finally:
+            # prewarm_llm is only used for this fire-and-forget task, so close
+            # its async HTTP client/connection pool as soon as the task finishes.
+            # The shutdown-time aclose() call remains as a best-effort fallback
+            # for the case where prewarm is cancelled before this callback runs.
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return  # loop already closed; rely on shutdown-time aclose()
+            loop.create_task(prewarm_llm.aclose())
 
     prewarm_task.add_done_callback(_on_prewarm_done)
 
