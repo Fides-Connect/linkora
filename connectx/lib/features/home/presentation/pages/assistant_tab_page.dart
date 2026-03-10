@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/app_types.dart';
-import '../../../../services/notification_service.dart';
 import '../../../../utils/constants.dart';
 import '../../../../utils/permission_helper.dart';
 import '../viewmodels/assistant_tab_view_model.dart';
@@ -48,31 +46,6 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
           locale.languageCode,
         );
       }
-    });
-    _setupForegroundMessageHandler();
-  }
-
-  void _setupForegroundMessageHandler() {
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint('Foreground message received: ${message.messageId}');
-      debugPrint('Title: ${message.notification?.title}');
-      debugPrint('Body: ${message.notification?.body}');
-
-      if (message.notification != null) {
-        final notification = message.notification!;
-        final notificationId =
-            message.messageId?.hashCode ??
-            DateTime.now().millisecondsSinceEpoch;
-        NotificationService().showNotification(
-          id: notificationId,
-          title: notification.title ?? 'New Message',
-          body: notification.body ?? '',
-        );
-      }
-    });
-
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      debugPrint('Notification opened from background: ${message.messageId}');
     });
   }
 

@@ -133,6 +133,7 @@ class TTSPlaybackManager:
         self._total_sentences = 0
         self._llm_stream_complete = False
         self._first_audio_at: float = 0.0  # monotonic time when first audio byte was forwarded
+        self._synthesis_tasks: list[asyncio.Task] = []
     
     async def process_llm_stream(
         self,
@@ -158,6 +159,7 @@ class TTSPlaybackManager:
         self._llm_stream_complete = False
         self._chunk_registered.clear()
         self._first_audio_at = 0.0
+        self._synthesis_tasks = []
 
         # Wrap the audio callback to capture the timestamp of the very first
         # audio byte forwarded.  This lets _monitor_playback_completion
@@ -229,6 +231,13 @@ class TTSPlaybackManager:
                 pass
             raise
         finally:
+            # Cancel any synthesis tasks still running (occurs on interrupt or error).
+            # This prevents stale gRPC streams from holding the TTS concurrency slot
+            # and stops them from retaining a reference to this manager after it is done.
+            for t in self._synthesis_tasks:
+                if not t.done():
+                    t.cancel()
+            self._synthesis_tasks = []
             self._processing = False
             self.on_audio_ready = _original_on_audio
 
@@ -250,7 +259,7 @@ class TTSPlaybackManager:
             self._chunks[order] = chunk
         self._chunk_registered.set()
 
-        asyncio.create_task(self._synthesize_chunk(order, text))
+        self._synthesis_tasks.append(asyncio.create_task(self._synthesize_chunk(order, text)))
 
     async def _synthesize_chunk(self, order: int, text: str):
         """
