@@ -22,9 +22,9 @@ class AudioOutputTrack(MediaStreamTrack):
     def __init__(self):
         super().__init__()
         self.audio_queue = asyncio.Queue()
-        self.sample_rate = 48000  # Match WebRTC native rate
+        self.sample_rate = 24000  # 24kHz: half the TTS payload vs 48kHz; aiortc resamples to 48kHz for RTP
         self.channels = 1  
-        self.samples_per_frame = 960  # 20ms at 48kHz
+        self.samples_per_frame = 480  # 20ms at 24kHz
         self._timestamp = 0
         self._start = None
         self._next_frame_time = None

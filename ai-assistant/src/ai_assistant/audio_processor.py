@@ -356,7 +356,11 @@ class AudioProcessor:
 
                     audio_data = self.frame_converter.frame_to_numpy(frame)
                     self.debug_recorder.add_frame(audio_data)
-                    audio_bytes = audio_data.tobytes()
+                    # Downsample 48kHz → 8kHz (factor 6) to match the telephony
+                    # model's native rate. Box-filter (reshape + mean) acts as a
+                    # simple anti-aliasing low-pass before decimation.
+                    n = (len(audio_data) // 6) * 6
+                    audio_bytes = audio_data[:n].reshape(-1, 6).mean(axis=1).astype(np.int16).tobytes()
                     await self.audio_queue.put(audio_bytes)
 
                 except asyncio.TimeoutError:

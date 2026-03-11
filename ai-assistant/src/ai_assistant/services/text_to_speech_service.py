@@ -34,7 +34,7 @@ class TextToSpeechService:
             )
             audio_config = tts.AudioConfig(
                 audio_encoding=tts.AudioEncoding.LINEAR16,
-                sample_rate_hertz=48000,
+                sample_rate_hertz=24000,
             )
 
             async with self.semaphore:
