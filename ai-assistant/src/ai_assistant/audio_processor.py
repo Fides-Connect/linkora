@@ -642,13 +642,13 @@ class AudioProcessor:
             audio_samples = np.frombuffer(audio_data, dtype=np.int16).copy()
 
             if is_first:
-                fade_in_samples = min(480, len(audio_samples) // 2)  # 10ms at 48kHz
+                fade_in_samples = min(240, len(audio_samples) // 2)  # 10ms at 24kHz
                 if fade_in_samples > 0:
                     fade_in = (1.0 - np.cos(np.linspace(0, np.pi, fade_in_samples))) / 2.0
                     audio_samples[:fade_in_samples] = (audio_samples[:fade_in_samples] * fade_in).astype(np.int16)
 
             if is_last:
-                fade_out_samples = min(144, len(audio_samples) // 2)  # 3ms at 48kHz
+                fade_out_samples = min(72, len(audio_samples) // 2)  # 3ms at 24kHz
                 if fade_out_samples > 0:
                     fade_out = (1.0 + np.cos(np.linspace(0, np.pi, fade_out_samples))) / 2.0
                     audio_samples[-fade_out_samples:] = (audio_samples[-fade_out_samples:] * fade_out).astype(np.int16)
@@ -670,8 +670,8 @@ class AudioProcessor:
         """
         try:
             if total_audio_bytes > 0:
-                # int16 mono @ 48 kHz → 2 bytes per sample, 48 000 samples/s
-                total_wait_s = total_audio_bytes / (48_000 * 2)
+                # int16 mono @ 24 kHz → 2 bytes per sample, 24 000 samples/s
+                total_wait_s = total_audio_bytes / (24_000 * 2)
                 # Subtract time already elapsed since the first audio bytes were queued
                 # (audio plays in parallel with TTS streaming, so some portion has
                 # already played by the time this monitor task starts).
