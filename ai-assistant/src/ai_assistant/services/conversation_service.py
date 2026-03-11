@@ -188,14 +188,15 @@ class ConversationService:
             ])
         
         elif stage == ConversationStage.FINALIZE:
-            provider_list_json = json.dumps(self.context["providers_found"], ensure_ascii=False, default=json_serializer)
-            provider_count = len(self.context["providers_found"])
+            providers = self.context.get("providers_found", [])
+            idx = self.context.get("current_provider_index", 0)
+            current_provider = providers[idx] if providers and idx < len(providers) else {}
+            provider_json = json.dumps(current_provider, ensure_ascii=False, default=json_serializer)
             language_instruction = get_language_instruction(self.language)
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(FINALIZE_SERVICE_REQUEST_PROMPT).format(
                     agent_name=self.agent_name,
-                    provider_list_json=provider_list_json,
-                    provider_count=provider_count,
+                    provider_json=provider_json,
                     language_instruction=language_instruction
                 ),
                 MessagesPlaceholder(variable_name="history"),
@@ -306,6 +307,40 @@ class ConversationService:
         # onboarding_draft and current_competencies are preserved across request
         # resets so a PROVIDER_ONBOARDING session isn't interrupted mid-flow.
         logger.info("Request context reset for new TRIAGE scoping session")
+
+    def restore_from_summary(self, summary: dict) -> None:
+        """Hydrate conversation context from a previous session summary.
+
+        Seeds the context with the prior request summary and topic title so the
+        LLM has the necessary background on session connect.  Only restores the
+        stage when the prior final_stage is an auto-resumable mid-flow stage
+        (TRIAGE, CLARIFY, CONFIRMATION).  Terminal stages are ignored — the
+        session boots fresh from GREETING/TRIAGE instead.
+
+        Uses direct _current_stage assignment (bypasses legal-transition FSM)
+        since this is a restore, not a runtime transition.
+        """
+        _MID_FLOW_STAGES = {
+            ConversationStage.TRIAGE,
+            ConversationStage.CLARIFY,
+            ConversationStage.CONFIRMATION,
+        }
+        final_stage = summary.get("final_stage")
+        topic_title = summary.get("topic_title", "")
+        request_summary_text = summary.get("request_summary", "")
+
+        if request_summary_text:
+            self.context["request_summary"] = request_summary_text
+        if topic_title:
+            self.context["user_problem"] = [topic_title]
+
+        if final_stage in _MID_FLOW_STAGES:
+            self._current_stage = final_stage
+            logger.info("Session restored to stage %s from previous session summary", final_stage)
+        else:
+            logger.info(
+                "Session summary present but stage %s is terminal — booting fresh.", final_stage
+            )
 
     def record_ai_response(self, text: str) -> None:
         """Append an assembled AI response to the context history.
@@ -512,8 +547,10 @@ class ConversationService:
                 f"has_open_request={has_open_request}"
             )
             language_instruction = get_language_instruction(self.language)
+            resume_ctx = self.context.get("session_resume_context", "")
+            system_prefix = f"{resume_ctx}\n\n" if resume_ctx else ""
             prompt_template = ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
+                SystemMessagePromptTemplate.from_template(system_prefix + GREETING_AND_TRIAGE_PROMPT),
                 HumanMessage(content=" ")
             ])
 

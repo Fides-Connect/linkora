@@ -181,3 +181,66 @@ class TestCrossEncoderServiceRerank:
         for q, doc in call_args:
             assert q == query
             assert isinstance(doc, str) and len(doc) > 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# min_score threshold
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCrossEncoderMinScore:
+
+    async def test_candidates_below_min_score_are_excluded(self):
+        """Candidates with rerank_score below min_score must not appear in results."""
+        candidates = _make_candidates(4)
+        # scores: Provider 0 (+2.0), Provider 1 (-6.0), Provider 2 (+1.0), Provider 3 (-1.0)
+        scores = [2.0, -6.0, 1.0, -1.0]
+        service = CrossEncoderService(min_score=-5.0)
+        service._model = _mock_cross_encoder(scores)
+
+        result = await service.rerank(query="electrician", candidates=candidates, top_k=10)
+
+        returned_titles = {r["title"] for r in result}
+        assert "Provider 1" not in returned_titles, "Provider 1 (score -6.0) should be below min_score -5.0"
+        assert len(result) == 3  # providers 0, 2, 3 remain (scores 2.0, 1.0, -1.0)
+
+    async def test_all_above_threshold_returns_top_k_unchanged(self):
+        """When all candidates exceed min_score, top_k slicing behaviour is unchanged."""
+        candidates = _make_candidates(3)
+        scores = [3.0, 1.0, 2.0]
+        service = CrossEncoderService(min_score=-5.0)
+        service._model = _mock_cross_encoder(scores)
+
+        result = await service.rerank(query="plumber", candidates=candidates, top_k=3)
+
+        assert len(result) == 3
+        # Verify descending score order is still maintained
+        assert result[0]["rerank_score"] >= result[1]["rerank_score"] >= result[2]["rerank_score"]
+
+    async def test_all_below_threshold_returns_empty(self):
+        """When every candidate is below min_score, results should be empty."""
+        candidates = _make_candidates(3)
+        scores = [-7.0, -8.0, -9.0]
+        service = CrossEncoderService(min_score=-5.0)
+        service._model = _mock_cross_encoder(scores)
+
+        result = await service.rerank(query="gardening", candidates=candidates, top_k=5)
+
+        assert result == []
+
+    async def test_min_score_from_env_var(self, monkeypatch):
+        """CROSS_ENCODER_MIN_SCORE env var configures the threshold at construction time."""
+        monkeypatch.setenv("CROSS_ENCODER_MIN_SCORE", "-2.5")
+        service = CrossEncoderService()
+        assert service._min_score == -2.5
+
+    async def test_min_score_explicit_overrides_env_var(self, monkeypatch):
+        """An explicit min_score constructor argument takes precedence over the env var."""
+        monkeypatch.setenv("CROSS_ENCODER_MIN_SCORE", "-99.0")
+        service = CrossEncoderService(min_score=0.0)
+        assert service._min_score == 0.0
+
+    async def test_invalid_env_var_falls_back_to_default(self, monkeypatch):
+        """A non-numeric CROSS_ENCODER_MIN_SCORE must fall back to -5.0."""
+        monkeypatch.setenv("CROSS_ENCODER_MIN_SCORE", "not-a-number")
+        service = CrossEncoderService()
+        assert service._min_score == -5.0

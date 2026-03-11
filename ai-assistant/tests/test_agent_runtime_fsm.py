@@ -115,6 +115,22 @@ class TestAgentRuntimeFSMTransitions:
             AgentRuntimeState.LISTENING
         )
 
+    def test_thinking_to_listening_on_stream_complete_text(self, fsm):
+        """Empty-stream recovery: if the LLM yields nothing, stream_complete_text
+        must still reset the FSM to LISTENING instead of leaving it stuck in THINKING."""
+        self._assert_transition(
+            fsm, AgentRuntimeState.THINKING, "stream_complete_text",
+            AgentRuntimeState.LISTENING
+        )
+
+    def test_tool_executing_to_listening_on_stream_complete_text(self, fsm):
+        """Error-recovery: if an exception fires mid-tool-execution and the finally
+        block emits stream_complete_text, the FSM must reset to LISTENING."""
+        self._assert_transition(
+            fsm, AgentRuntimeState.TOOL_EXECUTING, "stream_complete_text",
+            AgentRuntimeState.LISTENING
+        )
+
     def test_speaking_to_listening_on_playback_done(self, fsm):
         self._assert_transition(
             fsm, AgentRuntimeState.SPEAKING, "playback_done",

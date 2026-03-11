@@ -108,7 +108,7 @@ class TestBuildFiltersAndQuery:
             mock_filter_instance.equal.return_value = mock_filter_instance
             mock_filter_instance.contains_any.return_value = mock_filter_instance
 
-            _, _, available_time = HubSpokeSearch._build_filters_and_query(
+            _, _, available_time, _ = HubSpokeSearch._build_filters_and_query(
                 {"available_time": "  weekend  ", "category": "X", "criterions": []},
                 max_inactive_days=90,
             )
@@ -193,6 +193,35 @@ class TestBuildFiltersAndQuery:
 
             # is_none(True) must have been called so null last_sign_in values are included.
             mock_fi.is_none.assert_called_with(True)
+
+    def test_availability_filter_applied_flag_true_for_known_tokens(self):
+        """availability_filter_applied (4th return value) must be True when recognised tokens are found."""
+        with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+            mock_fi = self._make_filter_mock()
+            MockFilter.by_property.return_value = mock_fi
+            MockFilter.by_ref.return_value = mock_fi
+
+            _, _, _, flag = HubSpokeSearch._build_filters_and_query(
+                {"available_time": "Monday morning", "category": "Plumber", "criterions": []},
+                max_inactive_days=90,
+            )
+            assert flag is True, "Expected availability_filter_applied=True for 'Monday morning'"
+
+    def test_availability_filter_applied_flag_false_for_flexible(self):
+        """availability_filter_applied must be False for skip-phrases like 'flexible'."""
+        for skip_value in ["flexible", "flexibel", "any", "anytime", "", "next week", "asap"]:
+            with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+                mock_fi = self._make_filter_mock()
+                MockFilter.by_property.return_value = mock_fi
+                MockFilter.by_ref.return_value = mock_fi
+
+                _, _, _, flag = HubSpokeSearch._build_filters_and_query(
+                    {"available_time": skip_value, "category": "Electrician", "criterions": []},
+                    max_inactive_days=90,
+                )
+                assert flag is False, (
+                    f"Expected availability_filter_applied=False for {skip_value!r}, got True"
+                )
 
 
 class TestHybridSearchHydeParameter:

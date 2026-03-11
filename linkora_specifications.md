@@ -86,7 +86,7 @@ The conversation progresses through a finite set of named stages. Each stage rep
 | `CLARIFY`             | **Disambiguation.** Used when the request is too ambiguous to scope. The AI asks exactly one targeted question and immediately returns to `TRIAGE`.            |
 | `TOOL_EXECUTION`      | **Data retrieval.** An intermediate stage while a data operation runs (e.g. fetching open requests or favorites). Control returns to `TRIAGE`, `CONFIRMATION`, or `FINALIZE` once the tool completes. |
 | `CONFIRMATION`        | **Pre-commit check.** The AI summarises the scoped request in 2–3 sentences and asks the user to confirm before proceeding to provider matching.               |
-| `FINALIZE`            | **Provider matching and presentation.** A multi-turn stage where the system searches for providers, presents them, and waits for the user to accept, ask questions, or decline. |
+| `FINALIZE`            | **Provider matching and presentation.** A multi-turn, tool-driven stage where the system searches for providers, presents them, and waits for the user to make a decision using explicit functional tools. |
 | `RECOVERY`            | **Error / confusion recovery.** The AI calmly acknowledges the issue without asking the user to restart, then steers back to `TRIAGE` as soon as any service context is given. |
 | `COMPLETED`           | **Post-request wrap-up.** The current service flow (request submitted or onboarding finished) has concluded. The AI asks warmly if the user needs anything else. |
 | `PROVIDER_PITCH`      | **Recruitment offer.** The AI invites the user—once per 30-day window—to join as a service provider. Fires automatically when the user is eligible and `COMPLETED` is reached. |
@@ -111,10 +111,11 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 
 - **Atomic Stage Output**: When the system autonomously fast-paths through a stage — most commonly `TRIAGE → CONFIRMATION` because the user's initial request was already complete — the originating stage (`TRIAGE`) must emit only the `signal_transition` call and must not produce any natural-language response text. All user-facing communication is the sole responsibility of the destination stage (`CONFIRMATION`). This prevents stacking of redundant acknowledgements across consecutive stage outputs.
 - **Strict Confirmation Gate**: The system must strictly enforce that `FINALIZE` can only be entered from `CONFIRMATION` or `TOOL_EXECUTION`. The AI is mathematically forbidden from transitioning directly from `TRIAGE` to `FINALIZE` without user approval.
-- `CONFIRMATION → FINALIZE`: the system automatically performs a provider search in the same response stream; the result list is injected into the follow-up LLM call.
+- `CONFIRMATION → FINALIZE`: the system automatically performs a provider search. The routing is handled by the backend orchestrator based on the search results (see §6.11).
+- `FINALIZE → COMPLETED`: The LLM inside `FINALIZE` **does not use the `signal_transition` tool.** This transition is automatically forced by the backend orchestrator when the LLM successfully executes the `accept_provider` tool.
+- `FINALIZE → TRIAGE`: Triggered automatically by the backend orchestrator when the LLM executes the `cancel_search` tool, or if the user exhausts the cached provider list. It is also triggered pre-emptively by the orchestrator (bypassing the FINALIZE LLM) if the initial search returns exactly 0 results.
+- **FINALIZE Safety Fallback Limitation**: Because `FINALIZE` relies on the user to make a choice (and intentionally omits a generic state transition signal), the standard orchestrator safety fallback (forcing `RECOVERY` when a stage does not emit a transition) **must be disabled for the `FINALIZE` stage.** The stage naturally waits for user input.
 - `COMPLETED → PROVIDER_PITCH`: fires automatically (without an explicit LLM call) when the user is pitch-eligible (see §4). The LLM never needs to call this transition itself.
-- `FINALIZE → TRIAGE`: triggered when the user explicitly cancels the entire provider search. If `FINALIZE` yields exactly 0 search results, the AI must explicitly inform the user, apologize, and transition immediately back to `TRIAGE` to prompt the user to broaden their criteria. No service request cancellation is required on this back-transition, because the service request is only created upon provider acceptance (see §6.10).
-- `FINALIZE → RECOVERY` (safety fallback limitation): The safety fallback must **only** fire if the orchestrator exceeds 3 autonomous, uninterrupted stream loops without yielding to the user. **It must strictly NOT fire** if the LLM completes its stream by asking the user a question (e.g., "Are you happy with this provider?") and intentionally omits a `signal_transition`. Waiting for user input in `FINALIZE` is the expected happy path.
 - `COMPLETED → TRIAGE`: triggered when the user indicates they have another need after the current flow concludes.
 - `PROVIDER_PITCH → TRIAGE`: triggered when the user, during the pitch, says they actually want to find a service provider rather than become one.
 - `PROVIDER_ONBOARDING → TRIAGE`: triggered when the user declines the provider role (STEP 0 "no") or switches intent to finding a service instead of managing their own skills.
@@ -350,8 +351,8 @@ For `delete_competences`: each deleted competency is removed from Firestore and 
 2. AI optionally clarifies → stage: `CLARIFY → TRIAGE`.
 3. AI confirms the request with the user → stages: `TRIAGE → CONFIRMATION`.
 4. User explicitly confirms the summary.
-5. System performs provider search and enters presentation loop → stage: `FINALIZE`.
-6. User explicitly accepts a presented provider → stage: `COMPLETED`.
+5. System performs provider search and relies on the Backend Orchestrator to evaluate results and transition → stage: `FINALIZE` (if results > 0).
+6. User explicitly accepts a presented provider (LLM calls `accept_provider`) → stage: `COMPLETED`.
 
 - **Mandatory Confirmation Gate:** Regardless of how comprehensively the user defines their request in the initial prompt, the AI must summarize the understood requirements in the `CONFIRMATION` stage and receive an explicit affirmative response from the user before executing the provider search in `FINALIZE`.
 
@@ -370,6 +371,7 @@ For `delete_competences`: each deleted competency is removed from Firestore and 
 - Provider candidates inactive for more than 180 consecutive days (no sign-in) are excluded from all search results.
 - Availability-based filtering is applied only when the user's stated `available_time` contains recognised tokens (specific day names, `weekday`, `weekend`, `morning`, `afternoon`, `evening`). If the stated availability uses unrecognised terms (e.g. "flexible", "any time", "next week") that do not map to a known token, no availability filter is applied and all matching providers are returned regardless of availability.
 - The "problem summary" used as the basis for provider search is the most recent AI response text. If no AI response has been generated yet, the concatenation of raw user inputs accumulated during `TRIAGE` is used instead.
+- **Zero-result diagnostic**: Evaluated immediately by the Backend Orchestrator (see §6.11). When no providers are returned, the system logs the count of competencies with `is_service_provider = True` in the index, to distinguish between a vocabulary mismatch and a missing or stale provider-flag issue.
 
 ### 6.3 Tool Execution
 
@@ -405,6 +407,7 @@ Step 2 of the provider search pipeline generates a short hypothetical provider p
 #### Structured Query Extraction (Step 1 detail)
 
 - The LLM converts the problem summary into a structured JSON object with three fields: `available_time` (free-form time string), `category` (service category), and `criterions` (list of requirement strings).
+- The `available_time` field must always be expressed using English time tokens (`monday`–`sunday`, `morning`, `afternoon`, `evening`) or a recognised skip-phrase (`flexible`, `any time`, `anytime`), regardless of the session language. The extraction prompt must enforce this constraint explicitly so that non-English day names (e.g. "Montag") are never produced.
 - The last 3 messages from the session's conversation history are appended to the extraction prompt so the LLM has richer context than the summary alone.
 - If the LLM returns malformed JSON or an exception is raised, the system falls back to the plain-text problem summary.
 - The structured query is combined into a single query string of the form `"<category>. Features: <criterion1>, <criterion2>"` for passing to the BM25 component.
@@ -431,67 +434,70 @@ Step 4 of the provider search pipeline re-scores the wide-net candidates using a
 - **Candidate text construction**: each provider candidate is represented as a single string: title (or category if title is absent), then `search_optimized_summary`, then `skills_list` items prefixed with "Skills: ", all joined with ". ". If all fields are empty, the text defaults to "No description available.".
 - **Query**: the original plain-language problem summary is used as the cross-encoder query, not the HyDE text or structured query.
 - **Execution**: scoring runs in a thread executor to keep the async event loop non-blocking.
-- Each returned provider dict is augmented with a `rerank_score` (float) field. Candidates are sorted by `rerank_score` descending and the list is sliced to `max_providers`.
+- Each returned provider dict is augmented with a `rerank_score` (float) field. Candidates are sorted by `rerank_score` descending; any candidate whose score falls below a configurable minimum relevance threshold is excluded before the list is sliced to `max_providers`. The threshold is deployment-configurable (default −5.0 on the ms-marco model scale) and prevents clearly irrelevant providers from surfacing when the candidate pool is sparse.
 - If reranking fails for any reason (exception), the original Weaviate-ordered candidates are returned truncated to `max_providers`, with no error surfaced to the user.
 - If no `CrossEncoderService` is available, the Weaviate candidates are simply truncated to `max_providers` without reranking.
 - The same reranking step is applied when the `search_providers` tool is called explicitly mid-conversation (outside the `FINALIZE` pipeline), whenever a `CrossEncoderService` is available.
 
 ### 6.10 Service Request Creation Semantics
 
-- A service request document is created **only at the moment the user explicitly accepts a provider** in the `FINALIZE` stage. It is never created before that point.
+- A service request document is created **only at the moment the user explicitly accepts a provider** (via the `accept_provider` tool in the `FINALIZE` stage). It is never created before that point.
 - The service request must be fully populated at creation time. The AI must include all details gathered during `TRIAGE` and `CONFIRMATION`:
   - `title`: a concise label for the job (e.g. "Mobile App Development").
   - `description`: the full scope summary assembled during scoping.
   - `selected_provider_user_id`: the Firebase UID (`user.user_id`) of the accepted provider as returned by the provider search results.
   - `location`: the city or address provided by the user, if any.
-  - `category`: the service category as inferred by the AI from the conversation (e.g. "IT", "Handwerk", "Reinigung"). Never left blank if the category can be determined.
-  - `start_date` / `end_date`: concrete calendar dates if the user stated a timeframe; omitted otherwise.
-  - `amount_value`: the user's stated budget figure, if provided.
+  - `category`: the service category as inferred by the AI from the conversation. Must be one of the canonical values (`pets`, `housekeeping`, `restaurant`, `technology`, `gardening`, `electrical`, `plumbing`, `repair`, `teaching`, `transport`, `childcare`, `wellness`, `events`, `other`). Always required — use `other` if no specific category can be determined.
+  - `location`: always required — use the city or address provided by the user. If the user provided no location, ask for it before creating the request.
+  - `start_date` / `end_date`: concrete calendar dates if the user stated a timeframe; omitted otherwise. The client must display a safe fallback when `start_date` is absent.
+  - `amount_value`: the user's stated budget figure, if provided. The client must display a safe fallback (e.g. 0) when absent.
   - `currency`: derived from the service `location` (Germany, Austria, Switzerland → `EUR`; UK → `GBP`; US → `USD`). Omitted if location is unknown or ambiguous. Never asked from the user.
   - `requested_competencies`: list of specific skills or competencies mentioned during scoping.
 - Because the service request is only created on acceptance, a `FINALIZE → TRIAGE` back-transition (zero results or user cancellation) requires no cancellation step — no document exists at that point.
 - The `CONFIRMATION` stage summary must include location, timeframe, and budget **only when the user provided them**; it must not invent or approximate values that were not stated.
 
-### 6.11 FINALIZE Stage Multi-Turn Interaction
+### 6.11 FINALIZE Stage Multi-Turn Interaction (Smart Backend & Tool-Driven FSM)
 
-The `FINALIZE` stage is a stateful, multi-turn interaction phase. Once the provider search completes, the orchestrator does **not** force an immediate transition. Instead, it enters a conversational sub-loop, waiting for user decisions.
+To prevent the LLM from drifting or failing to emit generic stage transitions, the `FINALIZE` loop relies on **Backend Pre-Routing** and **State-Mutating Tools**. The LLM inside `FINALIZE` does not possess the `signal_transition` tool; the stage transitions are side-effects of concrete tool execution managed by the orchestrator.
 
-The AI manages the `FINALIZE` session using the following internal state logic:
+#### Phase 1: Backend Pre-Routing (Entry Check)
+When the provider search completes, the Backend Orchestrator intercepts the payload *before* invoking the `FINALIZE` LLM:
 
-- **Initial Entry & Presentation**: 
-  - Upon entry to `FINALIZE`, the provider search runs. 
-  - **If results > 0**: The AI presents the top (first) result to the user, explicitly asks for their opinion (e.g., "Are you happy with this suggestion?"), and stops generating. **No `signal_transition` is emitted here.** The orchestrator waits for user input.
-  - **If results == 0**: The AI explicitly informs the user that no matching providers were found, apologizes, and emits `signal_transition(target_stage="triage")` immediately within the same turn to prompt the user to broaden their criteria.
-  - The AI explicitly asks the user for their opinion (e.g., "Are you happy with this suggestion?") and stops generating. 
-  - **No `signal_transition` is emitted here.** The orchestrator waits for user input.
+* **If `results == 0`**: 
+  The Backend completely bypasses the `FINALIZE` LLM. It forcefully transitions the FSM back to `TRIAGE` and passes a silent system event to the `TRIAGE` LLM: `[System Event: The provider search returned 0 results. Apologise to the user and ask how they would like to broaden their criteria.]`
+* **If `results > 0`**:
+  The Backend caches the full result list, sets the FSM to `FINALIZE`, and passes *only* the top result (`results[0]`) into the LLM prompt with instructions to present this provider and wait for the user's decision.
+
+#### Phase 2: Tool-Driven Interaction (The Loop)
+The `FINALIZE` LLM is equipped with exactly three functional tools: `accept_provider(provider_id)`, `reject_and_fetch_next()`, and `cancel_search()`.
 
 - **User Response A: Decline current, ask for another**:
-  - If the user rejects the current suggestion but still wants help (e.g., "No, someone else", "Too expensive"), the AI presents the next highest-ranked result from the active cached list.
-  - It asks for the user's opinion on the new candidate and stops generating.
-  - If the list of cached results is exhausted, the AI apologises, clears the cached search results, and emits `signal_transition(target_stage="triage")` to renegotiate the criteria.
+  - The user rejects the suggestion ("No, someone else", "Too expensive").
+  - The LLM evaluates the intent and calls the `reject_and_fetch_next()` tool.
+  - *Orchestrator Action*: The backend executes the tool, pops the next candidate from the cached list, injects it into the context, and leaves the state in `FINALIZE`. If the cached list is empty, the orchestrator automatically transitions the state to `TRIAGE` and prompts the LLM to inform the user.
 
 - **User Response B: Ask for more detail about the current result**:
-  - The user asks a specific question about the currently presented provider (e.g., "What are their exact hours?", "Do they speak German?").
-  - The AI answers based on the provider's `skills_list` and `search_optimized_summary` in the payload.
-  - The AI remains in `FINALIZE` and asks if the user wants to select them.
+  - The user asks a specific question ("What are their exact hours?", "Do they speak German?").
+  - The LLM answers naturally based on the current provider's injected profile. **No tool is called.**
+  - *Orchestrator Action*: The FSM safely remains in `FINALIZE`, waiting for the user to make a final decision on this provider.
 
 - **User Response C: Accept current result**:
-  - The user explicitly accepts the current provider (e.g., "Yes, let's go with him", "Perfect").
-  - The AI calls `create_service_request` using the selected provider's ID.
-  - Upon successful creation, the AI emits `signal_transition(target_stage="completed")`.
+  - The user explicitly accepts the current provider ("Yes, let's go with him").
+  - The LLM evaluates the intent and calls `accept_provider(provider_id)`.
+  - *Orchestrator Action*: The backend executes the tool, calls `create_service_request` in the database, and **automatically forces the state transition** to `COMPLETED`.
 
 - **User Response D: Cancel the request**:
-  - The user aborts the flow entirely (e.g., "Nevermind", "Cancel the search").
-  - The AI acknowledges the cancellation. No service request cancellation tool is called (because none was created yet).
-  - The AI emits `signal_transition(target_stage="triage")`.
+  - The user aborts the flow entirely ("Nevermind", "Cancel the search").
+  - The LLM evaluates the intent and calls `cancel_search()`.
+  - *Orchestrator Action*: The backend forces the state transition to `TRIAGE` to clear the scoping draft.
 
-- **User Response E: Disconnection**:
+- **User Response E: Referencing a previously presented result**:
+  - If the user decides to select a provider presented earlier in the loop ("Let's go back to the first guy"), the LLM (using the chat history context) calls `accept_provider(provider_id)` with the older ID.
+  - *Orchestrator Action*: Proceeds as **Response C**.
+
+- **User Response F: Disconnection**:
   - If the user drops connection while in `FINALIZE`, background search tasks are aborted. 
   - Session resumption rules (§9.2) apply on reconnect.
-
-- **User Response F: Referencing a previously presented result**:
-  - If the user asks about or decides to select a provider presented earlier in the current `FINALIZE` loop (e.g., "Let's go back to the first guy"), the AI accesses the cached search result to get information.
-  - The AI confirms the selection and proceeds to **Response C** (Acceptance).
 
 ---
 
@@ -613,8 +619,8 @@ The AI manages the `FINALIZE` session using the following internal state logic:
 ## 9. Connection Lifecycle
 
 - Each WebRTC connection has a 10-minute server-side idle timer. If no user activity (voice transcript finalisation, text input, or mode switch) is detected within this window, the connection is automatically closed and all associated resources are released.
-- The idle timer is reset on every user activity event. Empty audio chunks or audio classified purely as background noise by the VAD (Voice Activity Detection) must not reset the 10-minute idle timer.
-- When a connection is closed (intentional or timeout), the current conversation stage is written as the final stage to the active AI conversation document (if one is open), and the runtime state machine is transitioned to its terminal state.
+- The idle timer is reset on every user activity event. Empty audio chunks or audio classified purely as background noise by the VAD (Voice Activity Detection) must not reset the 10-minute idle timer. Specifically, an empty or whitespace-only STT transcript must not count as user activity and must not reset the idle timer.
+- When a connection is closed (intentional or timeout), the current conversation stage and the active request summary (if any) are written to the AI conversation document in Firestore, and the runtime state machine is transitioned to its terminal state.
 - An invalid `mode` query parameter (any value other than `"voice"` or `"text"`) on a WebSocket connection is silently coerced to `"text"` to prevent unintended audio playback in inappropriate environments.
 
 ### 9.1 Runtime FSM Bootstrap Sequence
@@ -624,6 +630,7 @@ The AI manages the `FINALIZE` session using the following internal state logic:
 - Once the data channel is confirmed open, the FSM invokes the **Session Resumption (State-Aware Hydration)** check (see §9.2) to determine whether to restore previous context or start fresh, and then transitions to the appropriate state (e.g., `LISTENING`, `GREETING`, or `TRIAGE`).
 - The current FSM state is emitted as a `runtime-state` message on both the initial data-channel attachment and again when the channel open event fires, ensuring the client always receives the correct state even if it connects after the FSM has already advanced past `BOOTSTRAP`.
 - **Text-mode initialization race guard**: After the FSM advances to `LISTENING`, a text-mode session applies a brief wait (up to 300 ms) before committing to an autonomous greeting. If the client delivers a text message within this window (e.g., a buffered message sent immediately after the DataChannel opens), the system skips the standalone greeting and transitions directly to `TRIAGE`, allowing the LLM to process greeting and user intent in a single combined turn. If no message arrives within 300 ms, the autonomous greeting is generated and dispatched normally.
+- **FSM stuck-state prevention**: The `stream_complete_text` event must be emitted unconditionally at the end of every LLM response pipeline turn — whether the stream yielded text, yielded only tool-calls (no text), or raised an exception. The FSM must accept `stream_complete_text` from both `THINKING` and `TOOL_EXECUTING` states (in addition to `LLM_STREAMING`) and transition to `LISTENING`. This ensures the FSM is never permanently stuck when the LLM produces a pure function-call response with no accompanying text fragments.
 
 ### 9.2 Session Resumption (State-Aware Hydration)
 
@@ -635,6 +642,11 @@ When a new connection is established, the server must check Firestore for the us
 2. **Explicit Continuation:** If the user initiates the new session by explicitly asking to continue their last request (e.g., "Let's continue with the plumber search" or "Where were we?"), the AI uses the injected context to summarize the last known state to the user in 1-2 sentences and restores the previous request data into the active session memory. The FSM is then transitioned to the appropriate active stage (e.g., `TRIAGE` or `CONFIRMATION`) to resume the flow.
 3. **Fresh Start (Clean Break):** If the previous session ended in a terminal state (`COMPLETED`, `FINALIZE`, `PROVIDER_PITCH`, `PROVIDER_ONBOARDING`) and the user's new message introduces a *new* intent (or they simply say "Hello"), the AI ignores the previous context, leaves the FSM in the new session state, and boots into the standard `GREETING` or `TRIAGE` flow. 
 4. **Unfinished Business (Auto-Resume):** If the last session abruptly dropped mid-flow (e.g., during `TRIAGE`, `CLARIFY`, or `CONFIRMATION`), the system automatically restores the in-memory request draft and resumes the FSM at that exact stage, prompting the AI to naturally welcome the user back and acknowledge the interrupted task.
+
+### 9.3 Client-Side Connection Resilience
+
+- When the WebRTC peer connection enters a transient `Disconnected` state (e.g., a brief network hiccup), the client waits up to 5 seconds for the connection to recover before triggering a full disconnect sequence. If the connection recovers to `Connected` within this grace period, the session continues uninterrupted. If the connection transitions to `Failed` or `Closed`, the client disconnects immediately without waiting.
+- When the user sends a text-mode message, the client displays it immediately in the chat history (optimistic UI). If the server subsequently echoes back the same message text as a user message over the DataChannel, the client suppresses the duplicate and does not add it a second time. If the server sends a user message with different text, it is shown normally.
 
 ---
 

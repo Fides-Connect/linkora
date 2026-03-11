@@ -220,12 +220,14 @@ class HubSpokeSearch:
     def _build_filters_and_query(
         search_request: Dict[str, Any],
         max_inactive_days: int
-    ) -> tuple[Filter, str, str]:
+    ) -> tuple[Filter, str, str, bool]:
         """
         Build search filters and query text from search request.
-        
+
         Returns:
-            Tuple of (filter_clause, query_text, available_time)
+            Tuple of (filter_clause, query_text, available_time, availability_filter_applied).
+            availability_filter_applied is True only when a Weaviate availability_tags
+            filter was added (i.e. recognised time tokens were found in available_time).
         """
         # Build base filter: ghost filtering + provider filtering.
         # Null last_sign_in is treated as active (providers who signed in before
@@ -253,11 +255,13 @@ class HubSpokeSearch:
         # The LLM may produce a free-form string (e.g. "nächste Woche", "Monday morning"),
         # so we intersect with the known token vocabulary before filtering. This prevents
         # the raw string from never matching stored tags and silently returning zero results.
+        availability_filter_applied = False
         if available_time and available_time.lower() not in ("flexibel", "flexible", "any", "anytime", ""):
             raw_words = set(re.findall(r'[a-z]+', available_time.lower()))
             matched_tokens = sorted(raw_words & _AVAILABILITY_TOKENS)
             if matched_tokens:
                 filter_clause = filter_clause & Filter.by_property("availability_tags").contains_any(matched_tokens)
+                availability_filter_applied = True
                 logger.info("Added availability filter: %r → tokens: %s", available_time, matched_tokens)
             else:
                 logger.info("Availability filter skipped — no known tokens in %r", available_time)
@@ -288,8 +292,8 @@ class HubSpokeSearch:
         else:
             query_text = "service provider"
         
-        return filter_clause, query_text, available_time
-    
+        return filter_clause, query_text, available_time, availability_filter_applied
+
     @staticmethod
     def _process_search_results(response, limit: int) -> List[Dict[str, Any]]:
         """
@@ -378,7 +382,7 @@ class HubSpokeSearch:
                 logger.debug("[HyDE Step 0] Total competencies in Weaviate collection: %d", total or 0)
 
             # Build filters and query text
-            filter_clause, structured_query_text, available_time = HubSpokeSearch._build_filters_and_query(
+            filter_clause, structured_query_text, available_time, availability_filter_applied = HubSpokeSearch._build_filters_and_query(
                 search_request, max_inactive_days
             )
 
@@ -414,7 +418,10 @@ class HubSpokeSearch:
             )
 
             logger.info(f"Hybrid search query ({'HyDE' if hyde_text else 'structured'}): '{query_text[:120]}...'")
-            logger.info(f"Active filters: availability={available_time or 'none'}")
+            if availability_filter_applied:
+                logger.info("Availability filter applied: %r → filtering on availability_tags", available_time)
+            else:
+                logger.info("Availability filter skipped: %r — no recognised tokens or excluded phrase", available_time or "none")
 
             # Wide-net fetch: retrieve enough candidates to feed the cross-encoder
             # reranker (Stage 2).  5x limit, capped at 30.

@@ -631,7 +631,13 @@ def build_default_registry() -> AgentToolRegistry:
                     },
                     "category": {
                         "type": "string",
-                        "description": "Service category inferred from the conversation (e.g. 'IT', 'Handwerk', 'Reinigung', 'Garten').",
+                        "enum": [
+                            "pets", "housekeeping", "restaurant", "technology",
+                            "gardening", "electrical", "plumbing", "repair",
+                            "teaching", "transport", "childcare", "wellness",
+                            "events", "other",
+                        ],
+                        "description": "Service category that best matches the request.",
                     },
                     "start_date": {
                         "type": "string",
@@ -644,7 +650,7 @@ def build_default_registry() -> AgentToolRegistry:
                     "amount_value": {
                         "type": "number",
                         "minimum": 0,
-                        "description": "User's budget or price estimate for the service.",
+                        "description": "User's budget or price estimate for the service. Use 0 if unknown.",
                     },
                     "currency": {
                         "type": "string",
@@ -656,7 +662,7 @@ def build_default_registry() -> AgentToolRegistry:
                         "description": "List of specific skills or competencies required for the job.",
                     },
                 },
-                "required": ["title"],
+                "required": ["title", "category", "location"],
             },
         },
         required_capability=ToolCapability("service_requests", "write"),
@@ -830,3 +836,98 @@ def build_default_registry() -> AgentToolRegistry:
     ))
 
     return registry
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FINALIZE stage tool schemas (§6.11 — tool-driven FSM)
+# Declared for LLM use in FINALIZE only. NOT registered in the default registry.
+# Intercepted directly by ResponseOrchestrator._handle_finalize_tool().
+# ─────────────────────────────────────────────────────────────────────────────
+
+FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA: Dict[str, Any] = {
+    "name": "accept_provider",
+    "description": (
+        "Accept the currently presented provider and create the service request. "
+        "Call this when the user explicitly agrees to go with the shown provider."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "provider_id": {
+                "type": "string",
+                "description": "Firebase UID (user.user_id) of the accepted provider from the provider JSON.",
+            },
+            "title": {
+                "type": "string",
+                "description": "Short label for the job (e.g. 'Plumbing repair').",
+            },
+            "description": {
+                "type": "string",
+                "description": "Full scope summary assembled during scoping.",
+            },
+            "location": {
+                "type": "string",
+                "description": "City or address where the service is needed.",
+            },
+            "category": {
+                "type": "string",
+                "description": "Service category inferred from the conversation (e.g. 'IT', 'Handwerk', 'Reinigung').",
+            },
+            "start_date": {
+                "type": "string",
+                "description": "Desired start date in ISO 8601 YYYY-MM-DD format.",
+            },
+            "end_date": {
+                "type": "string",
+                "description": "Desired end date in ISO 8601 YYYY-MM-DD format.",
+            },
+            "amount_value": {
+                "type": "number",
+                "description": "User's budget figure if stated.",
+            },
+            "currency": {
+                "type": "string",
+                "description": "Currency code derived from location (EUR/GBP/USD).",
+            },
+            "requested_competencies": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Specific skills or competencies mentioned during scoping.",
+            },
+        },
+        "required": ["provider_id"],
+    },
+}
+
+FINALIZE_TOOL_REJECT_AND_FETCH_NEXT_SCHEMA: Dict[str, Any] = {
+    "name": "reject_and_fetch_next",
+    "description": (
+        "Reject the currently presented provider and request the next candidate from the list. "
+        "Call this when the user declines the current provider and wants to see another option."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    },
+}
+
+FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA: Dict[str, Any] = {
+    "name": "cancel_search",
+    "description": (
+        "Cancel the entire provider search and return to the start. "
+        "Call this when the user abandons the search entirely (e.g. 'Forget it', 'Never mind')."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    },
+}
+
+# Convenience list for LLM tool registration in the FINALIZE stage.
+FINALIZE_TOOL_SCHEMAS: List[Dict[str, Any]] = [
+    FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA,
+    FINALIZE_TOOL_REJECT_AND_FETCH_NEXT_SCHEMA,
+    FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA,
+]

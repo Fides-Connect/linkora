@@ -568,3 +568,249 @@ class TestSessionStarterFactory:
     def test_created_starter_has_unset_initialized_event(self):
         starter = SessionStarterFactory.create(SessionMode.TEXT, **self._common_kwargs())
         assert not starter.initialized_event.is_set()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GAP-2: Session resumption hydration
+# ══════════════════════════════════════════════════════════════════════════════
+
+from datetime import datetime, timezone, timedelta
+from ai_assistant.services.conversation_service import ConversationStage
+
+
+def _make_summary(
+    final_stage=ConversationStage.TRIAGE,
+    topic_title="Plumber needed",
+    request_summary="User wants a plumber",
+    minutes_ago=10,
+):
+    ended_at = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    return {
+        "final_stage": final_stage,
+        "topic_title": topic_title,
+        "request_summary": request_summary,
+        "ended_at": ended_at,
+    }
+
+
+def _voice_starter_with_ai_conv(summary=None):
+    """Build a VoiceSessionStarter with an ai_conversation_service mock."""
+    ai_conv = Mock()
+    ai_conv.get_recent_session_summary = AsyncMock(return_value=summary)
+
+    data_provider = Mock()
+    data_provider.get_user_by_id = AsyncMock(return_value={"name": "Max", "has_open_request": False})
+
+    conversation_service = Mock()
+    conversation_service.context = {}
+    conversation_service.generate_greeting_text = AsyncMock(return_value="Hallo!")
+    conversation_service.restore_from_summary = Mock()
+
+    orchestrator = Mock()
+    orchestrator.handle_signal_transition_async = AsyncMock()
+    orchestrator.handle_signal_transition = Mock()
+
+    llm = Mock()
+    llm.get_session_history = Mock(return_value=Mock(add_message=Mock()))
+
+    async def _tts(*a, **kw):
+        yield b"audio"
+
+    tts = Mock()
+    tts.synthesize_stream = Mock(return_value=_tts())
+
+    dc = Mock()
+    dc.send_chat = Mock()
+    output_track = Mock()
+    output_track.queue_audio = AsyncMock()
+
+    starter = VoiceSessionStarter(
+        conversation_service=conversation_service,
+        response_orchestrator=orchestrator,
+        data_provider=data_provider,
+        tts_service=tts,
+        llm_service=llm,
+        dc_bridge=dc,
+        output_track=output_track,
+        user_id="user-123",
+        connection_id="conn-1",
+        interrupt_event=asyncio.Event(),
+        on_speaking_change=Mock(),
+        ai_conversation_service=ai_conv,
+    )
+    return starter, conversation_service, ai_conv
+
+
+def _text_starter_with_ai_conv(summary=None):
+    """Build a TextSessionStarter with an ai_conversation_service mock."""
+    ai_conv = Mock()
+    ai_conv.get_recent_session_summary = AsyncMock(return_value=summary)
+
+    data_provider = Mock()
+    data_provider.get_user_by_id = AsyncMock(return_value={"name": "Anna", "has_open_request": False})
+
+    conversation_service = Mock()
+    conversation_service.context = {}
+    conversation_service.generate_greeting_text = AsyncMock(return_value="Hallo!")
+    conversation_service.restore_from_summary = Mock()
+
+    orchestrator = Mock()
+    orchestrator.handle_signal_transition = Mock()
+
+    llm = Mock()
+    llm.get_session_history = Mock(return_value=Mock(add_message=Mock()))
+
+    dc = Mock()
+    dc.send_chat = Mock()
+
+    starter = TextSessionStarter(
+        conversation_service=conversation_service,
+        response_orchestrator=orchestrator,
+        data_provider=data_provider,
+        llm_service=llm,
+        dc_bridge=dc,
+        user_id="user-456",
+        connection_id="conn-2",
+        ai_conversation_service=ai_conv,
+    )
+    return starter, conversation_service, ai_conv
+
+
+class TestVoiceSessionStarterResumption:
+    """GAP-2: session resumption hydration for VoiceSessionStarter."""
+
+    async def test_no_summary_does_not_set_resume_context(self):
+        starter, conv, _ = _voice_starter_with_ai_conv(summary=None)
+        await starter.initialize()
+        assert "session_resume_context" not in conv.context
+
+    async def test_recent_triage_session_injects_resume_context(self):
+        summary = _make_summary(final_stage=ConversationStage.TRIAGE, minutes_ago=5)
+        starter, conv, _ = _voice_starter_with_ai_conv(summary=summary)
+        await starter.initialize()
+        ctx = conv.context.get("session_resume_context", "")
+        assert "triage" in ctx.lower()
+        assert "5 minutes ago" in ctx
+
+    async def test_recent_triage_session_calls_restore_from_summary(self):
+        summary = _make_summary(final_stage=ConversationStage.TRIAGE)
+        starter, conv, _ = _voice_starter_with_ai_conv(summary=summary)
+        await starter.initialize()
+        conv.restore_from_summary.assert_called_once_with(summary)
+
+    async def test_recent_confirmation_session_calls_restore_from_summary(self):
+        summary = _make_summary(final_stage=ConversationStage.CONFIRMATION)
+        starter, conv, _ = _voice_starter_with_ai_conv(summary=summary)
+        await starter.initialize()
+        conv.restore_from_summary.assert_called_once_with(summary)
+
+    async def test_terminal_stage_injects_context_but_no_restore(self):
+        summary = _make_summary(final_stage=ConversationStage.COMPLETED)
+        starter, conv, _ = _voice_starter_with_ai_conv(summary=summary)
+        await starter.initialize()
+        assert "session_resume_context" in conv.context
+        conv.restore_from_summary.assert_not_called()
+
+    async def test_no_ai_conv_service_skips_hydration(self):
+        """When no ai_conversation_service is injected, hydration is silently skipped."""
+        data_provider = Mock()
+        data_provider.get_user_by_id = AsyncMock(return_value={"name": "Max", "has_open_request": False})
+        conv = Mock()
+        conv.context = {}
+        conv.generate_greeting_text = AsyncMock(return_value="Hi!")
+        conv.restore_from_summary = Mock()
+        orchestrator = Mock()
+        orchestrator.handle_signal_transition_async = AsyncMock()
+        orchestrator.handle_signal_transition = Mock()
+        llm = Mock()
+        llm.get_session_history = Mock(return_value=Mock(add_message=Mock()))
+
+        async def _tts(*a, **kw):
+            yield b"x"
+
+        tts = Mock()
+        tts.synthesize_stream = Mock(return_value=_tts())
+        dc = Mock()
+        dc.send_chat = Mock()
+
+        starter = VoiceSessionStarter(
+            conversation_service=conv,
+            response_orchestrator=orchestrator,
+            data_provider=data_provider,
+            tts_service=tts,
+            llm_service=llm,
+            dc_bridge=dc,
+            output_track=Mock(queue_audio=AsyncMock()),
+            user_id="u1",
+            connection_id="c1",
+            interrupt_event=asyncio.Event(),
+            on_speaking_change=Mock(),
+            # ai_conversation_service not passed
+        )
+        await starter.initialize()
+        conv.restore_from_summary.assert_not_called()
+        assert "session_resume_context" not in conv.context
+
+    async def test_summary_topic_title_included_in_context(self):
+        summary = _make_summary(
+            final_stage=ConversationStage.TRIAGE,
+            topic_title="Electrician for kitchen",
+        )
+        starter, conv, _ = _voice_starter_with_ai_conv(summary=summary)
+        await starter.initialize()
+        ctx = conv.context.get("session_resume_context", "")
+        assert "Electrician for kitchen" in ctx
+
+    async def test_ended_at_none_produces_context_without_minutes(self):
+        summary = _make_summary(final_stage=ConversationStage.TRIAGE)
+        summary["ended_at"] = None
+        starter, conv, _ = _voice_starter_with_ai_conv(summary=summary)
+        await starter.initialize()
+        ctx = conv.context.get("session_resume_context", "")
+        assert "triage" in ctx.lower()
+        assert "minutes ago" not in ctx
+
+
+class TestTextSessionStarterResumption:
+    """GAP-2: session resumption hydration for TextSessionStarter."""
+
+    async def test_no_summary_does_not_set_resume_context(self):
+        starter, conv, _ = _text_starter_with_ai_conv(summary=None)
+        await starter.initialize()
+        assert "session_resume_context" not in conv.context
+
+    async def test_recent_triage_session_injects_resume_context(self):
+        summary = _make_summary(final_stage=ConversationStage.TRIAGE, minutes_ago=15)
+        starter, conv, _ = _text_starter_with_ai_conv(summary=summary)
+        await starter.initialize()
+        ctx = conv.context.get("session_resume_context", "")
+        assert "triage" in ctx.lower()
+        assert "15 minutes ago" in ctx
+
+    async def test_mid_flow_calls_restore_from_summary(self):
+        for stage in (ConversationStage.TRIAGE, ConversationStage.CLARIFY, ConversationStage.CONFIRMATION):
+            summary = _make_summary(final_stage=stage)
+            starter, conv, _ = _text_starter_with_ai_conv(summary=summary)
+            await starter.initialize()
+            conv.restore_from_summary.assert_called_once_with(summary)
+
+    async def test_terminal_stage_no_restore(self):
+        summary = _make_summary(final_stage=ConversationStage.FINALIZE)
+        starter, conv, _ = _text_starter_with_ai_conv(summary=summary)
+        await starter.initialize()
+        conv.restore_from_summary.assert_not_called()
+        assert "session_resume_context" in conv.context
+
+    async def test_resume_context_present_before_greeting_llm_call(self):
+        """session_resume_context must be set in context before generate_greeting_text is called."""
+        captured_ctx = {}
+
+        async def _capture_greeting(**kw):
+            captured_ctx.update(conv.context)
+            return "Hello!"
+
+        summary = _make_summary(final_stage=ConversationStage.TRIAGE)
+        starter, conv, _ = _text_starter_with_ai_conv(summary=summary)
+        conv.generate_greeting_text = AsyncMock(side_effect=_capture_greeting)
+        await starter.initialize()
+        assert "session_resume_context" in captured_ctx

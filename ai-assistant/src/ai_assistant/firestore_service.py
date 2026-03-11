@@ -2044,3 +2044,27 @@ class FirestoreService:
                 "Error fetching ai_conversation %s: %s", conversation_id, exc,
             )
             return None
+
+    async def get_recent_ai_conversation(
+        self, user_id: str, within_hours: int = 24
+    ) -> Optional[Dict[str, Any]]:
+        """Return the most recent AI conversation if it ended within *within_hours* hours.
+
+        Fetches the single most recent conversation ordered by last_message_at DESC.
+        Returns None if no conversation exists, if Firestore is unavailable, or if
+        the most recent conversation's last_message_at is older than the cutoff.
+        """
+        conversations = await self.get_ai_conversations(user_id, limit=1)
+        if not conversations:
+            return None
+        recent = conversations[0]
+        last_message_at = recent.get("last_message_at")
+        if last_message_at is None:
+            return None
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=within_hours)
+        if hasattr(last_message_at, "tzinfo") and last_message_at.tzinfo is None:
+            from datetime import timezone as _tz
+            last_message_at = last_message_at.replace(tzinfo=_tz.utc)
+        if last_message_at < cutoff:
+            return None
+        return recent

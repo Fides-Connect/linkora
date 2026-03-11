@@ -62,9 +62,11 @@ class ServiceRequest {
     return ServiceRequest(
       serviceRequestId: json['service_request_id'] as String,
       title: json['title'] as String,
-      amountValue: (json['amount_value'] as num).toDouble(),
+      amountValue: (json['amount_value'] as num?)?.toDouble() ?? 0.0,
       currency: json['currency'] as String? ?? '€',
-      startDate: DateTime.parse(json['start_date'] as String),
+      startDate: json['start_date'] != null
+          ? DateTime.parse(json['start_date'] as String)
+          : DateTime.now(),
       endDate: json['end_date'] != null
           ? DateTime.parse(json['end_date'] as String)
           : null,

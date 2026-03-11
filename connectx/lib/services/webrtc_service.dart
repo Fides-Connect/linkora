@@ -62,6 +62,11 @@ class WebRTCService {
   // Voice upgrade timeout (cancelled when the remote audio track arrives)
   Timer? _voiceUpgradeTimer;
 
+  // ICE disconnection grace period (GAP-5): if ICE disconnects transiently,
+  // wait 5 s for recovery before tearing down the session.
+  Timer? _iceGracePeriodTimer;
+  static const _iceGracePeriodDuration = Duration(seconds: 5);
+
   // Configuration
   late final String _serverUrl;
   bool _isConnected = false;
@@ -193,6 +198,8 @@ class WebRTCService {
     _iceCandidatesQueue.clear();
     _voiceUpgradeTimer?.cancel();
     _voiceUpgradeTimer = null;
+    _iceGracePeriodTimer?.cancel();
+    _iceGracePeriodTimer = null;
 
     await _signaling?.sink.close();
     _signaling = null;
@@ -463,6 +470,9 @@ class WebRTCService {
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
           _isConnected = true;
           _isConnecting = false;
+          // Cancel any in-flight grace period (recovered from transient disconnect).
+          _iceGracePeriodTimer?.cancel();
+          _iceGracePeriodTimer = null;
           onConnected?.call();
           // Safety net: if data channel was already open before this callback fired
           if (_dataChannel?.state == RTCDataChannelState.RTCDataChannelOpen &&
@@ -471,10 +481,23 @@ class WebRTCService {
             onDataChannelOpen?.call();
           }
         } else if (state ==
+            RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+          // GAP-5: Transient network interruptions cause a Disconnected state
+          // before ICE can attempt a restart. Allow a 5 s grace period before
+          // tearing down the session, in case ICE recovers on its own.
+          if (_isConnected || _isConnecting) {
+            _iceGracePeriodTimer ??= Timer(_iceGracePeriodDuration, () {
+              _iceGracePeriodTimer = null;
+              debugPrint('WebRTC: ICE grace period expired — disconnecting');
+              if (_isConnected || _isConnecting) disconnect();
+            });
+          }
+        } else if (state ==
                 RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-            state ==
-                RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
             state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
+          // Hard failures and explicit close are immediate.
+          _iceGracePeriodTimer?.cancel();
+          _iceGracePeriodTimer = null;
           if (_isConnected || _isConnecting) disconnect();
         }
       };
@@ -583,11 +606,15 @@ class WebRTCService {
   /// bypassing the speech-to-text step while maintaining the conversation
   ///
   /// [text] - The text message to send
-  void sendTextMessage(String text) {
+  /// [messageId] - Optional stable ID sent with the message so the server
+  ///   echo can be deduplicated in the UI (GAP-4).
+  void sendTextMessage(String text, {String? messageId}) {
     if (_dataChannel != null &&
         _dataChannel!.state == RTCDataChannelState.RTCDataChannelOpen) {
       try {
-        final message = jsonEncode({'type': 'text-input', 'text': text});
+        final payload = <String, dynamic>{'type': 'text-input', 'text': text};
+        if (messageId != null) payload['message_id'] = messageId;
+        final message = jsonEncode(payload);
         _dataChannel!.send(RTCDataChannelMessage(message));
         debugPrint(
           'WebRTC: Sent text message (${text.length} chars) over data channel',

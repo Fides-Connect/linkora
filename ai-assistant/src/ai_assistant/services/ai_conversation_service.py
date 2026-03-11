@@ -117,17 +117,49 @@ class AIConversationService:
         """Return the service request ID linked to this conversation (in-memory cache)."""
         return self._request_id
 
-    async def close_session(self, final_stage: ConversationStage) -> None:
-        """Mark the conversation as closed with the final stage."""
+    async def close_session(self, final_stage: ConversationStage, request_summary: str = "") -> None:
+        """Mark the conversation as closed with the final stage and optional request summary."""
         if self._conversation_id is None:
             return
         if self._firestore is None:
             return
         try:
+            update: dict = {"final_stage": final_stage.value}
+            if request_summary:
+                update["request_summary"] = request_summary
             await self._firestore.update_ai_conversation(
                 self._user_id,
                 self._conversation_id,
-                {"final_stage": final_stage.value},
+                update,
             )
         except Exception as exc:
             logger.error("AIConversationService.close_session error: %s", exc, exc_info=True)
+
+    async def get_recent_session_summary(self, user_id: str) -> Optional[dict]:
+        """Return a summary dict of the most recent session if within 24 hours, else None.
+
+        Returns dict with keys: final_stage, topic_title, request_summary, ended_at.
+        Returns None when firestore_service is None or no recent session exists.
+        """
+        if self._firestore is None:
+            return None
+        try:
+            recent = await self._firestore.get_recent_ai_conversation(user_id)
+            if not recent:
+                return None
+            final_stage_str = recent.get("final_stage")
+            if not final_stage_str:
+                return None
+            try:
+                final_stage = ConversationStage(final_stage_str)
+            except ValueError:
+                return None
+            return {
+                "final_stage": final_stage,
+                "topic_title": recent.get("topic_title", ""),
+                "request_summary": recent.get("request_summary", ""),
+                "ended_at": recent.get("last_message_at"),
+            }
+        except Exception as exc:
+            logger.error("AIConversationService.get_recent_session_summary error: %s", exc, exc_info=True)
+            return None

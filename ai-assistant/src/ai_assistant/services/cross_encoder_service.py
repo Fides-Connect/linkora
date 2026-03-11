@@ -22,6 +22,7 @@ Usage pattern:
 """
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -97,13 +98,23 @@ class CrossEncoderService:
     that needs reranking — do not create multiple instances.
     """
 
-    def __init__(self, model_name: str = _DEFAULT_MODEL):
+    def __init__(self, model_name: str = _DEFAULT_MODEL, min_score: Optional[float] = None):
         # When using the default HF identifier, prefer the bundled local copy.
         self._model_name = (
             _resolve_model_name() if model_name == _DEFAULT_MODEL else model_name
         )
         self._model: Optional[Any] = None  # loaded lazily
-        logger.info("CrossEncoderService created with model '%s' (lazy load)", self._model_name)
+        if min_score is None:
+            try:
+                min_score = float(os.environ.get("CROSS_ENCODER_MIN_SCORE", "-5.0"))
+            except (ValueError, TypeError):
+                min_score = -5.0
+        self._min_score: float = min_score
+        logger.info(
+            "CrossEncoderService created with model '%s' (lazy load), min_score=%.1f",
+            self._model_name,
+            self._min_score,
+        )
 
     def _load_model(self) -> Any:
         """Load the cross-encoder model (called once on first use)."""
@@ -169,10 +180,23 @@ class CrossEncoderService:
         ]
         scored.sort(key=lambda c: c["rerank_score"], reverse=True)
 
+        # Apply minimum relevance threshold to prevent clearly irrelevant providers
+        # (e.g. a software developer returned for an electrician query) from surfacing
+        # when the candidate pool is sparse. Configurable via CROSS_ENCODER_MIN_SCORE
+        # env var (default -5.0 on the ms-marco model scale, range roughly -10 to +10).
+        above_threshold = [c for c in scored if c["rerank_score"] >= self._min_score]
+        if len(above_threshold) < len(scored):
+            logger.info(
+                "min_score=%.1f filtered out %d/%d candidates below relevance threshold",
+                self._min_score,
+                len(scored) - len(above_threshold),
+                len(scored),
+            )
+
         logger.info(
             "Reranked %d candidates → returning top %d (scores: %s)",
-            len(scored),
-            min(top_k, len(scored)),
-            [f"{c['rerank_score']:.3f}" for c in scored[:top_k]],
+            len(above_threshold),
+            min(top_k, len(above_threshold)),
+            [f"{c['rerank_score']:.3f}" for c in above_threshold[:top_k]],
         )
-        return scored[:top_k]
+        return above_threshold[:top_k]

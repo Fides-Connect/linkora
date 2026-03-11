@@ -14,7 +14,7 @@ from langchain_core.messages import AIMessage
 from .conversation_service import ConversationService, ConversationStage, is_legal_transition
 from .llm_service import LLMService, SIGNAL_TRANSITION_SCHEMA
 from .agent_runtime_fsm import AgentRuntimeFSM
-from .agent_tools import AgentToolRegistry, ToolPermissionError
+from .agent_tools import AgentToolRegistry, ToolPermissionError, FINALIZE_TOOL_SCHEMAS
 from ..prompts_templates import get_fallback_error_message
 from ..data_provider import SearchUnavailableError  # noqa: F401 (used below)
 
@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 _KNOWN_TOOL_NAMES_RE = re.compile(
     r'\b(?:signal_transition|search_providers|get_favorites|get_open_requests'
     r'|create_service_request|cancel_service_request|record_provider_interest|get_my_competencies'
-    r'|save_competence_batch|delete_competences)\s*\([^)]*\)'
+    r'|save_competence_batch|delete_competences'
+    r'|accept_provider|reject_and_fetch_next|cancel_search)\s*\([^)]*\)'
 )
 
 def _strip_tool_call_text(text: str) -> str:
@@ -157,14 +158,28 @@ class ResponseOrchestrator:
                 providers: list = self.conversation_service.context.get("providers_found", [])
             # Keep context cache in sync for follow-up stream cache-hit logic.
             self.conversation_service.context["providers_found"] = providers
+            # Reset provider cursor so the LLM always starts from the first result.
+            self.conversation_service.context["current_provider_index"] = 0
             # Update topic title as soon as we enter FINALIZE
             if self.ai_conversation_service:
                 summary = self.conversation_service.get_problem_summary()
                 await self.ai_conversation_service.set_topic_title(summary)
+            # Zero-result bypass: skip FINALIZE entirely and return to TRIAGE.
+            if len(providers) == 0:
+                logger.info("Zero providers found — bypassing FINALIZE, returning to TRIAGE.")
+                self.handle_signal_transition("triage")
+                pending.append(("signal_transition", {
+                    "stage": "triage",
+                    "zero_result_event": (
+                        "No service providers were found for this request. "
+                        "Apologise briefly and invite the user to adjust their criteria."
+                    ),
+                }))
+                return True
+            current_provider = providers[0]
             pending.append(("signal_transition", {
                 "stage": "finalize",
-                "providers": providers,
-                "provider_count": len(providers),
+                "current_provider": current_provider,
             }))
 
         elif target_stage == ConversationStage.PROVIDER_ONBOARDING:
@@ -228,34 +243,6 @@ class ResponseOrchestrator:
                         "Preserved triggering utterance '%s...' for new TRIAGE session",
                         triggering_utterance[:50],
                     )
-
-                # B12: programmatic cancel of service request when FINALIZE→TRIAGE.
-                if (
-                    previous_stage == ConversationStage.FINALIZE
-                    and self.tool_registry
-                    and self.ai_conversation_service
-                ):
-                    req_id = None
-                    try:
-                        req_id = await self.ai_conversation_service.get_request_id()
-                    except Exception:
-                        pass
-                    if req_id:
-                        try:
-                            await self.tool_registry.execute(
-                                "cancel_service_request",
-                                {"request_id": req_id},
-                                context or {},
-                            )
-                            logger.info(
-                                "Programmatically cancelled service request %s on FINALIZE→TRIAGE",
-                                req_id,
-                            )
-                        except Exception as cancel_exc:
-                            logger.warning(
-                                "Failed to cancel service request %s on FINALIZE→TRIAGE: %s",
-                                req_id, cancel_exc,
-                            )
             pending.append(("signal_transition", {"stage": "triage"}))
 
         else:
@@ -408,6 +395,20 @@ class ResponseOrchestrator:
         # storing a blank HumanMessage that would upset Gemini on the next turn.
         actual_input = follow_up_input if has_transition else " "
 
+        # In FINALIZE, restrict the LLM to only the three FINALIZE tools.
+        if follow_up_stage == ConversationStage.FINALIZE:
+            self.llm_service.register_functions(session_id, list(FINALIZE_TOOL_SCHEMAS))
+
+        # Extract zero_result_event hint from any triage payload (set by reject_and_fetch_next
+        # when the provider list is exhausted) so we can inject it into the human turn.
+        _zero_event: Optional[str] = None
+        for _pname, _ppayload in pending:
+            if isinstance(_ppayload, dict) and _ppayload.get("stage") == "triage":
+                _zero_event = _ppayload.get("zero_result_event")
+                break
+        if _zero_event:
+            actual_input = f"{actual_input} [{_zero_event}]".strip()
+
         async for chunk in self.llm_service.generate_stream(
             actual_input, follow_up_template, session_id
         ):
@@ -432,43 +433,143 @@ class ResponseOrchestrator:
                         fu_target, session_id, context, new_pending
                     )
                 else:
+                    # FINALIZE-stage tools are intercepted here.
+                    if fu_name in ("accept_provider", "reject_and_fetch_next", "cancel_search"):
+                        await self._handle_finalize_tool(
+                            fu_name, fu_args, session_id, context, new_pending
+                        )
+                    else:
                     # Guard: search_providers is redundant in FINALIZE when the
                     # auto-search already ran and returned results on stage entry.
                     # If the cached list is empty the first search may have been
                     # interrupted or used stale Weaviate data — re-fetch in that
                     # case so a repaired dataset is picked up.
-                    _cached_providers = self.conversation_service.context.get(
-                        "providers_found", []
-                    )
-                    if (
-                        fu_name == "search_providers"
-                        and self.conversation_service.get_current_stage()
-                            == ConversationStage.FINALIZE
-                        and _cached_providers
-                    ):
-                        tool_result = _cached_providers
-                        logger.info(
-                            "Intercepted search_providers in FINALIZE (follow-up) — "
-                            "returning %d cached provider(s), skipping re-fetch.",
-                            len(tool_result),
+                        _cached_providers = self.conversation_service.context.get(
+                            "providers_found", []
                         )
-                    else:
-                        tool_result = None
-                        async for tc in self.dispatch_tool(fu_name, fu_args, context or {}):
-                            tool_result = tc
-                    if tool_result is not None and not (
-                        isinstance(tool_result, dict) and tool_result.get("error")
-                    ):
-                        new_pending.append((fu_name, tool_result))
-                        if isinstance(tool_result, dict) and "signal_transition" in tool_result:
-                            await self._apply_signal_transition_with_payload(
-                                tool_result["signal_transition"], session_id, context, new_pending
+                        if (
+                            fu_name == "search_providers"
+                            and self.conversation_service.get_current_stage()
+                                == ConversationStage.FINALIZE
+                            and _cached_providers
+                        ):
+                            tool_result = _cached_providers
+                            logger.info(
+                                "Intercepted search_providers in FINALIZE (follow-up) — "
+                                "returning %d cached provider(s), skipping re-fetch.",
+                                len(tool_result),
                             )
+                        else:
+                            tool_result = None
+                            async for tc in self.dispatch_tool(fu_name, fu_args, context or {}):
+                                tool_result = tc
+                        if tool_result is not None and not (
+                            isinstance(tool_result, dict) and tool_result.get("error")
+                        ):
+                            new_pending.append((fu_name, tool_result))
+                            if isinstance(tool_result, dict) and "signal_transition" in tool_result:
+                                await self._apply_signal_transition_with_payload(
+                                    tool_result["signal_transition"], session_id, context, new_pending
+                                )
             elif isinstance(chunk, str):
                 filtered = _strip_tool_call_text(chunk)
                 if filtered.strip():
                     ai_response_parts.append(filtered)
                     yield filtered
+
+    async def _handle_finalize_tool(
+        self,
+        fn_name: str,
+        fn_args: dict,
+        session_id: str,
+        context: Optional[dict],
+        pending: list,
+    ) -> None:
+        """Dispatch FINALIZE-stage tool calls outside the tool registry.
+
+        Handles accept_provider, reject_and_fetch_next, and cancel_search by
+        executing their side effects and appending result payloads to *pending*
+        for the follow-up LLM stream to respond to.
+        """
+        providers = self.conversation_service.context.get("providers_found", [])
+
+        if fn_name == "accept_provider":
+            provider_id = fn_args.get("provider_id", "")
+            csr_args: dict = {"selected_provider_user_id": provider_id}
+            for field in (
+                "title", "description", "location", "category",
+                "start_date", "end_date", "amount_value", "currency",
+                "requested_competencies",
+            ):
+                if fn_args.get(field) is not None:
+                    csr_args[field] = fn_args[field]
+
+            result: Optional[dict] = None
+            if self.tool_registry:
+                try:
+                    result = await self.tool_registry.execute(
+                        "create_service_request", csr_args, context or {}
+                    )
+                except Exception as exc:
+                    logger.warning("accept_provider: create_service_request failed: %s", exc)
+                    result = {"error": str(exc)}
+            if result is None:
+                result = {"error": "Tool registry unavailable"}
+
+            pending.append(("accept_provider", result))
+            if not result.get("error"):
+                # Link the newly created service request to the AI conversation
+                # document (§6.4). This must happen here because create_service_request
+                # is called internally — the outer tool-dispatch block never sees it.
+                if self.ai_conversation_service and isinstance(result, dict):
+                    req_id = result.get("id") or result.get("service_request_id")
+                    if req_id:
+                        await self.ai_conversation_service.set_request_id(req_id)
+                await self._apply_signal_transition_with_payload(
+                    "completed", session_id, context, pending, user_input=""
+                )
+
+        elif fn_name == "reject_and_fetch_next":
+            idx = self.conversation_service.context.get("current_provider_index", 0) + 1
+            self.conversation_service.context["current_provider_index"] = idx
+
+            if idx < len(providers):
+                next_provider = providers[idx]
+                pending.append(("reject_and_fetch_next", {
+                    "status": "next_provider",
+                    "current_provider": next_provider,
+                }))
+            else:
+                logger.info(
+                    "Provider list exhausted at index %d — returning to TRIAGE.", idx
+                )
+                await self._apply_signal_transition_with_payload(
+                    "triage", session_id, context, pending, user_input=""
+                )
+                # Enrich the triage payload with an exhaustion hint.
+                for _, ppayload in pending:
+                    if (
+                        isinstance(ppayload, dict)
+                        and ppayload.get("stage") == "triage"
+                        and "zero_result_event" not in ppayload
+                    ):
+                        ppayload["zero_result_event"] = (
+                            "All available providers have been reviewed and none were accepted. "
+                            "Apologise briefly and invite the user to adjust their criteria."
+                        )
+                        break
+
+        elif fn_name == "cancel_search":
+            await self._apply_signal_transition_with_payload(
+                "triage", session_id, context, pending, user_input=""
+            )
+            pending.append(("cancel_search", {
+                "status": "cancelled",
+                "message": (
+                    "User cancelled the search. Acknowledge briefly "
+                    "then offer further help."
+                ),
+            }))
 
     async def generate_response_stream(
         self,
@@ -496,13 +597,20 @@ class ResponseOrchestrator:
         Delegates message persistence to ai_conversation_service when set.
         """
         try:
+            # ── Determine stage before registering tools ────────────────────────
+            current_stage = self.conversation_service.get_current_stage()
+
             # ── Register tools ─────────────────────────────────────────────────
-            tool_schemas = [SIGNAL_TRANSITION_SCHEMA]
-            if self.tool_registry:
-                tool_schemas += self.tool_registry.all_schemas()
+            # In FINALIZE, restrict the LLM to only the three FINALIZE tools so it
+            # cannot call signal_transition, create_service_request, etc.
+            if current_stage == ConversationStage.FINALIZE:
+                tool_schemas = list(FINALIZE_TOOL_SCHEMAS)
+            else:
+                tool_schemas = [SIGNAL_TRANSITION_SCHEMA]
+                if self.tool_registry:
+                    tool_schemas += self.tool_registry.all_schemas()
             self.llm_service.register_functions(session_id, tool_schemas)
 
-            current_stage = self.conversation_service.get_current_stage()
             logger.debug(
                 "Generating response for '%s...' [Stage: %s]",
                 user_input[:50], current_stage,
@@ -610,35 +718,46 @@ class ResponseOrchestrator:
                         self.runtime_fsm.transition("tool_done")
 
                     else:
+                        # FINALIZE-stage tools are intercepted here and never
+                        # dispatched through the registry.
+                        tool_result = None
+                        if fn_name in ("accept_provider", "reject_and_fetch_next", "cancel_search"):
+                            self.runtime_fsm.transition("tool_call")
+                            await self._handle_finalize_tool(
+                                fn_name, fn_args, session_id, context, pending_tool_results
+                            )
+                            self.runtime_fsm.transition("tool_done")
+
+                        else:
                         # Regular tool call
-                        self.runtime_fsm.transition("tool_call")
                         # Guard: search_providers is redundant in FINALIZE when
                         # the auto-search already ran and found results.  If the
                         # cache is empty the first search may have been interrupted
                         # or used stale Weaviate data — re-fetch so a repaired
                         # dataset is picked up on the next turn.
-                        _cached_providers = self.conversation_service.context.get(
-                            "providers_found", []
-                        )
-                        if (
-                            fn_name == "search_providers"
-                            and self.conversation_service.get_current_stage()
-                                == ConversationStage.FINALIZE
-                            and _cached_providers
-                        ):
-                            tool_result = _cached_providers
-                            logger.info(
-                                "Intercepted search_providers in FINALIZE — "
-                                "returning %d cached provider(s), skipping re-fetch.",
-                                len(tool_result),
+                            self.runtime_fsm.transition("tool_call")
+                            _cached_providers = self.conversation_service.context.get(
+                                "providers_found", []
                             )
-                        else:
-                            tool_result = None
-                            async for tool_chunk in self.dispatch_tool(
-                                fn_name, fn_args, context or {}
+                            if (
+                                fn_name == "search_providers"
+                                and self.conversation_service.get_current_stage()
+                                    == ConversationStage.FINALIZE
+                                and _cached_providers
                             ):
-                                tool_result = tool_chunk
-                        self.runtime_fsm.transition("tool_done")
+                                tool_result = _cached_providers
+                                logger.info(
+                                    "Intercepted search_providers in FINALIZE — "
+                                    "returning %d cached provider(s), skipping re-fetch.",
+                                    len(tool_result),
+                                )
+                            else:
+                                tool_result = None
+                                async for tool_chunk in self.dispatch_tool(
+                                    fn_name, fn_args, context or {}
+                                ):
+                                    tool_result = tool_chunk
+                            self.runtime_fsm.transition("tool_done")
 
                         if tool_result is not None:
                             is_error = (
@@ -750,27 +869,13 @@ class ResponseOrchestrator:
                 yield chunk
 
             # ── Safety fallback: stuck-in-FINALIZE guard ─────────────────────────
-            # If all follow-up rounds are exhausted and the stage is still FINALIZE
-            # (the LLM never called a transition), force a transition to RECOVERY so
-            # Elin can calmly acknowledge the failure and steer back to TRIAGE.
-            if self.conversation_service.get_current_stage() == ConversationStage.FINALIZE:
-                logger.warning(
-                    "Safety fallback: conversation still in FINALIZE after all follow-up "
-                    "streams — forcing transition to RECOVERY."
-                )
-                fallback_pending: list[tuple[str, object]] = []
-                await self._apply_signal_transition_with_payload(
-                    "recovery", session_id, context, fallback_pending
-                )
-                async for chunk in self._run_follow_up_stream(
-                    fallback_pending, user_input, session_id, context,
-                    ai_response_parts, []
-                ):
-                    yield chunk
+            # FINALIZE is a user-driven decision stage — the LLM awaits explicit
+            # accept/reject/cancel input.  Forcing RECOVERY here would discard the
+            # provider presentation mid-flow.  The fallback is therefore disabled:
+            # the stage will persist until the next user utterance triggers one of
+            # the three FINALIZE tools.  (§3.2)
 
             # ── Stream complete ──────────────────────────────────────────────────
-            self.runtime_fsm.transition("stream_complete_text")
-
             ai_text = "".join(ai_response_parts)
             self.conversation_service.record_ai_response(ai_text)
 
@@ -783,3 +888,9 @@ class ResponseOrchestrator:
         except Exception as exc:
             logger.error("Error in response orchestration: %s", exc, exc_info=True)
             yield get_fallback_error_message(self.conversation_service.language)
+        finally:
+            # Always reset the FSM regardless of whether the stream yielded
+            # content, returned empty, or raised an exception.  Without this,
+            # a pure tool-call stream (no text chunks) or an error path would
+            # leave the FSM stuck in THINKING or TOOL_EXECUTING forever.
+            self.runtime_fsm.transition("stream_complete_text")

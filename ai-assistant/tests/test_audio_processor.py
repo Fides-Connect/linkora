@@ -568,3 +568,78 @@ class TestVoiceFinalizeGuard:
             await never_done
         except asyncio.CancelledError:
             pass
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GAP-3: Idle timer guard — empty transcripts must not reset the idle timer
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestIdleTimerActivityGuard:
+    """
+    GAP-3 (§9): Empty or whitespace-only STT transcripts must NOT invoke
+    on_activity, so the idle timer is not incorrectly reset.
+    """
+
+    @pytest.mark.asyncio
+    async def test_empty_transcript_does_not_call_on_activity(self, audio_processor):
+        activity_calls = []
+        audio_processor.on_activity = lambda: activity_calls.append(1)
+
+        with patch.object(
+            audio_processor,
+            "_send_chat_message",
+            new=AsyncMock(),
+        ), patch.object(
+            audio_processor.ai_assistant.response_orchestrator,
+            "generate_response_stream",
+            return_value=AsyncMock().__aiter__(),
+        ):
+            await audio_processor._process_final_transcript("")
+
+        assert activity_calls == [], (
+            "on_activity must NOT be called for an empty transcript (GAP-3)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_whitespace_transcript_does_not_call_on_activity(self, audio_processor):
+        activity_calls = []
+        audio_processor.on_activity = lambda: activity_calls.append(1)
+
+        with patch.object(
+            audio_processor,
+            "_send_chat_message",
+            new=AsyncMock(),
+        ), patch.object(
+            audio_processor.ai_assistant.response_orchestrator,
+            "generate_response_stream",
+            return_value=AsyncMock().__aiter__(),
+        ):
+            await audio_processor._process_final_transcript("   ")
+
+        assert activity_calls == [], (
+            "on_activity must NOT be called for whitespace-only transcript (GAP-3)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_non_empty_transcript_calls_on_activity(self, audio_processor):
+        activity_calls = []
+        audio_processor.on_activity = lambda: activity_calls.append(1)
+
+        async def _empty_stream(*a, **kw):
+            return
+            yield  # make it an async generator
+
+        with patch.object(
+            audio_processor.ai_assistant.response_orchestrator,
+            "generate_response_stream",
+            side_effect=_empty_stream,
+        ), patch.object(
+            audio_processor,
+            "_send_chat_message",
+            new=AsyncMock(),
+        ):
+            await audio_processor._process_final_transcript("ich brauche einen Klempner")
+
+        assert activity_calls == [1], (
+            "on_activity must be called for a non-empty transcript (GAP-3)"
+        )

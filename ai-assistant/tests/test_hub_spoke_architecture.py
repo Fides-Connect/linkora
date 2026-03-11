@@ -665,7 +665,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         logger.info("=" * 80)
         
         search_request = {
-            "category": "Elektriker",
+            "category": "electrician",
             "criterions": []
         }
         
@@ -676,7 +676,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         )
         
         self.assertIsInstance(results, list, "Should return a list")
-        logger.info(f"Found {len(results)} providers for category: Elektriker")
+        logger.info(f"Found {len(results)} providers for category: Electrician")
         
         # Verify results are sorted by score
         if len(results) > 1:
@@ -728,8 +728,8 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         
         # Search with flexible availability (should not filter)
         search_request_flexible = {
-            "available_time": "flexibel",
-            "category": "Elektriker",
+            "available_time": "flexible",
+            "category": "electrician",
             "criterions": []
         }
         
@@ -740,7 +740,7 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         
         # Search without availability (should also not filter)
         search_request_no_filter = {
-            "category": "Elektriker",
+            "category": "electrician",
             "criterions": []
         }
         

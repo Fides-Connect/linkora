@@ -646,9 +646,10 @@ class AudioProcessor:
         """Process a final transcript through LLM -> TTS pipeline."""
         try:
             logger.info(f"Processing final transcript: '{transcript}'")
-            
-            # Notify the connection handler of activity (resets idle timer)
-            if self.on_activity:
+
+            # Notify the connection handler of activity (resets idle timer).
+            # Guard: empty/noise transcripts must not reset the idle timer (§9).
+            if self.on_activity and transcript.strip():
                 self.on_activity()
 
             # Open AI conversation session on the first turn (idempotent after that)

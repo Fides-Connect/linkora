@@ -127,14 +127,32 @@ class TestHandleSignalTransition:
     async def test_apply_payload_finalize_calls_search_with_session_id(
         self, orchestrator, mock_conversation_service
     ):
-        """_apply_signal_transition_with_payload triggers search and forwards session_id."""
+        """_apply_signal_transition_with_payload triggers search and forwards session_id.
+        When providers are found, the payload has stage='finalize' and current_provider."""
         mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
+        mock_conversation_service.context["providers_found"] = [{"user_id": "p1", "name": "Alice"}]
         pending: list = []
         await orchestrator._apply_signal_transition_with_payload(
             "finalize", "sess-42", None, pending
         )
         mock_conversation_service.search_providers_for_request.assert_called_once_with("sess-42")
         assert any(r.get("stage") == "finalize" for _, r in pending)
+
+    async def test_apply_payload_finalize_zero_results_bypasses_to_triage(
+        self, orchestrator, mock_conversation_service
+    ):
+        """Zero providers found: FINALIZE bypasses to TRIAGE with zero_result_event."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
+        mock_conversation_service.context["providers_found"] = []
+        pending: list = []
+        await orchestrator._apply_signal_transition_with_payload(
+            "finalize", "sess-42", None, pending
+        )
+        mock_conversation_service.search_providers_for_request.assert_called_once_with("sess-42")
+        assert any(
+            isinstance(r, dict) and r.get("stage") == "triage" and "zero_result_event" in r
+            for _, r in pending
+        ), f"Expected triage+zero_result_event in pending, got: {pending}"
 
     async def test_finalize_from_provider_onboarding_skips_provider_search(
         self, orchestrator, mock_conversation_service
@@ -244,6 +262,8 @@ class TestProviderSearchViaSignalTransition:
         self, orchestrator, mock_conversation_service, mock_llm_service
     ):
         mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
+        # Provide at least one provider so the zero-result bypass does not fire.
+        mock_conversation_service.context["providers_found"] = [{"user_id": "p1", "name": "Alice"}]
         call_count = 0
 
         async def stream_with_transition(*args, **kwargs):
@@ -276,7 +296,7 @@ class TestProviderSearchTiming:
     ):
         mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
         async for _ in orchestrator.generate_response_stream(
-            "Ich brauche einen Elektriker", "test-session"
+            "I need an electrician", "test-session"
         ):
             pass
         mock_conversation_service.search_providers_for_request.assert_not_called()
@@ -628,7 +648,7 @@ class TestAIConversationServiceIntegration:
         self, mock_llm_service, mock_conversation_service
     ):
         mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
-        mock_conversation_service.get_problem_summary = Mock(return_value="Elektriker")
+        mock_conversation_service.get_problem_summary = Mock(return_value="electrician")
 
         ai_conv = self._make_ai_conv_svc()
         call_count = 0

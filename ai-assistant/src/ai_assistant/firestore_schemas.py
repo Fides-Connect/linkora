@@ -663,6 +663,7 @@ class AIConversationSchema(BaseModel):
     user_id: str = Field(..., min_length=1)
     topic_title: str = Field(default="", max_length=300)
     request_id: Optional[str] = Field(default=None)
+    request_summary: str = Field(default="", max_length=1000)
     final_stage: Optional[str] = Field(default=None)
     first_message_at: Optional[datetime] = Field(default=None)
     last_message_at: Optional[datetime] = Field(default=None)
@@ -684,6 +685,7 @@ class AIConversationUpdateSchema(BaseModel):
 
     topic_title: Optional[str] = Field(default=None, max_length=300)
     request_id: Optional[str] = Field(default=None)
+    request_summary: Optional[str] = Field(default=None, max_length=1000)
     final_stage: Optional[str] = Field(default=None)
     first_message_at: Optional[datetime] = Field(default=None)
     last_message_at: Optional[datetime] = Field(default=None)

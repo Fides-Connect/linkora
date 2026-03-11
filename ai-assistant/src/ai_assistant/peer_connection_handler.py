@@ -446,7 +446,11 @@ class PeerConnectionHandler:
                         self.audio_processor.ai_assistant.conversation_service
                         .get_current_stage()
                     )
-                    await ai_conv.close_session(final_stage)
+                    request_summary = (
+                        self.audio_processor.ai_assistant.conversation_service
+                        .context.get("request_summary", "")
+                    )
+                    await ai_conv.close_session(final_stage, request_summary=request_summary)
                 orchestrator.runtime_fsm.transition("terminate")
             except Exception as exc:
                 logger.warning(

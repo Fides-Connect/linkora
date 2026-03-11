@@ -194,15 +194,16 @@ class SpeechService {
   /// bypassing the speech-to-text step
   ///
   /// [text] - The text message to send
+  /// [messageId] - Optional stable ID for echo deduplication (GAP-4).
   /// Returns `true` if the message was dispatched, `false` if the WebRTC service is not ready.
-  bool sendTextMessage(String text) {
+  bool sendTextMessage(String text, {String? messageId}) {
     if (_webrtcService == null) {
       debugPrint(
         'SpeechService: Cannot send text message, WebRTC service not initialized',
       );
       return false;
     }
-    _webrtcService!.sendTextMessage(text);
+    _webrtcService!.sendTextMessage(text, messageId: messageId);
     return true;
   }
 

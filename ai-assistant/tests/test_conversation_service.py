@@ -170,11 +170,11 @@ class TestProviderSearchMethod:
         self, conversation_service, mock_data_provider, mock_llm_service
     ):
         """Falls back to joined user inputs when no AI response has been recorded."""
-        conversation_service.context["user_problem"] = ["Ich brauche einen Elektriker"]
+        conversation_service.context["user_problem"] = ["I need an electrician"]
         await conversation_service.search_providers_for_request()
         # First generate call is the structured query extraction
         first_call_prompt = mock_llm_service.generate.call_args_list[0][0][0][0].content
-        assert "Elektriker" in first_call_prompt
+        assert "Electrician" in first_call_prompt
 
     async def test_providers_stored_in_context(
         self, conversation_service, mock_data_provider
@@ -292,6 +292,90 @@ class TestSearchProvidersPipelineIntegration:
         await conversation_service.search_providers_for_request()
         # mock_data_provider returns 2 providers; sliced to 1
         assert len(conversation_service.context["providers_found"]) == 1
+
+
+class TestStructuredQueryExtractionPrompt:
+    """Tests for structured query extraction — specifically the available_time field
+    and its English-only token constraint (Bug 2 fix)."""
+
+    def test_prompt_contains_english_token_instruction(self):
+        """STRUCTURED_QUERY_EXTRACTION_PROMPT must instruct the LLM to output English
+        time tokens even in non-English sessions (e.g. 'monday' not 'Montag')."""
+        from ai_assistant.prompts_templates import STRUCTURED_QUERY_EXTRACTION_PROMPT
+        prompt_lower = STRUCTURED_QUERY_EXTRACTION_PROMPT.lower()
+        assert "monday" in prompt_lower, (
+            "Prompt must list 'monday' as an example to ensure English tokens are used"
+        )
+        # The prompt uses 'Montag' as a negative example ("use 'monday' not 'Montag'"),
+        # which is correct — it teaches the LLM what NOT to do.
+        assert "never output translated day names" in prompt_lower, (
+            "Prompt must explicitly forbid translated day names"
+        )
+        assert "english time tokens" in prompt_lower, (
+            "Prompt must explicitly require English time tokens"
+        )
+
+    async def test_german_day_name_in_available_time_skips_filter(self):
+        """If the LLM ignores the prompt instruction and returns a German day name,
+        the availability filter must still be skipped gracefully (no crash, no bogus filter).
+
+        This is a safety regression test: before Bug-2 fix, German sessions would silently
+        produce no availability filter (correct outcome, wrong reason). After the fix the
+        prompt guidance steers the LLM to produce 'monday' instead. But even if it
+        doesn't, the token-intersection guard in _build_filters_and_query must protect us.
+        """
+        from unittest.mock import patch, MagicMock
+        from ai_assistant.hub_spoke_search import HubSpokeSearch
+
+        german_day_names = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+        for german in german_day_names:
+            with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+                mock_fi = MagicMock()
+                mock_fi.__and__ = MagicMock(return_value=mock_fi)
+                mock_fi.__or__ = MagicMock(return_value=mock_fi)
+                mock_fi.by_property.return_value = mock_fi
+                mock_fi.greater_or_equal.return_value = mock_fi
+                mock_fi.is_none.return_value = mock_fi
+                mock_fi.equal.return_value = mock_fi
+                mock_fi.contains_any.return_value = mock_fi
+                MockFilter.by_property.return_value = mock_fi
+                MockFilter.by_ref.return_value = mock_fi
+
+                _, _, _, flag = HubSpokeSearch._build_filters_and_query(
+                    {"available_time": german, "category": "Electrician", "criterions": []},
+                    max_inactive_days=180,
+                )
+
+                property_names_used = [c.args[0] for c in MockFilter.by_property.call_args_list]
+                assert "availability_tags" not in property_names_used, (
+                    f"German day name {german!r} must not add an availability_tags filter "
+                    f"(it is not in _AVAILABILITY_TOKENS)"
+                )
+                assert flag is False, f"availability_filter_applied must be False for German day {german!r}"
+
+    async def test_english_day_name_in_available_time_applies_filter(self):
+        """When the LLM correctly outputs an English day name, the filter MUST fire."""
+        from unittest.mock import patch, MagicMock
+        from ai_assistant.hub_spoke_search import HubSpokeSearch
+
+        for english in ["monday", "tuesday", "saturday", "morning", "evening"]:
+            with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+                mock_fi = MagicMock()
+                mock_fi.__and__ = MagicMock(return_value=mock_fi)
+                mock_fi.__or__ = MagicMock(return_value=mock_fi)
+                mock_fi.by_property.return_value = mock_fi
+                mock_fi.greater_or_equal.return_value = mock_fi
+                mock_fi.is_none.return_value = mock_fi
+                mock_fi.equal.return_value = mock_fi
+                mock_fi.contains_any.return_value = mock_fi
+                MockFilter.by_property.return_value = mock_fi
+                MockFilter.by_ref.return_value = mock_fi
+
+                _, _, _, flag = HubSpokeSearch._build_filters_and_query(
+                    {"available_time": english, "category": "Electrician", "criterions": []},
+                    max_inactive_days=180,
+                )
+                assert flag is True, f"availability_filter_applied must be True for {english!r}"
 
 
 class TestAccumulateProblemDescription:

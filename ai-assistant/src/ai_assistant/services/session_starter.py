@@ -22,10 +22,13 @@ at call sites.
 import asyncio
 import logging
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
+from ai_assistant.services.ai_conversation_service import AIConversationService
 from langchain_core.messages import AIMessage
 
+from .conversation_service import ConversationStage
 from .data_channel_bridge import DataChannelBridge
 from .session_mode import SessionMode
 
@@ -117,6 +120,7 @@ class VoiceSessionStarter(SessionStarter):
         interrupt_event: asyncio.Event,
         on_speaking_change: Callable[[bool], None],
         firestore_service=None,
+        ai_conversation_service=None,
     ) -> None:
         super().__init__()
         self._conv = conversation_service
@@ -131,6 +135,7 @@ class VoiceSessionStarter(SessionStarter):
         self._interrupt_event = interrupt_event
         self._on_speaking_change = on_speaking_change
         self._firestore_service = firestore_service
+        self._ai_conv_service = ai_conversation_service
 
     async def initialize(self) -> None:
         self._on_speaking_change(True)
@@ -143,6 +148,35 @@ class VoiceSessionStarter(SessionStarter):
             # Seed context so TRIAGE prompt can reference the user's name.
             self._conv.context["user_name"] = user_name
             self._conv.context["has_open_request"] = has_open_request
+
+            # GAP-2: Session resumption hydration (§9.2)
+            if self._ai_conv_service is not None and self._user_id:
+                _summary = await self._ai_conv_service.get_recent_session_summary(self._user_id)
+                if _summary:
+                    _ended = _summary.get("ended_at")
+                    _now = datetime.now(timezone.utc)
+                    if _ended:
+                        if _ended.tzinfo is None:
+                            _ended = _ended.replace(tzinfo=timezone.utc)
+                        _mins = int((_now - _ended).total_seconds() / 60)
+                        _ctx = (
+                            f"[System Context: The user's previous session ended {_mins} minutes ago "
+                            f"in stage {_summary['final_stage'].value}. "
+                            f"Last discussed request: \"{_summary.get('topic_title', '')}\".]"
+                        )
+                    else:
+                        _ctx = (
+                            f"[System Context: Previous session in stage {_summary['final_stage'].value}. "
+                            f"Last discussed request: \"{_summary.get('topic_title', '')}\".]"
+                        )
+                    self._conv.context["session_resume_context"] = _ctx
+                    _MID_FLOW = {ConversationStage.TRIAGE, ConversationStage.CLARIFY, ConversationStage.CONFIRMATION}
+                    if _summary["final_stage"] in _MID_FLOW:
+                        self._conv.restore_from_summary(_summary)
+                        logger.info(
+                            "Voice session resumed to %s for user %s",
+                            _summary["final_stage"].value, self._user_id,
+                        )
 
             greeting_text = await self._conv.generate_greeting_text(
                 user_name=user_name,
@@ -204,11 +238,12 @@ class TextSessionStarter(SessionStarter):
         data_provider,
         llm_service,
         dc_bridge: DataChannelBridge,
-        user_id: Optional[str],
+        user_id: str | None,
         connection_id: str,
         firestore_service=None,
-        buffered_message: Optional[str] = None,
-        first_message_event: Optional[asyncio.Event] = None,
+        ai_conversation_service: AIConversationService | None=None,
+        buffered_message: str | None = None,
+        first_message_event: asyncio.Event | None = None,
     ) -> None:
         super().__init__()
         self._conv = conversation_service
@@ -219,6 +254,7 @@ class TextSessionStarter(SessionStarter):
         self._user_id = user_id
         self._connection_id = connection_id
         self._firestore_service = firestore_service
+        self._ai_conv_service = ai_conversation_service
         self._buffered_message = buffered_message
         self._first_message_event = first_message_event
 
@@ -231,6 +267,35 @@ class TextSessionStarter(SessionStarter):
             )
             self._conv.context["user_name"] = user_name
             self._conv.context["has_open_request"] = has_open_request
+
+            # GAP-2: Session resumption hydration (§9.2)
+            if self._ai_conv_service is not None and self._user_id is not None:
+                _summary = await self._ai_conv_service.get_recent_session_summary(self._user_id)
+                if _summary:
+                    _ended = _summary.get("ended_at")
+                    _now = datetime.now(timezone.utc)
+                    if _ended:
+                        if _ended.tzinfo is None:
+                            _ended = _ended.replace(tzinfo=timezone.utc)
+                        _mins = int((_now - _ended).total_seconds() / 60)
+                        _ctx = (
+                            f"[System Context: The user's previous session ended {_mins} minutes ago "
+                            f"in stage {_summary['final_stage'].value}. "
+                            f"Last discussed request: \"{_summary.get('topic_title', '')}\".]"
+                        )
+                    else:
+                        _ctx = (
+                            f"[System Context: Previous session in stage {_summary['final_stage'].value}. "
+                            f"Last discussed request: \"{_summary.get('topic_title', '')}\".]"
+                        )
+                    self._conv.context["session_resume_context"] = _ctx
+                    _MID_FLOW = {ConversationStage.TRIAGE, ConversationStage.CLARIFY, ConversationStage.CONFIRMATION}
+                    if _summary["final_stage"] in _MID_FLOW:
+                        self._conv.restore_from_summary(_summary)
+                        logger.info(
+                            "Text session resumed to %s for user %s",
+                            _summary["final_stage"].value, self._user_id,
+                        )
 
             if self._buffered_message:
                 # A first user message arrived before the session was ready.
@@ -316,6 +381,7 @@ class SessionStarterFactory:
         interrupt_event: Optional[asyncio.Event] = None,
         on_speaking_change: Optional[Callable[[bool], None]] = None,
         firestore_service=None,
+        ai_conversation_service=None,
         buffered_message: Optional[str] = None,
         first_message_event: Optional[asyncio.Event] = None,
     ) -> SessionStarter:
@@ -333,6 +399,7 @@ class SessionStarterFactory:
                 interrupt_event=interrupt_event or asyncio.Event(),
                 on_speaking_change=on_speaking_change or (lambda _: None),
                 firestore_service=firestore_service,
+                ai_conversation_service=ai_conversation_service,
             )
         return TextSessionStarter(
             conversation_service=conversation_service,
@@ -343,6 +410,7 @@ class SessionStarterFactory:
             user_id=user_id,
             connection_id=connection_id,
             firestore_service=firestore_service,
+            ai_conversation_service=ai_conversation_service,
             buffered_message=buffered_message,
             first_message_event=first_message_event,
         )
