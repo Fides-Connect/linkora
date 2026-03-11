@@ -24,13 +24,10 @@ class SentenceChunk:
 
 class SentenceParser:
     """Parses and manages sentence boundaries."""
-    
+
     # Sentence-ending punctuation pattern
     SENTENCE_END_PATTERN = re.compile(r'([.!?]+(?:\s+|$))')
-    
-    # Short sentence threshold
-    MIN_SENTENCE_LENGTH = 5
-    
+
     @classmethod
     def split_into_sentences(cls, text: str) -> list[str]:
         """
@@ -64,45 +61,6 @@ class SentenceParser:
                 sentences.append(last_part)
         
         return sentences
-    
-    @classmethod
-    def merge_short_sentences(cls, sentences: list[str]) -> list[str]:
-        """
-        Merge sentences that are too short.
-        
-        Args:
-            sentences: List of sentences
-            
-        Returns:
-            List of merged sentences
-        """
-        if not sentences:
-            return []
-        
-        merged = []
-        current = ""
-        
-        for sentence in sentences:
-            if current:
-                combined = f"{current} {sentence}"
-            else:
-                combined = sentence
-            
-            # If combined is long enough or this is the last sentence, add it
-            if len(combined) >= cls.MIN_SENTENCE_LENGTH or sentence == sentences[-1]:
-                merged.append(combined)
-                current = ""
-            else:
-                current = combined
-        
-        # Add any remaining text
-        if current:
-            if merged:
-                merged[-1] += f" {current}"
-            else:
-                merged.append(current)
-        
-        return merged
 
 
 class TTSPlaybackManager:
@@ -190,14 +148,8 @@ class TTSPlaybackManager:
                 sentences = sentence_parser.split_into_sentences(accumulated_text)
 
                 if len(sentences) > 1:
-                    # Process all complete sentences (all but the last one)
-                    complete_sentences = sentences[:-1]
-
-                    # Merge short sentences
-                    merged = sentence_parser.merge_short_sentences(complete_sentences)
-
-                    # Create TTS tasks for complete sentences
-                    for sentence in merged:
+                    # Create TTS tasks for all complete sentences (all but the last)
+                    for sentence in sentences[:-1]:
                         await self._synthesize_and_queue(sentence, sentence_order)
                         sentence_order += 1
 
