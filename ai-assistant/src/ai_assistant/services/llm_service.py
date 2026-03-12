@@ -50,7 +50,7 @@ class LLMService:
     """Service for language model interactions using LangChain and Gemini."""
     
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash",
-                 temperature: float = 0.2, max_output_tokens: int = 2048,
+                 temperature: float = 0.2, max_output_tokens: int = 8192,
                  language: str = "de"):
         """
         Initialize LLM service.
@@ -70,6 +70,11 @@ class LLMService:
             top_k=8,
             top_p=0.9,
             max_output_tokens=max_output_tokens,
+            # Disable thinking: real-time voice assistant needs low latency;
+            # extended reasoning tokens also consume from max_output_tokens,
+            # which can silently exhaust the budget before any response is
+            # generated (observed with gemini-2.5-flash + thinking_budget=default).
+            thinking_budget=0,
             streaming=True,
         )
         

@@ -187,6 +187,11 @@ For ambiguity resolution, the AI may enter CLARIFY to ask one targeted question 
 - **Pre-Commit Summary Consolidation**: During the `CONFIRMATION` stage, if the stage was reached via a fast-path transition from `TRIAGE`, the AI must combine any acknowledgement and the confirmation summary into a single cohesive statement. It must not open with a fresh greeting-like preamble before the summary.
 - **Silent Fast-Path Transitions**: When `TRIAGE` determines that the user's request is already complete and transitions immediately to `CONFIRMATION`, the `TRIAGE` LLM call must emit the `signal_transition` signal only and produce no natural-language output. The `CONFIRMATION` stage owns all user-visible text for that turn.
 
+### 3.10 Empty LLM Response Recovery
+
+- If the LLM orchestration pipeline produces no visible text across the primary stream and all follow-up streams (e.g., because the model exhausted its output-token budget on internal reasoning without generating a final answer), the system must yield a generic fallback error message to the user. Silent pipeline completion with no user-facing output is not permitted.
+- The AI service must disable extended model thinking (thinking_budget=0) for all real-time conversation turns. Extended thinking adds latency and consumes from the output token budget, which can silently exhaust the limit before any response is generated.
+
 ### 3.9 Provider Onboarding Competency Injection
 
 - At the start of every `PROVIDER_ONBOARDING` turn, the system pre-fetches the user's current competency list from the authoritative data store and injects it into the LLM prompt context. The LLM must never call a competency-fetch tool explicitly during onboarding turns; the data is always pre-loaded.

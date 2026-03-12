@@ -926,6 +926,22 @@ class ResponseOrchestrator:
 
             # ── Stream complete ──────────────────────────────────────────────────
             ai_text = "".join(ai_response_parts)
+
+            # Safety net: if the entire orchestration produced no visible text
+            # (e.g. the LLM exhausted its token budget on thinking tokens and
+            # emitted nothing, or a transient Gemini API empty-stream), yield a
+            # generic fallback so the user is not left in complete silence.
+            if not ai_text.strip():
+                logger.warning(
+                    "generate_response_stream: empty response after all streams "
+                    "(stage=%s, user_input=%r). Yielding fallback.",
+                    self.conversation_service.get_current_stage(),
+                    user_input[:80],
+                )
+                fallback = get_fallback_error_message(self.conversation_service.language)
+                yield fallback
+                ai_text = fallback
+
             self.conversation_service.record_ai_response(ai_text)
 
             if self.ai_conversation_service and ai_text.strip():
