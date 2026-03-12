@@ -722,6 +722,7 @@ class ResponseOrchestrator:
             first_chunk = True
             ai_response_parts: list[str] = []
             pending_tool_results: list[tuple[str, object]] = []
+            tool_calls_seen = False  # True when ≥1 tool/signal was dispatched
 
             async for chunk in self.llm_service.generate_stream(
                 user_input, prompt_template, session_id
@@ -736,6 +737,7 @@ class ResponseOrchestrator:
 
                     if fn_name == "signal_transition":
                         self.runtime_fsm.transition("tool_call")
+                        tool_calls_seen = True
                         target = fn_args.get("target_stage", "")
 
                         _write_tools = ("save_competence_batch", "delete_competences")
@@ -761,6 +763,7 @@ class ResponseOrchestrator:
                         tool_result = None
                         if fn_name in ("accept_provider", "reject_and_fetch_next", "cancel_search"):
                             self.runtime_fsm.transition("tool_call")
+                            tool_calls_seen = True
                             await self._handle_finalize_tool(
                                 fn_name, fn_args, session_id, context, pending_tool_results
                             )
@@ -774,6 +777,7 @@ class ResponseOrchestrator:
                         # or used stale Weaviate data — re-fetch so a repaired
                         # dataset is picked up on the next turn.
                             self.runtime_fsm.transition("tool_call")
+                            tool_calls_seen = True
                             _cached_providers = self.conversation_service.context.get(
                                 "providers_found", []
                             )
@@ -885,6 +889,11 @@ class ResponseOrchestrator:
                     if filtered.strip() if isinstance(filtered, str) else filtered:
                         ai_response_parts.append(filtered)
                         yield filtered
+                    elif isinstance(chunk, str) and chunk.strip() and not (filtered.strip() if isinstance(filtered, str) else filtered):
+                        # The chunk had content but was entirely stripped (leaked
+                        # tool-call text).  Count it as intentional signal so the
+                        # empty-response fallback is not triggered.
+                        tool_calls_seen = True
 
             # ── Follow-up streams (bounded loop) ───────────────────────────────
             # Each iteration handles one batch of pending tool/transition results.
@@ -931,7 +940,9 @@ class ResponseOrchestrator:
             # (e.g. the LLM exhausted its token budget on thinking tokens and
             # emitted nothing, or a transient Gemini API empty-stream), yield a
             # generic fallback so the user is not left in complete silence.
-            if not ai_text.strip():
+            # Exception: pure tool-call streams (signal_transition, registry
+            # tools) legitimately produce no text — do NOT fall back in that case.
+            if not ai_text.strip() and not tool_calls_seen:
                 logger.warning(
                     "generate_response_stream: empty response after all streams "
                     "(stage=%s, user_input=%r). Yielding fallback.",
