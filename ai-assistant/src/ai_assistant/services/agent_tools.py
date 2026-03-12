@@ -203,7 +203,24 @@ async def _create_service_request(params: dict, context: dict) -> Any:
                 data[date_field] = datetime.fromisoformat(raw)
             except (ValueError, TypeError):
                 pass  # skip malformed date; Firestore field remains unset
-    return await fs.create_service_request(data)
+    result = await fs.create_service_request(data)
+
+    # Append the selected provider as the initial pending candidate
+    selected_provider_user_id = params.get("selected_provider_user_id")
+    service_request_id = result.get("service_request_id") if isinstance(result, dict) else None
+    if selected_provider_user_id and service_request_id:
+        await fs.create_provider_candidate(
+            service_request_id=service_request_id,
+            candidate_data={
+                "provider_candidate_user_id": selected_provider_user_id,
+                "status": "pending",
+                "matching_score": params.get("_candidate_matching_score", 0.0),
+                "matching_score_reasons": params.get("_candidate_matching_score_reasons", []),
+                "introduction": "",
+            },
+        )
+
+    return result
 
 
 async def _cancel_service_request(params: dict, context: dict) -> Any:
@@ -871,7 +888,13 @@ FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA: Dict[str, Any] = {
             },
             "category": {
                 "type": "string",
-                "description": "Service category inferred from the conversation (e.g. 'IT', 'Handwerk', 'Reinigung').",
+                "description": "Service category inferred from the conversation. Must be one of the canonical values.",
+                "enum": [
+                    "pets", "housekeeping", "restaurant", "technology",
+                    "gardening", "electrical", "plumbing", "repair",
+                    "teaching", "transport", "childcare", "wellness",
+                    "events", "other",
+                ],
             },
             "start_date": {
                 "type": "string",
@@ -895,7 +918,7 @@ FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA: Dict[str, Any] = {
                 "description": "Specific skills or competencies mentioned during scoping.",
             },
         },
-        "required": ["provider_id"],
+        "required": ["provider_id", "location", "category"],
     },
 }
 

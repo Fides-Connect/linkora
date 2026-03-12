@@ -510,7 +510,9 @@ The user says yes or expresses clear acceptance ("Yes", "Let's go with them", "T
    - `provider_id` = the `user_id` field from the provider JSON.
    - `title` = concise job label derived from the conversation (e.g. "Plumbing repair").
    - `description` = full scope summary from the conversation.
-   - Include `location`, `category`, `start_date`, `end_date`, `amount_value`, `currency`, `requested_competencies` when available from the conversation.
+   - `location` is MANDATORY. Use the city or address established in the conversation. If no location has been stated yet, ask the user for it before calling `accept_provider`.
+   - `category` is MANDATORY. Must be one of: `pets`, `housekeeping`, `restaurant`, `technology`, `gardening`, `electrical`, `plumbing`, `repair`, `teaching`, `transport`, `childcare`, `wellness`, `events`, `other`. Use `other` if no specific category fits.
+   - Include `start_date`, `end_date`, `amount_value`, `currency`, `requested_competencies` when available from the conversation.
 2. After the tool result is received, confirm warmly: "The request has been sent to [name]. You will be notified via the app when they respond."
 
 **Response C — User declines, wants another provider:**

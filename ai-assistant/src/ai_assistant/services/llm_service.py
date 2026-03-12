@@ -230,6 +230,7 @@ class LLMService:
 
             # Buffer for assembling multi-chunk tool calls (keyed by index)
             tcc_buffer: Dict[int, Dict[str, str]] = {}
+            full_text_buffer: list[str] = []
 
             async for chunk in chain_with_history.astream(
                 {"input": prompt},
@@ -272,8 +273,8 @@ class LLMService:
                     # Yield text content
                     if chunk.content:
                         text = self._content_to_text(chunk.content)
-                        logger.debug(f"LLM stream chunk: '{text}'")
                         if text:
+                            full_text_buffer.append(text)
                             yield text
 
             # Flush any remaining buffered tool calls
@@ -288,7 +289,10 @@ class LLMService:
                         "name": item["name"],
                         "args": fn_args,
                     }
-            
+
+            if full_text_buffer:
+                logger.info(f"LLM complete message: '{''.join(full_text_buffer)}'")
+
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)
             yield get_fallback_error_message(self.language)

@@ -5,6 +5,7 @@ signal_transition dispatch, tool dispatch, and FSM ownership.
 """
 import re
 import json
+import math
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import AsyncIterator, Optional, Union
@@ -393,7 +394,15 @@ class ResponseOrchestrator:
         follow_up_template = self.conversation_service.create_prompt_for_stage(follow_up_stage)
         # Use the real user input when a stage transition is present to avoid
         # storing a blank HumanMessage that would upset Gemini on the next turn.
-        actual_input = follow_up_input if has_transition else " "
+        # Exception: when accept_provider triggered the transition internally (the user's
+        # last utterance was a location/date answer, not a new service intent), feeding it
+        # to LOOP_BACK_PROMPT causes the LLM to misread it as a new topic, call
+        # signal_transition("triage"), and generate a duplicate confirmation message.
+        _is_automated_provider_acceptance = any(n == "accept_provider" for n, _ in pending)
+        if _is_automated_provider_acceptance:
+            actual_input = " "
+        else:
+            actual_input = follow_up_input if has_transition else " "
 
         # In FINALIZE, restrict the LLM to only the three FINALIZE tools.
         if follow_up_stage == ConversationStage.FINALIZE:
@@ -495,6 +504,15 @@ class ResponseOrchestrator:
 
         if fn_name == "accept_provider":
             provider_id = fn_args.get("provider_id", "")
+            if not provider_id:
+                logger.warning("accept_provider called with no provider_id — aborting service request creation.")
+                pending.append(("accept_provider", {"error": "No provider selected"}))
+                return
+            location = fn_args.get("location", "")
+            if not location:
+                logger.warning("accept_provider called with no location — asking user before creating request.")
+                pending.append(("accept_provider", {"error": "location_required", "message": "Please provide the city or address where the service is needed."}))
+                return
             csr_args: dict = {"selected_provider_user_id": provider_id}
             for field in (
                 "title", "description", "location", "category",
@@ -503,6 +521,26 @@ class ResponseOrchestrator:
             ):
                 if fn_args.get(field) is not None:
                     csr_args[field] = fn_args[field]
+
+            # Enrich the provider candidate record with the actual match score
+            # and reasons derived from the search/rerank results stored in context.
+            accepted_provider = next(
+                (p for p in providers if p.get("user", {}).get("user_id") == provider_id),
+                None,
+            )
+            if accepted_provider is not None:
+                if "rerank_score" in accepted_provider:
+                    raw = float(accepted_provider["rerank_score"])
+                    csr_args["_candidate_matching_score"] = round(
+                        1.0 / (1.0 + math.exp(-raw)) * 100, 1
+                    )
+                elif "score" in accepted_provider:
+                    csr_args["_candidate_matching_score"] = round(
+                        float(accepted_provider["score"]) * 100, 1
+                    )
+                reasons = [t for t in [accepted_provider.get("title")] if t]
+                if reasons:
+                    csr_args["_candidate_matching_score_reasons"] = reasons
 
             result: Optional[dict] = None
             if self.tool_registry:
@@ -848,25 +886,36 @@ class ResponseOrchestrator:
                         ai_response_parts.append(filtered)
                         yield filtered
 
-            # ── First follow-up stream ───────────────────────────────────────────
-            # Handles the auto-response for finalize presentation, provider
-            # onboarding opener, completed loop-back/pitch, etc.
-            second_pending: list[tuple[str, object]] = []
-            async for chunk in self._run_follow_up_stream(
-                pending_tool_results, user_input, session_id, context,
-                ai_response_parts, second_pending
-            ):
-                yield chunk
+            # ── Follow-up streams (bounded loop) ───────────────────────────────
+            # Each iteration handles one batch of pending tool/transition results.
+            # Iteration 0 carries the real user_input so the first follow-up LLM
+            # call can use it when constructing the human turn.  Deeper iterations
+            # use a neutral prompt instead: re-feeding user_input at depth ≥ 1
+            # caused cascading misinterpretation (e.g. CONFIRMATION reading "try
+            # again" as a refusal and oscillating back to TRIAGE, whose accumulated
+            # problem context immediately bounced back to CONFIRMATION — dropping
+            # all pending results from the third hop on the floor).
+            MAX_FOLLOW_UP_DEPTH = 4
+            current_pending = pending_tool_results
+            for follow_up_iter in range(MAX_FOLLOW_UP_DEPTH):
+                if not current_pending:
+                    break
+                next_pending: list[tuple[str, object]] = []
+                # Only the first follow-up stream sees the real user utterance.
+                follow_up_user_input = user_input if follow_up_iter == 0 else " "
+                async for chunk in self._run_follow_up_stream(
+                    current_pending, follow_up_user_input, session_id, context,
+                    ai_response_parts, next_pending
+                ):
+                    yield chunk
+                current_pending = next_pending
 
-            # ── Second follow-up stream ──────────────────────────────────────────
-            # Runs when the first follow-up itself triggered new signal_transitions
-            # or tool calls (e.g. COMPLETED loop-back immediately calling triage).
-            third_pending: list[tuple[str, object]] = []
-            async for chunk in self._run_follow_up_stream(
-                second_pending, user_input, session_id, context,
-                ai_response_parts, third_pending
-            ):
-                yield chunk
+            if current_pending:
+                logger.warning(
+                    "Follow-up chain still had %d pending item(s) after %d iterations — "
+                    "discarding to prevent unbounded recursion.",
+                    len(current_pending), MAX_FOLLOW_UP_DEPTH,
+                )
 
             # ── Safety fallback: stuck-in-FINALIZE guard ─────────────────────────
             # FINALIZE is a user-driven decision stage — the LLM awaits explicit

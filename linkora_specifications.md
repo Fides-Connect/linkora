@@ -112,7 +112,7 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - **Atomic Stage Output**: When the system autonomously fast-paths through a stage — most commonly `TRIAGE → CONFIRMATION` because the user's initial request was already complete — the originating stage (`TRIAGE`) must emit only the `signal_transition` call and must not produce any natural-language response text. All user-facing communication is the sole responsibility of the destination stage (`CONFIRMATION`). This prevents stacking of redundant acknowledgements across consecutive stage outputs.
 - **Strict Confirmation Gate**: The system must strictly enforce that `FINALIZE` can only be entered from `CONFIRMATION` or `TOOL_EXECUTION`. The AI is mathematically forbidden from transitioning directly from `TRIAGE` to `FINALIZE` without user approval.
 - `CONFIRMATION → FINALIZE`: the system automatically performs a provider search. The routing is handled by the backend orchestrator based on the search results (see §6.11).
-- `FINALIZE → COMPLETED`: The LLM inside `FINALIZE` **does not use the `signal_transition` tool.** This transition is automatically forced by the backend orchestrator when the LLM successfully executes the `accept_provider` tool.
+- `FINALIZE → COMPLETED`: The LLM inside `FINALIZE` **does not use the `signal_transition` tool.** This transition is automatically forced by the backend orchestrator when the LLM successfully executes the `accept_provider` tool. The `COMPLETED` follow-up response generated after this automated transition must be triggered without replaying the user's prior utterance (e.g. a location or date answer) — the orchestrator must inject a neutral input for the `COMPLETED` stage prompt so that the LLM does not misinterpret the prior answer as a new service request and generate a duplicate confirmation message.
 - `FINALIZE → TRIAGE`: Triggered automatically by the backend orchestrator when the LLM executes the `cancel_search` tool, or if the user exhausts the cached provider list. It is also triggered pre-emptively by the orchestrator (bypassing the FINALIZE LLM) if the initial search returns exactly 0 results.
 - **FINALIZE Safety Fallback Limitation**: Because `FINALIZE` relies on the user to make a choice (and intentionally omits a generic state transition signal), the standard orchestrator safety fallback (forcing `RECOVERY` when a stage does not emit a transition) **must be disabled for the `FINALIZE` stage.** The stage naturally waits for user input.
 - `COMPLETED → PROVIDER_PITCH`: fires automatically (without an explicit LLM call) when the user is pitch-eligible (see §4). The LLM never needs to call this transition itself.
@@ -131,6 +131,7 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - When the `FINALIZE` provider-search is actively running, any new user input (voice or text) must be rejected. The system sends a bilingual acknowledgement (German and English) informing the user that the search is still in progress, and does not interrupt the search.
 - If the user disconnects or the session is intentionally terminated while a `FINALIZE` search is actively running, the background search tasks must be aborted to free system resources.
 - **Silent Tool Execution**: The LLM must never narrate or announce internal state transitions, database searches, or tool executions in natural language (e.g., 'Let me search the database'). If a transition or search is required, the LLM must emit the transition signal silently. Status updates regarding searches are handled exclusively by the client UI interpreting the `runtime-state`.
+- **Cascading Transitions Within a Single Turn**: When a stage transition triggers an autonomous follow-up LLM call that itself emits another transition (e.g., `TRIAGE → CONFIRMATION → TRIAGE → CONFIRMATION`), the system must continue processing each subsequent stage until no pending transitions remain or a safety depth limit is reached. No pending stage transition result shall be silently discarded mid-turn. The user must always receive a natural-language response from the final resolved stage, never silence.
 
 ### 3.4 Clarification & Minimum Required Information (MRI)
 
@@ -446,13 +447,15 @@ Step 4 of the provider search pipeline re-scores the wide-net candidates using a
   - `title`: a concise label for the job (e.g. "Mobile App Development").
   - `description`: the full scope summary assembled during scoping.
   - `selected_provider_user_id`: the Firebase UID (`user.user_id`) of the accepted provider as returned by the provider search results.
-  - `location`: the city or address provided by the user, if any.
+  - `location`: always required — use the city or address provided by the user. If the user provided no location, ask for it before calling `accept_provider`.
   - `category`: the service category as inferred by the AI from the conversation. Must be one of the canonical values (`pets`, `housekeeping`, `restaurant`, `technology`, `gardening`, `electrical`, `plumbing`, `repair`, `teaching`, `transport`, `childcare`, `wellness`, `events`, `other`). Always required — use `other` if no specific category can be determined.
-  - `location`: always required — use the city or address provided by the user. If the user provided no location, ask for it before creating the request.
   - `start_date` / `end_date`: concrete calendar dates if the user stated a timeframe; omitted otherwise. The client must display a safe fallback when `start_date` is absent.
   - `amount_value`: the user's stated budget figure, if provided. The client must display a safe fallback (e.g. 0) when absent.
   - `currency`: derived from the service `location` (Germany, Austria, Switzerland → `EUR`; UK → `GBP`; US → `USD`). Omitted if location is unknown or ambiguous. Never asked from the user.
   - `requested_competencies`: list of specific skills or competencies mentioned during scoping.
+- Simultaneously with the service request creation, the backend records the accepted provider as a **provider candidate** entry linked to that service request. The candidate entry carries the provider's ranking score (normalised to a 0–100 range) and the matched competency label as scoring reasons. Only the accepted provider is stored this way — providers shown but not selected during the `FINALIZE` loop are not persisted as candidates.
+- If the user refuses every presented provider — either by exhausting the candidate list via `reject_and_fetch_next` or by explicitly cancelling via `cancel_search` — the system returns to `TRIAGE` and **no service request is created**.
+- If the provider search returns zero results, the `FINALIZE` stage is bypassed entirely and **no service request is created**.
 - Because the service request is only created on acceptance, a `FINALIZE → TRIAGE` back-transition (zero results or user cancellation) requires no cancellation step — no document exists at that point.
 - The `CONFIRMATION` stage summary must include location, timeframe, and budget **only when the user provided them**; it must not invent or approximate values that were not stated.
 
@@ -484,7 +487,7 @@ The `FINALIZE` LLM is equipped with exactly three functional tools: `accept_prov
 - **User Response C: Accept current result**:
   - The user explicitly accepts the current provider ("Yes, let's go with him").
   - The LLM evaluates the intent and calls `accept_provider(provider_id)`.
-  - *Orchestrator Action*: The backend executes the tool, calls `create_service_request` in the database, and **automatically forces the state transition** to `COMPLETED`.
+  - *Orchestrator Action*: The backend executes the tool, creates the service request document (see §6.10), records the accepted provider as a `provider_candidate` sub-document with their normalised ranking score, and **automatically forces the state transition** to `COMPLETED`. No service request or candidate document is written for any provider the user did not accept.
 
 - **User Response D: Cancel the request**:
   - The user aborts the flow entirely ("Nevermind", "Cancel the search").

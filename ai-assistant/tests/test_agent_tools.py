@@ -311,6 +311,82 @@ class TestToolExecuteContracts:
         call_data = mock_firestore.create_service_request.call_args[0][0]
         assert "start_date" not in call_data
 
+    async def test_create_service_request_creates_pending_candidate_for_selected_provider(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        mock_firestore.create_service_request = AsyncMock(
+            return_value={"service_request_id": "sr-abc123"}
+        )
+        mock_firestore.create_provider_candidate = AsyncMock(return_value={"candidate_id": "pc-1"})
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {
+                "title": "Network Setup",
+                "location": "Berlin",
+                "category": "technology",
+                "selected_provider_user_id": "provider-uid-999",
+            },
+            ctx,
+        )
+        mock_firestore.create_provider_candidate.assert_called_once_with(
+            service_request_id="sr-abc123",
+            candidate_data={
+                "provider_candidate_user_id": "provider-uid-999",
+                "status": "pending",
+                "matching_score": 0.0,
+                "matching_score_reasons": [],
+                "introduction": "",
+            },
+        )
+
+    async def test_create_service_request_passes_enriched_candidate_score(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        """Internal _candidate_* fields from accept_provider enrichment are forwarded to the candidate."""
+        mock_firestore.create_service_request = AsyncMock(
+            return_value={"service_request_id": "sr-score-test"}
+        )
+        mock_firestore.create_provider_candidate = AsyncMock(return_value={"candidate_id": "pc-2"})
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {
+                "title": "Plumbing repair",
+                "location": "Hamburg",
+                "category": "plumbing",
+                "selected_provider_user_id": "provider-uid-42",
+                "_candidate_matching_score": 73.5,
+                "_candidate_matching_score_reasons": ["Expert plumber", "High rating"],
+            },
+            ctx,
+        )
+        mock_firestore.create_provider_candidate.assert_called_once_with(
+            service_request_id="sr-score-test",
+            candidate_data={
+                "provider_candidate_user_id": "provider-uid-42",
+                "status": "pending",
+                "matching_score": 73.5,
+                "matching_score_reasons": ["Expert plumber", "High rating"],
+                "introduction": "",
+            },
+        )
+
+    async def test_create_service_request_skips_candidate_when_no_selected_provider(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        mock_firestore.create_service_request = AsyncMock(
+            return_value={"service_request_id": "sr-xyz"}
+        )
+        mock_firestore.create_provider_candidate = AsyncMock()
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {"title": "Help needed", "location": "Munich", "category": "other"},
+            ctx,
+        )
+        mock_firestore.create_provider_candidate.assert_not_called()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Provider onboarding tools
 # ─────────────────────────────────────────────────────────────────────────────
