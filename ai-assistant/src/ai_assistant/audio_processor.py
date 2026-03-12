@@ -217,6 +217,7 @@ class AudioProcessor:
             firestore_service=self.ai_assistant.firestore_service,
             buffered_message=self._buffered_message,
             first_message_event=self._first_message_received,
+            monitor_playback_fn=self._monitor_playback_completion,
         )
 
     # ── DataChannel send helpers (thin wrappers over DataChannelBridge) ───────
@@ -470,6 +471,12 @@ class AudioProcessor:
             if transcript and self.is_ai_speaking and len(transcript.strip()) > 0:
                 logger.info("Interrupt detected: '%s'", transcript)
                 await self._trigger_interrupt()
+                if is_final:
+                    # The triggering transcript was the AI's own TTS echo —
+                    # do NOT route it to the LLM as user input.  Reset the
+                    # queue sentinel and restart the STT session cleanly.
+                    await self.audio_queue.put(None)
+                    break
                 await asyncio.sleep(0.05)
                 # Reset utterance timer after interrupt so the next speech
                 # segment is tracked independently.

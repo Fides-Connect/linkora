@@ -686,6 +686,50 @@ class TestContinuousSttTaskScheduling:
 
         assert interrupted, "_trigger_interrupt must be called before new response"
 
+    async def test_final_echo_not_routed_to_llm_when_ai_speaking(
+        self, voice_proc
+    ):
+        """Echo guard: when AI is speaking and a FINAL transcript arrives,
+        _process_final_transcript must NOT be called for that echo transcript.
+
+        Without this guard the triggering transcript (AI's own TTS audio picked
+        up by the microphone) would be routed to the LLM as if the user spoke.
+        """
+        pft_called = False
+
+        async def spy_pft(transcript):
+            nonlocal pft_called
+            pft_called = True
+
+        async def fake_process_audio_stream(_):
+            yield "ai tts echo", True  # final=True while AI is still speaking
+
+        voice_proc.is_ai_speaking = True
+        voice_proc.transcript_processor.process_audio_stream = Mock(
+            return_value=fake_process_audio_stream(None)
+        )
+
+        with (
+            patch.object(voice_proc, "_trigger_interrupt", new=AsyncMock()),
+            patch.object(
+                voice_proc, "_process_final_transcript", side_effect=spy_pft
+            ),
+        ):
+            voice_proc.running = True
+            stt_task = asyncio.create_task(voice_proc._continuous_stt())
+            await asyncio.sleep(0.05)
+            voice_proc.running = False
+            stt_task.cancel()
+            try:
+                await stt_task
+            except asyncio.CancelledError:
+                pass
+
+        assert not pft_called, (
+            "_process_final_transcript must NOT be called for a FINAL echo "
+            "transcript when is_ai_speaking=True"
+        )
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FINALIZE-stage busy guard

@@ -814,3 +814,81 @@ class TestTextSessionStarterResumption:
         conv.generate_greeting_text = AsyncMock(side_effect=_capture_greeting)
         await starter.initialize()
         assert "session_resume_context" in captured_ctx
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Tests: VoiceSessionStarter — is_ai_speaking deferred until playback drains
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestVoiceStarterSpeakingFlagTiming:
+    """is_ai_speaking must stay True until monitor_playback_fn completes.
+
+    Clearing the speaking flag immediately after TTS streaming finishes (but
+    before buffered audio has played) lets _stt_session misclassify the
+    still-playing greeting audio as user speech.  The monitor_playback_fn
+    defers the flag-clear until the output-track queue is empty.
+    """
+
+    async def test_speaking_false_deferred_while_monitor_blocks(self):
+        """With a blocking monitor_playback_fn, on_speaking_change(False) must
+        NOT fire when initialized_event is set — only after the monitor yields."""
+        monitor_finished = asyncio.Event()
+
+        async def slow_monitor():
+            await monitor_finished.wait()
+
+        starter, deps = _voice_starter()
+        starter._monitor_playback_fn = slow_monitor
+        calls: list = []
+        deps["on_speaking_change"].side_effect = lambda v: calls.append(v)
+
+        task = asyncio.create_task(starter.initialize())
+        await asyncio.wait_for(starter.initialized_event.wait(), timeout=2.0)
+
+        # Yield control so the monitor task can be scheduled (but it will block)
+        await asyncio.sleep(0)
+
+        assert False not in calls, (
+            f"on_speaking_change(False) fired before monitor completed; calls={calls}"
+        )
+
+        # Unblock monitor so the task and test both complete cleanly
+        monitor_finished.set()
+        await asyncio.sleep(0)
+        await task
+
+    async def test_speaking_false_immediate_when_interrupted(self):
+        """When interrupt_event is set, on_speaking_change(False) fires in the
+        finally block rather than being delegated to the monitor."""
+        interrupt_event = asyncio.Event()
+        interrupt_event.set()  # simulate an interrupt before TTS finishes
+
+        async def dummy_monitor():
+            pass
+
+        starter, deps = _voice_starter(interrupt_event=interrupt_event)
+        starter._monitor_playback_fn = dummy_monitor
+        calls: list = []
+        deps["on_speaking_change"].side_effect = lambda v: calls.append(v)
+
+        await starter.initialize()
+
+        assert True in calls, "on_speaking_change(True) must have been called first"
+        assert calls[-1] is False, (
+            "on_speaking_change(False) must fire immediately when interrupted"
+        )
+
+    async def test_speaking_false_immediate_when_no_monitor(self):
+        """Without a monitor_playback_fn (backward-compatible path) the finally
+        block clears the flag immediately, as before the deferred-clear feature."""
+        starter, deps = _voice_starter()
+        # _monitor_playback_fn defaults to None — no change needed
+        calls: list = []
+        deps["on_speaking_change"].side_effect = lambda v: calls.append(v)
+
+        await starter.initialize()
+
+        assert True in calls, "on_speaking_change(True) must have been called first"
+        assert calls[-1] is False, (
+            "on_speaking_change(False) must fire immediately when no monitor provided"
+        )

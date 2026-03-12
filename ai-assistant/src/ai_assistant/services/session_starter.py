@@ -23,7 +23,7 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Callable, Optional
+from typing import Callable, Coroutine, Optional
 
 from ai_assistant.services.ai_conversation_service import AIConversationService
 from langchain_core.messages import AIMessage
@@ -121,6 +121,7 @@ class VoiceSessionStarter(SessionStarter):
         on_speaking_change: Callable[[bool], None],
         firestore_service=None,
         ai_conversation_service=None,
+        monitor_playback_fn: Optional[Callable[[], Coroutine]] = None,
     ) -> None:
         super().__init__()
         self._conv = conversation_service
@@ -136,6 +137,7 @@ class VoiceSessionStarter(SessionStarter):
         self._on_speaking_change = on_speaking_change
         self._firestore_service = firestore_service
         self._ai_conv_service = ai_conversation_service
+        self._monitor_playback_fn = monitor_playback_fn
 
     async def initialize(self) -> None:
         self._on_speaking_change(True)
@@ -216,7 +218,17 @@ class VoiceSessionStarter(SessionStarter):
             # Ensure stage reaches TRIAGE even on error.
             self._orchestrator.handle_signal_transition("triage")
         finally:
-            self._on_speaking_change(False)
+            # Keep is_ai_speaking=True until the audio queue actually drains.
+            # Clearing it here while audio is still buffered in the output
+            # track would let _stt_session treat the still-playing greeting as
+            # user speech and route it to the LLM.
+            if self._interrupt_event.is_set() or self._monitor_playback_fn is None:
+                # Interrupted or no monitor available — clear immediately.
+                self._on_speaking_change(False)
+            else:
+                # Delegate flag-clearing to the playback monitor so it fires
+                # only after the output track's audio queue is empty.
+                asyncio.create_task(self._monitor_playback_fn())
             self.initialized_event.set()
 
 
@@ -384,6 +396,7 @@ class SessionStarterFactory:
         ai_conversation_service=None,
         buffered_message: Optional[str] = None,
         first_message_event: Optional[asyncio.Event] = None,
+        monitor_playback_fn: Optional[Callable[[], Coroutine]] = None,
     ) -> SessionStarter:
         if mode == SessionMode.VOICE:
             return VoiceSessionStarter(
@@ -400,6 +413,7 @@ class SessionStarterFactory:
                 on_speaking_change=on_speaking_change or (lambda _: None),
                 firestore_service=firestore_service,
                 ai_conversation_service=ai_conversation_service,
+                monitor_playback_fn=monitor_playback_fn,
             )
         return TextSessionStarter(
             conversation_service=conversation_service,
