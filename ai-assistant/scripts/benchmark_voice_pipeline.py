@@ -80,8 +80,8 @@ for _lib in ("google", "langchain", "langchain_core", "langchain_community",
 
 # ── constants ────────────────────────────────────────────────────────────────
 DEFAULT_WAV = ROOT / "tests/data/ai_assistant_test_input.wav"
-STT_SAMPLE_RATE = 48_000   # what SpeechToTextService expects
-CHUNK_BYTES     = 1_920    # 10 ms of 16-bit mono @ 48 kHz (480 samples × 2)
+STT_SAMPLE_RATE = 8_000   # what SpeechToTextService expects
+CHUNK_BYTES     = 160      # 10 ms of 16-bit mono @ 8 kHz (80 samples × 2 bytes = 160)
 
 LANGUAGE_CONFIG = {
     "de": {
@@ -200,9 +200,7 @@ async def run_once(
     # same SentenceParser used by TTSPlaybackManager, synthesize all sentences
     # concurrently, and report the first-chunk latency of the first sentence
     # (= perceived start-of-speech latency).
-    sentences = SentenceParser.merge_short_sentences(
-        SentenceParser.split_into_sentences(llm_full)
-    )
+    sentences = SentenceParser.split_into_sentences(llm_full)
     if not sentences:
         sentences = [llm_full]
 
