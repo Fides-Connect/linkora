@@ -317,8 +317,8 @@ class ConversationService:
         (TRIAGE, CLARIFY, CONFIRMATION).  Terminal stages are ignored — the
         session boots fresh from GREETING/TRIAGE instead.
 
-        Uses direct _current_stage assignment (bypasses legal-transition FSM)
-        since this is a restore, not a runtime transition.
+        Assigns to ``self.current_stage`` directly (bypasses legal-transition
+        FSM) since this is a restore, not a runtime transition.
         """
         _MID_FLOW_STAGES = {
             ConversationStage.TRIAGE,
@@ -335,7 +335,7 @@ class ConversationService:
             self.context["user_problem"] = [topic_title]
 
         if final_stage in _MID_FLOW_STAGES:
-            self._current_stage = final_stage
+            self.current_stage = final_stage
             logger.info("Session restored to stage %s from previous session summary", final_stage)
         else:
             logger.info(
@@ -490,13 +490,13 @@ class ConversationService:
 
         self.context["request_summary"] = query_text
 
-        # Stage 3: wide-net retrieval (fetch_limit is computed inside
-        # HubSpokeSearch as min(limit * 5, 30)).
-        fetch_limit = min(self.max_providers * 5, 30)
+        # Stage 3: wide-net retrieval. Pass max_providers directly;
+        # HubSpokeSearch.hybrid_search_providers applies its own min(limit * 5, 30)
+        # expansion internally, so pre-multiplying here causes double expansion.
         try:
             providers = await self.data_provider.search_providers(
                 query_text=query_text,
-                limit=fetch_limit,
+                limit=self.max_providers,
                 hyde_text=hyde_text,
             )
         except SearchUnavailableError as exc:

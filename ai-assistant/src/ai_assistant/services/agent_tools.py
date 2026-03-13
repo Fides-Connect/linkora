@@ -162,9 +162,19 @@ async def _search_providers(params: dict, context: dict) -> Any:
     dp = context["data_provider"]
     cross_encoder = context.get("cross_encoder_service")
     # For explicit mid-conversation tool calls, apply reranking when available.
-    raw = await dp.search_providers(query_text=query, limit=min(limit * 5, 30))
+    # Avoid double wide-net expansion: HubSpokeSearch.hybrid_search_providers
+    # already applies min(limit * 5, 30) internally for structured (JSON dict)
+    # queries. For plain text queries the expansion is needed here since
+    # search_competencies has no internal expansion.
+    import json as _json
+    try:
+        _parsed = _json.loads(query) if query.strip().startswith("{") else None
+        _is_structured = isinstance(_parsed, dict)
+    except Exception:
+        _is_structured = False
+    fetch_limit = limit if _is_structured else min(limit * 5, 30)
+    raw = await dp.search_providers(query_text=query, limit=fetch_limit)
     if cross_encoder and raw:
-        from .cross_encoder_service import CrossEncoderService
         raw = await cross_encoder.rerank(query=query, candidates=raw, top_k=limit)
     else:
         raw = raw[:limit]

@@ -296,7 +296,7 @@ class LLMService:
                     }
 
             if full_text_buffer:
-                logger.info(f"LLM complete message: '{''.join(full_text_buffer)}'")
+                logger.debug("LLM complete message (%d chars)", len("".join(full_text_buffer)))
 
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)

@@ -197,13 +197,14 @@ class TestProviderSearchMethod:
     async def test_respects_max_providers_limit(
         self, conversation_service, mock_data_provider
     ):
-        """The wide-net fetch limit is min(max_providers * 5, 30)."""
+        """max_providers is passed directly; HubSpokeSearch does its own wide-net expansion."""
         conversation_service.max_providers = 5
         conversation_service.context["user_problem"] = ["need electrician"]
         await conversation_service.search_providers_for_request()
         call_kwargs = mock_data_provider.search_providers.call_args[1]
-        # fetch_limit = min(5 * 5, 30) = 25
-        assert call_kwargs["limit"] == 25
+        # max_providers passed directly — no pre-multiplication here;
+        # HubSpokeSearch.hybrid_search_providers handles min(limit * 5, 30) internally.
+        assert call_kwargs["limit"] == 5
 
     async def test_history_excerpt_included_when_session_id_provided(
         self, conversation_service, mock_data_provider, mock_llm_service
