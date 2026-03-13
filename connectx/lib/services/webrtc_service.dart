@@ -489,7 +489,13 @@ class WebRTCService {
             _iceGracePeriodTimer ??= Timer(_iceGracePeriodDuration, () {
               _iceGracePeriodTimer = null;
               debugPrint('WebRTC: ICE grace period expired — disconnecting');
-              if (_isConnected || _isConnecting) disconnect();
+              if (_isConnected || _isConnecting) {
+                unawaited(
+                  disconnect().catchError(
+                    (e) => debugPrint('WebRTC: ICE disconnect error: $e'),
+                  ),
+                );
+              }
             });
           }
         } else if (state ==

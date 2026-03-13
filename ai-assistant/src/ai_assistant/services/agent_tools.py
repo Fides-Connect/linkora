@@ -459,6 +459,9 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
                 logger.error(
                     "Failed to write availability_time for competence %s: %s", saved_id, avail_exc
                 )
+                raise RuntimeError(
+                    f"Failed to write availability_time for competence {saved_id}"
+                ) from avail_exc
 
         # ── LLM enrichment ───────────────────────────────────────────────────
         if enricher is not None:

@@ -20,7 +20,7 @@ class ServiceRequest {
   final String title;
   final double amountValue;
   final String currency;
-  final DateTime startDate;
+  final DateTime? startDate;
   final DateTime? endDate;
   final String seekerUserId;
   final String seekerUserName;
@@ -41,7 +41,7 @@ class ServiceRequest {
     required this.title,
     required this.amountValue,
     this.currency = '€',
-    required this.startDate,
+    this.startDate,
     this.endDate,
     required this.seekerUserId,
     required this.seekerUserName,
@@ -66,7 +66,7 @@ class ServiceRequest {
       currency: json['currency'] as String? ?? '€',
       startDate: json['start_date'] != null
           ? DateTime.parse(json['start_date'] as String)
-          : DateTime.now(),
+          : null,
       endDate: json['end_date'] != null
           ? DateTime.parse(json['end_date'] as String)
           : null,
@@ -99,7 +99,7 @@ class ServiceRequest {
       'title': title,
       'amount_value': amountValue,
       'currency': currency,
-      'start_date': startDate.toIso8601String(),
+      'start_date': startDate?.toIso8601String(),
       'end_date': endDate?.toIso8601String(),
       'seeker_user_id': seekerUserId,
       'seeker_user_name': seekerUserName,

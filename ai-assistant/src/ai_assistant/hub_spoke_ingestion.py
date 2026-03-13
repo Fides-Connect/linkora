@@ -289,10 +289,13 @@ class HubSpokeIngestion:
                     "skills_list": competence_data.get("skills_list", []),
                     "price_per_hour": competence_data.get("price_per_hour"),
                     "year_of_experience": competence_data.get("year_of_experience", 0),
-                    # Derive availability tags from the structured availability_time dict.
-                    # Falls back to an empty list if no availability_time is present.
-                    "availability_tags": derive_availability_tags(
-                        competence_data.get("availability_time") or {}
+                    # Use pre-computed availability_tags from enricher when present;
+                    # derive from availability_time as a fallback.
+                    "availability_tags": (
+                        competence_data.get("availability_tags")
+                        or derive_availability_tags(
+                            competence_data.get("availability_time") or {}
+                        )
                     ),
                     "availability_text": competence_data.get("availability_text", ""),
                 },

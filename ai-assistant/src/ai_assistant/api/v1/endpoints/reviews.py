@@ -88,14 +88,21 @@ async def create_review(request: web.Request) -> web.Response:
                 "error": "Service request not found"
             }, status=404)
 
-        seeker_id = service_request.get("user_id") or service_request.get("seeker_id")
-        provider_id = service_request.get("provider_id")
+        seeker_id = service_request.get("seeker_user_id")
+        provider_id = service_request.get("selected_provider_user_id")
         reviewable_statuses = {"serviceProvided", "completed"}
         sr_status = service_request.get("status", "")
 
         if reviewer_user_id not in (seeker_id, provider_id):
             return web.json_response({
                 "error": "You are not authorised to review this service request"
+            }, status=403)
+
+        # Reviewer must review the opposing party, not themselves.
+        expected_reviewee = provider_id if reviewer_user_id == seeker_id else seeker_id
+        if body.get("user_id") != expected_reviewee:
+            return web.json_response({
+                "error": "Reviewer must review the opposing party of the service request"
             }, status=403)
 
         if sr_status not in reviewable_statuses:
