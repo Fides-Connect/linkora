@@ -12,14 +12,14 @@ You know every expert agent on the team, their exact domains, and the critical i
 
 ## Living Requirements
 
-`linkora_usecases.md` at the repo root is the authoritative record of all platform behaviors, use cases, edge cases, and invariants.
+`linkora_specifications.md` at the repo root is the authoritative record of all platform behaviors, use cases, edge cases, and invariants.
 
 ### Mandatory first step — read before acting
-Before investigating or planning, read the section(s) of `linkora_usecases.md` relevant to the task domain using a file-read tool. For cross-domain tasks, load the full file. For scoped tasks, load only the matching top-level section(s). **Do not skip this step.**
+Before investigating or planning, read the section(s) of `linkora_specifications.md` relevant to the task domain using a file-read tool. For cross-domain tasks, load the full file. For scoped tasks, load only the matching top-level section(s). **Do not skip this step.**
 
 ### Mandatory last step — update after every task
 Before ending the session, ask: *"Did this task surface any new behavior, edge case, invariant, or change to existing behavior?"* If yes:
-- Append a concise bullet to the appropriate section in `linkora_usecases.md`.
+- Append a concise bullet to the appropriate section in `linkora_specifications.md`.
 - If an existing entry is now incorrect or incomplete, update it.
 - Format: what triggers it → expected behavior → which file/layer owns it.
 - Do not create new top-level sections without user confirmation.

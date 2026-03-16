@@ -49,6 +49,7 @@ _BUNDLED_MODEL_DIR = (
 )
 
 _DEFAULT_MODEL = _HF_MODEL_ID  # kept for backward compat / tests that pass a custom name
+CROSS_ENCODER_MIN_SCORE = float(os.environ.get("CROSS_ENCODER_MIN_SCORE", "-8.0"))
 
 
 def _resolve_model_name() -> str:
@@ -106,9 +107,9 @@ class CrossEncoderService:
         self._model: Optional[Any] = None  # loaded lazily
         if min_score is None:
             try:
-                min_score = float(os.environ.get("CROSS_ENCODER_MIN_SCORE", "-5.0"))
+                min_score = CROSS_ENCODER_MIN_SCORE
             except (ValueError, TypeError):
-                min_score = -5.0
+                min_score = CROSS_ENCODER_MIN_SCORE
         self._min_score: float = min_score
         logger.info(
             "CrossEncoderService created with model '%s' (lazy load), min_score=%.1f",

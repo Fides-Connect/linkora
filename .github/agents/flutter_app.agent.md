@@ -11,14 +11,14 @@ You are the **Flutter App Engineer** for Fides. You built the ConnectX app insid
 
 ## Living Requirements
 
-`linkora_usecases.md` at the repo root is the authoritative record of all platform behaviors, use cases, edge cases, and invariants.
+`linkora_specifications.md` at the repo root is the authoritative record of all platform behaviors, use cases, edge cases, and invariants.
 
 ### Mandatory first step — read before acting
-Before writing any code or making any change, read the section(s) of `linkora_usecases.md` relevant to the current task using a file-read tool. For Flutter tasks, load at minimum `## Flutter App` and `## Use Cases`. Load additional sections only when the task touches them. **Do not skip this step.**
+Before writing any code or making any change, read the section(s) of `linkora_specifications.md` relevant to the current task using a file-read tool. For Flutter tasks, load at minimum `## Flutter App` and `## Use Cases`. Load additional sections only when the task touches them. **Do not skip this step.**
 
 ### Mandatory last step — update after every task
 Before ending the session, ask: *"Did this task surface any new behavior, edge case, invariant, or change to existing behavior?"* If yes:
-- Append a concise bullet to the appropriate section in `linkora_usecases.md`.
+- Append a concise bullet to the appropriate section in `linkora_specifications.md`.
 - If an existing entry is now incorrect or incomplete, update it.
 - Format: what triggers it → expected behavior → which file/layer owns it.
 - Do not create new top-level sections without user confirmation.
