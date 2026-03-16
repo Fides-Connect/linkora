@@ -248,6 +248,144 @@ class TestToolExecuteContracts:
             ctx,
         )
         mock_firestore.create_service_request.assert_called_once()
+        call_data = mock_firestore.create_service_request.call_args[0][0]
+        assert call_data["title"] == "Fix leaking tap"
+        assert call_data["description"] == "Bathroom tap drips"
+        assert call_data["seeker_user_id"] == "user-abc"
+
+    async def test_create_service_request_forwards_all_optional_fields(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {
+                "title": "Mobile App Development",
+                "description": "iOS and Android SaaS app",
+                "selected_provider_user_id": "provider-uid-456",
+                "location": "Munich",
+                "category": "IT",
+                "start_date": "2026-04-01",
+                "end_date": "2026-06-30",
+                "amount_value": 5000.0,
+                "currency": "EUR",
+                "requested_competencies": ["Flutter", "Firebase"],
+            },
+            ctx,
+        )
+        call_data = mock_firestore.create_service_request.call_args[0][0]
+        assert call_data["selected_provider_user_id"] == "provider-uid-456"
+        assert call_data["location"] == "Munich"
+        assert call_data["category"] == "IT"
+        assert call_data["amount_value"] == 5000.0
+        assert call_data["currency"] == "EUR"
+        assert call_data["requested_competencies"] == ["Flutter", "Firebase"]
+
+    async def test_create_service_request_converts_iso_dates(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        from datetime import datetime
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {"title": "Garden work", "start_date": "2026-05-10", "end_date": "2026-05-11"},
+            ctx,
+        )
+        call_data = mock_firestore.create_service_request.call_args[0][0]
+        assert isinstance(call_data["start_date"], datetime)
+        assert call_data["start_date"].year == 2026
+        assert call_data["start_date"].month == 5
+        assert call_data["start_date"].day == 10
+        assert isinstance(call_data["end_date"], datetime)
+        assert call_data["end_date"].day == 11
+
+    async def test_create_service_request_ignores_malformed_dates(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {"title": "Garden work", "start_date": "not-a-date"},
+            ctx,
+        )
+        call_data = mock_firestore.create_service_request.call_args[0][0]
+        assert "start_date" not in call_data
+
+    async def test_create_service_request_creates_pending_candidate_for_selected_provider(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        mock_firestore.create_service_request = AsyncMock(
+            return_value={"service_request_id": "sr-abc123"}
+        )
+        mock_firestore.create_provider_candidate = AsyncMock(return_value={"candidate_id": "pc-1"})
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {
+                "title": "Network Setup",
+                "location": "Berlin",
+                "category": "technology",
+                "selected_provider_user_id": "provider-uid-999",
+            },
+            ctx,
+        )
+        mock_firestore.create_provider_candidate.assert_called_once_with(
+            service_request_id="sr-abc123",
+            candidate_data={
+                "provider_candidate_user_id": "provider-uid-999",
+                "status": "pending",
+                "matching_score": 0.0,
+                "matching_score_reasons": [],
+                "introduction": "",
+            },
+        )
+
+    async def test_create_service_request_passes_enriched_candidate_score(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        """Internal _candidate_* fields from accept_provider enrichment are forwarded to the candidate."""
+        mock_firestore.create_service_request = AsyncMock(
+            return_value={"service_request_id": "sr-score-test"}
+        )
+        mock_firestore.create_provider_candidate = AsyncMock(return_value={"candidate_id": "pc-2"})
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {
+                "title": "Plumbing repair",
+                "location": "Hamburg",
+                "category": "plumbing",
+                "selected_provider_user_id": "provider-uid-42",
+                "_candidate_matching_score": 73.5,
+                "_candidate_matching_score_reasons": ["Expert plumber", "High rating"],
+            },
+            ctx,
+        )
+        mock_firestore.create_provider_candidate.assert_called_once_with(
+            service_request_id="sr-score-test",
+            candidate_data={
+                "provider_candidate_user_id": "provider-uid-42",
+                "status": "pending",
+                "matching_score": 73.5,
+                "matching_score_reasons": ["Expert plumber", "High rating"],
+                "introduction": "",
+            },
+        )
+
+    async def test_create_service_request_skips_candidate_when_no_selected_provider(
+        self, registry, mock_data_provider, mock_firestore
+    ):
+        mock_firestore.create_service_request = AsyncMock(
+            return_value={"service_request_id": "sr-xyz"}
+        )
+        mock_firestore.create_provider_candidate = AsyncMock()
+        ctx = self._ctx(mock_data_provider, mock_firestore)
+        await registry.execute(
+            "create_service_request",
+            {"title": "Help needed", "location": "Munich", "category": "other"},
+            ctx,
+        )
+        mock_firestore.create_provider_candidate.assert_not_called()
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Provider onboarding tools
@@ -262,6 +400,9 @@ class TestProviderOnboardingTools:
     def mock_firestore(self):
         fs = Mock()
         fs.update_user = AsyncMock(return_value={"user_id": "user-x"})
+        # Default: existing provider — prevents was_provider=False from triggering
+        # an unexpected extra update_user call in tests that don't care about it.
+        fs.get_user = AsyncMock(return_value={"is_service_provider": True})
         fs.get_competencies = AsyncMock(return_value=[
             {"competence_id": "c1", "title": "Plumbing"},
             {"competence_id": "c2", "title": "Electrical"},
@@ -322,16 +463,20 @@ class TestProviderOnboardingTools:
 
     # ── record_provider_interest ─────────────────────────────────────────────
 
-    async def test_record_interest_accepted_sets_is_service_provider(
+    async def test_record_interest_accepted_defers_firestore_write(
         self, registry, mock_firestore
     ):
+        """Accepting the provider pitch must NOT write to Firestore.
+
+        Both is_service_provider and last_time_asked_being_provider are deferred
+        until save_competence_batch so that users who abandon onboarding mid-way
+        remain pitch-eligible for a future re-pitch (spec §4.3).
+        """
         ctx = self._ctx(mock_firestore)
-        result = await registry.execute(
+        await registry.execute(
             "record_provider_interest", {"decision": "accepted"}, ctx
         )
-        update_call = mock_firestore.update_user.call_args
-        data = update_call.args[1] if len(update_call.args) > 1 else update_call.kwargs.get("update_data", {})
-        assert data.get("is_service_provider") is True
+        mock_firestore.update_user.assert_not_called()
 
     async def test_record_interest_accepted_returns_signal_transition(
         self, registry, mock_firestore
@@ -342,6 +487,30 @@ class TestProviderOnboardingTools:
         )
         assert isinstance(result, dict)
         assert result.get("signal_transition") == "provider_onboarding"
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_record_interest_accepted_does_not_sync_weaviate_yet(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """Accepting the provider pitch must NOT yet mirror is_service_provider=True to
+        Weaviate.  Mirroring is intentionally deferred until save_competence_batch so
+        the user is not surfaced in provider searches before any skills are listed."""
+        ctx = self._ctx(mock_firestore)
+        await registry.execute(
+            "record_provider_interest", {"decision": "accepted"}, ctx
+        )
+        mock_hub.update_user_hub_properties.assert_not_called()
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_record_interest_not_now_does_not_touch_weaviate(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """Non-acceptance decisions must NOT touch the Weaviate User hub."""
+        ctx = self._ctx(mock_firestore)
+        await registry.execute(
+            "record_provider_interest", {"decision": "not_now"}, ctx
+        )
+        mock_hub.update_user_hub_properties.assert_not_called()
 
     async def test_record_interest_not_now_sets_current_timestamp(
         self, registry, mock_firestore
@@ -363,6 +532,44 @@ class TestProviderOnboardingTools:
         update_call = mock_firestore.update_user.call_args
         data = update_call.args[1] if len(update_call.args) > 1 else update_call.kwargs.get("update_data", {})
         assert data.get("last_time_asked_being_provider") == PROVIDER_PITCH_OPT_OUT_SENTINEL
+
+    # ── save_competence_batch cooldown reset ─────────────────────────────────
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_resets_cooldown_for_first_batch(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """First skill batch: pitch cooldown timestamp must be reset to now (spec §5.8.8)."""
+        mock_firestore.get_user = AsyncMock(return_value={"is_service_provider": False})
+        ctx = self._ctx(mock_firestore)
+        avail = {"monday_time_ranges": [{"start_time": "08:00", "end_time": "12:00"}]}
+        skills = [{"title": "Cooking", "description": "Great cook", "price_range": "€20/h", "availability_time": avail}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        all_update_data = [
+            call.args[1] if len(call.args) > 1 else call.kwargs.get("update_data", {})
+            for call in mock_firestore.update_user.call_args_list
+        ]
+        assert any("last_time_asked_being_provider" in d for d in all_update_data), (
+            "Expected last_time_asked_being_provider to be reset on first skill batch"
+        )
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_no_cooldown_reset_for_existing_provider(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """Existing provider adding more skills: cooldown timestamp must NOT change (spec §5.8.8)."""
+        mock_firestore.get_user = AsyncMock(return_value={"is_service_provider": True})
+        ctx = self._ctx(mock_firestore)
+        avail = {"monday_time_ranges": [{"start_time": "08:00", "end_time": "12:00"}]}
+        skills = [{"title": "Cooking", "description": "Great cook", "price_range": "€20/h", "availability_time": avail}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        all_update_data = [
+            call.args[1] if len(call.args) > 1 else call.kwargs.get("update_data", {})
+            for call in mock_firestore.update_user.call_args_list
+        ]
+        assert not any("last_time_asked_being_provider" in d for d in all_update_data), (
+            "Expected last_time_asked_being_provider to NOT be reset for an existing provider"
+        )
 
     # ── get_my_competencies ──────────────────────────────────────────────────
 
@@ -424,6 +631,26 @@ class TestProviderOnboardingTools:
         update_call = mock_firestore.update_user.call_args
         data = update_call.args[1] if len(update_call.args) > 1 else update_call.kwargs.get("update_data", {})
         assert data.get("is_service_provider") is True
+
+    @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
+    async def test_save_competence_batch_syncs_is_service_provider_to_weaviate(
+        self, mock_hub, registry, mock_firestore
+    ):
+        """After marking is_service_provider=True in Firestore, the Weaviate User hub
+        must also be updated immediately so that provider search filters (which filter
+        on the Weaviate User hub) can find the new provider without delay.
+
+        Regression for: provider onboarding via AI chat sets is_service_provider=True
+        in Firestore but Weaviate User hub retains False, making the provider invisible
+        to all search_providers queries.
+        """
+        ctx = self._ctx(mock_firestore)
+        avail = {"friday_time_ranges": [{"start_time": "09:00", "end_time": "17:00"}]}
+        skills = [{"title": "Inline Skating Lessons", "price_range": "€30/h", "availability_time": avail}]
+        await registry.execute("save_competence_batch", {"skills": skills}, ctx)
+        mock_hub.update_user_hub_properties.assert_called_once_with(
+            "user-x", {"is_service_provider": True}
+        )
 
     @patch("ai_assistant.services.agent_tools.HubSpokeIngestion")
     async def test_save_competence_batch_updates_existing_entry(self, mock_hub, registry, mock_firestore):

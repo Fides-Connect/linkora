@@ -47,6 +47,11 @@ _TRANSITIONS: Dict[AgentRuntimeState, Dict[str, AgentRuntimeState]] = {
     },
     AgentRuntimeState.THINKING: {
         "llm_stream_started": AgentRuntimeState.LLM_STREAMING,
+        # Empty-stream recovery: if the LLM yields nothing (e.g. pure function-call
+        # stream that was silently buffered, or an exception before the first chunk),
+        # stream_complete_text is still issued; allow it to reset to LISTENING so the
+        # FSM never sticks in THINKING.
+        "stream_complete_text": AgentRuntimeState.LISTENING,
     },
     AgentRuntimeState.LLM_STREAMING: {
         "tool_call":            AgentRuntimeState.TOOL_EXECUTING,
@@ -54,8 +59,11 @@ _TRANSITIONS: Dict[AgentRuntimeState, Dict[str, AgentRuntimeState]] = {
         "stream_complete_text": AgentRuntimeState.LISTENING,
     },
     AgentRuntimeState.TOOL_EXECUTING: {
-        "tool_done":  AgentRuntimeState.LLM_STREAMING,
-        "mode_switch": AgentRuntimeState.MODE_SWITCH,
+        "tool_done":            AgentRuntimeState.LLM_STREAMING,
+        "mode_switch":          AgentRuntimeState.MODE_SWITCH,
+        # Error-recovery: if an exception fires mid-tool and the finally block
+        # emits stream_complete_text, reset to LISTENING rather than staying stuck.
+        "stream_complete_text": AgentRuntimeState.LISTENING,
     },
     AgentRuntimeState.SPEAKING: {
         "playback_done": AgentRuntimeState.LISTENING,

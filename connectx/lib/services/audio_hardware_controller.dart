@@ -18,6 +18,10 @@ abstract class AudioHardwareController {
   
   /// Set callback for device changes
   set onDeviceChange(Function(dynamic)? callback);
+
+  /// Configure Android audio mode for voice communication (AEC, hardware routing).
+  /// No-op on non-Android platforms.
+  Future<void> setAndroidAudioConfig();
 }
 
 /// Production implementation using flutter_webrtc Helper
@@ -86,5 +90,16 @@ class FlutterWebRTCAudioController implements AudioHardwareController {
     } catch (e) {
       // Ignore if not supported
     }
+  }
+
+  @override
+  Future<void> setAndroidAudioConfig() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration(
+      androidAudioMode: AndroidAudioMode.inCommunication,
+      androidAudioStreamType: AndroidAudioStreamType.voiceCall,
+      androidAudioAttributesUsageType:
+          AndroidAudioAttributesUsageType.voiceCommunication,
+    ));
   }
 }

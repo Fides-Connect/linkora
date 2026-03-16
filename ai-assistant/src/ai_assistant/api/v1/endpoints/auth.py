@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from firebase_admin import auth as firebase_auth
 
 from ai_assistant.firestore_service import FirestoreService
+from ai_assistant.hub_spoke_ingestion import HubSpokeIngestion
 from ai_assistant.weaviate_models import UserModelWeaviate
 from ai_assistant.services.user_seeding_service import UserSeedingService
 
@@ -88,30 +89,128 @@ async def user_sync(request: web.Request) -> web.Response:
         
         existing_firestore_user = await firestore_service.get_user(user_id)
         if existing_firestore_user:
-            # Never overwrite an existing FCM token with an empty value.
-            # This prevents a race on app startup where getToken() hasn't
-            # resolved yet and the client sends fcm_token="".
-            update_data = {
-                k: v for k, v in user_data.items()
-                if k != "fcm_token" or v
+            # Session-only update — never overwrite backend-managed fields like
+            # is_service_provider (set by AI onboarding / PATCH /me, not by the
+            # client, which always defaults to False).
+            # Also: never overwrite an existing FCM token with an empty value —
+            # prevents a race on app startup where getToken() hasn't resolved yet.
+            session_update = {
+                "email": user_data["email"],
+                "last_sign_in": user_data["last_sign_in"],
             }
-            updated_user = await firestore_service.update_user(user_id, update_data)
+            # Never overwrite an existing name or photo with an empty value —
+            # prevents a race on app startup where Firebase Auth hasn't fully
+            # resolved the user profile yet (displayName briefly null).
+            if user_data["name"]:
+                session_update["name"] = user_data["name"]
+            if user_data["photo_url"]:
+                session_update["photo_url"] = user_data["photo_url"]
+            if user_data["fcm_token"]:
+                session_update["fcm_token"] = user_data["fcm_token"]
+            updated_user = await firestore_service.update_user(user_id, session_update)
             if not updated_user:
                 return web.json_response({
                     "error": "Failed to update Firestore user"
                 }, status=500)
-            
+
+            # Keep the hub-spoke Weaviate User node in sync with Firestore's
+            # is_service_provider so provider-search filters stay correct.
+            is_sp = existing_firestore_user.get("is_service_provider", False)
+
+            # Self-healing guard: if Firestore says False but the user already
+            # has competencies (e.g. added via dev script or a previous session
+            # where the Firestore write was missed), auto-upgrade to True so
+            # they appear in provider searches without manual intervention.
+            if not is_sp:
+                try:
+                    competencies = await firestore_service.get_competencies(user_id)
+                    if competencies:
+                        is_sp = True
+                        await firestore_service.update_user(user_id, {"is_service_provider": True})
+                        logger.info(
+                            "user_sync: auto-upgraded is_service_provider=True for %s "
+                            "(has %d competencies but flag was False)",
+                            user_id,
+                            len(competencies),
+                        )
+                except Exception as upgrade_exc:
+                    logger.error(
+                        "user_sync: failed to auto-upgrade is_service_provider for %s: %s",
+                        user_id,
+                        upgrade_exc,
+                    )
+
+            hub_updated = HubSpokeIngestion.update_user_hub_properties(
+                user_id, {"is_service_provider": is_sp}
+            )
+            if not hub_updated:
+                # Hub node is missing — self-heal by recreating it from Firestore
+                # so this user appears in provider-search results immediately.
+                logger.warning(
+                    "user_sync: Weaviate hub node missing for user_id=%s — self-healing",
+                    user_id,
+                )
+                try:
+                    user_data_for_weaviate = {**existing_firestore_user, "user_id": user_id}
+                    HubSpokeIngestion.create_user(user_data_for_weaviate)
+                    # Re-sync all competencies so provider-search cross-references exist.
+                    all_competencies = await firestore_service.get_competencies(user_id)
+                    if all_competencies:
+                        from ai_assistant.firestore_schemas import derive_availability_tags
+                        for comp in all_competencies:
+                            cid = comp.get("competence_id")
+                            if cid:
+                                avail_docs = await firestore_service.get_availability_times(
+                                    user_id, competence_id=cid
+                                )
+                                if avail_docs:
+                                    comp["availability_tags"] = derive_availability_tags(avail_docs[0])
+                        HubSpokeIngestion.update_competencies_by_user_id(user_id, all_competencies)
+                    logger.info("user_sync: self-heal complete for user_id=%s", user_id)
+                except Exception as heal_exc:
+                    logger.error(
+                        "user_sync: self-heal failed for user_id=%s: %s", user_id, heal_exc
+                    )
+
             if UserModelWeaviate.get_user_by_id(user_id):
+                # Ensure the Firestore-authoritative is_service_provider value
+                # (not the client-sent default=False) is written to Weaviate.
+                user_data["is_service_provider"] = is_sp
                 if not UserModelWeaviate.update_user(user_id, user_data):
-                    return web.json_response({
-                        "error": "Failed to update Weaviate user"
-                    }, status=500)
+                    # A6: Weaviate outage must not fail login — log and continue.
+                    logger.warning(
+                        "user_sync: Weaviate update_user failed for %s — "
+                        "search index may be stale; will self-heal on next login",
+                        user_id,
+                    )
             else:
                 if not UserModelWeaviate.create_user(user_data):
-                    return web.json_response({
-                        "error": "Failed to self-heal/create Weaviate user"
-                    }, status=500)
-            
+                    # A6: Weaviate outage must not fail login — log and continue.
+                    logger.warning(
+                        "user_sync: Weaviate create_user failed for %s — "
+                        "search index node missing; will retry on next login",
+                        user_id,
+                    )
+
+            # B10: Detect mid-onboarding abandonment: user is marked as provider
+            # but has zero competencies (closed app before completing onboarding).
+            onboarding_incomplete = False
+            if is_sp:
+                try:
+                    existing_comps = await firestore_service.get_competencies(user_id)
+                    if len(existing_comps) == 0:
+                        onboarding_incomplete = True
+                        logger.info(
+                            "user_sync: user %s is a provider with 0 competencies — "
+                            "onboarding_incomplete=True in response",
+                            user_id,
+                        )
+                except Exception as comp_check_exc:
+                    logger.warning(
+                        "user_sync: could not check competencies for %s: %s",
+                        user_id, comp_check_exc,
+                    )
+
             logger.info(f"Updated user: {user_id}")
             status = "updated"
         else:
@@ -120,7 +219,8 @@ async def user_sync(request: web.Request) -> web.Response:
                     user_id=user_id,
                     name=user_data["name"],
                     email=user_data["email"],
-                    photo_url=user_data["photo_url"]
+                    photo_url=user_data["photo_url"],
+                    enricher=request.app.get("competence_enricher"),
                 )
                 
                 # Only update FCM token and last_sign_in after seeding
@@ -142,9 +242,11 @@ async def user_sync(request: web.Request) -> web.Response:
             
             logger.info(f"Created new user: {user_id}")
             status = "created"
+            onboarding_incomplete = False  # new users always start clean
         
         return web.json_response({
             "status": status,
+            "onboarding_incomplete": onboarding_incomplete,
             "user": {
                 "user_id": user_id,
                 "name": user_data["name"],

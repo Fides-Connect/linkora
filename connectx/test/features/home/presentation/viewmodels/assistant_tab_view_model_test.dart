@@ -144,14 +144,17 @@ void main() {
     setUp(() {
       when(mockSpeech.startSpeech(mode: anyNamed('mode')))
           .thenAnswer((_) async {});
-      when(mockSpeech.sendTextMessage(any)).thenReturn(true);
+      when(mockSpeech.sendTextMessage(any, messageId: anyNamed('messageId')))
+          .thenReturn(true);
     });
 
     test('flushes pending text message when onDataChannelOpen fires', () async {
       final cbs = init();
       await vm.startChat(voiceMode: false, pendingText: 'flush me');
       (cbs['dataChannelOpen'] as Function())();
-      verify(mockSpeech.sendTextMessage('flush me')).called(1);
+      verify(mockSpeech.sendTextMessage('flush me',
+              messageId: anyNamed('messageId')))
+          .called(1);
     });
 
     // Regression test: onConnected fires when RTCPeerConnectionStateConnected is
@@ -171,7 +174,9 @@ void main() {
 
       // Now the data channel truly opens — message must be sent exactly once
       (cbs['dataChannelOpen'] as Function())();
-      verify(mockSpeech.sendTextMessage('not yet')).called(1);
+      verify(mockSpeech.sendTextMessage('not yet',
+              messageId: anyNamed('messageId')))
+          .called(1);
     });
 
     test('dedup: onConnected + onDataChannelOpen together flush exactly once',
@@ -180,7 +185,9 @@ void main() {
       await vm.startChat(voiceMode: false, pendingText: 'once');
       (cbs['connected'] as Function())();
       (cbs['dataChannelOpen'] as Function())();
-      verify(mockSpeech.sendTextMessage('once')).called(1);
+      verify(mockSpeech.sendTextMessage('once',
+              messageId: anyNamed('messageId')))
+          .called(1);
     });
 
     test('no pending message → sendTextMessage not called on channel open',
@@ -225,7 +232,9 @@ void main() {
     setUp(() async {
       when(mockSpeech.startSpeech(mode: anyNamed('mode')))
           .thenAnswer((_) async {});
-      when(mockSpeech.sendTextMessage(any)).thenReturn(true);
+      when(mockSpeech.sendTextMessage(any,
+              messageId: anyNamed('messageId')))
+          .thenReturn(true);
       cbs = init();
       await vm.startChat(voiceMode: false);
       (cbs['dataChannelOpen'] as Function())(); // channel is ready
@@ -244,7 +253,9 @@ void main() {
 
     test('delegates to speechService.sendTextMessage', () {
       vm.sendTextMessage('delegate this');
-      verify(mockSpeech.sendTextMessage('delegate this')).called(1);
+      verify(mockSpeech.sendTextMessage('delegate this',
+              messageId: anyNamed('messageId')))
+          .called(1);
     });
 
     test('ignores empty string', () {
@@ -281,7 +292,9 @@ void main() {
     setUp(() async {
       when(mockSpeech.startSpeech(mode: anyNamed('mode')))
           .thenAnswer((_) async {});
-      when(mockSpeech.sendTextMessage(any)).thenReturn(true);
+      when(mockSpeech.sendTextMessage(any,
+              messageId: anyNamed('messageId')))
+          .thenReturn(true);
       cbs = init();
       await vm.startChat(voiceMode: false);
       (cbs['dataChannelOpen'] as Function())();
