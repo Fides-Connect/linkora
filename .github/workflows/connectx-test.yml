@@ -1,4 +1,4 @@
-name: "Flutter Tests"
+name: Flutter Tests
 
 on:
   push:
@@ -126,7 +126,7 @@ jobs:
             ${{ needs.build-container.outputs.image-tag }} \
             bash -c '
               set -e
-              cp ./template.env .env
+              cp ./.env.template .env
               
               echo "=== Getting Flutter dependencies ==="
               flutter pub get

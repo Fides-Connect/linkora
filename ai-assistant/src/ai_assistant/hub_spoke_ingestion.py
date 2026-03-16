@@ -534,7 +534,7 @@ class HubSpokeIngestion:
                     )
                     logger.info(f"Deleted old competence: {comp_uuid}")
             
-            # Add new competencies — pass full dicts so all enriched fields are written.
+            # Add new competencies — expects a list of dicts only
             updated_uuids = []
             for comp_dict in competencies_to_insert:
                 comp_uuid = HubSpokeIngestion.create_competence(
@@ -543,7 +543,6 @@ class HubSpokeIngestion:
                     apply_sanitization=True,
                     apply_enrichment=True,
                 )
-                
                 if comp_uuid:
                     updated_uuids.append(comp_uuid)
                     logger.info(f"Created new competence: {comp_uuid}")

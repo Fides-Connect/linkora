@@ -51,6 +51,7 @@ void main() {
     // Setup User mock
     when(mockFirebaseAuthWrapper.currentUser).thenReturn(mockUser);
     when(mockUser.uid).thenReturn('test_user_id');
+    when(mockFirebaseAuthWrapper.getIdToken()).thenAnswer((_) async => 'test-id-token');
 
     // Setup WebRTC mocks
     when(mockWebRTCWrapper.getUserMedia(any))
@@ -93,7 +94,7 @@ void main() {
 
     webRTCService = WebRTCService(
       webRTCWrapper: mockWebRTCWrapper,
-      webSocketFactory: (uri) => mockWebSocketChannel,
+      webSocketFactory: (uri, headers) => mockWebSocketChannel,
       audioRoutingServiceFactory: () => AudioRoutingService(
         hardwareController: mockAudioHardwareController,
         // Use short intervals for unit tests to avoid leaking timers
@@ -102,6 +103,7 @@ void main() {
       ),
       firebaseAuthWrapper: mockFirebaseAuthWrapper,
       serverUrl: 'localhost:8000',
+      iceConfigTimeout: Duration.zero,
     );
   });
 
@@ -320,6 +322,74 @@ void main() {
       // Assert
       expect(capturedError, isNotNull);
       expect(capturedError, contains('Failed to send'));
+    });
+  });
+
+  group('WebRTCService URL scheme detection', () {
+    test('bare host:port produces ws:// URL and attaches Firebase ID token', () async {
+      // webRTCService is already built with serverUrl: 'localhost:8000' (bare)
+      await webRTCService.connect();
+      // getIdToken must be called even for plain ws:// — server requires auth on all connections
+      verify(mockFirebaseAuthWrapper.getIdToken()).called(1);
+    });
+
+    test('https:// URL produces wss connection and attaches Firebase ID token', () async {
+      // Arrange – build a service with a Cloud Run HTTPS URL
+      final secureService = WebRTCService(
+        webRTCWrapper: mockWebRTCWrapper,
+        webSocketFactory: (uri, headers) {
+          // Verify wss scheme and Authorization header
+          expect(uri.scheme, 'wss');
+          expect(headers['Authorization'], 'Bearer fake-id-token');
+          return mockWebSocketChannel;
+        },
+        audioRoutingServiceFactory: () => AudioRoutingService(
+          hardwareController: mockAudioHardwareController,
+          deviceCheckInterval: testDeviceCheckInterval,
+          inputChangeDebounce: testInputChangeDebounce,
+        ),
+        firebaseAuthWrapper: mockFirebaseAuthWrapper,
+        serverUrl: 'https://ai-assistant-test.run.app',
+        iceConfigTimeout: Duration.zero,
+      );
+      when(mockFirebaseAuthWrapper.getIdToken())
+          .thenAnswer((_) async => 'fake-id-token');
+
+      // Act
+      await secureService.connect();
+
+      // Assert token was fetched
+      verify(mockFirebaseAuthWrapper.getIdToken()).called(1);
+
+      await secureService.disconnect();
+    });
+
+    test('http:// URL produces ws connection and attaches Firebase ID token', () async {
+      // Arrange
+      final httpService = WebRTCService(
+        webRTCWrapper: mockWebRTCWrapper,
+        webSocketFactory: (uri, headers) {
+          expect(uri.scheme, 'ws');
+          expect(headers['Authorization'], 'Bearer fake-id-token');
+          return mockWebSocketChannel;
+        },
+        audioRoutingServiceFactory: () => AudioRoutingService(
+          hardwareController: mockAudioHardwareController,
+          deviceCheckInterval: testDeviceCheckInterval,
+          inputChangeDebounce: testInputChangeDebounce,
+        ),
+        firebaseAuthWrapper: mockFirebaseAuthWrapper,
+        serverUrl: 'http://192.168.1.100:8080',
+        iceConfigTimeout: Duration.zero,
+      );
+      when(mockFirebaseAuthWrapper.getIdToken())
+          .thenAnswer((_) async => 'fake-id-token');
+
+      await httpService.connect();
+
+      verify(mockFirebaseAuthWrapper.getIdToken()).called(1);
+
+      await httpService.disconnect();
     });
   });
 }

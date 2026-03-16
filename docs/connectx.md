@@ -181,7 +181,7 @@ Then:
 
 ```bash
 # Copy template
-cp template.env .env
+cp .env.template .env
 
 # Edit configuration
 nano .env

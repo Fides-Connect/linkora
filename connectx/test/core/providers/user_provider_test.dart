@@ -19,6 +19,7 @@ void main() {
     // Mock initial calls
     when(mockAuthService.initialize()).thenAnswer((_) async {});
     when(mockAuthService.onCurrentUserChanged).thenAnswer((_) => authStreamController.stream);
+    when(mockAuthService.performSyncAndConnect(any)).thenAnswer((_) async {});
   });
 
   tearDown(() {

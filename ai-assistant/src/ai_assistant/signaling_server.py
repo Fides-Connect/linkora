@@ -2,17 +2,77 @@
 WebRTC Signaling Server
 Handles WebSocket connections and WebRTC signaling between client and AI assistant.
 """
+import asyncio
 import json
 import logging
+import os
+import time
 from typing import Dict
+import aiohttp
 from aiohttp import web, WSMsgType
 from aiortc import RTCSessionDescription
+from firebase_admin import auth as firebase_auth
 
 from .peer_connection_handler import PeerConnectionHandler
 from .firestore_service import FirestoreService
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_ICE_SERVERS: list[dict] = [{"urls": "stun:stun.l.google.com:19302"}]
+
+# Module-level TTL cache for ICE servers — Metered.ca credentials are valid
+# for ~1 day, so we cache for 5 minutes to amortise per-connection latency.
+_ICE_CACHE: list[dict] | None = None
+_ICE_CACHE_TIMESTAMP: float = 0.0
+_ICE_CACHE_TTL: float = 300.0  # seconds
+_ICE_CACHE_LOCK: asyncio.Lock | None = None
+
+
+def _get_ice_cache_lock() -> asyncio.Lock:
+    """Return (creating if needed) the module-level asyncio.Lock for the ICE cache."""
+    global _ICE_CACHE_LOCK
+    if _ICE_CACHE_LOCK is None:
+        _ICE_CACHE_LOCK = asyncio.Lock()
+    return _ICE_CACHE_LOCK
+
+
+async def _fetch_ice_servers() -> list[dict]:
+    """Fetch ephemeral TURN credentials from Metered.ca with a 5-minute TTL cache.
+
+    Requires ``METERED_APP_NAME`` and ``METERED_API_KEY`` environment variables.
+    Falls back to a plain STUN server when either is absent or the request
+    fails, so the service degrades gracefully in development.
+    """
+    global _ICE_CACHE, _ICE_CACHE_TIMESTAMP
+    async with _get_ice_cache_lock():
+        if _ICE_CACHE is not None and (time.monotonic() - _ICE_CACHE_TIMESTAMP) < _ICE_CACHE_TTL:
+            logger.debug("Returning cached ICE servers (%d entry(s))", len(_ICE_CACHE))
+            return _ICE_CACHE
+
+        app_name = os.getenv("METERED_APP_NAME")
+        api_key = os.getenv("METERED_API_KEY")
+        if not app_name or not api_key:
+            logger.debug("METERED_APP_NAME/METERED_API_KEY not set — using default STUN server")
+            return _DEFAULT_ICE_SERVERS
+        url = f"https://{app_name}.metered.live/api/v1/turn/credentials?apiKey={api_key}"
+        try:
+            timeout = aiohttp.ClientTimeout(total=5)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        servers = await resp.json()
+                        if servers:
+                            logger.debug("Fetched %d ICE server(s) from Metered.ca", len(servers))
+                            _ICE_CACHE = servers
+                            _ICE_CACHE_TIMESTAMP = time.monotonic()
+                            return _ICE_CACHE
+                    else:
+                        logger.warning(
+                            "Metered.ca returned status %d — using default STUN", resp.status
+                        )
+        except Exception as exc:
+            logger.warning("Failed to fetch TURN credentials: %s — using default STUN", exc)
+        return _DEFAULT_ICE_SERVERS
 # Languages the LLM prompts are tested and localised for.
 # Any code outside this set falls back to English.
 SUPPORTED_LANGUAGES = {"en", "de"}
@@ -33,12 +93,53 @@ class SignalingServer:
         connection_id = id(ws)
         client_ip = request.remote
         
-        # Extract user_id, language, and session mode from query parameters
-        user_id = request.query.get('user_id')
+        # Extract language and session mode from query parameters.
+        # user_id is always taken from the verified Firebase ID token — never trusted from the client.
+        language = request.query.get('language', 'de')  # Default to German
 
-        # A3: invalid mode is coerced to 'text' (not 'voice') to prevent
-        # unintended audio playback in inappropriate environments.
+        # Session mode: 'voice' or 'text', default to 'text' if invalid or absent
         raw_mode = request.query.get('mode', 'voice')
+
+        # Authenticate the connection. Non-web clients send the Firebase ID token in the
+        # Authorization: Bearer header. Web browsers cannot set WebSocket upgrade headers
+        # (browser security restriction), so they send {"type": "auth", "token": "..."} as the
+        # first WebSocket message instead.
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header[len('Bearer '):]
+            try:
+                decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
+                user_id = decoded_token['uid']
+                logger.debug(f"Token verified for uid: {user_id}")
+            except Exception as e:
+                logger.warning(f"WebSocket auth failed — invalid token: {e}")
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
+        else:
+            # No Authorization header — expect {"type": "auth", "token": "..."} as the
+            # first message within 10 s (used by web browsers which cannot set WS headers).
+            try:
+                first_msg = await asyncio.wait_for(ws.receive(), timeout=10.0)
+            except Exception as e:
+                logger.warning(f"WebSocket auth failed — no auth message from {client_ip}: {e}")
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
+            if first_msg.type != WSMsgType.TEXT:
+                logger.warning(f"WebSocket auth failed — unexpected message type from {client_ip}")
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
+            try:
+                auth_data = json.loads(first_msg.data)
+                if auth_data.get('type') != 'auth' or not auth_data.get('token'):
+                    raise ValueError('First message is not an auth message')
+                token = auth_data['token']
+                decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
+                user_id = decoded_token['uid']
+                logger.info(f"WebSocket web-auth from {client_ip} for uid: {user_id}")
+            except Exception as e:
+                logger.warning(f"WebSocket auth failed — invalid web auth message from {client_ip}: {e}")
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
         if raw_mode not in ('voice', 'text'):
             logger.warning(
                 f"Invalid session mode '{raw_mode}' from {client_ip}; defaulting to 'text'"
@@ -47,8 +148,10 @@ class SignalingServer:
         else:
             session_mode = raw_mode
 
-        # A4 / B2: Validate language against the supported set.
-        # Fallback order: WS param (if valid) → user REST-stored setting → 'en'.
+        # Language selection logic:
+        # 1. Check 'language' query parameter against SUPPORTED_LANGUAGES. If valid, use it.
+        # 2. If query parameter is invalid or absent, and we have a user_id, look up the user's stored language in Firestore. If valid, use it.
+        # 3. If both the query parameter and stored language are invalid or absent, fall back to 'en'.
         raw_language = request.query.get('language', '')
         stored_language = None  # populated below if a Firestore lookup is required
         language_fallback_applied = False
@@ -82,13 +185,11 @@ class SignalingServer:
                 elif not raw_language:
                     logger.debug("No language param; defaulting to 'en'")
         
-        if user_id:
-            logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (user: {user_id}, language: {language}, mode: {session_mode})")
-        else:
-            logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (no user_id, language: {language}, mode: {session_mode})")
+        logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (user: {user_id}, language: {language}, mode: {session_mode})")
         
         # Create peer connection handler
         logger.debug(f"Creating PeerConnectionHandler for {connection_id}")
+        ice_servers = await _fetch_ice_servers()
         # Compute fallback_from: non-empty when the client sent a language code that
         # is not in SUPPORTED_LANGUAGES so we fell all the way back to 'en'.
         language_fallback_from = (
@@ -104,10 +205,15 @@ class SignalingServer:
             user_id=user_id,
             language=language,
             session_mode=session_mode,
+            ice_servers=ice_servers,
             language_fallback_from=language_fallback_from,
         )
         self.active_connections[str(connection_id)] = handler
         logger.debug(f"Active connections: {len(self.active_connections)}")
+
+        # Send ICE config to client immediately so it can configure its peer
+        # connection with TURN credentials before sending the offer.
+        await handler.send_ice_config(ice_servers)
         
         try:
             logger.debug(f"Starting message loop for connection {connection_id}")
