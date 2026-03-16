@@ -107,6 +107,11 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${CI_SA}" \
   --role="roles/compute.instanceAdmin.v1"
 
+# Open IAP TCP tunnel to the VM (required for --tunnel-through-iap)
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${CI_SA}" \
+  --role="roles/iap.tunnelResourceAccessor"
+
 # Allow CI SA to impersonate the default Compute Engine SA
 # (required so gcloud compute ssh can inject ephemeral SSH keys)
 gcloud iam service-accounts add-iam-policy-binding \
@@ -120,11 +125,18 @@ gcloud iam service-accounts add-iam-policy-binding \
   --member="serviceAccount:${CI_SA}" \
   --role="roles/iam.serviceAccountUser"
 
-# Add new Secret Manager versions on every deploy
-# (secrets must already exist — create them manually first, see step 4)
+# Create secrets and add new versions on every deploy.
+# No predefined role covers both — use a custom role created once below.
+gcloud iam roles create secretManagerCiRole \
+  --project=$PROJECT_ID \
+  --title="Secret Manager CI Role" \
+  --description="Create secrets and add versions for CI deploys" \
+  --permissions=secretmanager.secrets.create,secretmanager.secrets.get,secretmanager.secrets.list,secretmanager.versions.add \
+  --stage=GA
+
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${CI_SA}" \
-  --role="roles/secretmanager.secretVersionAdder"
+  --role="projects/${PROJECT_ID}/roles/secretManagerCiRole"
 ```
 
 **Runtime service account** (`linkora-rt-service-account-dev`) — attached to Cloud Run; used at runtime.
@@ -207,15 +219,7 @@ gcloud iam workload-identity-pools providers describe "linkora-github-provider-d
 
 ### 4. Secrets in Secret Manager
 
-The CI workflow adds new versions automatically, but the secrets must exist before the first deploy. Create them once:
-
-```bash
-echo -n "<your-gemini-api-key>"   | gcloud secrets create gemini-api-key   --data-file=-
-echo -n "<your-admin-secret-key>" | gcloud secrets create admin-secret-key --data-file=-
-echo -n "<your-metered-api-key>"  | gcloud secrets create metered-api-key  --data-file=-
-```
-
-After this the CI workflow manages all future updates via `secretVersionAdder`.
+The CI workflow handles creation and updates automatically via the `secretManagerCiRole` custom role. No manual pre-creation needed — just set the corresponding GitHub Actions secrets and push.
 
 ### 5. Harden default VPC firewall rules
 
