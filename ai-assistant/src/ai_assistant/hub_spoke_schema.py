@@ -155,6 +155,10 @@ def init_hub_spoke_schema():
             try:
                 client.collections.create(
                     name=USER_COLLECTION,
+                    # index_null_state=True is required for is_none() filter on last_sign_in.
+                    # This enables null-safe ghost filtering so providers who were created
+                    # before last_sign_in was tracked are not silently excluded from searches.
+                    inverted_index_config=Configure.inverted_index(index_null_state=True),
                     properties=[
                         Property(name="user_id", data_type=DataType.TEXT),  # External ID (e.g. Firebase UID)
                         Property(name="name", data_type=DataType.TEXT),

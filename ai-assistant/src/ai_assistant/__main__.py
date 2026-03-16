@@ -93,7 +93,7 @@ async def main():
     logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
     logger.info(f"  Google TTS API Concurrency: {os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5')}")
     logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
-    logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-lite')}")
+    logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}")
     
     # Sync Firestore → Weaviate (opt-in via WEAVIATE_SYNC_ON_STARTUP=true)
     await run_startup_sync()
@@ -113,7 +113,23 @@ async def main():
 
     # Register v1 API routes
     register_v1_routes(app)
-    
+
+    # Wire the competence enricher onto the app so REST endpoints
+    # (POST/PATCH /me/competencies) can enrich without owning an AIAssistant.
+    _api_key = os.getenv("GEMINI_API_KEY", "")
+    if _api_key:
+        from .services.llm_service import LLMService as _LLMService
+        from .services.competence_enricher import CompetenceEnricher as _CompetenceEnricher
+        _rest_llm = _LLMService(
+            api_key=_api_key,
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            max_output_tokens=2048,
+        )
+        app["competence_enricher"] = _CompetenceEnricher(llm=_rest_llm.llm)
+        logger.info("CompetenceEnricher wired to REST app for /me/competencies endpoints")
+    else:
+        logger.warning("GEMINI_API_KEY not set — competence enrichment disabled for REST endpoints")
+
     # Register admin routes
     admin_service.register_routes(app)
     
@@ -159,9 +175,11 @@ async def main():
 
     # Fire-and-forget: prime LangChain internals so the first real user
     # utterance doesn't pay the one-time initialisation cost.
+
+
     prewarm_llm = LLMService(
         api_key=os.getenv('GEMINI_API_KEY', ''),
-        model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-lite'),
+        model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-lite'),        
     )
     prewarm_task = asyncio.create_task(prewarm_llm.prewarm())
 

@@ -17,6 +17,7 @@ Context shape expected by all execute() functions::
         "firestore_service": FirestoreService,
     }
 """
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -124,6 +125,11 @@ class AgentToolRegistry:
             raise ToolPermissionError(name, tool.required_capability)
 
         logger.info("Executing tool '%s' for user '%s'", name, context.get("user_id"))
+        # B13: Shield the batch-save so a mid-write WebSocket disconnect cannot
+        # cancel the coroutine and leave the user's Firestore data in a partial
+        # state.
+        if name == "save_competence_batch":
+            return await asyncio.shield(tool.execute(params, context))
         return await tool.execute(params, context)
 
     def all_schemas(self) -> List[Dict[str, Any]]:
@@ -152,9 +158,27 @@ def _require_fs(context: dict):
 
 async def _search_providers(params: dict, context: dict) -> Any:
     query = params.get("query", "")
-    limit = int(params.get("limit", 3))
+    limit = int(params.get("limit", 5))
     dp = context["data_provider"]
-    return await dp.search_providers(query_text=query, limit=limit)
+    cross_encoder = context.get("cross_encoder_service")
+    # For explicit mid-conversation tool calls, apply reranking when available.
+    # Avoid double wide-net expansion: HubSpokeSearch.hybrid_search_providers
+    # already applies min(limit * 5, 30) internally for structured (JSON dict)
+    # queries. For plain text queries the expansion is needed here since
+    # search_competencies has no internal expansion.
+    import json as _json
+    try:
+        _parsed = _json.loads(query) if query.strip().startswith("{") else None
+        _is_structured = isinstance(_parsed, dict)
+    except Exception:
+        _is_structured = False
+    fetch_limit = limit if _is_structured else min(limit * 5, 30)
+    raw = await dp.search_providers(query_text=query, limit=fetch_limit)
+    if cross_encoder and raw:
+        raw = await cross_encoder.rerank(query=query, candidates=raw, top_k=limit)
+    else:
+        raw = raw[:limit]
+    return raw
 
 
 async def _get_favorites(params: dict, context: dict) -> Any:
@@ -169,11 +193,44 @@ async def _get_open_requests(params: dict, context: dict) -> Any:
 
 async def _create_service_request(params: dict, context: dict) -> Any:
     fs = _require_fs(context)
-    return await fs.create_service_request(
-        user_id=context["user_id"],
-        title=params.get("title", ""),
-        description=params.get("description", ""),
-    )
+    data: dict = {
+        "seeker_user_id": context["user_id"],
+        "title": params.get("title", ""),
+        "description": params.get("description", ""),
+    }
+    for field in ("selected_provider_user_id", "location", "category", "currency"):
+        if params.get(field) is not None:
+            data[field] = params[field]
+    for field in ("amount_value",):
+        if params.get(field) is not None:
+            data[field] = params[field]
+    if params.get("requested_competencies") is not None:
+        data["requested_competencies"] = params["requested_competencies"]
+    for date_field in ("start_date", "end_date"):
+        raw = params.get(date_field)
+        if raw:
+            try:
+                data[date_field] = datetime.fromisoformat(raw)
+            except (ValueError, TypeError):
+                pass  # skip malformed date; Firestore field remains unset
+    result = await fs.create_service_request(data)
+
+    # Append the selected provider as the initial pending candidate
+    selected_provider_user_id = params.get("selected_provider_user_id")
+    service_request_id = result.get("service_request_id") if isinstance(result, dict) else None
+    if selected_provider_user_id and service_request_id:
+        await fs.create_provider_candidate(
+            service_request_id=service_request_id,
+            candidate_data={
+                "provider_candidate_user_id": selected_provider_user_id,
+                "status": "pending",
+                "matching_score": params.get("_candidate_matching_score", 0.0),
+                "matching_score_reasons": params.get("_candidate_matching_score_reasons", []),
+                "introduction": "",
+            },
+        )
+
+    return result
 
 
 async def _cancel_service_request(params: dict, context: dict) -> Any:
@@ -207,10 +264,12 @@ async def _record_provider_interest(params: dict, context: dict) -> Any:
     now = datetime.now(timezone.utc)
 
     if decision == "accepted":
-        await fs.update_user(user_id, {
-            "is_service_provider": True,
-            "last_time_asked_being_provider": now,
-        })
+        # Spec §4.3: Deliberately do NOT write to Firestore here.
+        # Both is_service_provider and last_time_asked_being_provider are deferred
+        # until _save_competence_batch completes so that:
+        #   1. Users who abandon onboarding mid-way remain pitch-eligible.
+        #   2. A blank provider profile is never surfaced in search before any
+        #      skills are listed (Weaviate mirroring is also deferred).
         return {"signal_transition": "provider_onboarding", "status": "accepted"}
     elif decision == "never":
         await fs.update_user(user_id, {
@@ -253,12 +312,25 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
     skills: List[dict] = params.get("skills", [])
     saved = []
 
+    # Spec §5.8.8: capture the user's pre-save provider status so we can
+    # conditionally reset the pitch cooldown timestamp after storing the
+    # first batch (only trigger when transitioning non-provider → provider).
+    try:
+        current_user = await fs.get_user(user_id) or {}
+        was_provider = current_user.get("is_service_provider", False)
+    except Exception as _was_prov_exc:  # pragma: no cover
+        logger.warning(
+            "Could not fetch user %s to check was_provider: %s — assuming existing provider",
+            user_id, _was_prov_exc,
+        )
+        was_provider = True  # Safe default: prevents spurious cooldown reset
+
     # Validate: price_range is mandatory for every NEW skill (no competence_id)
     missing_price = [
         skill.get("title", "(untitled)")
         for skill in skills
         if not skill.get("competence_id")
-        and not skill.get("price_range", "").strip()
+        and not str(skill.get("price_range", "")).strip()
     ]
     if missing_price:
         return {
@@ -304,12 +376,34 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
             )
         }
 
+    from pydantic import ValidationError as _ValidationError
+
     for skill in skills:
         skill_copy = dict(skill)  # don't mutate caller's dict
 
         # Pop availability_time before hitting Firestore — it's written to the
         # 'availability_time' subcollection separately, not onto the competence doc.
         availability_time_data: Optional[dict] = skill_copy.pop("availability_time", None)
+
+        # Validate availability_time BEFORE any Firestore write so that an invalid
+        # structured-time payload is rejected before the competence doc is persisted,
+        # avoiding partial state (competence saved but subcollection unreachable).
+        if availability_time_data:
+            try:
+                fs._validate_data(availability_time_data, AvailabilityTimeSchema)
+            except _ValidationError as avail_err:
+                field_errors = fs._format_validation_errors(avail_err)
+                return {
+                    "error": (
+                        "availability_time contains invalid data. "
+                        "Fix the highlighted fields and retry."
+                    ),
+                    "field_errors": field_errors,
+                    "hint": (
+                        "time ranges: use HH:MM format (e.g. '09:00'), "
+                        "absence_days: use YYYY-MM-DD (e.g. '2026-03-15')"
+                    ),
+                }
 
         # Legacy normalisation: if the LLM sent 'availability' as a plain string,
         # keep it in skill_copy so CompetenceEnricher can use it for context, but
@@ -343,10 +437,8 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
             else None
         )
         if availability_time_data and saved_id:
-            from pydantic import ValidationError as _ValidationError
             try:
-                # Validate the structured time data before writing.
-                fs._validate_data(availability_time_data, AvailabilityTimeSchema)
+                # availability_time_data was already validated above — write directly.
                 # Check whether a doc already exists to decide create vs. update.
                 existing_avail = await fs.get_availability_times(
                     user_id, competence_id=saved_id
@@ -363,19 +455,13 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
                 logger.info(
                     "Wrote availability_time for competence %s (user %s)", saved_id, user_id
                 )
-            except _ValidationError as avail_err:
-                field_errors = fs._format_validation_errors(avail_err)
-                return {
-                    "error": (
-                        "availability_time contains invalid data. "
-                        "Fix the highlighted fields and retry."
-                    ),
-                    "field_errors": field_errors,
-                    "hint": (
-                        "time ranges: use HH:MM format (e.g. '09:00'), "
-                        "absence_days: use YYYY-MM-DD (e.g. '2026-03-15')"
-                    ),
-                }
+            except Exception as avail_exc:
+                logger.error(
+                    "Failed to write availability_time for competence %s: %s", saved_id, avail_exc
+                )
+                raise RuntimeError(
+                    f"Failed to write availability_time for competence {saved_id}"
+                ) from avail_exc
 
         # ── LLM enrichment ───────────────────────────────────────────────────
         if enricher is not None:
@@ -411,6 +497,18 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
             )
 
     await fs.update_user(user_id, {"is_service_provider": True})
+    # Spec §5.8.8: if this was the user's first skill batch (they were not a
+    # provider before this save), reset the pitch cooldown to now so they are
+    # not re-pitched for another 30 days.
+    if not was_provider:
+        await fs.update_user(user_id, {
+            "last_time_asked_being_provider": datetime.now(timezone.utc),
+        })
+    # Immediately mirror the flag to the Weaviate User hub so that the
+    # is_service_provider==True filter in provider searches becomes visible
+    # before the next request.  (update_competencies_by_user_id only touches
+    # Competence spokes — it does not rewrite User hub properties.)
+    HubSpokeIngestion.update_user_hub_properties(user_id, {"is_service_provider": True})
 
     # Weaviate full re-sync: read ALL competencies from Firestore (ground truth) so
     # that skills saved in earlier sessions are preserved in Weaviate.
@@ -494,7 +592,7 @@ def build_default_registry() -> AgentToolRegistry:
                     },
                     "limit": {
                         "type": "integer",
-                        "description": "Maximum number of results to return (default 3).",
+                        "description": "Maximum number of results to return (default 5).",
                     },
                 },
                 "required": ["query"],
@@ -553,8 +651,48 @@ def build_default_registry() -> AgentToolRegistry:
                         "type": "string",
                         "description": "Full description of the service needed.",
                     },
+                    "selected_provider_user_id": {
+                        "type": "string",
+                        "description": "Firebase UID of the accepted provider (user.user_id from provider search results).",
+                    },
+                    "location": {
+                        "type": "string",
+                        "description": "City or address where the service is needed.",
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "pets", "housekeeping", "restaurant", "technology",
+                            "gardening", "electrical", "plumbing", "repair",
+                            "teaching", "transport", "childcare", "wellness",
+                            "events", "other",
+                        ],
+                        "description": "Service category that best matches the request.",
+                    },
+                    "start_date": {
+                        "type": "string",
+                        "description": "Desired start date in ISO 8601 format YYYY-MM-DD.",
+                    },
+                    "end_date": {
+                        "type": "string",
+                        "description": "Desired end date in ISO 8601 format YYYY-MM-DD.",
+                    },
+                    "amount_value": {
+                        "type": "number",
+                        "minimum": 0,
+                        "description": "User's budget or price estimate for the service. Use 0 if unknown.",
+                    },
+                    "currency": {
+                        "type": "string",
+                        "description": "Currency code derived from the service location (e.g. 'EUR' for Germany/Austria/Switzerland, 'GBP' for UK, 'USD' for US). Omit if location is unknown.",
+                    },
+                    "requested_competencies": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of specific skills or competencies required for the job.",
+                    },
                 },
-                "required": ["title"],
+                "required": ["title", "category", "location"],
             },
         },
         required_capability=ToolCapability("service_requests", "write"),
@@ -631,7 +769,7 @@ def build_default_registry() -> AgentToolRegistry:
         description=(
             "Create or update one or more service competencies for the user. "
             "Each skill dict may include 'competence_id' for updates, or omit it for new entries. "
-            "Required fields per skill: 'title' and 'price_range' (e.g. '€30–€50/h' or 'fixed price €200'). "
+            "Required fields per skill: 'title' and 'price_range' (e.g. '€30–€50/h', 'fixed price €200', or 'free' / '0' for volunteer work). "
             "price_range is MANDATORY for new entries — never create a competence without it. "
             "For UPDATE (competence_id provided), price_range is optional. "
             "Optional fields: 'description', 'category', 'year_of_experience', "
@@ -655,7 +793,7 @@ def build_default_registry() -> AgentToolRegistry:
                                 "category": {"type": "string"},
                                 "price_range": {
                                     "type": "string",
-                                    "description": "Pricing information, e.g. '€30–€50/h' or 'fixed price €200'. REQUIRED for new entries.",
+                                    "description": "Pricing information, e.g. '€30–€50/h', 'fixed price €200', or 'free' / '0' for volunteer work. REQUIRED for new entries.",
                                 },
                                 "availability": {
                                     "type": "string",
@@ -694,7 +832,7 @@ def build_default_registry() -> AgentToolRegistry:
                                 },
                                 "year_of_experience": {"type": "integer"},
                             },
-                            "required": ["title", "price_range"],
+                            "required": ["title"],
                         },
                     },
                 },
@@ -728,3 +866,104 @@ def build_default_registry() -> AgentToolRegistry:
     ))
 
     return registry
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FINALIZE stage tool schemas (§6.11 — tool-driven FSM)
+# Declared for LLM use in FINALIZE only. NOT registered in the default registry.
+# Intercepted directly by ResponseOrchestrator._handle_finalize_tool().
+# ─────────────────────────────────────────────────────────────────────────────
+
+FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA: Dict[str, Any] = {
+    "name": "accept_provider",
+    "description": (
+        "Accept the currently presented provider and create the service request. "
+        "Call this when the user explicitly agrees to go with the shown provider."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "provider_id": {
+                "type": "string",
+                "description": "Firebase UID (user.user_id) of the accepted provider from the provider JSON.",
+            },
+            "title": {
+                "type": "string",
+                "description": "Short label for the job (e.g. 'Plumbing repair').",
+            },
+            "description": {
+                "type": "string",
+                "description": "Full scope summary assembled during scoping.",
+            },
+            "location": {
+                "type": "string",
+                "description": "City or address where the service is needed.",
+            },
+            "category": {
+                "type": "string",
+                "description": "Service category inferred from the conversation. Must be one of the canonical values.",
+                "enum": [
+                    "pets", "housekeeping", "restaurant", "technology",
+                    "gardening", "electrical", "plumbing", "repair",
+                    "teaching", "transport", "childcare", "wellness",
+                    "events", "other",
+                ],
+            },
+            "start_date": {
+                "type": "string",
+                "description": "Desired start date in ISO 8601 YYYY-MM-DD format.",
+            },
+            "end_date": {
+                "type": "string",
+                "description": "Desired end date in ISO 8601 YYYY-MM-DD format.",
+            },
+            "amount_value": {
+                "type": "number",
+                "description": "User's budget figure if stated.",
+            },
+            "currency": {
+                "type": "string",
+                "description": "Currency code derived from location (EUR/GBP/USD).",
+            },
+            "requested_competencies": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Specific skills or competencies mentioned during scoping.",
+            },
+        },
+        "required": ["provider_id", "location", "category"],
+    },
+}
+
+FINALIZE_TOOL_REJECT_AND_FETCH_NEXT_SCHEMA: Dict[str, Any] = {
+    "name": "reject_and_fetch_next",
+    "description": (
+        "Reject the currently presented provider and request the next candidate from the list. "
+        "Call this when the user declines the current provider and wants to see another option."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    },
+}
+
+FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA: Dict[str, Any] = {
+    "name": "cancel_search",
+    "description": (
+        "Cancel the entire provider search and return to the start. "
+        "Call this when the user abandons the search entirely (e.g. 'Forget it', 'Never mind')."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    },
+}
+
+# Convenience list for LLM tool registration in the FINALIZE stage.
+FINALIZE_TOOL_SCHEMAS: List[Dict[str, Any]] = [
+    FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA,
+    FINALIZE_TOOL_REJECT_AND_FETCH_NEXT_SCHEMA,
+    FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA,
+]

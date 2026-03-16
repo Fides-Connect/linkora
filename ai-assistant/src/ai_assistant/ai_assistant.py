@@ -17,13 +17,14 @@ from .services import (
 )
 from .services.response_orchestrator import ResponseOrchestrator
 from .services.competence_enricher import CompetenceEnricher
+from .services.cross_encoder_service import CrossEncoderService
 from .data_provider import get_data_provider
 
 logger = logging.getLogger(__name__)
 
 # Constants
 AGENT_NAME = "Elin"
-COMPANY_NAME = "FidesConnect"
+COMPANY_NAME = "LinkoraConnect"
 USER_NAME_PLACEHOLDER = ""
 
 
@@ -47,7 +48,7 @@ class AIAssistant:
     """
     
     def __init__(self, gemini_api_key: str, language: str = 'de',
-                 llm_model: str = 'gemini-2.5-flash-lite',
+                 llm_model: str = 'gemini-2.5-flash',
                  session_id: Optional[str] = None):
         """
         Initialize AI Assistant with all required services.
@@ -83,16 +84,22 @@ class AIAssistant:
             api_key=gemini_api_key,
             model=llm_model,
             temperature=0.2,
-            max_output_tokens=512
+            max_output_tokens=512,
+            language=self.language,
         )
-        
+
+        # Cross-encoder reranker: lazy-loading sentence-transformers model.
+        # Initialized before ConversationService so it can be injected.
+        self.cross_encoder_service = CrossEncoderService()
+
         self.conversation_service = ConversationService(
             llm_service=self.llm_service,
             data_provider=self.data_provider,
             agent_name=AGENT_NAME,
             company_name=COMPANY_NAME,
-            max_providers=3,
-            language=self.language
+            max_providers=5,
+            language=self.language,
+            cross_encoder_service=self.cross_encoder_service,
         )
         
         # Build agentic runtime FSM and tool registry
@@ -179,6 +186,7 @@ class AIAssistant:
             "firestore_service": self.firestore_service,
             "user_context": user_ctx,
             "competence_enricher": self.competence_enricher,
+            "cross_encoder_service": self.cross_encoder_service,
         }
         async for chunk in self.response_orchestrator.generate_response_stream(
             prompt, self.session_id, context=context

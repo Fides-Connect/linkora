@@ -27,7 +27,12 @@ class SentenceParser:
 
     # Sentence-ending punctuation pattern
     SENTENCE_END_PATTERN = re.compile(r'([.!?]+(?:\s+|$))')
-
+    
+    # B4: Hard char-length fallback — if no punctuation appears within this
+    # many characters, force-split at the nearest space to prevent the audio
+    # pipeline from being blocked indefinitely by a very long non-punctuated block.
+    MAX_UNPUNCTUATED_LENGTH = 200
+    
     @classmethod
     def split_into_sentences(cls, text: str) -> list[str]:
         """
@@ -156,6 +161,26 @@ class TTSPlaybackManager:
                     # Keep the incomplete last sentence
                     accumulated_text = sentences[-1]
 
+                # B4: Hard character-length fallback — force-split at the nearest
+                # space when no punctuation appears within MAX_UNPUNCTUATED_LENGTH
+                # chars to prevent the audio pipeline from stalling indefinitely.
+                elif len(accumulated_text) >= sentence_parser.MAX_UNPUNCTUATED_LENGTH:
+                    split_pos = accumulated_text.rfind(' ')
+                    if split_pos > 0:
+                        force_chunk = accumulated_text[:split_pos].strip()
+                        accumulated_text = accumulated_text[split_pos:].strip()
+                    else:
+                        # No space found — split at the boundary as a last resort
+                        force_chunk = accumulated_text
+                        accumulated_text = ""
+                    if force_chunk:
+                        logger.debug(
+                            "B4: forced TTS split at %d chars (no punctuation): '%s...'",
+                            len(force_chunk), force_chunk[:40],
+                        )
+                        await self._synthesize_and_queue(force_chunk, sentence_order)
+                        sentence_order += 1
+            
             # Process any remaining text
             if accumulated_text.strip() and not self._interrupted:
                 await self._synthesize_and_queue(accumulated_text.strip(), sentence_order)

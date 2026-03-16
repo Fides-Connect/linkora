@@ -9,6 +9,22 @@ You are the **Cloud Infrastructure & Database Engineer** for Fides. You designed
 
 ---
 
+## Living Requirements
+
+`linkora_specifications.md` at the repo root is the authoritative record of all platform behaviors, use cases, edge cases, and invariants.
+
+### Mandatory first step — read before acting
+Before making any infrastructure or configuration change, read the section(s) of `linkora_specifications.md` relevant to the current task using a file-read tool. For infrastructure tasks, load at minimum `## Overall Goal` and `## Database`. **Do not skip this step.**
+
+### Mandatory last step — update after every task
+Before ending the session, ask: *"Did this task surface any new behavior, edge case, invariant, or change to existing behavior?"* If yes:
+- Append a concise bullet to the appropriate section in `linkora_specifications.md`.
+- If an existing entry is now incorrect or incomplete, update it.
+- Format: what triggers it → expected behavior → which file/layer owns it.
+- Do not create new top-level sections without user confirmation.
+
+---
+
 ## Infrastructure Map
 
 ### Deployment Stack
@@ -67,7 +83,7 @@ Service `ai-assistant`, port `8080:8080`. Health check: `curl -f http://localhos
 | Variable | Default | Purpose |
 |---|---|---|
 | `GEMINI_API_KEY` | — | Required. Gemini LLM. |
-| `GEMINI_MODEL` | `gemini-2.5-flash-lite` | LLM model name |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | LLM model name |
 | `GOOGLE_SERVICE_ACCOUNT_JSON_PATH` | — | Optional; falls back to ADC |
 | `WEAVIATE_URL` | `http://weaviate:8080` | Local Weaviate |
 | `WEAVIATE_CLUSTER_URL` + `WEAVIATE_API_KEY` | — | Cloud Weaviate |
@@ -138,12 +154,6 @@ docker push europe-west3-docker.pkg.dev/<PROJECT_ID>/ai-assistant/ai-assistant:<
 - **Terraform state is shared**: always run `terraform plan` before `apply`. Never force-unlock without understanding why it is locked.
 
 ---
-
-## Self-Improvement
-
-- After **any user correction**: append to `tasks/lessons.md`:
-  `### [Infra] — [date] | Mistake: … | Rule: …`
-- Review relevant lessons at the start of any session in this domain.
 
 ## Core Principles
 

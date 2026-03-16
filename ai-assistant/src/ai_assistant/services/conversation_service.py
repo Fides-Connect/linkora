@@ -4,13 +4,14 @@ Handles conversation flow, stage management, and orchestration.
 """
 import logging
 import json
+import asyncio
 from enum import Enum
 from datetime import datetime
 from typing import Optional, AsyncIterator, Dict, Any, List
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.messages import HumanMessage, AIMessage
 
-from ..data_provider import DataProvider
+from ..data_provider import DataProvider, SearchUnavailableError
 from ..prompts_templates import (
     GREETING_AND_TRIAGE_PROMPT,
     TRIAGE_CONVERSATION_PROMPT,
@@ -21,8 +22,10 @@ from ..prompts_templates import (
     LOOP_BACK_PROMPT,
     PROVIDER_PITCH_PROMPT,
     PROVIDER_ONBOARDING_PROMPT,
-    get_language_instruction
+    get_language_instruction,
+    get_greeting_fallback,
 )
+from .cross_encoder_service import CrossEncoderService
 
 
 logger = logging.getLogger(__name__)
@@ -52,7 +55,7 @@ class ConversationStage(str, Enum):
 # Legal stage transitions: { from_stage: { allowed_to_stages } }
 _LEGAL_TRANSITIONS: Dict["ConversationStage", List["ConversationStage"]] = {
     ConversationStage.GREETING:       [ConversationStage.TRIAGE],
-    ConversationStage.TRIAGE:         [ConversationStage.FINALIZE, ConversationStage.CLARIFY,
+    ConversationStage.TRIAGE:         [ConversationStage.CONFIRMATION, ConversationStage.CLARIFY,
                                        ConversationStage.TOOL_EXECUTION, ConversationStage.RECOVERY,
                                        ConversationStage.PROVIDER_ONBOARDING],
     ConversationStage.CLARIFY:        [ConversationStage.TRIAGE],
@@ -62,8 +65,9 @@ _LEGAL_TRANSITIONS: Dict["ConversationStage", List["ConversationStage"]] = {
     ConversationStage.FINALIZE:       [ConversationStage.COMPLETED, ConversationStage.RECOVERY, ConversationStage.TRIAGE],
     ConversationStage.RECOVERY:       [ConversationStage.TRIAGE],
     ConversationStage.COMPLETED:      [ConversationStage.PROVIDER_PITCH, ConversationStage.TRIAGE],
-    ConversationStage.PROVIDER_PITCH: [ConversationStage.PROVIDER_ONBOARDING, ConversationStage.COMPLETED],
-    ConversationStage.PROVIDER_ONBOARDING: [ConversationStage.COMPLETED],
+    ConversationStage.PROVIDER_PITCH: [ConversationStage.PROVIDER_ONBOARDING, ConversationStage.COMPLETED,
+                                       ConversationStage.TRIAGE],
+    ConversationStage.PROVIDER_ONBOARDING: [ConversationStage.COMPLETED, ConversationStage.TRIAGE],
 }
 
 
@@ -80,7 +84,8 @@ class ConversationService:
     
     def __init__(self, llm_service, data_provider: DataProvider,
                  agent_name: str = "Elin", company_name: str = "Linkora",
-                 max_providers: int = 3, language: str = 'de'):
+                 max_providers: int = 5, language: str = 'de',
+                 cross_encoder_service: Optional["CrossEncoderService"] = None):
         """
         Initialize Conversation service.
         
@@ -91,6 +96,9 @@ class ConversationService:
             company_name: Company name
             max_providers: Maximum number of providers to present
             language: Language code ('de' or 'en')
+            cross_encoder_service: Optional cross-encoder reranker.  When
+                provided, providers returned by Weaviate are reranked before
+                being stored in ``context["providers_found"]``.
         """
         self.llm_service = llm_service
         self.data_provider = data_provider
@@ -98,6 +106,7 @@ class ConversationService:
         self.company_name = company_name
         self.max_providers = max_providers
         self.language = language
+        self.cross_encoder_service = cross_encoder_service
         
         self.current_stage = ConversationStage.GREETING
         self.context: Dict[str, Any] = {
@@ -115,6 +124,9 @@ class ConversationService:
             # Populated by ResponseOrchestrator before each LLM call in that stage;
             # refreshed after every successful write tool.
             "current_competencies": [],
+            # Mirrored from user_context by ResponseOrchestrator on every
+            # PROVIDER_ONBOARDING turn so the prompt can render STEP 0 correctly.
+            "is_service_provider": False,
         }
         
         logger.info(f"Conversation service initialized: agent={agent_name}, company={company_name}")
@@ -144,7 +156,10 @@ class ConversationService:
             ChatPromptTemplate for the stage
         """
         if stage == ConversationStage.GREETING:
-            language_instruction = get_language_instruction(self.language)
+            # B2: Pass any unsupported-language fallback note on the first turn only,
+            # then clear it so subsequent prompts don't repeat it.
+            fallback_from = self.context.pop("language_fallback_from", "")
+            language_instruction = get_language_instruction(self.language, fallback_from=fallback_from)
             user_name = self.context.get("user_name", "")
             has_open_request = "Yes" if self.context.get("has_open_request", False) else "No"
             return ChatPromptTemplate.from_messages([
@@ -173,14 +188,15 @@ class ConversationService:
             ])
         
         elif stage == ConversationStage.FINALIZE:
-            provider_list_json = json.dumps(self.context["providers_found"], ensure_ascii=False, default=json_serializer)
-            provider_count = len(self.context["providers_found"])
+            providers = self.context.get("providers_found", [])
+            idx = self.context.get("current_provider_index", 0)
+            current_provider = providers[idx] if providers and idx < len(providers) else {}
+            provider_json = json.dumps(current_provider, ensure_ascii=False, default=json_serializer)
             language_instruction = get_language_instruction(self.language)
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(FINALIZE_SERVICE_REQUEST_PROMPT).format(
                     agent_name=self.agent_name,
-                    provider_list_json=provider_list_json,
-                    provider_count=provider_count,
+                    provider_json=provider_json,
                     language_instruction=language_instruction
                 ),
                 MessagesPlaceholder(variable_name="history"),
@@ -232,11 +248,22 @@ class ConversationService:
                 ensure_ascii=False,
                 default=json_serializer,
             )
+            draft_invalidated = self.context.pop("onboarding_draft_invalidated", False)
+            draft_invalidated_notice = (
+                "\n**NOTICE:** Your competency list was updated from another session "
+                "since this conversation started. The previous draft has been discarded "
+                "and the list above reflects the current saved state. "
+                "Inform the user briefly before continuing.\n"
+                if draft_invalidated
+                else ""
+            )
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(PROVIDER_ONBOARDING_PROMPT).format(
                     agent_name=self.agent_name,
                     language_instruction=language_instruction,
                     current_competencies_json=current_competencies_json,
+                    is_service_provider=self.context.get("is_service_provider", False),
+                    draft_invalidated_notice=draft_invalidated_notice,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
@@ -280,6 +307,40 @@ class ConversationService:
         # onboarding_draft and current_competencies are preserved across request
         # resets so a PROVIDER_ONBOARDING session isn't interrupted mid-flow.
         logger.info("Request context reset for new TRIAGE scoping session")
+
+    def restore_from_summary(self, summary: dict) -> None:
+        """Hydrate conversation context from a previous session summary.
+
+        Seeds the context with the prior request summary and topic title so the
+        LLM has the necessary background on session connect.  Only restores the
+        stage when the prior final_stage is an auto-resumable mid-flow stage
+        (TRIAGE, CLARIFY, CONFIRMATION).  Terminal stages are ignored — the
+        session boots fresh from GREETING/TRIAGE instead.
+
+        Assigns to ``self.current_stage`` directly (bypasses legal-transition
+        FSM) since this is a restore, not a runtime transition.
+        """
+        _MID_FLOW_STAGES = {
+            ConversationStage.TRIAGE,
+            ConversationStage.CLARIFY,
+            ConversationStage.CONFIRMATION,
+        }
+        final_stage = summary.get("final_stage")
+        topic_title = summary.get("topic_title", "")
+        request_summary_text = summary.get("request_summary", "")
+
+        if request_summary_text:
+            self.context["request_summary"] = request_summary_text
+        if topic_title:
+            self.context["user_problem"] = [topic_title]
+
+        if final_stage in _MID_FLOW_STAGES:
+            self.current_stage = final_stage
+            logger.info("Session restored to stage %s from previous session summary", final_stage)
+        else:
+            logger.info(
+                "Session summary present but stage %s is terminal — booting fresh.", final_stage
+            )
 
     def record_ai_response(self, text: str) -> None:
         """Append an assembled AI response to the context history.
@@ -361,12 +422,52 @@ class ConversationService:
             logger.error("Error generating structured query: %s", exc, exc_info=True)
             logger.info("Falling back to original summary for search")
             return problem_summary
+
+    async def _generate_hyde_text(self, problem_summary: str) -> str:
+        """Generate a hypothetical provider profile (HyDE) from the problem summary.
+
+        Calls the LLM with ``HYDE_GENERATION_PROMPT`` to produce a short
+        prose description of a *perfect* service provider for the user's need.
+        The resulting text is used as the Weaviate vector query to bridge the
+        vocabulary gap between user language and stored competency bios.
+
+        Args:
+            problem_summary: Plain-language description of the user's request.
+
+        Returns:
+            Hypothetical provider profile string, or empty string on error.
+        """
+        from ..prompts_templates import HYDE_GENERATION_PROMPT
+
+        try:
+            hyde_prompt = HYDE_GENERATION_PROMPT.format(problem_summary=problem_summary)
+            hyde_text = await self.llm_service.generate(
+                [HumanMessage(content=hyde_prompt)]
+            )
+            hyde_text = hyde_text.strip()
+            logger.info("Generated HyDE profile (%d chars): '%s...'" , len(hyde_text), hyde_text[:80])
+            return hyde_text
+        except Exception as exc:
+            logger.error("Error generating HyDE text: %s", exc, exc_info=True)
+            return ""
     
     async def search_providers_for_request(self, session_id: str = "") -> None:
         """Search for providers based on the confirmed TRIAGE summary.
 
-        Called by ResponseOrchestrator when entering FINALIZE stage.
-        Generates a structured JSON query for hybrid Weaviate search.
+        Multi-stage retrieval pipeline:
+
+        1. **Structured query extraction** — LLM parses the problem summary
+           into ``{available_time, category, criterions}`` JSON for hard
+           filters and BM25 matching.
+        2. **HyDE** — LLM writes a hypothetical provider profile that bridges
+           the vocabulary gap between the user's language and stored bios.  The
+           profile is used as the Weaviate vector query.
+        3. **Wide-net hybrid retrieval** — Weaviate returns up to 25 candidates
+           using both vector (HyDE) and BM25 (structured fields) signals.
+        4. **Cross-encoder reranking** — if a ``CrossEncoderService`` is
+           injected, it rescores each candidate against the original problem
+           summary using a joint (query, document) encoder, returning the top
+           ``max_providers`` most relevant results.
 
         Args:
             session_id: Active LLM session — last 3 history messages are
@@ -374,19 +475,54 @@ class ConversationService:
         """
         problem_summary = self.get_problem_summary()
         logger.info(
-            "Generating structured search query from summary: '%s...'",
+            "Starting multi-stage provider search from summary: '%s...'",
             problem_summary[:100],
         )
-        query_text = await self._generate_structured_query(problem_summary, session_id)
+
+        # Stages 1 + 2 run independently — fire both LLM calls concurrently.
+        structured_query_task = asyncio.create_task(
+            self._generate_structured_query(problem_summary, session_id)
+        )
+        hyde_task = asyncio.create_task(
+            self._generate_hyde_text(problem_summary)
+        )
+        query_text, hyde_text = await asyncio.gather(structured_query_task, hyde_task)
 
         self.context["request_summary"] = query_text
-        providers = await self.data_provider.search_providers(
-            query_text=query_text,
-            limit=self.max_providers,
-        )
+
+        # Stage 3: wide-net retrieval. Pass max_providers directly;
+        # HubSpokeSearch.hybrid_search_providers applies its own min(limit * 5, 30)
+        # expansion internally, so pre-multiplying here causes double expansion.
+        try:
+            providers = await self.data_provider.search_providers(
+                query_text=query_text,
+                limit=self.max_providers,
+                hyde_text=hyde_text,
+            )
+        except SearchUnavailableError as exc:
+            logger.warning(
+                "Search index unreachable during provider search — routing to RECOVERY. (%s)", exc
+            )
+            self.context["search_error"] = "unavailable"
+            return
+
+        # Stage 4: cross-encoder reranking.
+        if self.cross_encoder_service and providers:
+            logger.info(
+                "Reranking %d candidates with cross-encoder (top %d)...",
+                len(providers),
+                self.max_providers,
+            )
+            providers = await self.cross_encoder_service.rerank(
+                query=problem_summary,
+                candidates=providers,
+                top_k=self.max_providers,
+            )
+        else:
+            providers = providers[: self.max_providers]
 
         self.context["providers_found"] = providers
-        logger.info("Found %d matching providers", len(providers))
+        logger.info("Provider search complete — %d results", len(providers))
     
     async def generate_greeting_text(
         self,
@@ -411,8 +547,10 @@ class ConversationService:
                 f"has_open_request={has_open_request}"
             )
             language_instruction = get_language_instruction(self.language)
+            resume_ctx = self.context.get("session_resume_context", "")
+            system_prefix = f"{resume_ctx}\n\n" if resume_ctx else ""
             prompt_template = ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT),
+                SystemMessagePromptTemplate.from_template(system_prefix + GREETING_AND_TRIAGE_PROMPT),
                 HumanMessage(content=" ")
             ])
 
@@ -432,4 +570,4 @@ class ConversationService:
 
         except Exception as e:
             logger.error(f"Error generating greeting text: {e}", exc_info=True)
-            return "Hallo! Wie kann ich dir heute helfen?"
+            return get_greeting_fallback(self.language)
