@@ -22,23 +22,21 @@ from weaviate.classes.query import Filter
 logger = logging.getLogger(__name__)
 
 
-def sanitize_input(text: str, max_unique_words: int = 20) -> str:
+def sanitize_input(text: str, max_unique_words: int = 20, max_chars: int = 200) -> str:
     """
     SEO Spam Defense: Strip keyword stuffing from input text.
-    
+
     Strategy:
     1. Extract unique words (case-insensitive)
-    2. If unique word count > threshold, it's likely spam
-    3. Truncate or reject the text
-    
-    Example:
-        Input: "Plumber Electrician Driver Nurse Teacher Plumber Driver"
-        Output: Returns only first 20 unique words
-        
+    2. If unique word count > threshold, it's likely spam — truncate to first N unique words
+    3. Cap result at max_chars to prevent a single massive word from
+       overloading the embedding model (e.g. a 10 000-char wordless blob).
+
     Args:
         text: Input text to sanitize
         max_unique_words: Maximum unique words allowed before truncation
-        
+        max_chars: Hard character-length cap applied after word deduplication.
+
     Returns:
         Sanitized text
     """
@@ -60,10 +58,22 @@ def sanitize_input(text: str, max_unique_words: int = 20) -> str:
     if len(unique_words) > max_unique_words:
         logger.warning(f"Keyword stuffing detected: {len(unique_words)} unique words. Truncating.")
         # Reconstruct from original text to maintain case and punctuation
-        truncated = ' '.join(unique_words[:max_unique_words])
-        return truncated
-    
-    return text
+        result = ' '.join(unique_words[:max_unique_words])
+    else:
+        result = text
+
+    # B5: Hard character-length cap to prevent a single massive word (or long
+    # concatenated tokens) from overloading the embedding model.
+    if len(result) > max_chars:
+        # Truncate at nearest space before the limit to avoid mid-word cuts.
+        truncated_at_space = result[:max_chars + 1].rsplit(' ', 1)[0]
+        result = truncated_at_space if truncated_at_space else result[:max_chars]
+        logger.warning(
+            "sanitize_input: text exceeded %d chars after dedup — truncated to %d chars",
+            max_chars, len(result),
+        )
+
+    return result
 
 
 def enrich_text(text: str, category: str) -> str:
@@ -89,13 +99,18 @@ def enrich_text(text: str, category: str) -> str:
         Enriched text with parent category terms
     """
     # Category enrichment map: category -> parent terms
+    _IT_TERMS = ["Technician", "Technology", "Computer", "Software", "Hardware"]
     enrichment_map = {
         "Electrical": ["Electrician", "Electrical", "Lighting", "Wiring", "Power"],
         "Plumbing": ["Plumber", "Plumbing", "Pipes", "Water", "Drain"],
         "Gardening": ["Gardener", "Gardening", "Landscaping", "Plants", "Outdoor"],
         "Carpentry": ["Carpenter", "Carpentry", "Woodwork", "Construction"],
         "Cleaning": ["Cleaner", "Cleaning", "Housekeeping", "Janitorial"],
-        "IT": ["Technician", "Technology", "Computer", "Software", "Hardware"],
+        "IT": _IT_TERMS,
+        # Aliases — all map to the same IT bucket
+        "Technology": _IT_TERMS + ["Mobile", "App", "Development"],
+        "App Development": _IT_TERMS + ["Mobile", "App", "Development", "Flutter", "React", "Android", "iOS"],
+        "Mobile Development": _IT_TERMS + ["Mobile", "App", "Development", "Flutter", "Android", "iOS"],
     }
     
     # Get parent terms for category
@@ -167,7 +182,50 @@ class HubSpokeIngestion:
         except Exception as e:
             logger.error(f"Error creating user: {e}")
             return None
-    
+
+    @staticmethod
+    def update_user_hub_properties(user_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update specific properties of a User hub node in Weaviate.
+
+        Uses the hub-spoke schema User collection (not the legacy
+        ``UserModelWeaviate`` collection) so that changes are visible to the
+        search filters that traverse ``owned_by`` cross-references.
+
+        Args:
+            user_id:     Firestore / Firebase user identifier.
+            update_data: Dict of property names → new values to merge into the
+                         existing Weaviate object.
+
+        Returns:
+            True on success, False when the user node was not found or an error
+            occurred.
+        """
+        try:
+            user_collection = get_user_collection()
+            result = user_collection.query.fetch_objects(
+                filters=Filter.by_property("user_id").equal(user_id),
+                limit=1,
+            )
+            if not result.objects:
+                logger.warning(
+                    "update_user_hub_properties: no Weaviate User found for user_id=%s",
+                    user_id,
+                )
+                return False
+            user_uuid = str(result.objects[0].uuid)
+            user_collection.data.update(uuid=user_uuid, properties=update_data)
+            logger.info(
+                "Updated Weaviate User hub for user_id=%s: %s",
+                user_id,
+                list(update_data.keys()),
+            )
+            return True
+        except Exception as e:
+            logger.error(
+                "Error updating Weaviate User hub properties for %s: %s", user_id, e
+            )
+            return False
+
     @staticmethod
     def create_competence(
         competence_data: Dict[str, Any],
@@ -231,11 +289,15 @@ class HubSpokeIngestion:
                     "skills_list": competence_data.get("skills_list", []),
                     "price_per_hour": competence_data.get("price_per_hour"),
                     "year_of_experience": competence_data.get("year_of_experience", 0),
-                    # Derive availability tags from the structured availability_time dict.
-                    # Falls back to an empty list if no availability_time is present.
-                    "availability_tags": derive_availability_tags(
-                        competence_data.get("availability_time") or {}
+                    # Use pre-computed availability_tags from enricher when present;
+                    # derive from availability_time as a fallback.
+                    "availability_tags": (
+                        competence_data.get("availability_tags")
+                        or derive_availability_tags(
+                            competence_data.get("availability_time") or {}
+                        )
                     ),
+                    "availability_text": competence_data.get("availability_text", ""),
                 },
                 references={
                     "owned_by": user_uuid  # Link to User (Spoke → Hub)
@@ -389,7 +451,7 @@ class HubSpokeIngestion:
     @staticmethod
     def update_competencies_by_user_id(
         user_id: str,
-        competencies: List[Dict[str, Any]],
+        competencies: "str | List[str] | List[Dict[str, Any]]",
     ) -> Dict[str, Any]:
         """Replace all Weaviate competencies for a user with fresh enriched data.
 
@@ -400,10 +462,11 @@ class HubSpokeIngestion:
 
         Args:
             user_id:      Firestore / Firebase user identifier.
-            competencies: List of competence dicts, each should contain at minimum
-                          ``title``.  Enriched fields (search_optimized_summary,
-                          skills_list, price_per_hour, availability_tags, …) are
-                          written when present.
+            competencies: Accepts any of:
+                          - A single string (converted to one competence dict).
+                          - A list of strings (each converted to a competence dict).
+                          - A list of dicts (preferred; enriched fields are written
+                            as-is so the full Weaviate index is populated).
 
         Returns:
             Dict with ``success``, ``updated_uuids``, and ``count`` keys.
@@ -425,6 +488,31 @@ class HubSpokeIngestion:
             
             user_uuid = str(result.objects[0].uuid)
             logger.info(f"Found user {user_uuid} for user_id {user_id}")
+
+            # Normalise input to List[Dict] so the loop below is uniform.
+            if isinstance(competencies, str):
+                competencies_to_insert: List[Dict[str, Any]] = [
+                    {"title": competencies, "description": competencies}
+                ]
+            elif isinstance(competencies, list):
+                competencies_to_insert = []
+                for item in competencies:
+                    if isinstance(item, dict):
+                        competencies_to_insert.append(item)
+                    elif isinstance(item, str):
+                        competencies_to_insert.append(
+                            {"title": item, "description": item}
+                        )
+                    else:
+                        logger.warning(
+                            "update_competencies_by_user_id: skipping unsupported entry type %r",
+                            type(item),
+                        )
+            else:
+                logger.warning(
+                    "update_competencies_by_user_id: unexpected competencies type %r", type(competencies)
+                )
+                competencies_to_insert = []
             
             # Delete all existing competencies
             from weaviate.classes.query import QueryReference
@@ -448,13 +536,7 @@ class HubSpokeIngestion:
             
             # Add new competencies — expects a list of dicts only
             updated_uuids = []
-            if not isinstance(competencies, list):
-                logger.error("update_competencies_by_user_id: competencies must be a list of dicts")
-                return {"success": False, "error": "Input must be a list of dicts", "updated_uuids": []}
-            for comp_dict in competencies:
-                if not isinstance(comp_dict, dict):
-                    logger.warning("update_competencies_by_user_id: skipping non-dict entry: %r", comp_dict)
-                    continue
+            for comp_dict in competencies_to_insert:
                 comp_uuid = HubSpokeIngestion.create_competence(
                     competence_data=comp_dict,
                     user_uuid=user_uuid,

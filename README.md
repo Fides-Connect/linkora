@@ -56,8 +56,9 @@ Fides/
 │
 ├── ai-assistant/         # 🤖 Python WebRTC server
 │   ├── src/             # Python source code
-│   ├── scripts/         # Utility scripts
+│   ├── scripts/         # Utility scripts (incl. download_models.py)
 │   ├── tests/           # Unit and integration tests
+│   ├── models/          # Bundled ML models (Git LFS — run `git lfs pull`)
 │   ├── Dockerfile       # Container definition
 │   └── docker-compose.yml
 │
@@ -80,6 +81,27 @@ Fides/
 
 - **For Mobile App**: Flutter SDK (^3.9.2+), iOS/Android device
 - **For Backend**: Python 3.11+, Docker, Google Cloud account, Gemini API key
+- **Git LFS**: required to pull bundled ML model weights (see below)
+
+### 0. Clone with Git LFS
+
+This repo uses [Git LFS](https://git-lfs.com) to store the cross-encoder model weights (~87 MB).
+Install LFS once and pull the files after cloning:
+
+```bash
+# Install (macOS)
+brew install git-lfs
+git lfs install          # registers LFS hooks globally (run once per machine)
+
+# After cloning the repo
+git lfs pull             # downloads model.safetensors and any other LFS-tracked files
+```
+
+If you skip `git lfs pull`, the `model.safetensors` file will be a 134-byte pointer and the
+backend will fall back to downloading the model from HuggingFace Hub at first startup.
+
+> **First-time setup without LFS access**: run `python ai-assistant/scripts/download_models.py`
+> to download the model files directly from HuggingFace Hub into `ai-assistant/models/`.
 
 ### 1. Start the Backend Server
 

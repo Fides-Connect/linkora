@@ -3,7 +3,7 @@
 All schemas use ConfigDict with extra='forbid' to reject unknown fields.
 Timestamps (created_at, updated_at) are auto-injected and not part of validation.
 """
-from typing import List, Optional
+from typing import ClassVar, List, Optional
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
@@ -180,7 +180,22 @@ class ServiceRequestSchema(BaseModel):
     end_date: Optional[datetime] = None
     category: Optional[str] = Field(None, max_length=100)
     location: Optional[str] = Field(None, max_length=200)
-    
+
+    _VALID_CATEGORIES: ClassVar[frozenset] = frozenset({
+        "pets", "housekeeping", "restaurant", "technology",
+        "gardening", "electrical", "plumbing", "repair",
+        "teaching", "transport", "childcare", "wellness",
+        "events", "other",
+    })
+
+    @field_validator('category')
+    @classmethod
+    def validate_category(cls, v: Optional[str]) -> Optional[str]:
+        """Validate category against the canonical set."""
+        if v is not None and v not in cls._VALID_CATEGORIES:
+            raise ValueError(f'category must be one of {sorted(cls._VALID_CATEGORIES)}')
+        return v
+
     @field_validator('status')
     @classmethod
     def validate_status(cls, v: str) -> str:
@@ -663,6 +678,7 @@ class AIConversationSchema(BaseModel):
     user_id: str = Field(..., min_length=1)
     topic_title: str = Field(default="", max_length=300)
     request_id: Optional[str] = Field(default=None)
+    request_summary: str = Field(default="", max_length=1000)
     final_stage: Optional[str] = Field(default=None)
     first_message_at: Optional[datetime] = Field(default=None)
     last_message_at: Optional[datetime] = Field(default=None)
@@ -684,6 +700,7 @@ class AIConversationUpdateSchema(BaseModel):
 
     topic_title: Optional[str] = Field(default=None, max_length=300)
     request_id: Optional[str] = Field(default=None)
+    request_summary: Optional[str] = Field(default=None, max_length=1000)
     final_stage: Optional[str] = Field(default=None)
     first_message_at: Optional[datetime] = Field(default=None)
     last_message_at: Optional[datetime] = Field(default=None)

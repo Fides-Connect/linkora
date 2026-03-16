@@ -600,11 +600,16 @@ async def main():
             # Clean and Populate
             if args.load_test_data and test_personas:
                 await init_firestore(test_data)
-                
-                # Load Weaviate Data as well if requested
+
+                # Rebuild Weaviate from Firestore — includes all live accounts,
+                # not just the static test personas loaded above.
                 logger.info("\n[Phase 3] Loading Vector Data (Weaviate)")
                 logger.info("-" * 30)
-                load_weaviate_data(test_personas)
+                result = await rebuild_weaviate_from_firestore()
+                logger.info(
+                    f"  ✓ {result.success_count} user(s) ingested, "
+                    f"{result.failure_count} failure(s)."
+                )
             elif not args.load_test_data:
                 # Create empty structure by passing empty dict
                 await init_firestore({}) 

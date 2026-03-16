@@ -222,6 +222,14 @@ class AudioRoutingService {
   Future<void> _setLoudspeaker() async {
     try {
       await _hardwareController.setSpeakerphoneOn(true);
+      // Android requires MODE_IN_COMMUNICATION for hardware AEC to engage.
+      // Without it the OS defaults to MODE_NORMAL (media playback) and hardware
+      // echo cancellation is disabled — causing STT to transcribe TTS output.
+      try {
+        await _hardwareController.setAndroidAudioConfig();
+      } catch (e) {
+        debugPrint('AudioRouting: Android AEC config error (loudspeaker): $e');
+      }
       _isSpeakerOn = true;
       _isBluetoothSpeakerConnected = false;
       _isBluetoothMicrophoneConnected = false;
@@ -249,17 +257,11 @@ class AudioRoutingService {
       }
 
       await _hardwareController.setSpeakerphoneOn(true);
-      // Skip Android audio configuration in test environments
-      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android && !kDebugMode) {
-        try {
-          await Helper.setAndroidAudioConfiguration(AndroidAudioConfiguration(
-            androidAudioMode: AndroidAudioMode.inCommunication,
-            androidAudioStreamType: AndroidAudioStreamType.voiceCall,
-            androidAudioAttributesUsageType: AndroidAudioAttributesUsageType.voiceCommunication,
-          ));
-        } catch (e) {
-          debugPrint('AudioRouting: Android audio configuration error: $e');
-        }
+      // Android requires MODE_IN_COMMUNICATION for hardware AEC.
+      try {
+        await _hardwareController.setAndroidAudioConfig();
+      } catch (e) {
+        debugPrint('AudioRouting: Android AEC config error (bluetooth): $e');
       }
       // Android requires speakerphone to be toggled on then off to route Bluetooth audio correctly
       // This delay allows the audio system to stabilize before disabling speakerphone

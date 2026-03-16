@@ -32,11 +32,13 @@ class PeerConnectionHandler:
         language: str = 'de',
         session_mode: str = 'voice',
         ice_servers: list[dict] | None = None,
+        language_fallback_from: str = "",
     ):
         self.connection_id = connection_id
         self.websocket = websocket
         self.user_id = user_id
         self.language = language
+        self.language_fallback_from = language_fallback_from
         # Store as SessionMode enum; backward-compat: == "voice" still works.
         self.session_mode = SessionMode(session_mode)
         self.pc = RTCPeerConnection(
@@ -202,10 +204,10 @@ class PeerConnectionHandler:
             logger.warning("mode-switch received but audio processor not ready")
             return
         self._reset_idle_timer()
-        if mode == 'text' and not self.audio_processor._is_text_mode:
+        if mode == 'text' and self.audio_processor.session_mode != SessionMode.TEXT:
             logger.info("mode-switch → text: pausing voice pipeline")
             asyncio.create_task(self.audio_processor.disable_voice_mode())
-        elif mode == 'voice' and self.audio_processor._is_text_mode:
+        elif mode == 'voice' and self.audio_processor.session_mode == SessionMode.TEXT:
             logger.info("mode-switch → voice: resuming voice pipeline")
             asyncio.create_task(self.audio_processor.enable_voice_mode())
 
@@ -218,6 +220,7 @@ class PeerConnectionHandler:
             input_track=track,
             user_id=self.user_id,
             language=self.language,
+            language_fallback_from=self.language_fallback_from,
         )
         # Wire activity hook so STT transcripts reset the idle timer
         self.audio_processor.on_activity = self._reset_idle_timer
@@ -272,7 +275,7 @@ class PeerConnectionHandler:
             if track.kind != "audio":
                 return
 
-            if self.audio_processor is not None and self.audio_processor._is_text_mode:
+            if self.audio_processor is not None and self.audio_processor.session_mode == SessionMode.TEXT:
                 await self._on_text_to_voice_upgrade(track)
             elif self.audio_processor is not None:
                 await self._on_track_replacement(track)
@@ -288,6 +291,31 @@ class PeerConnectionHandler:
             if self.audio_processor:
                 self.audio_processor.set_data_channel(channel)
             self._flush_pending_text_inputs()
+
+            @channel.on("open")
+            def on_channel_open():
+                """Re-emit current FSM state once the DataChannel is confirmed open.
+
+                set_data_channel() is called when the channel is *received* but
+                still in 'connecting' state, so any FSM-state emit attempted
+                there is a silent no-op. Re-emitting here guarantees Flutter
+                receives the current runtime state (e.g. 'listening') as soon
+                as the channel becomes writable.
+                """
+                if self.audio_processor:
+                    try:
+                        fsm = self.audio_processor.ai_assistant.response_orchestrator.runtime_fsm
+                        self.audio_processor._emit_runtime_state(fsm.state)
+                        logger.info(
+                            "DataChannel open — re-emitted FSM state '%s' for connection %s",
+                            fsm.state,
+                            self.connection_id,
+                        )
+                    except AttributeError as exc:
+                        logger.warning(
+                            "Could not re-emit FSM state on DC open for %s: %s",
+                            self.connection_id, exc,
+                        )
 
             @channel.on("message")
             def on_message(message):
@@ -347,11 +375,27 @@ class PeerConnectionHandler:
     async def _handle_initial_text_offer(self) -> None:
         """Create a text-mode AudioProcessor and send answer (no audio track)."""
         if self.audio_processor is None:
+            # When the client sent a message before the session was fully ready,
+            # tag the first pending input as a system event so the LLM can
+            # respond to the user's intent immediately instead of showing a
+            # standalone greeting followed by a separate response.
+            buffered_message: str | None = None
+            if self._pending_text_inputs:
+                original = self._pending_text_inputs[0]
+                system_tagged = (
+                    f'[System Event: User reconnected and sent the following'
+                    f' message: "{original}"]'
+                )
+                self._pending_text_inputs[0] = system_tagged
+                buffered_message = original
+
             self.audio_processor = AudioProcessor(
                 connection_id=self.connection_id,
                 input_track=None,
                 user_id=self.user_id,
                 language=self.language,
+                language_fallback_from=self.language_fallback_from,
+                buffered_message=buffered_message,
             )
             self.audio_processor.on_activity = self._reset_idle_timer
             self._wire_runtime_fsm(self.audio_processor)
@@ -368,7 +412,7 @@ class PeerConnectionHandler:
     async def _handle_renegotiation_offer(self) -> None:
         """Handle renegotiation: text→voice upgrade (hard wait) or track swap (soft wait)."""
         is_text_to_voice_upgrade = (
-            self.audio_processor is not None and self.audio_processor._is_text_mode
+            self.audio_processor is not None and self.audio_processor.session_mode == SessionMode.TEXT
         )
         if is_text_to_voice_upgrade:
             # Hard wait: on_track MUST fire to add the TTS output track before answer.
@@ -388,7 +432,7 @@ class PeerConnectionHandler:
                 "Handling %s offer%s",
                 "renegotiation" if is_renegotiation else "initial",
                 " (text→voice upgrade)" if (
-                    is_renegotiation and self.audio_processor._is_text_mode
+                    is_renegotiation and self.audio_processor.session_mode == SessionMode.TEXT
                 ) else "",
             )
 
@@ -446,7 +490,11 @@ class PeerConnectionHandler:
                         self.audio_processor.ai_assistant.conversation_service
                         .get_current_stage()
                     )
-                    await ai_conv.close_session(final_stage)
+                    request_summary = (
+                        self.audio_processor.ai_assistant.conversation_service
+                        .context.get("request_summary", "")
+                    )
+                    await ai_conv.close_session(final_stage, request_summary=request_summary)
                 orchestrator.runtime_fsm.transition("terminate")
             except Exception as exc:
                 logger.warning(

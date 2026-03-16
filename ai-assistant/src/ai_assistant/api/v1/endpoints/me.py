@@ -275,6 +275,36 @@ async def create_my_competence(request: web.Request) -> web.Response:
         
         created_competence = await firestore_service.create_competence(user_id, competence)
         if created_competence:
+            # Enrich before writing to Weaviate so the vector and BM25 fields
+            # (search_optimized_summary, skills_list, availability_tags) are populated.
+            enricher = request.app.get("competence_enricher")
+            if enricher is not None:
+                try:
+                    enriched = await enricher.enrich(created_competence)
+                    enriched_fields = {
+                        k: enriched[k]
+                        for k in (
+                            "skills_list",
+                            "search_optimized_summary",
+                            "availability_tags",
+                            "availability_text",
+                            "price_per_hour",
+                            "category",
+                        )
+                        if k in enriched
+                    }
+                    if enriched_fields:
+                        competence_id = (
+                            created_competence.get("id")
+                            or created_competence.get("competence_id")
+                        )
+                        if competence_id:
+                            await firestore_service.update_competence(
+                                user_id, competence_id, enriched_fields
+                            )
+                        created_competence = {**created_competence, **enriched_fields}
+                except Exception as enr_exc:
+                    logger.error(f"Competence enrichment failed (non-fatal): {enr_exc}")
             # Sync to Weaviate
             try:
                 coll = get_user_collection()
@@ -282,14 +312,36 @@ async def create_my_competence(request: web.Request) -> web.Response:
                     filters=Filter.by_property("user_id").equal(user_id),
                     limit=1
                 )
+                if not res.objects:
+                    # Self-heal: Weaviate user is missing — create it from Firestore.
+                    firestore_user = await firestore_service.get_user(user_id)
+                    if firestore_user:
+                        firestore_user.setdefault("user_id", user_id)
+                        HubSpokeIngestion.create_user(firestore_user)
+                        res = coll.query.fetch_objects(
+                            filters=Filter.by_property("user_id").equal(user_id),
+                            limit=1
+                        )
+                        logger.info(f"Self-healed missing Weaviate user for {user_id}")
                 if res.objects:
                     user_uuid = str(res.objects[0].uuid)
                     HubSpokeIngestion.create_competence(
                         competence_data=created_competence,
                         user_uuid=user_uuid
                     )
+                else:
+                    logger.error(f"Weaviate user still not found after self-heal for {user_id}")
             except Exception as e:
                 logger.error(f"Failed to sync new competence to Weaviate: {e}")
+
+            # Creating a competence means this user is now offering services.
+            # Mirror is_service_provider=True to Firestore and Weaviate so they
+            # appear in provider searches (same invariant as save_competence_batch).
+            try:
+                await firestore_service.update_user(user_id, {"is_service_provider": True})
+                HubSpokeIngestion.update_user_hub_properties(user_id, {"is_service_provider": True})
+            except Exception as e:
+                logger.error(f"Failed to set is_service_provider=True for {user_id}: {e}")
 
             # Fetch and return the updated user object
             user = await firestore_service.get_user(user_id)
@@ -326,16 +378,22 @@ async def update_my_competence(request: web.Request) -> web.Response:
         
         updated_competence = await firestore_service.update_competence(user_id, competence_id, body)
         if updated_competence:
-            # Sync to Weaviate: remove old entry then re-create with updated data
+            # Sync to Weaviate: remove old entry then re-create with the full
+            # updated competence dict (preserves all enriched fields).
             try:
                 competence_data = await firestore_service.get_competence(user_id, competence_id)
                 if competence_data:
                     HubSpokeIngestion.remove_competence_by_firestore_id(competence_id)
-                    title = competence_data.get("title", "")
-                    category = competence_data.get("category", "")
-                    if title:
-                        HubSpokeIngestion.create_competencies_by_user_id(
-                            user_id, [title], category=category
+                    coll = get_user_collection()
+                    res = coll.query.fetch_objects(
+                        filters=Filter.by_property("user_id").equal(user_id),
+                        limit=1,
+                    )
+                    if res.objects:
+                        user_uuid = str(res.objects[0].uuid)
+                        HubSpokeIngestion.create_competence(
+                            competence_data=competence_data,
+                            user_uuid=user_uuid,
                         )
             except Exception as e:
                 logger.error(f"Failed to sync competence {competence_id} update to Weaviate: {e}")
