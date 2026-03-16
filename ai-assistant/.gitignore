@@ -3,6 +3,9 @@
 *.json
 secrets/**
 !secrets/.gitkeep
+# Bundled ML models — must override the *.json rule above so tokenizer/config
+# JSON files inside models/ are tracked in git (large weights use Git LFS).
+!models/**
 
 # Python
 __pycache__/

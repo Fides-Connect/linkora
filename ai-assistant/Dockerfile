@@ -23,6 +23,9 @@ WORKDIR /app
 COPY --chown=appuser:appuser pyproject.toml .
 COPY --chown=appuser:appuser main.py .
 COPY --chown=appuser:appuser src/ ./src/
+# Bundle the cross-encoder model weights (tracked via Git LFS).
+# This avoids any HF Hub network calls at container startup.
+COPY --chown=appuser:appuser models/ ./models/
 RUN pip install --no-cache-dir .
 
 
@@ -33,8 +36,12 @@ USER appuser
 EXPOSE 8080
 
 # Set environment variables
+# HF_HUB_OFFLINE prevents any outbound huggingface_hub / transformers calls;
+# the model is already present in ./models/ so no network access is needed.
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

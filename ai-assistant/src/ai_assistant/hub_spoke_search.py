@@ -9,6 +9,7 @@ Handles:
 """
 import json
 import logging
+import re
 from datetime import datetime, UTC, timedelta
 from typing import List, Dict, Any
 from weaviate.classes.query import Filter, QueryReference, MetadataQuery
@@ -20,6 +21,14 @@ from ai_assistant.hub_spoke_schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Normalised availability tokens stored in Competence.availability_tags.
+# Must stay in sync with derive_availability_tags() in firestore_schemas.py.
+_AVAILABILITY_TOKENS: frozenset = frozenset({
+    "monday", "tuesday", "wednesday", "thursday", "friday",
+    "saturday", "sunday", "weekday", "weekend",
+    "morning", "afternoon", "evening",
+})
 
 
 class HubSpokeSearch:
@@ -64,10 +73,17 @@ class HubSpokeSearch:
             # Calculate cutoff date for ghost filtering
             cutoff_date = datetime.now(UTC) - timedelta(days=max_inactive_days)
             
-            # Build query with ghost filtering and provider filtering
-            # Filter: owned_by.last_sign_in >= cutoff_date AND owned_by.is_service_provider == True
-            filter_clause = Filter.by_ref("owned_by").by_property("last_sign_in").greater_or_equal(cutoff_date) & \
-                           Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
+            # Build query with ghost filtering and provider filtering.
+            # Null last_sign_in is treated as active (providers who signed in before
+            # the field was tracked are included rather than silently excluded).
+            # Filter: (owned_by.last_sign_in is_none OR >= cutoff) AND is_service_provider == True
+            filter_clause = (
+                (
+                    Filter.by_ref("owned_by").by_property("last_sign_in").is_none(True)
+                    | Filter.by_ref("owned_by").by_property("last_sign_in").greater_or_equal(cutoff_date)
+                )
+                & Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
+            )
             
             if group_by_user:
                 # Note: Weaviate's GroupBy doesn't work with reference properties,
@@ -80,7 +96,7 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["name", "email", "is_service_provider", "last_sign_in"]
+                        return_properties=["user_id", "name", "email", "is_service_provider", "last_sign_in"]
                     )
                 )
                 
@@ -100,6 +116,7 @@ class HubSpokeSearch:
                             user_uuid = str(owned_by_refs[0].uuid)
                             competence['user'] = {
                                 'uuid': user_uuid,
+                                'user_id': user.get('user_id'),
                                 'name': user.get('name'),
                                 'email': user.get('email'),
                                 'is_service_provider': user.get('is_service_provider', False),
@@ -126,7 +143,7 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["name", "email", "is_service_provider", "last_sign_in"]
+                        return_properties=["user_id", "name", "email", "is_service_provider", "last_sign_in"]
                     )
                 )
                 
@@ -143,6 +160,7 @@ class HubSpokeSearch:
                             user = owned_by_refs[0].properties
                             competence['user'] = {
                                 'uuid': str(owned_by_refs[0].uuid),
+                                'user_id': user.get('user_id'),
                                 'name': user.get('name'),
                                 'email': user.get('email'),
                                 'last_sign_in': user.get('last_sign_in'),
@@ -202,18 +220,27 @@ class HubSpokeSearch:
     def _build_filters_and_query(
         search_request: Dict[str, Any],
         max_inactive_days: int
-    ) -> tuple[Filter, str, str]:
+    ) -> tuple[Filter, str, str, bool]:
         """
         Build search filters and query text from search request.
-        
+
         Returns:
-            Tuple of (filter_clause, query_text, available_time)
+            Tuple of (filter_clause, query_text, available_time, availability_filter_applied).
+            availability_filter_applied is True only when a Weaviate availability_tags
+            filter was added (i.e. recognised time tokens were found in available_time).
         """
-        # Build base filter: ghost filtering + provider filtering
+        # Build base filter: ghost filtering + provider filtering.
+        # Null last_sign_in is treated as active (providers who signed in before
+        # the field was tracked are included rather than silently excluded).
+        # The User collection has indexNullState:true (hub_spoke_schema.py), which
+        # is required for is_none() to work correctly on this property.
         cutoff_date = datetime.now(UTC) - timedelta(days=max_inactive_days)
         filter_clause = (
-            Filter.by_ref("owned_by").by_property("last_sign_in").greater_or_equal(cutoff_date) &
-            Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
+            (
+                Filter.by_ref("owned_by").by_property("last_sign_in").is_none(True)
+                | Filter.by_ref("owned_by").by_property("last_sign_in").greater_or_equal(cutoff_date)
+            )
+            & Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
         )
         
         # Extract and normalize availability
@@ -223,12 +250,21 @@ class HubSpokeSearch:
         else:
             available_time = ""
         
-        # Add availability filter if specified and not flexible
-        # The Weaviate schema stores normalised tokens in `availability_tags` (TEXT_ARRAY);
-        # `availability` does not exist as a property.
-        if available_time and available_time.lower() not in ["flexibel", "flexible", "any", "anytime", ""]:
-            filter_clause = filter_clause & Filter.by_property("availability_tags").contains_any([available_time])
-            logger.info(f"Added availability filter: {available_time}")
+        # Add availability filter if specified and not flexible.
+        # The Weaviate schema stores normalised tokens in `availability_tags` (TEXT_ARRAY).
+        # The LLM may produce a free-form string (e.g. "nächste Woche", "Monday morning"),
+        # so we intersect with the known token vocabulary before filtering. This prevents
+        # the raw string from never matching stored tags and silently returning zero results.
+        availability_filter_applied = False
+        if available_time and available_time.lower() not in ("flexibel", "flexible", "any", "anytime", ""):
+            raw_words = set(re.findall(r'[a-z]+', available_time.lower()))
+            matched_tokens = sorted(raw_words & _AVAILABILITY_TOKENS)
+            if matched_tokens:
+                filter_clause = filter_clause & Filter.by_property("availability_tags").contains_any(matched_tokens)
+                availability_filter_applied = True
+                logger.info("Added availability filter: %r → tokens: %s", available_time, matched_tokens)
+            else:
+                logger.info("Availability filter skipped — no known tokens in %r", available_time)
         
         # Build query text from category and criterions
         # STRATEGY: Combine category and criteria into a natural language sentence
@@ -256,8 +292,8 @@ class HubSpokeSearch:
         else:
             query_text = "service provider"
         
-        return filter_clause, query_text, available_time
-    
+        return filter_clause, query_text, available_time, availability_filter_applied
+
     @staticmethod
     def _process_search_results(response, limit: int) -> List[Dict[str, Any]]:
         """
@@ -286,6 +322,7 @@ class HubSpokeSearch:
                     user_uuid = str(owned_by_refs[0].uuid)
                     competence['user'] = {
                         'uuid': user_uuid,
+                        'user_id': user.get('user_id'),
                         'name': user.get('name'),
                         'email': user.get('email'),
                         'is_service_provider': user.get('is_service_provider', False),
@@ -305,39 +342,106 @@ class HubSpokeSearch:
         search_request: Dict[str, Any],
         limit: int = 10,
         max_inactive_days: int = 180,
-        alpha: float = 0.5
+        alpha: float = 0.5,
+        hyde_text: str = "",
     ) -> List[Dict[str, Any]]:
         """
         Hybrid search for providers with structured filtering.
-        
+
         Search Strategy:
-        1. Filter by metadata: available_time
-        2. Combine vector search for category + criterions
-        3. Sort by relevance (score)
-        
+        1. Filter by metadata: available_time, is_service_provider, last_sign_in
+        2. If ``hyde_text`` is provided, use it as the Weaviate query text so
+           that the vector component searches for semantically similar profiles
+           (HyDE — Hypothetical Document Embeddings).  The BM25 component still
+           benefits from the richer vocabulary in the hypothetical profile.
+           Otherwise fall back to the category + criterions structured string.
+        3. Fetch ``limit * 5`` (capped at 30) candidates for downstream reranking.
+        4. Group by user and sort by Weaviate hybrid score.
+
         Args:
             search_request: Structured search query with keys:
                 - available_time: when service is needed
                 - category: service category
                 - criterions: list of additional requirements
-            limit: Maximum results
-            max_inactive_days: Maximum days since last_sign_in
-            alpha: Hybrid search weight (0=pure vector, 1=pure keyword, 0.5=balanced)
-            
+            limit: Final maximum results returned (after grouping).
+            max_inactive_days: Maximum days since last_sign_in.
+            alpha: Hybrid search weight (0=pure vector, 1=pure keyword, 0.5=balanced).
+            hyde_text: Optional hypothetical provider profile generated by LLM.
+                       When supplied it is used as the Weaviate query string,
+                       bridging the vocabulary gap between user needs and stored
+                       competency descriptions.
+
         Returns:
             List of provider results sorted by relevance
         """
         try:
             competence_collection = get_competence_collection()
-            
+
+            # ── DEBUG Step 0: total collection size ──────────────────────────
+            if logger.isEnabledFor(logging.DEBUG):
+                total = competence_collection.aggregate.over_all(total_count=True).total_count
+                logger.debug("[HyDE Step 0] Total competencies in Weaviate collection: %d", total or 0)
+
             # Build filters and query text
-            filter_clause, query_text, available_time = HubSpokeSearch._build_filters_and_query(
+            filter_clause, structured_query_text, available_time, availability_filter_applied = HubSpokeSearch._build_filters_and_query(
                 search_request, max_inactive_days
             )
-            
-            logger.info(f"Hybrid search query: '{query_text[:100]}...'")
-            logger.info(f"Active filters: availability={available_time or 'none'}")
-            
+
+            # ── DEBUG Step 1: unfiltered fetch (raw collection state) ────────
+            if logger.isEnabledFor(logging.DEBUG):
+                unfiltered = competence_collection.query.fetch_objects(limit=5)
+                logger.debug(
+                    "[HyDE Step 1] Unfiltered sample (%d objects): %s",
+                    len(unfiltered.objects),
+                    [o.properties.get("title") for o in unfiltered.objects],
+                )
+
+            # ── DEBUG Step 2: filter-only fetch (is_service_provider guard) ──
+            if logger.isEnabledFor(logging.DEBUG):
+                sp_filter = Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
+                sp_results = competence_collection.query.fetch_objects(filters=sp_filter, limit=20)
+                logger.debug(
+                    "[HyDE Step 2] is_service_provider=True fetch: %d objects → %s",
+                    len(sp_results.objects),
+                    [o.properties.get("title") for o in sp_results.objects],
+                )
+
+            # HyDE: prefer the hypothetical profile text as the Weaviate query when
+            # available — it produces a richer vector representation that bridges the
+            # vocabulary gap between the user's problem and stored provider bios.
+            query_text = hyde_text.strip() if hyde_text and hyde_text.strip() else structured_query_text
+
+            # ── DEBUG Step 3: query selection ────────────────────────────────
+            logger.debug(
+                "[HyDE Step 3] Query mode: %s | query text (first 200 chars): %s",
+                "HyDE" if (hyde_text and hyde_text.strip()) else "structured",
+                query_text[:200],
+            )
+
+            logger.info(f"Hybrid search query ({'HyDE' if hyde_text else 'structured'}): '{query_text[:120]}...'")
+            if availability_filter_applied:
+                logger.info("Availability filter applied: %r → filtering on availability_tags", available_time)
+            else:
+                logger.info("Availability filter skipped: %r — no recognised tokens or excluded phrase", available_time or "none")
+
+            # Wide-net fetch: retrieve enough candidates to feed the cross-encoder
+            # reranker (Stage 2).  5x limit, capped at 30.
+            fetch_limit = min(limit * 5, 30)
+
+            # ── DEBUG Step 4: hybrid search WITHOUT full filter ───────────────
+            if logger.isEnabledFor(logging.DEBUG):
+                no_filter_response = competence_collection.query.hybrid(
+                    query=query_text,
+                    limit=5,
+                    alpha=alpha,
+                    query_properties=["title^2", "category", "description", "search_optimized_summary", "availability_text"],
+                    return_metadata=MetadataQuery(score=True),
+                )
+                logger.debug(
+                    "[HyDE Step 4] Hybrid search NO-FILTER top-5: %s",
+                    [(o.properties.get("title"), round(o.metadata.score or 0, 4)) for o in no_filter_response.objects],
+                )
+
             # Execute hybrid search
             # STRATEGY: Use query_properties to boost title and category matches.
             # This ensures that even with long criteria lists, the core "what" (category/title) remains dominant.
@@ -346,24 +450,76 @@ class HubSpokeSearch:
             #       any legacy price_range TEXT property may lack indexSearchable and would crash.
             response = competence_collection.query.hybrid(
                 query=query_text,
-                limit=limit * 10,  # Fetch more for client-side grouping
+                limit=fetch_limit * 10,  # Fetch more for client-side grouping
                 filters=filter_clause,
                 alpha=alpha,
-                # Boost title and category to prioritize exact service matches over peripheral criteria
-                query_properties=["title^2", "category^2", "description", "availability_text"],
+                # Boost title (2×) to prioritize exact service name matches. category, description,
+                # search_optimized_summary, and availability_text are searched at standard weight.
+                # search_optimized_summary is the primary vector source and also benefits BM25 recall
+                # for niche skills well-described in the summary but not literally in the title.
+                query_properties=["title^2", "category", "description", "search_optimized_summary", "availability_text"],
                 return_metadata=MetadataQuery(score=True),
                 return_references=QueryReference(
                     link_on="owned_by",
-                    return_properties=["name", "email", "is_service_provider", "last_sign_in"]
+                    return_properties=["user_id", "name", "email", "is_service_provider", "last_sign_in"]
                 )
             )
+
+            # ── DEBUG Step 5: raw results from full hybrid+filter search ─────
+            logger.debug(
+                "[HyDE Step 5] Hybrid+filter raw results: %d objects → top scores: %s",
+                len(response.objects),
+                [(o.properties.get("title"), round(o.metadata.score or 0, 4)) for o in response.objects[:5]],
+            )
             
-            # Process results: group by user and sort
-            results = HubSpokeSearch._process_search_results(response, limit)
+            # Process results: group by user and sort; use fetch_limit so we
+            # pass enough candidates to the cross-encoder reranker upstream.
+            results = HubSpokeSearch._process_search_results(response, fetch_limit)
             
-            logger.info(f"Hybrid search found {len(results)} unique providers")
+            # ── DEBUG Step 6: final grouped results ──────────────────────────
+            logger.debug(
+                "[HyDE Step 6] Final grouped providers (%d): %s",
+                len(results),
+                [r.get("name") for r in results],
+            )
+
+            if results:
+                logger.info("Hybrid search found %d unique providers", len(results))
+            else:
+                # Zero results — emit a diagnostic so the cause (no matching
+                # competencies vs. missing/wrong is_service_provider flag) is
+                # immediately visible at INFO level in production logs.
+                try:
+                    sp_filter = Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
+                    sp_count = (
+                        competence_collection.aggregate.over_all(
+                            filters=sp_filter, total_count=True
+                        ).total_count
+                        or 0
+                    )
+                    logger.info(
+                        "Hybrid search found 0 providers — "
+                        "competencies with is_service_provider=True in Weaviate: %d — "
+                        "query=%r availability=%r",
+                        sp_count,
+                        query_text[:80],
+                        available_time or "none",
+                    )
+                except Exception:
+                    logger.info(
+                        "Hybrid search found 0 providers — query=%r availability=%r",
+                        query_text[:80],
+                        available_time or "none",
+                    )
             return results
             
         except Exception as e:
             logger.error(f"Error in hybrid_search_providers: {e}", exc_info=True)
+            # Distinguish connectivity failures from data/logic errors so callers
+            # can route to RECOVERY instead of silently presenting zero results.
+            err_lower = (type(e).__name__ + " " + str(e)).lower()
+            _conn_hints = ("connect", "timeout", "unavailable", "refused", "unreachable")
+            if any(h in err_lower for h in _conn_hints):
+                from .data_provider import SearchUnavailableError
+                raise SearchUnavailableError(str(e)) from e
             return []

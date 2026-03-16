@@ -30,6 +30,9 @@ class SpeechService {
   OnChatMessageCallback? onChatMessage;
   OnRuntimeStateCallback? onRuntimeState;
   Function()? onDataChannelOpen;
+  /// Called when the voice upgrade (renegotiation) timed out without receiving
+  /// a remote audio track. The UI should revert to text mode.
+  Function()? onVoiceUpgradeTimeout;
 
   SpeechService({
     PermissionWrapper? permissionWrapper,
@@ -135,6 +138,11 @@ class SpeechService {
       debugPrint('SpeechService: WebRTC error: $error');
       onSpeechEnd?.call();
     };
+
+    _webrtcService!.onVoiceUpgradeTimeout = () {
+      debugPrint('SpeechService: Voice upgrade timed out');
+      onVoiceUpgradeTimeout?.call();
+    };
   }
 
   /// Handle incoming remote audio stream from AI-Assistant server
@@ -186,15 +194,16 @@ class SpeechService {
   /// bypassing the speech-to-text step
   ///
   /// [text] - The text message to send
+  /// [messageId] - Optional stable ID for echo deduplication (GAP-4).
   /// Returns `true` if the message was dispatched, `false` if the WebRTC service is not ready.
-  bool sendTextMessage(String text) {
+  bool sendTextMessage(String text, {String? messageId}) {
     if (_webrtcService == null) {
       debugPrint(
         'SpeechService: Cannot send text message, WebRTC service not initialized',
       );
       return false;
     }
-    _webrtcService!.sendTextMessage(text);
+    _webrtcService!.sendTextMessage(text, messageId: messageId);
     return true;
   }
 
