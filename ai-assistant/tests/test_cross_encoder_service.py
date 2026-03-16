@@ -240,7 +240,7 @@ class TestCrossEncoderMinScore:
         assert service._min_score == 0.0
 
     async def test_invalid_env_var_falls_back_to_default(self, monkeypatch):
-        """A non-numeric CROSS_ENCODER_MIN_SCORE must fall back to -5.0."""
+        """A non-numeric CROSS_ENCODER_MIN_SCORE must fall back to -8.0."""
         monkeypatch.setenv("CROSS_ENCODER_MIN_SCORE", "not-a-number")
         service = CrossEncoderService()
-        assert service._min_score == -5.0
+        assert service._min_score == -8.0
