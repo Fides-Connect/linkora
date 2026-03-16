@@ -30,7 +30,7 @@ void main() {
 
   WebRTCService buildService() => WebRTCService(
         webRTCWrapper: mockWebRTCWrapper,
-        webSocketFactory: (uri) => mockWebSocketChannel,
+        webSocketFactory: (uri, headers) => mockWebSocketChannel,
         audioRoutingServiceFactory: () => AudioRoutingService(
           hardwareController: mockAudioHardwareController,
           deviceCheckInterval: testDeviceCheckInterval,
@@ -38,6 +38,7 @@ void main() {
         ),
         firebaseAuthWrapper: mockFirebaseAuthWrapper,
         serverUrl: 'localhost:8000',
+        iceConfigTimeout: Duration.zero,
       );
 
   setUp(() async {
@@ -62,6 +63,7 @@ void main() {
 
     when(mockFirebaseAuthWrapper.currentUser).thenReturn(mockUser);
     when(mockUser.uid).thenReturn('test_user_id');
+    when(mockFirebaseAuthWrapper.getIdToken()).thenAnswer((_) async => 'test-id-token');
 
     when(mockWebRTCWrapper.getUserMedia(any))
         .thenAnswer((_) async => mockLocalStream);
@@ -156,7 +158,7 @@ void main() {
       // Re-create with URI-capturing factory
       final capturingSvc = WebRTCService(
         webRTCWrapper: mockWebRTCWrapper,
-        webSocketFactory: (uri) {
+        webSocketFactory: (uri, headers) {
           capturedUris.add(uri);
           return mockWebSocketChannel;
         },

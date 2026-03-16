@@ -32,7 +32,9 @@ async def sign_in_google(request: web.Request) -> web.Response:
         if not token:
             return web.json_response({"error": "Missing id_token"}, status=400)
 
-        # Verify the Firebase ID token
+        # Verify the Firebase ID token, including revocation check.
+        # Requires the runtime SA to have firebaseauth.users.get
+        # (custom role: projects/linkora-dev/roles/firebaseAuthTokenChecker).
         decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
 
         # Extract user information
@@ -49,6 +51,11 @@ async def sign_in_google(request: web.Request) -> web.Response:
             "name": name,
             "is_valid": True
         })
+
+    except firebase_auth.RevokedIdTokenError:
+        return web.json_response({
+            "error": "Token has been revoked",
+        }, status=401)
 
     except ValueError as e:
         # Token is invalid

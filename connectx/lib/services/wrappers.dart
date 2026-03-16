@@ -29,6 +29,11 @@ class WebRTCWrapper {
 /// Wrapper for FirebaseAuth to allow mocking
 class FirebaseAuthWrapper {
   User? get currentUser => FirebaseAuth.instance.currentUser;
+
+  /// Returns the Firebase ID token for the current user, or null if not signed in.
+  Future<String?> getIdToken() async {
+    return await FirebaseAuth.instance.currentUser?.getIdToken();
+  }
 }
 
 /// Abstract wrapper for Firestore to allow mocking in tests.

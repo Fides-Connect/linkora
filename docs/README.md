@@ -14,8 +14,7 @@ Welcome to the Linkora platform documentation. This directory contains comprehen
 - [**Weaviate (Database)**](weaviate.md) - Vector database setup and configuration
 
 ### Infrastructure Documentation
-- [**Helm Charts**](helm.md) - Kubernetes deployment configuration
-- [**Terraform**](terraform.md) - Infrastructure as code documentation
+- [**Deployment**](deployment.md) - Cloud Run + Compute Engine setup
 
 ## 🎯 Quick Links
 
@@ -31,8 +30,7 @@ Welcome to the Linkora platform documentation. This directory contains comprehen
 - [Weaviate Documentation](weaviate.md)
 
 ### For DevOps
-- [Helm Charts](helm.md)
-- [Terraform](terraform.md)
+- [Deployment](deployment.md)
 
 ## 🔗 Repository Structure
 
@@ -41,9 +39,7 @@ Fides/
 ├── docs/                 # 📖 This documentation directory
 ├── connectx/             # 📱 Flutter mobile application
 ├── ai-assistant/         # 🤖 Python WebRTC server
-├── weaviate/             # 🗄️ Vector database infrastructure
-├── helm/                 # ☸️ Kubernetes Helm charts
-├── terraform/            # 🏗️ Infrastructure as Code
+├── weaviate/             # 🗄️ Weaviate docker-compose + VM startup script
 └── .github/workflows/    # 🔄 CI/CD pipelines
 ```
 

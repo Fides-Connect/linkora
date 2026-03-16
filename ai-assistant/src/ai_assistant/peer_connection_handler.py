@@ -6,6 +6,8 @@ import asyncio
 import json
 import logging
 from aiortc import (
+    RTCConfiguration,
+    RTCIceServer,
     RTCPeerConnection,
     RTCSessionDescription,
 )
@@ -29,6 +31,7 @@ class PeerConnectionHandler:
         user_id: str = None,
         language: str = 'de',
         session_mode: str = 'voice',
+        ice_servers: list[dict] | None = None,
         language_fallback_from: str = "",
     ):
         self.connection_id = connection_id
@@ -38,7 +41,9 @@ class PeerConnectionHandler:
         self.language_fallback_from = language_fallback_from
         # Store as SessionMode enum; backward-compat: == "voice" still works.
         self.session_mode = SessionMode(session_mode)
-        self.pc = RTCPeerConnection()
+        self.pc = RTCPeerConnection(
+            configuration=self._build_rtc_config(ice_servers)
+        )
         self.relay = MediaRelay()
         self.audio_processor = None
         self.track_ready = asyncio.Event()
@@ -100,6 +105,45 @@ class PeerConnectionHandler:
             await self.close()
         except asyncio.CancelledError:
             pass  # Normal cancellation when activity is detected
+
+    # ── ICE / TURN helpers ────────────────────────────────────────────────────
+
+    @staticmethod
+    def _build_rtc_config(ice_servers: list[dict] | None) -> RTCConfiguration | None:
+        """Convert a list of ICE server dicts into an RTCConfiguration.
+
+        Each dict may contain:
+          - ``urls``:       str or list[str]
+          - ``username``:   str (optional)
+          - ``credential``: str (optional)
+
+        Returns ``None`` (no explicit config) when ``ice_servers`` is empty/None,
+        which lets aiortc fall back to its built-in default.
+        """
+        if not ice_servers:
+            return None
+        servers = []
+        for s in ice_servers:
+            urls = s.get("urls", [])
+            if isinstance(urls, str):
+                urls = [urls]
+            for url in urls:
+                servers.append(
+                    RTCIceServer(
+                        urls=url,
+                        username=s.get("username"),
+                        credential=s.get("credential"),
+                    )
+                )
+        return RTCConfiguration(iceServers=servers) if servers else None
+
+    async def send_ice_config(self, ice_servers: list[dict]) -> None:
+        """Send ICE server credentials to the client before the offer/answer exchange.
+
+        The client (Flutter) waits for this message before creating its peer
+        connection so that TURN credentials are available from the start.
+        """
+        await self.websocket.send_json({"type": "ice-config", "iceServers": ice_servers})
 
     def _flush_pending_text_inputs(self) -> None:
         """Flush queued text-input messages once the processor/channel are ready."""

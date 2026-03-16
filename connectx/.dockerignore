@@ -61,7 +61,7 @@ web/canvaskit/
 
 # Environment files (keep template only)
 .env
-!template.env
+!.env.template
 
 # Secrets and credentials
 *.json

@@ -454,34 +454,43 @@ class TestHubSpokeArchitecture(unittest.TestCase):
         # Update with a single string
         new_competence = "Updated: Expert in Home Renovation"
         logger.info(f"\nUpdating with single string: '{new_competence}'")
+        # Patch: always pass a list of dicts
         result = HubSpokeIngestion.update_competencies_by_user_id(
             user_id=user_id,
-            competencies=new_competence
+            competencies=[{
+                "title": new_competence[:50] if len(new_competence) > 50 else new_competence,
+                "description": new_competence,
+                "category": "",
+                "price_range": ""
+            }]
         )
-        
         self.assertTrue(result['success'], "Update should succeed")
         self.assertEqual(len(result['updated_uuids']), 1, "Should update one competence")
-        
         # Verify the update
         time.sleep(1)  # Wait for indexing
         updated_competencies = HubSpokeSearch.get_user_competencies(user_a['user_uuid'])
         found_updated = any("Home Renovation" in c.get('description', '') for c in updated_competencies)
         self.assertTrue(found_updated, "Should find updated competence")
-        
         # Update with a list of strings
         new_competencies_list = [
             "Master Plumber with 10 years experience",
             "Specialized in Bathroom Renovations"
         ]
         logger.info(f"\nUpdating with list: {new_competencies_list}")
+        # Patch: always pass a list of dicts
         result = HubSpokeIngestion.update_competencies_by_user_id(
             user_id=user_id,
-            competencies=new_competencies_list
+            competencies=[
+                {
+                    "title": text[:50] if len(text) > 50 else text,
+                    "description": text,
+                    "category": "",
+                    "price_range": ""
+                } for text in new_competencies_list
+            ]
         )
-        
         self.assertTrue(result['success'], "Update should succeed")
         self.assertEqual(len(result['updated_uuids']), 2, "Should update two competencies")
-        
         logger.info("✓ Update competencies by user_id working correctly")
     
     def test_delete_competencies_by_user_id(self):

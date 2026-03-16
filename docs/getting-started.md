@@ -40,10 +40,8 @@ Linkora is a complete voice-based AI assistant platform that enables natural voi
 - Google Gemini API key
 
 ### For Infrastructure/DevOps
-- Kubernetes knowledge
-- Helm 3+
-- Terraform
 - gcloud CLI
+- Basic Compute Engine / Cloud Run knowledge
 
 ## 🚀 Quick Start (Development Mode)
 
@@ -85,7 +83,7 @@ cd connectx
 flutter pub get
 
 # Copy environment template
-cp template.env .env
+cp .env.template .env
 
 # Configure server URL (use your machine's IP for Android emulator)
 # Edit .env and set:
@@ -273,5 +271,4 @@ docker-compose build --no-cache
 ### For DevOps
 
 **Infrastructure Setup**  
-- [Terraform Documentation](terraform.md) - GKE cluster provisioning
-- [Helm Documentation](helm.md) - Kubernetes deployments
+- [Deployment Documentation](deployment.md) - Cloud Run + Compute Engine setup

@@ -119,9 +119,9 @@ class TestStart:
 
     async def test_text_mode_skips_audio_tasks(self, text_proc):
         with (
-            patch.object(text_proc, "_process_audio", new=AsyncMock()),
-            patch.object(text_proc, "_continuous_stt", new=AsyncMock()),
-            patch.object(text_proc._session_starter, "initialize", new=AsyncMock()),
+            patch.object(text_proc, "_process_audio", new=AsyncMock(return_value=None)),
+            patch.object(text_proc, "_continuous_stt", new=AsyncMock(return_value=None)),
+            patch.object(text_proc._session_starter, "initialize", new=AsyncMock(return_value=None)),
         ):
             await text_proc.start()
 
@@ -131,9 +131,9 @@ class TestStart:
 
     async def test_text_mode_sets_running(self, text_proc):
         with (
-            patch.object(text_proc, "_process_audio", new=AsyncMock()),
-            patch.object(text_proc, "_continuous_stt", new=AsyncMock()),
-            patch.object(text_proc._session_starter, "initialize", new=AsyncMock()),
+            patch.object(text_proc, "_process_audio", new=AsyncMock(return_value=None)),
+            patch.object(text_proc, "_continuous_stt", new=AsyncMock(return_value=None)),
+            patch.object(text_proc._session_starter, "initialize", new=AsyncMock(return_value=None)),
         ):
             await text_proc.start()
 
@@ -141,9 +141,9 @@ class TestStart:
 
     async def test_voice_mode_creates_audio_tasks(self, voice_proc):
         with (
-            patch.object(voice_proc, "_process_audio", new=AsyncMock()),
-            patch.object(voice_proc, "_continuous_stt", new=AsyncMock()),
-            patch.object(voice_proc._session_starter, "initialize", new=AsyncMock()),
+            patch.object(voice_proc, "_process_audio", new=AsyncMock(return_value=None)),
+            patch.object(voice_proc, "_continuous_stt", new=AsyncMock(return_value=None)),
+            patch.object(voice_proc._session_starter, "initialize", new=AsyncMock(return_value=None)),
         ):
             await voice_proc.start()
 
@@ -469,7 +469,7 @@ class TestProcessFinalTranscript:
         )
 
         with patch.object(
-            text_proc.tts_manager, "process_llm_stream", new=AsyncMock()
+            text_proc.tts_manager, "process_llm_stream", new=AsyncMock(return_value=None)
         ) as mock_tts:
             await text_proc._process_final_transcript("hi")
 
@@ -504,7 +504,7 @@ class TestProcessFinalTranscript:
         _dc.send = Mock()
 
         with patch.object(
-            voice_proc.tts_manager, "process_llm_stream", new=AsyncMock()
+            voice_proc.tts_manager, "process_llm_stream", new=AsyncMock(return_value=None)
         ) as mock_tts:
             await voice_proc._process_final_transcript("hello")
 
@@ -556,9 +556,7 @@ class TestProcessFinalTranscript:
         _dc.send = Mock(side_effect=lambda m: sent_messages.append(m))
 
         # Patch LLM stream to return nothing
-        text_proc.ai_assistant.generate_llm_response_stream = AsyncMock(
-            return_value=_empty_llm_stream()
-        )
+        text_proc.ai_assistant.generate_llm_response_stream = Mock(return_value=_empty_llm_stream())
 
         await text_proc._process_final_transcript("hi, I need an electrician")
 
@@ -581,13 +579,11 @@ class TestProcessFinalTranscript:
         sent_messages = []
         _dc.send = Mock(side_effect=lambda m: sent_messages.append(m))
 
-        voice_proc.ai_assistant.generate_llm_response_stream = AsyncMock(
-            return_value=_empty_llm_stream()
-        )
+        voice_proc.ai_assistant.generate_llm_response_stream = Mock(return_value=_empty_llm_stream())
 
         # Patch TTS manager so we don't need real audio
         voice_proc.tts_manager = AsyncMock()
-        voice_proc.tts_manager.process_llm_stream = AsyncMock()
+        voice_proc.tts_manager.process_llm_stream = AsyncMock(return_value=None)
 
         await voice_proc._process_final_transcript("I need a plumber")
 

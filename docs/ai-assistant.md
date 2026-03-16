@@ -599,29 +599,25 @@ docker run -d \
   ai-assistant:latest
 ```
 
-### Kubernetes (GKE)
+### Cloud Run (Production)
 
-Uses Helm charts in `/helm/ai-assistant/`:
+Deployed automatically via CI/CD. See [Deployment Documentation](deployment.md) for the full setup.
 
 ```bash
-# Deploy to GKE
-helm install ai-assistant helm/ai-assistant \
-  --set image.tag=latest \
-  --set secrets.geminiApiKey=$GEMINI_API_KEY \
-  --set serviceAccount.annotations."iam\.gke\.io/gcp-service-account"=ai-assistant@PROJECT_ID.iam.gserviceaccount.com
+# Manual redeploy with latest image
+gcloud run deploy ai-assistant \
+  --image europe-west3-docker.pkg.dev/<PROJECT_ID>/ai-assistant/ai-assistant:latest \
+  --region europe-west3
 ```
-
-See [Helm Documentation](helm.md) for detailed deployment instructions.
 
 ### Environment-Specific Configuration
 
-**Production:**
-```yaml
-replicas: 3
-resources:
-  cpu: 1000m
-  memory: 2Gi
-WEAVIATE_URL: http://weaviate-service:80
+**Production (Cloud Run):**
+```
+WEAVIATE_URL: http://<WEAVIATE_VM_IP>:8090
+GEMINI_MODEL: gemini-2.5-flash
+MIN_INSTANCES: 1 / MAX_INSTANCES: 3
+MEMORY: 1Gi / CPU: 1
 ```
 
 ## ⚡ Performance Tuning
