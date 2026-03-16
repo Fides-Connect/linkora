@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:connectx/services/speech_service.dart';
 import 'package:connectx/models/chat_message.dart';
 import 'package:connectx/models/app_types.dart';
+
 
 class AssistantTabViewModel extends ChangeNotifier {
   final SpeechService _speechService;
@@ -32,6 +34,10 @@ class AssistantTabViewModel extends ChangeNotifier {
 
   /// Text message queued before the data channel was ready
   String? _pendingTextMessage;
+
+  /// Queue of user message texts awaiting a server echo.
+  /// When the echo arrives with matching text, we dequeue and skip re-adding it (GAP-4).
+  final Queue<String> _pendingEchoTexts = Queue<String>();
 
   // ── Idle timer ───────────────────────────────────────────────────────────
   Timer? _idleTimer;
@@ -108,12 +114,11 @@ class AssistantTabViewModel extends ChangeNotifier {
       _resetIdleTimer();
 
       if (isUser) {
-        // Dedup: if the last message is an optimistically-added user message
-        // with the same text, skip re-adding it (the server echo arrived).
-        final alreadyShown = _chatMessages.isNotEmpty &&
-            _chatMessages.last.isUser &&
-            _chatMessages.last.text == text;
-        if (!alreadyShown) {
+        // GAP-4: Text-based dedup — skip re-adding a user message whose echo we
+        // already showed optimistically (identified by _pendingEchoTexts queue).
+        if (_pendingEchoTexts.isNotEmpty && text == _pendingEchoTexts.first) {
+          _pendingEchoTexts.removeFirst(); // consume the pending echo slot
+        } else {
           _currentMessage = text;
           _chatMessages.add(ChatMessage(text: text, isUser: true));
         }
@@ -152,6 +157,13 @@ class AssistantTabViewModel extends ChangeNotifier {
     _speechService.onRuntimeState = (AgentRuntimeState state) {
       _resetIdleTimer();
       _conversationState = _runtimeStateToConversationState(state);
+      notifyListeners();
+    };
+
+    _speechService.onVoiceUpgradeTimeout = () {
+      // The renegotiation did not produce a remote audio track in time.
+      // Revert to text mode so the user is not left without a working session.
+      _isVoiceMode = false;
       notifyListeners();
     };
   }
@@ -223,6 +235,7 @@ class AssistantTabViewModel extends ChangeNotifier {
     _isVoiceMode = false;
     _dataChannelReady = false;
     _pendingTextMessage = null;
+    _pendingEchoTexts.clear();
     _isStarting = false;
     notifyListeners();
   }
@@ -237,14 +250,20 @@ class AssistantTabViewModel extends ChangeNotifier {
     if (_isStarting || _conversationState != ConversationState.idle) return;
     _isStarting = true;
     _isVoiceMode = voiceMode;
-    _pendingTextMessage = pendingText;
+    if (pendingText == null || pendingText.trim().isEmpty) {
+      _pendingTextMessage = null;
+    }
+    // _pendingTextMessage set above in the optimistic block when pendingText is non-null
     _dataChannelReady = false;
 
     // Optimistic update: show the user's first message immediately so the UI
     // responds before the server echo arrives (which may take a few seconds
     // while WebRTC is being established).
     if (pendingText != null && pendingText.trim().isNotEmpty) {
-      _chatMessages.add(ChatMessage(text: pendingText.trim(), isUser: true));
+      final optimisticMsg = ChatMessage(text: pendingText.trim(), isUser: true);
+      _pendingEchoTexts.addLast(optimisticMsg.text);
+      _pendingTextMessage = pendingText.trim();
+      _chatMessages.add(optimisticMsg);
       _lastMessageWasUser = true;
       _conversationState = ConversationState.connecting;
       notifyListeners();
@@ -283,6 +302,7 @@ class AssistantTabViewModel extends ChangeNotifier {
     _isVoiceMode = false;
     _dataChannelReady = false;
     _pendingTextMessage = null;
+    _pendingEchoTexts.clear();
     _isStarting = false;
     notifyListeners();
   }
@@ -326,17 +346,20 @@ class AssistantTabViewModel extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    // GAP-4: Track the text so the server echo can be deduplicated.
+    final optimisticMsg = ChatMessage(text: text.trim(), isUser: true);
+    _pendingEchoTexts.addLast(optimisticMsg.text);
     // Optimistic update: add message immediately so UI feels instant.
-    _chatMessages.add(ChatMessage(text: text.trim(), isUser: true));
+    _chatMessages.add(optimisticMsg);
     _lastMessageWasUser = true;
     _conversationState = ConversationState.processing;
     notifyListeners();
-    _sendTextMessageInternal(text);
+    _sendTextMessageInternal(text, messageId: optimisticMsg.id);
   }
 
-  void _sendTextMessageInternal(String text) {
+  void _sendTextMessageInternal(String text, {String? messageId}) {
     try {
-      final sent = _speechService.sendTextMessage(text);
+      final sent = _speechService.sendTextMessage(text, messageId: messageId);
       if (!sent) {
         _error = 'Unable to send message: connection is not ready yet.';
         notifyListeners();

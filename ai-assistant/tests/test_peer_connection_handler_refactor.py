@@ -101,7 +101,7 @@ class TestDataChannelMessageHandlers:
     async def test_on_dc_mode_switch_to_text(self, mock_ws):
         handler = _make_handler(mock_ws)
         ap = AsyncMock()
-        ap._is_text_mode = False
+        ap.session_mode = SessionMode.VOICE
         handler.audio_processor = ap
         handler._reset_idle_timer = Mock()
 
@@ -115,7 +115,7 @@ class TestDataChannelMessageHandlers:
     async def test_on_dc_mode_switch_to_voice(self, mock_ws):
         handler = _make_handler(mock_ws)
         ap = AsyncMock()
-        ap._is_text_mode = True
+        ap.session_mode = SessionMode.TEXT
         handler.audio_processor = ap
         handler._reset_idle_timer = Mock()
 
@@ -163,7 +163,7 @@ class TestHandleOfferDecomposition:
         """Renegotiation offer (audio_processor already set) routes to _handle_renegotiation_offer."""
         handler = _make_handler(mock_ws, mode="voice")
         ap = AsyncMock()
-        ap._is_text_mode = False
+        ap.session_mode = SessionMode.VOICE
         handler.audio_processor = ap
 
         offer = MagicMock()

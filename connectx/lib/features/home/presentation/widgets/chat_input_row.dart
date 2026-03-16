@@ -103,8 +103,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                       shape: BoxShape.circle,
                       gradient: LinearGradient(
                         colors:
-                            (widget.isVoiceMode &&
-                                widget.state != ConversationState.idle)
+                            widget.isVoiceMode
                             ? [Colors.red.shade400, Colors.red.shade700]
                             : [
                                 AppConstants.primaryCyan,
@@ -116,8 +115,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                       boxShadow: [
                         BoxShadow(
                           color:
-                              (widget.isVoiceMode &&
-                                          widget.state != ConversationState.idle
+                              (widget.isVoiceMode
                                       ? Colors.red
                                       : AppConstants.primaryPurple)
                                   .withValues(
@@ -132,7 +130,8 @@ class _ChatInputRowState extends State<ChatInputRow> {
                         ),
                       ],
                     ),
-                    child: widget.state == ConversationState.connecting
+                    child: (widget.state == ConversationState.connecting &&
+                            widget.isVoiceMode)
                         ? Center(
                             child: SizedBox(
                               width: micSize * 0.4,
@@ -146,8 +145,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                             ),
                           )
                         : Icon(
-                            widget.isVoiceMode &&
-                                    widget.state != ConversationState.idle
+                            widget.isVoiceMode
                                 ? Icons.mic_off
                                 : Icons.mic,
                             color: Colors.white,

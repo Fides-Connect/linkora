@@ -36,7 +36,7 @@ async def _get_user_language(user_id: str) -> str:
 
 logger = logging.getLogger(__name__)
 
-NOTIFICATION_CHANNEL_ID = "fides_notifications"
+NOTIFICATION_CHANNEL_ID = "Linkora_notifications"
 
 class NotificationService:
     """

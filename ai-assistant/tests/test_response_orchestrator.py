@@ -80,7 +80,7 @@ class TestOrchestratorOwnsFSMs:
 class TestHandleSignalTransition:
 
     def test_legal_target_calls_set_stage(self, orchestrator, mock_conversation_service):
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
         orchestrator.handle_signal_transition("finalize")
         mock_conversation_service.set_stage.assert_called_once_with(ConversationStage.FINALIZE)
 
@@ -112,7 +112,7 @@ class TestHandleSignalTransition:
         stage but does NOT trigger provider search.  Side effects (search,
         competency fetch, context reset) are handled by
         _apply_signal_transition_with_payload inside generate_response_stream."""
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
         result = await orchestrator.handle_signal_transition_async("finalize")
         assert result is True
         mock_conversation_service.search_providers_for_request.assert_not_called()
@@ -127,14 +127,32 @@ class TestHandleSignalTransition:
     async def test_apply_payload_finalize_calls_search_with_session_id(
         self, orchestrator, mock_conversation_service
     ):
-        """_apply_signal_transition_with_payload triggers search and forwards session_id."""
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        """_apply_signal_transition_with_payload triggers search and forwards session_id.
+        When providers are found, the payload has stage='finalize' and current_provider."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
+        mock_conversation_service.context["providers_found"] = [{"user": {"user_id": "p1", "name": "Alice"}, "title": "Electrical work", "score": 0.9}]
         pending: list = []
         await orchestrator._apply_signal_transition_with_payload(
             "finalize", "sess-42", None, pending
         )
         mock_conversation_service.search_providers_for_request.assert_called_once_with("sess-42")
         assert any(r.get("stage") == "finalize" for _, r in pending)
+
+    async def test_apply_payload_finalize_zero_results_bypasses_to_triage(
+        self, orchestrator, mock_conversation_service
+    ):
+        """Zero providers found: FINALIZE bypasses to TRIAGE with zero_result_event."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
+        mock_conversation_service.context["providers_found"] = []
+        pending: list = []
+        await orchestrator._apply_signal_transition_with_payload(
+            "finalize", "sess-42", None, pending
+        )
+        mock_conversation_service.search_providers_for_request.assert_called_once_with("sess-42")
+        assert any(
+            isinstance(r, dict) and r.get("stage") == "triage" and "zero_result_event" in r
+            for _, r in pending
+        ), f"Expected triage+zero_result_event in pending, got: {pending}"
 
     async def test_finalize_from_provider_onboarding_skips_provider_search(
         self, orchestrator, mock_conversation_service
@@ -243,7 +261,9 @@ class TestProviderSearchViaSignalTransition:
     async def test_search_called_when_signal_transition_finalize_received(
         self, orchestrator, mock_conversation_service, mock_llm_service
     ):
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
+        # Provide at least one provider so the zero-result bypass does not fire.
+        mock_conversation_service.context["providers_found"] = [{"user": {"user_id": "p1", "name": "Alice"}, "title": "Electrical work", "score": 0.9}]
         call_count = 0
 
         async def stream_with_transition(*args, **kwargs):
@@ -276,7 +296,7 @@ class TestProviderSearchTiming:
     ):
         mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
         async for _ in orchestrator.generate_response_stream(
-            "Ich brauche einen Elektriker", "test-session"
+            "I need an electrician", "test-session"
         ):
             pass
         mock_conversation_service.search_providers_for_request.assert_not_called()
@@ -627,8 +647,8 @@ class TestAIConversationServiceIntegration:
     async def test_set_topic_title_called_on_finalize_transition(
         self, mock_llm_service, mock_conversation_service
     ):
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
-        mock_conversation_service.get_problem_summary = Mock(return_value="Elektriker")
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CONFIRMATION
+        mock_conversation_service.get_problem_summary = Mock(return_value="electrician")
 
         ai_conv = self._make_ai_conv_svc()
         call_count = 0
@@ -1385,13 +1405,13 @@ class TestProviderOnboardingWriteGuard:
         self, mock_llm_service, mock_conversation_service, mock_tool_registry
     ):
         """Regression: LLM in PROVIDER_ONBOARDING yields text then calls
-        signal_transition(target_stage="") (leaked TRIAGE pattern).
+        signal_transition(target_stage="") (empty / unrecognised stage value).
 
-        Expected behaviour with the Phase 3 hard pre-check guard:
-        - The transition is BLOCKED before handle_signal_transition_async is called.
-        - A precise "call the write tool" correction is injected into pending results.
+        Expected behaviour:
+        - The transition is rejected (empty string is not a valid ConversationStage).
+        - A descriptive error is injected into pending results and fed to LLM history.
         - The follow-up stream is triggered and its output is included in the response.
-        - No 'suppressing follow-up stream' warning is logged.
+        - Stage must NOT advance (set_stage not called).
         """
         mock_conversation_service.get_current_stage.return_value = (
             ConversationStage.PROVIDER_ONBOARDING
@@ -1447,6 +1467,1065 @@ class TestProviderOnboardingWriteGuard:
             or "invalid" in m.lower() or "error" in m.lower()
             for m in messages
         ), (
-            "The 'call the write tool' correction must be fed into LLM history "
-            "so the follow-up stream knows to call save_competence_batch"
+            "A transition failure error must be fed into LLM history so the "
+            "follow-up stream can self-correct"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Provider stage escape to TRIAGE
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProviderStageEscapeToTriage:
+    """signal_transition('triage') must be allowed from PROVIDER_ONBOARDING and
+    PROVIDER_PITCH — the user may pivot mid-conversation to seek a service.
+    The old hardcoded guard that blocked any non-'completed' target from
+    PROVIDER_ONBOARDING must no longer fire."""
+
+    async def test_provider_onboarding_to_triage_allowed(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """LLM calls signal_transition('triage') from PROVIDER_ONBOARDING
+        (user says they want to find a provider, not manage skills).
+        Stage must advance to TRIAGE and no error must be injected."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+        call_count = 0
+
+        async def stream_triage(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "triage"}}
+            else:
+                yield "Of course! Let me help you find a provider."
+
+        mock_llm_service.generate_stream = stream_triage
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream(
+            "no, I am looking for someone teaching me inliner skating", "sess"
+        ):
+            pass
+
+        set_stage_calls = [c[0][0] for c in mock_conversation_service.set_stage.call_args_list]
+        assert ConversationStage.TRIAGE in set_stage_calls, (
+            "signal_transition('triage') from PROVIDER_ONBOARDING must be applied — "
+            "the old blocking guard must no longer reject it"
+        )
+
+        # No error should have been fed to LLM history for this valid transition
+        history_calls = mock_llm_service.add_message_to_history.call_args_list
+        messages = [
+            c[0][1].content for c in history_calls if hasattr(c[0][1], "content")
+        ]
+        assert not any(
+            '"error"' in m and "triage" in m.lower() for m in messages
+        ), "No blocking error should be injected for a valid ONBOARDING→TRIAGE transition"
+
+    async def test_provider_pitch_to_triage_allowed(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """signal_transition('triage') from PROVIDER_PITCH must be applied."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_PITCH
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+        call_count = 0
+
+        async def stream_triage(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "triage"}}
+            else:
+                yield "Sure, let me help you search."
+
+        mock_llm_service.generate_stream = stream_triage
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream("I want to find someone", "sess"):
+            pass
+
+        set_stage_calls = [c[0][0] for c in mock_conversation_service.set_stage.call_args_list]
+        assert ConversationStage.TRIAGE in set_stage_calls
+
+    async def test_no_re_pitch_after_record_provider_interest_not_now(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """record_provider_interest('not_now') must update in-memory user_context
+        so that when signal_transition('completed') fires next, _should_pitch_provider
+        returns False and the pitch is NOT re-triggered."""
+        from datetime import datetime, timezone, timedelta
+
+        # User is pitch-eligible: non-provider, asked 60 days ago
+        sixty_days_ago = datetime.now(timezone.utc) - timedelta(days=60)
+        context = {
+            "user_context": {
+                "is_service_provider": False,
+                "last_time_asked_being_provider": sixty_days_ago,
+            }
+        }
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_PITCH
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+        }
+
+        async def stream_with_record(*args, **kwargs):
+            yield {"type": "function_call", "name": "record_provider_interest",
+                   "args": {"decision": "not_now"}}
+
+        mock_llm_service.generate_stream = stream_with_record
+        mock_tool_registry.execute = AsyncMock(return_value={"status": "not_now"})
+
+        from unittest.mock import patch
+        with patch("ai_assistant.services.response_orchestrator.is_legal_transition", return_value=True):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("not now", "sess", context=context):
+                pass
+
+        # last_time_asked must have been refreshed to ~now (within last 5 seconds)
+        updated = context["user_context"].get("last_time_asked_being_provider")
+        assert updated is not None
+        assert (datetime.now(timezone.utc) - updated).total_seconds() < 5, (
+            "In-memory last_time_asked_being_provider must be refreshed after 'not_now' "
+            "so _should_pitch_provider won't re-fire on the next COMPLETED transition"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Same-stage guard: signal_transition embedded in tool result
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSameStageToolResultGuard:
+    """record_provider_interest(accepted) can legally be called from within
+    PROVIDER_ONBOARDING (STEP 0 intent gate).  Its tool result carries
+    {"signal_transition": "provider_onboarding"} which must NOT trigger a
+    re-entry attempt — the orchestrator should silently skip it."""
+
+    async def test_same_stage_signal_in_tool_result_is_skipped(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """No set_stage call with PROVIDER_ONBOARDING when already in that stage
+        and the tool result embeds signal_transition='provider_onboarding'."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [], "is_service_provider": False,
+        }
+
+        async def stream_accepted(*args, **kwargs):
+            yield {"type": "function_call", "name": "record_provider_interest",
+                   "args": {"decision": "accepted"}}
+
+        mock_llm_service.generate_stream = stream_accepted
+        # Tool returns the signal that would normally trigger onboarding entry
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"signal_transition": "provider_onboarding", "status": "accepted"}
+        )
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream("I could teach cooking", "sess"):
+            pass
+
+        # set_stage must NOT have been called with PROVIDER_ONBOARDING (self-loop)
+        for call in mock_conversation_service.set_stage.call_args_list:
+            assert call[0][0] != ConversationStage.PROVIDER_ONBOARDING, (
+                "set_stage(PROVIDER_ONBOARDING) must NOT be called when already in "
+                "PROVIDER_ONBOARDING — same-stage self-loop guard failed"
+            )
+
+    async def test_different_stage_signal_in_tool_result_is_applied(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """A tool result with signal_transition to a DIFFERENT stage must still
+        be applied normally (guard must not block legitimate transitions)."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_PITCH
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [], "is_service_provider": False,
+        }
+
+        async def stream_accepted(*args, **kwargs):
+            yield {"type": "function_call", "name": "record_provider_interest",
+                   "args": {"decision": "accepted"}}
+
+        mock_llm_service.generate_stream = stream_accepted
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"signal_transition": "provider_onboarding", "status": "accepted"}
+        )
+
+        from unittest.mock import patch
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("yes I want to", "sess"):
+                pass
+
+        set_stage_calls = [c[0][0] for c in mock_conversation_service.set_stage.call_args_list]
+        assert ConversationStage.PROVIDER_ONBOARDING in set_stage_calls, (
+            "Transition from PROVIDER_PITCH → PROVIDER_ONBOARDING must still be applied"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# is_service_provider sync into conversation_service.context
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestIsServiceProviderContextSync:
+    """ResponseOrchestrator must mirror user_context.is_service_provider into
+    conversation_service.context on every PROVIDER_ONBOARDING turn."""
+
+    async def test_is_service_provider_synced_on_entry(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """When entering PROVIDER_ONBOARDING via signal_transition, is_service_provider
+        from user_context must be stored in conversation_service.context."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [],
+        }
+        mock_tool_registry.execute = AsyncMock(return_value=[])
+
+        async def stream_transition(*args, **kwargs):
+            yield {"type": "function_call", "name": "signal_transition",
+                   "args": {"target_stage": "provider_onboarding"}}
+
+        mock_llm_service.generate_stream = stream_transition
+        context = {"user_context": {"is_service_provider": True, "user_id": "u1"}}
+
+        from unittest.mock import patch
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            orch = ResponseOrchestrator(
+                llm_service=mock_llm_service,
+                conversation_service=mock_conversation_service,
+                tool_registry=mock_tool_registry,
+            )
+            async for _ in orch.generate_response_stream("manage my skills", "sess", context=context):
+                pass
+
+        assert mock_conversation_service.context.get("is_service_provider") is True, (
+            "is_service_provider=True from user_context must be propagated into "
+            "conversation_service.context on PROVIDER_ONBOARDING entry"
+        )
+
+    async def test_record_provider_interest_accepted_updates_context(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """After record_provider_interest(accepted) fires, conversation_service.context
+        must have is_service_provider=True so the next prompt renders with STEP 0 skipped."""
+        mock_conversation_service.get_current_stage.return_value = (
+            ConversationStage.PROVIDER_ONBOARDING
+        )
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+            "current_competencies": [], "is_service_provider": False,
+        }
+        context = {"user_context": {"is_service_provider": False, "user_id": "u1"}}
+
+        async def stream_accepted(*args, **kwargs):
+            yield {"type": "function_call", "name": "record_provider_interest",
+                   "args": {"decision": "accepted"}}
+
+        mock_llm_service.generate_stream = stream_accepted
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"signal_transition": "provider_onboarding", "status": "accepted"}
+        )
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream("I could help", "sess", context=context):
+            pass
+
+        assert mock_conversation_service.context.get("is_service_provider") is True, (
+            "conversation_service.context['is_service_provider'] must be True after "
+            "record_provider_interest(accepted) so STEP 0 is skipped next turn"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# search_providers cache-skip guard in FINALIZE
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSearchProvidersCacheGuardInFinalize:
+    """The cache-skip guard must only bypass a Weaviate re-fetch when the cached
+    result is non-empty.  When providers_found == [], a re-fetch is required so
+    that a repaired Weaviate dataset (or a search that was interrupted on the
+    first FINALIZE entry) is picked up on the next LLM turn."""
+
+    @staticmethod
+    def _make_orchestrator(
+        mock_llm_service,
+        mock_conversation_service,
+        mock_tool_registry,
+    ):
+        return ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+
+    async def test_cache_used_when_providers_already_found(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """When providers_found has entries, the LLM-triggered search_providers call
+        must return the cache and NOT call the tool registry again."""
+        cached = [{"user": {"name": "Alice"}, "title": "Coaching"}]
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": cached, "current_provider_index": 0,
+        }
+
+        async def stream_search(*args, **kwargs):
+            yield {"type": "function_call", "name": "search_providers", "args": {}}
+            yield "Great, I found someone."
+
+        mock_llm_service.generate_stream = stream_search
+
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        chunks = []
+        async for c in orch.generate_response_stream("good", "sess"):
+            chunks.append(c)
+
+        # Tool registry must NOT be called for search_providers — cache was used
+        for call in mock_tool_registry.execute.call_args_list:
+            assert call.args[0] != "search_providers", (
+                "search_providers must be served from cache when providers_found is non-empty"
+            )
+
+    async def test_refetch_triggered_when_cache_is_empty(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """When providers_found is empty (e.g. first search was interrupted or
+        returned 0 due to stale Weaviate data), the next LLM call to search_providers
+        must execute the real tool, giving Weaviate a second chance."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+        }
+
+        async def stream_search(*args, **kwargs):
+            yield {"type": "function_call", "name": "search_providers", "args": {}}
+
+        mock_llm_service.generate_stream = stream_search
+        mock_tool_registry.execute = AsyncMock(return_value=[{"user": {"name": "Bob"}}])
+
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        async for _ in orch.generate_response_stream("good", "sess"):
+            pass
+
+        # Tool registry MUST have been called for search_providers
+        executed_names = [c.args[0] for c in mock_tool_registry.execute.call_args_list]
+        assert "search_providers" in executed_names, (
+            "search_providers must re-fetch when providers_found cache is empty"
+        )
+
+    async def test_followup_stream_refetches_when_cache_empty(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Same empty-cache rule applies to the follow-up LLM stream in FINALIZE."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+        mock_conversation_service.context = {
+            "user_problem": [], "providers_found": [], "current_provider_index": 0,
+        }
+
+        # First stream: signal_transition → follow-up stream: search_providers
+        turn = 0
+
+        async def two_turn_stream(*args, **kwargs):
+            nonlocal turn
+            if turn == 0:
+                turn += 1
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "finalize"}}
+            else:
+                yield {"type": "function_call", "name": "search_providers", "args": {}}
+
+        mock_llm_service.generate_stream = two_turn_stream
+        # Return empty from search_providers_for_request (auto-search on FINALIZE entry)
+        mock_conversation_service.search_providers_for_request = AsyncMock(return_value=[])
+        mock_tool_registry.execute = AsyncMock(return_value=[{"user": {"name": "Carol"}}])
+
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        async for _ in orch.generate_response_stream("yes", "sess"):
+            pass
+
+        # Tool registry must have been called for search_providers in follow-up
+        executed_names = [c.args[0] for c in mock_tool_registry.execute.call_args_list]
+        assert "search_providers" in executed_names, (
+            "Follow-up stream must re-fetch search_providers when cache is empty"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# accept_provider follow-up: no duplicate message
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestAcceptProviderNoDuplicateMessage:
+    """Regression: after accept_provider fires FINALIZE → COMPLETED, the follow-up
+    stream must NOT misinterpret the previous user utterance (e.g. "it's berlin")
+    as a new service request and generate a spurious second TRIAGE loop.
+
+    Bug trace:
+      1. User in FINALIZE says "it's berlin".
+      2. LLM calls accept_provider → create_service_request executes → COMPLETED.
+      3. follow_up_input = "it's berlin" was fed to LOOP_BACK_PROMPT.
+      4. LLM saw it as a new topic → signal_transition("triage") → second follow-up
+         stream ran against TRIAGE, producing a duplicate message and then an illegal
+         TRIAGE → COMPLETED attempt.
+    """
+
+    @staticmethod
+    def _make_orchestrator(mock_llm, mock_conv, mock_registry):
+        return ResponseOrchestrator(
+            llm_service=mock_llm,
+            conversation_service=mock_conv,
+            tool_registry=mock_registry,
+        )
+
+    async def test_no_triage_loop_after_accept_provider(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """After accept_provider, the follow-up stream must NOT receive the user's
+        prior location utterance as its input — preventing a spurious triage loop."""
+        from unittest.mock import call, patch
+
+        # Start in FINALIZE; stage advances to COMPLETED inside _handle_finalize_tool.
+        stage_sequence = [
+            ConversationStage.FINALIZE,   # initial stage check
+            ConversationStage.FINALIZE,   # tool registration check
+            ConversationStage.FINALIZE,   # prompt build
+            ConversationStage.COMPLETED,  # follow-up stream stage (after transition)
+        ]
+        mock_conversation_service.get_current_stage.side_effect = stage_sequence + [
+            ConversationStage.COMPLETED
+        ] * 10  # subsequent calls stay COMPLETED
+        mock_conversation_service.context = {
+            "user_problem": [],
+            "providers_found": [{"user": {"user_id": "p1", "name": "David"}, "title": "Lighting", "score": 0.9}],
+            "current_provider_index": 0,
+        }
+
+        # create_service_request returns a successful result
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"id": "req-123", "title": "New lights"}
+        )
+
+        stream_inputs: list[str] = []
+        call_count = 0
+
+        async def capture_stream(user_input, template, session_id):
+            nonlocal call_count
+            call_count += 1
+            stream_inputs.append(user_input)
+            if call_count == 1:
+                # Main stream: LLM calls accept_provider
+                yield {
+                    "type": "function_call",
+                    "name": "accept_provider",
+                    "args": {
+                        "provider_id": "p1",
+                        "title": "New lights",
+                        "description": "Install balcony lights",
+                        "location": "Berlin",
+                    },
+                }
+            else:
+                # Follow-up stream: LLM confirms and stops (no spurious triage call)
+                yield "Your request has been sent to David. He will be in touch shortly."
+
+        mock_llm_service.generate_stream = capture_stream
+
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            orch = self._make_orchestrator(
+                mock_llm_service, mock_conversation_service, mock_tool_registry
+            )
+            chunks = [c async for c in orch.generate_response_stream("it's berlin", "sess")]
+
+        # The fix: follow-up input must be " " (not "it's berlin") when accept_provider
+        # is in the pending batch.
+        assert len(stream_inputs) >= 2, "Expected at least main + follow-up stream"
+        follow_up_input_used = stream_inputs[1]
+        assert follow_up_input_used == " ", (
+            f"Follow-up input after accept_provider must be ' ' to avoid LOOP_BACK_PROMPT "
+            f"misreading the prior location answer as a new topic, got {follow_up_input_used!r}"
+        )
+
+    async def test_accept_provider_generates_single_confirmation(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Only one text response must be generated across all streams: the COMPLETED
+        confirmation.  No TRIAGE loop should produce a second message."""
+        from unittest.mock import patch
+
+        mock_conversation_service.get_current_stage.side_effect = (
+            [ConversationStage.FINALIZE] * 5 + [ConversationStage.COMPLETED] * 15
+        )
+        mock_conversation_service.context = {
+            "user_problem": [],
+            "providers_found": [{"user": {"user_id": "p1", "name": "David"}, "title": "Lighting", "score": 0.9}],
+            "current_provider_index": 0,
+        }
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"id": "req-123", "title": "New lights"}
+        )
+
+        call_count = 0
+
+        async def controlled_stream(user_input, template, session_id):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {
+                    "type": "function_call",
+                    "name": "accept_provider",
+                    "args": {"provider_id": "p1", "title": "New lights"},
+                }
+            elif call_count == 2:
+                yield "Your request has been sent. Is there anything else I can help you with?"
+            # No further streams; call_count >= 3 would indicate a spurious TRIAGE loop.
+
+        mock_llm_service.generate_stream = controlled_stream
+
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            orch = self._make_orchestrator(
+                mock_llm_service, mock_conversation_service, mock_tool_registry
+            )
+            texts = [c async for c in orch.generate_response_stream("it's berlin", "sess")
+                     if isinstance(c, str)]
+
+        # All text should come from stream call #2 (the COMPLETED follow-up).
+        # If a spurious TRIAGE loop had run, call_count would be >= 3.
+        assert call_count == 2, (
+            f"Expected exactly 2 LLM stream calls (main + COMPLETED follow-up), "
+            f"got {call_count} — a spurious TRIAGE loop is running."
+        )
+        assert any("request has been sent" in t for t in texts)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _handle_finalize_tool — unit tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestHandleFinalizeToolUnit:
+    """Direct unit tests for ResponseOrchestrator._handle_finalize_tool.
+
+    Each test calls the method directly and inspects the *pending* list to verify
+    the correct payload is appended without running a full stream.
+    """
+
+    @staticmethod
+    def _make_orchestrator(mock_llm, mock_conv, mock_registry):
+        return ResponseOrchestrator(
+            llm_service=mock_llm,
+            conversation_service=mock_conv,
+            tool_registry=mock_registry,
+        )
+
+    async def test_no_provider_id_appends_error(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Missing provider_id → error payload appended; registry never called."""
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        pending: list = []
+        await orch._handle_finalize_tool("accept_provider", {}, "sess", {}, pending)
+        assert any(
+            name == "accept_provider" and isinstance(result, dict) and result.get("error")
+            for name, result in pending
+        ), f"Expected error payload in pending, got: {pending}"
+        mock_tool_registry.execute.assert_not_called()
+
+    async def test_no_location_appends_location_required(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Missing location → location_required error; registry never called (GAP-2 guard)."""
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        mock_conversation_service.context["providers_found"] = []
+        pending: list = []
+        await orch._handle_finalize_tool(
+            "accept_provider",
+            {"provider_id": "uid-abc"},
+            "sess",
+            {},
+            pending,
+        )
+        errors = [result for name, result in pending if name == "accept_provider"]
+        assert errors, "Expected an accept_provider payload"
+        assert errors[0].get("error") == "location_required", (
+            f"Expected location_required error, got: {errors[0]}"
+        )
+        mock_tool_registry.execute.assert_not_called()
+
+    async def test_valid_call_invokes_create_service_request(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Valid accept_provider args → create_service_request called with selected_provider_user_id."""
+        mock_conversation_service.context["providers_found"] = []
+        mock_tool_registry.execute = AsyncMock(return_value={"id": "req-1", "title": "Fix pipes"})
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        pending: list = []
+        await orch._handle_finalize_tool(
+            "accept_provider",
+            {"provider_id": "uid-p1", "location": "Berlin", "category": "plumbing", "title": "Fix pipes"},
+            "sess",
+            {},
+            pending,
+        )
+        mock_tool_registry.execute.assert_called_once()
+        call_args = mock_tool_registry.execute.call_args
+        assert call_args[0][0] == "create_service_request"
+        csr_args = call_args[0][1]
+        assert csr_args["selected_provider_user_id"] == "uid-p1"
+        assert csr_args["location"] == "Berlin"
+        assert csr_args["category"] == "plumbing"
+
+    async def test_rerank_score_enriched_as_sigmoid(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Accepted provider with rerank_score → _candidate_matching_score = sigmoid * 100."""
+        import math
+        raw = 2.0
+        expected_score = round(1.0 / (1.0 + math.exp(-raw)) * 100, 1)
+        mock_conversation_service.context["providers_found"] = [
+            {"user": {"user_id": "uid-p1", "name": "Hans"}, "title": "Electrician", "score": 0.5, "rerank_score": raw}
+        ]
+        mock_tool_registry.execute = AsyncMock(return_value={"id": "req-2"})
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        pending: list = []
+        await orch._handle_finalize_tool(
+            "accept_provider",
+            {"provider_id": "uid-p1", "location": "Munich", "category": "electrical"},
+            "sess",
+            {},
+            pending,
+        )
+        csr_args = mock_tool_registry.execute.call_args[0][1]
+        assert csr_args.get("_candidate_matching_score") == expected_score
+
+    async def test_hybrid_score_used_when_no_rerank_score(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Provider without rerank_score but with score → _candidate_matching_score = score * 100."""
+        mock_conversation_service.context["providers_found"] = [
+            {"user": {"user_id": "uid-p2", "name": "Petra"}, "title": "Plumber", "score": 0.75}
+        ]
+        mock_tool_registry.execute = AsyncMock(return_value={"id": "req-3"})
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        pending: list = []
+        await orch._handle_finalize_tool(
+            "accept_provider",
+            {"provider_id": "uid-p2", "location": "Hamburg", "category": "plumbing"},
+            "sess",
+            {},
+            pending,
+        )
+        csr_args = mock_tool_registry.execute.call_args[0][1]
+        assert csr_args.get("_candidate_matching_score") == round(0.75 * 100, 1)
+
+    async def test_no_score_when_provider_not_in_list(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """provider_id not found in providers_found → request still created, no score enrichment."""
+        mock_conversation_service.context["providers_found"] = [
+            {"user": {"user_id": "uid-other", "name": "Other"}, "title": "Other", "score": 0.9}
+        ]
+        mock_tool_registry.execute = AsyncMock(return_value={"id": "req-4"})
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        pending: list = []
+        await orch._handle_finalize_tool(
+            "accept_provider",
+            {"provider_id": "uid-unknown", "location": "Berlin", "category": "repair"},
+            "sess",
+            {},
+            pending,
+        )
+        mock_tool_registry.execute.assert_called_once()
+        csr_args = mock_tool_registry.execute.call_args[0][1]
+        assert "_candidate_matching_score" not in csr_args
+
+    async def test_reject_and_fetch_next_presents_next_provider(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """reject_and_fetch_next at index 0 → index incremented to 1, next provider returned."""
+        p2 = {"user": {"user_id": "uid-p2", "name": "Lena"}, "title": "Gardener", "score": 0.8}
+        mock_conversation_service.context = {
+            "user_problem": [],
+            "providers_found": [
+                {"user": {"user_id": "uid-p1", "name": "Karl"}, "title": "Gardener", "score": 0.9},
+                p2,
+            ],
+            "current_provider_index": 0,
+        }
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        pending: list = []
+        await orch._handle_finalize_tool("reject_and_fetch_next", {}, "sess", {}, pending)
+        assert mock_conversation_service.context["current_provider_index"] == 1
+        payloads = [r for name, r in pending if name == "reject_and_fetch_next"]
+        assert payloads and payloads[0].get("status") == "next_provider"
+        assert payloads[0].get("current_provider") == p2
+
+    async def test_reject_and_fetch_next_exhausted_reports_exhausted(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """reject_and_fetch_next when already at last provider → transitions to TRIAGE
+        with a zero_result_event hint; no next_provider payload is appended."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+        mock_conversation_service.context = {
+            "user_problem": [],
+            "providers_found": [
+                {"user": {"user_id": "uid-p1", "name": "Karl"}, "title": "Gardener", "score": 0.9},
+            ],
+            "current_provider_index": 0,
+        }
+        orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+        pending: list = []
+        await orch._handle_finalize_tool("reject_and_fetch_next", {}, "sess", {}, pending)
+
+        # No next_provider should have been appended — list is exhausted
+        next_payloads = [r for name, r in pending if name == "reject_and_fetch_next"]
+        assert not next_payloads or all(
+            r.get("status") != "next_provider" for r in next_payloads
+        ), f"Expected no next_provider when list exhausted, got: {next_payloads}"
+
+        # A triage stage with zero_result_event must appear in the pending payloads
+        triage_payloads = [
+            r for _, r in pending
+            if isinstance(r, dict) and r.get("stage") == "triage" and "zero_result_event" in r
+        ]
+        assert triage_payloads, (
+            f"Expected triage+zero_result_event payload when all providers exhausted, got: {pending}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FINALIZE happy-path streams: reject→accept chain and cache exhaustion
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFinalizeHappyPathStream:
+    """Integration-level stream tests covering multi-turn FINALIZE flows:
+    - Test Case 2: user rejects first provider then accepts the second.
+    - Test Case 3: user rejects all providers → exhaustion → back to TRIAGE.
+    """
+
+    @staticmethod
+    def _make_orchestrator(mock_llm, mock_conv, mock_registry):
+        return ResponseOrchestrator(
+            llm_service=mock_llm,
+            conversation_service=mock_conv,
+            tool_registry=mock_registry,
+        )
+
+    async def test_reject_then_accept_chain(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """User rejects provider p1 then accepts p2.
+
+        Sequence:
+          Stream 1 (FINALIZE): LLM calls reject_and_fetch_next()
+          Stream 2 (FINALIZE follow-up re-presentation): LLM calls accept_provider(p2)
+          Stream 3 (COMPLETED follow-up): LLM confirms
+        """
+        from unittest.mock import patch
+
+        p1 = {"user": {"user_id": "uid-p1", "name": "Karl"}, "title": "Plumber", "score": 0.9}
+        p2 = {"user": {"user_id": "uid-p2", "name": "Lena"}, "title": "Plumber", "score": 0.8}
+        mock_conversation_service.context = {
+            "user_problem": [],
+            "providers_found": [p1, p2],
+            "current_provider_index": 0,
+        }
+        mock_conversation_service.get_current_stage.side_effect = (
+            [ConversationStage.FINALIZE] * 10 + [ConversationStage.COMPLETED] * 10
+        )
+        mock_tool_registry.execute = AsyncMock(return_value={"id": "req-99", "title": "Pipes"})
+
+        call_count = 0
+
+        async def stream(user_input, template, session_id):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "reject_and_fetch_next", "args": {}}
+            elif call_count == 2:
+                yield {
+                    "type": "function_call",
+                    "name": "accept_provider",
+                    "args": {"provider_id": "uid-p2", "location": "Berlin", "category": "plumbing"},
+                }
+            else:
+                yield "Request sent to Lena."
+
+        mock_llm_service.generate_stream = stream
+
+        with patch("ai_assistant.services.response_orchestrator.is_legal_transition", return_value=True):
+            orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+            chunks = [c async for c in orch.generate_response_stream("no, next one", "sess")]
+
+        # create_service_request must have been called with p2's uid
+        executed = [c.args[0] for c in mock_tool_registry.execute.call_args_list]
+        assert "create_service_request" in executed
+        csr_args = next(
+            c.args[1] for c in mock_tool_registry.execute.call_args_list if c.args[0] == "create_service_request"
+        )
+        assert csr_args["selected_provider_user_id"] == "uid-p2"
+        # p1 must have been skipped (index bumped)
+        assert mock_conversation_service.context["current_provider_index"] == 1
+
+    async def test_all_providers_rejected_raises_triage(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Rejecting the last provider in the list triggers all_providers_exhausted,
+        which the orchestrator must handle by transitioning back to TRIAGE
+        or returning the exhaustion payload for the LLM to route appropriately."""
+        from unittest.mock import patch
+
+        p1 = {"user": {"user_id": "uid-p1", "name": "Karl"}, "title": "Plumber", "score": 0.9}
+        mock_conversation_service.context = {
+            "user_problem": [],
+            "providers_found": [p1],
+            "current_provider_index": 0,
+        }
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+
+        call_count = 0
+
+        async def stream(user_input, template, session_id):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "reject_and_fetch_next", "args": {}}
+            else:
+                yield "I'm sorry, no more providers are available."
+
+        mock_llm_service.generate_stream = stream
+
+        with patch("ai_assistant.services.response_orchestrator.is_legal_transition", return_value=True):
+            orch = self._make_orchestrator(mock_llm_service, mock_conversation_service, mock_tool_registry)
+            chunks = [c async for c in orch.generate_response_stream("no one else?", "sess")]
+
+        # The follow-up stream must have been called (to deliver the "no more" message)
+        assert call_count >= 2, (
+            f"Expected follow-up LLM call after exhaustion, got call_count={call_count}"
+        )
+        # create_service_request must NOT have been called
+        executed = [c.args[0] for c in mock_tool_registry.execute.call_args_list]
+        assert "create_service_request" not in executed, (
+            "create_service_request must not be called when all providers are exhausted"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Follow-up chain: 3-hop oscillation regression
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFollowUpBoundedLoop:
+    """Tests for the bounded follow-up loop that replaced the fixed 2-pass pattern.
+
+    Regression: a 3-hop chain (TRIAGE→CONFIRMATION→TRIAGE→CONFIRMATION) silently
+    dropped the third-hop pending results because the old code only had 2 fixed
+    follow-up slots.  After the fix the loop runs up to MAX_FOLLOW_UP_DEPTH=4
+    times and the final CONFIRMATION stage always produces a response.
+    """
+
+    @staticmethod
+    def _make_orchestrator_with_stage_tracker(llm_fn, stages):
+        """Build an orchestrator whose conversation_service.get_current_stage()
+        returns successive values from *stages* on each call and whose
+        generate_stream calls *llm_fn* to drive the stream chunks.
+        """
+        from unittest.mock import patch
+
+        llm = Mock()
+        llm.generate_stream = llm_fn
+        llm.register_functions = Mock()
+        llm.add_message_to_history = Mock()
+
+        conv = Mock()
+        conv.language = "en"
+        _stage_iter = iter(stages)
+
+        def _next_stage():
+            try:
+                return next(_stage_iter)
+            except StopIteration:
+                return ConversationStage.CONFIRMATION
+
+        conv.get_current_stage = _next_stage
+        conv.set_stage = Mock()
+        conv.accumulate_problem_description = AsyncMock()
+        conv.search_providers_for_request = AsyncMock()
+        conv.record_ai_response = Mock()
+        conv.create_prompt_for_stage = Mock(return_value="prompt")
+        conv.get_problem_summary = Mock(return_value="summary")
+        conv.reset_request_context = Mock()
+        conv.context = {
+            "user_problem": [],
+            "providers_found": [],
+            "current_provider_index": 0,
+        }
+
+        registry = Mock()
+        registry.execute = AsyncMock(return_value=[])
+        registry.all_schemas.return_value = []
+
+        orch = ResponseOrchestrator(
+            llm_service=llm,
+            conversation_service=conv,
+            tool_registry=registry,
+        )
+        return orch, conv
+
+    async def test_three_hop_chain_produces_final_response(self):
+        """Simulate TRIAGE→CONFIRMATION→TRIAGE→CONFIRMATION (3 hops).
+
+        The main stream emits signal_transition("confirmation") from TRIAGE.
+        Follow-up 1 (CONFIRMATION) emits signal_transition("triage").
+        Follow-up 2 (TRIAGE) emits signal_transition("confirmation").
+        Follow-up 3 (CONFIRMATION) emits text: "Here is your confirmation summary."
+
+        The old 2-pass code would silently drop follow-up 3. The bounded loop
+        must produce the final text so the user gets a response.
+        """
+        from unittest.mock import patch
+
+        call_count = 0
+
+        async def mock_stream(user_input, template, session_id):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Main stream (TRIAGE): emit transition to CONFIRMATION
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "confirmation"}}
+            elif call_count == 2:
+                # Follow-up 1 (CONFIRMATION): LLM misreads input, goes back to TRIAGE
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "triage"}}
+            elif call_count == 3:
+                # Follow-up 2 (TRIAGE): accumulated context triggers CONFIRMATION again
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "confirmation"}}
+            else:
+                # Follow-up 3 (CONFIRMATION): final response
+                yield "Here is your confirmation summary."
+
+        # Stage sequence returned by get_current_stage():
+        # call 1: TRIAGE (main stream stage check for tools)
+        # call 2: TRIAGE (accumulate_problem_description check)
+        # call 3: TRIAGE (for prompt creation in main stream)
+        # follow-up calls use CONFIRMATION / TRIAGE alternately
+        stages = [
+            ConversationStage.TRIAGE,   # initial stage read
+            ConversationStage.TRIAGE,   # FINALIZE check
+            ConversationStage.TRIAGE,   # prompt creation
+            ConversationStage.CONFIRMATION,  # follow-up 1 stage
+            ConversationStage.TRIAGE,        # follow-up 2 stage
+            ConversationStage.CONFIRMATION,  # follow-up 3 stage
+            ConversationStage.CONFIRMATION,  # final save_message stage
+        ]
+
+        orch, conv = self._make_orchestrator_with_stage_tracker(mock_stream, iter(stages))
+
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            chunks = [c async for c in orch.generate_response_stream(
+                "hmm can you try once again please", "sess"
+            )]
+
+        text_chunks = [c for c in chunks if isinstance(c, str)]
+        assert "Here is your confirmation summary." in text_chunks, (
+            f"Expected the final CONFIRMATION response in chunks but got: {text_chunks}"
+        )
+        assert call_count == 4, (
+            f"Expected 4 LLM calls (main + 3 follow-ups), got {call_count}"
+        )
+
+    async def test_two_hop_chain_still_works(self):
+        """The common 2-hop case (TRIAGE→CONFIRMATION, CONFIRMATION emits text)
+        must continue to work exactly as before.
+        """
+        from unittest.mock import patch
+
+        call_count = 0
+
+        async def mock_stream(user_input, template, session_id):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "confirmation"}}
+            else:
+                yield "Here is your confirmation summary."
+
+        stages = [
+            ConversationStage.TRIAGE,
+            ConversationStage.TRIAGE,
+            ConversationStage.TRIAGE,
+            ConversationStage.CONFIRMATION,
+            ConversationStage.CONFIRMATION,
+        ]
+
+        orch, conv = self._make_orchestrator_with_stage_tracker(mock_stream, iter(stages))
+
+        with patch(
+            "ai_assistant.services.response_orchestrator.is_legal_transition",
+            return_value=True,
+        ):
+            chunks = [c async for c in orch.generate_response_stream("I need a plumber", "sess")]
+
+        text_chunks = [c for c in chunks if isinstance(c, str)]
+        assert "Here is your confirmation summary." in text_chunks
+        assert call_count == 2
