@@ -98,7 +98,7 @@ async def main():
     logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
     logger.info(f"  Google TTS API Concurrency: {os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5')}")
     logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
-    logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-lite')}")
+    logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}")
     
     # Sync Firestore → Weaviate (opt-in via WEAVIATE_SYNC_ON_STARTUP=true)
     await run_startup_sync()
@@ -163,7 +163,7 @@ async def main():
     asyncio.create_task(
         LLMService(
             api_key=os.getenv('GEMINI_API_KEY', ''),
-            model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-lite'),
+            model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
         ).prewarm()
     )
 

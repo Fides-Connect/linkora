@@ -47,7 +47,7 @@ class AIAssistant:
     """
     
     def __init__(self, gemini_api_key: str, language: str = 'de',
-                 llm_model: str = 'gemini-2.5-flash-lite',
+                 llm_model: str = 'gemini-2.5-flash',
                  session_id: Optional[str] = None):
         """
         Initialize AI Assistant with all required services.
@@ -83,7 +83,7 @@ class AIAssistant:
             api_key=gemini_api_key,
             model=llm_model,
             temperature=0.2,
-            max_output_tokens=512
+            max_output_tokens=512,
             language=self.language,
         )
 

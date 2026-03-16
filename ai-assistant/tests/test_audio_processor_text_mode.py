@@ -700,14 +700,8 @@ class TestContinuousSttTaskScheduling:
             ),
         ):
             voice_proc.running = True
-            stt_task = asyncio.create_task(voice_proc._continuous_stt())
-            await asyncio.sleep(0.05)
-            voice_proc.running = False
-            stt_task.cancel()
-            try:
-                await stt_task
-            except asyncio.CancelledError:
-                pass
+            await voice_proc._stt_session()
+            await asyncio.sleep(0)  # flush any background tasks
 
         assert not pft_called, (
             "_process_final_transcript must NOT be called for a FINAL echo "

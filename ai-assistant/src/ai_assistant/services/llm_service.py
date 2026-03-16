@@ -49,8 +49,8 @@ SIGNAL_TRANSITION_SCHEMA: Dict[str, Any] = {
 class LLMService:
     """Service for language model interactions using LangChain and Gemini."""
     
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash-lite",
-                 temperature: float = 0.2, max_output_tokens: int = 512,
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash",
+                 temperature: float = 0.2, max_output_tokens: int = 2048,
                  language: str = "de"):
         """
         Initialize LLM service.
