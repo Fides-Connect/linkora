@@ -216,6 +216,7 @@ class WebRTCService {
     final String prewarmedMode = _sessionMode;
     _sessionMode = validatedMode;
     _dataChannelOpenFired = false;
+    _iceConfigCompleter = Completer<void>();
 
     // ── Activate hollow pre-warm (fastest path) ──────────────────────────────
     // If a hollow pre-warm exists for the same mode, ICE + DTLS + DC are
