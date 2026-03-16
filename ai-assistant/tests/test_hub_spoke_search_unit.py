@@ -9,7 +9,6 @@ import pytest
 
 from ai_assistant.hub_spoke_search import HubSpokeSearch
 
-
 class TestBuildFiltersAndQuery:
     """Unit tests for _build_filters_and_query."""
 
@@ -109,8 +108,240 @@ class TestBuildFiltersAndQuery:
             mock_filter_instance.equal.return_value = mock_filter_instance
             mock_filter_instance.contains_any.return_value = mock_filter_instance
 
-            _, _, available_time = HubSpokeSearch._build_filters_and_query(
+            _, _, available_time, _ = HubSpokeSearch._build_filters_and_query(
                 {"available_time": "  weekend  ", "category": "X", "criterions": []},
                 max_inactive_days=90,
             )
             assert available_time == "weekend"
+
+    def _make_filter_mock(self):
+        """Create a fully-chained mock_fi + MockFilter pair for _build_filters_and_query."""
+        mock_fi = MagicMock()
+        mock_fi.__and__ = MagicMock(return_value=mock_fi)
+        mock_fi.__or__ = MagicMock(return_value=mock_fi)
+        mock_fi.by_property.return_value = mock_fi
+        mock_fi.greater_or_equal.return_value = mock_fi
+        mock_fi.is_none.return_value = mock_fi
+        mock_fi.equal.return_value = mock_fi
+        mock_fi.contains_any.return_value = mock_fi
+        return mock_fi
+
+    def test_unnormalizable_availability_skips_filter(self):
+        """Free-form LLM strings with no known token must NOT add an availability filter.
+
+        Regression: before Bug-5 fix, the raw string was passed directly to
+        contains_any([available_time]), which never matched stored normalised tags
+        and silently returned zero results.
+        """
+        for unrecognised in ["n\u00e4chste Woche", "next week", "asap", "2026-03-10", "xyz"]:
+            with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+                mock_fi = self._make_filter_mock()
+                MockFilter.by_property.return_value = mock_fi
+                MockFilter.by_ref.return_value = mock_fi
+
+                HubSpokeSearch._build_filters_and_query(
+                    {"available_time": unrecognised, "category": "Plumber", "criterions": []},
+                    max_inactive_days=90,
+                )
+
+                property_names_used = [
+                    c.args[0] for c in MockFilter.by_property.call_args_list
+                ]
+                assert "availability_tags" not in property_names_used, (
+                    f"Unrecognised string {unrecognised!r} should not add an availability_tags filter"
+                )
+
+    def test_known_tokens_in_availability_string_applied(self):
+        """A string containing known token(s) must filter using only those tokens."""
+        with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+            mock_fi = self._make_filter_mock()
+            MockFilter.by_property.return_value = mock_fi
+            MockFilter.by_ref.return_value = mock_fi
+
+            HubSpokeSearch._build_filters_and_query(
+                {"available_time": "Monday morning", "category": "Plumber", "criterions": []},
+                max_inactive_days=90,
+            )
+
+            property_names_used = [
+                c.args[0] for c in MockFilter.by_property.call_args_list
+            ]
+            assert "availability_tags" in property_names_used
+
+            contains_any_calls = mock_fi.contains_any.call_args_list
+            assert contains_any_calls, "contains_any must have been called"
+            tokens_used = set(contains_any_calls[0].args[0])
+            assert tokens_used <= {"monday", "morning"}, f"Unexpected tokens: {tokens_used}"
+            assert len(tokens_used) >= 1
+
+    def test_null_safe_last_sign_in_uses_is_none(self):
+        """_build_filters_and_query must use is_none(True) | greater_or_equal(cutoff) so
+        that providers whose Weaviate User hub has no last_sign_in (e.g. created before
+        the field was tracked) are NOT silently excluded from search results.
+
+        The User collection schema already has indexNullState:true (hub_spoke_schema.py)
+        which is required for is_none() to work at query time.
+        """
+        with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+            mock_fi = self._make_filter_mock()
+            MockFilter.by_ref.return_value = mock_fi
+            MockFilter.by_property.return_value = mock_fi
+
+            HubSpokeSearch._build_filters_and_query(
+                {"category": "Electrician", "criterions": []}, max_inactive_days=180,
+            )
+
+            # is_none(True) must have been called so null last_sign_in values are included.
+            mock_fi.is_none.assert_called_with(True)
+
+    def test_availability_filter_applied_flag_true_for_known_tokens(self):
+        """availability_filter_applied (4th return value) must be True when recognised tokens are found."""
+        with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+            mock_fi = self._make_filter_mock()
+            MockFilter.by_property.return_value = mock_fi
+            MockFilter.by_ref.return_value = mock_fi
+
+            _, _, _, flag = HubSpokeSearch._build_filters_and_query(
+                {"available_time": "Monday morning", "category": "Plumber", "criterions": []},
+                max_inactive_days=90,
+            )
+            assert flag is True, "Expected availability_filter_applied=True for 'Monday morning'"
+
+    def test_availability_filter_applied_flag_false_for_flexible(self):
+        """availability_filter_applied must be False for skip-phrases like 'flexible'."""
+        for skip_value in ["flexible", "flexibel", "any", "anytime", "", "next week", "asap"]:
+            with patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+                mock_fi = self._make_filter_mock()
+                MockFilter.by_property.return_value = mock_fi
+                MockFilter.by_ref.return_value = mock_fi
+
+                _, _, _, flag = HubSpokeSearch._build_filters_and_query(
+                    {"available_time": skip_value, "category": "Electrician", "criterions": []},
+                    max_inactive_days=90,
+                )
+                assert flag is False, (
+                    f"Expected availability_filter_applied=False for {skip_value!r}, got True"
+                )
+
+
+class TestHybridSearchHydeParameter:
+    """Tests verifying that hyde_text is used as the Weaviate query when provided."""
+
+    def _mock_collection(self):
+        """Return a mock competence collection with a fluent query interface."""
+        mock_obj = MagicMock()
+        mock_obj.uuid = "uuid-1"
+        mock_obj.score = 0.9
+        mock_obj.properties = {
+            "title": "Plumber",
+            "category": "Plumbing",
+            "description": "Expert plumber",
+            "search_optimized_summary": "Professional plumber with 10 years experience",
+            "skills_list": ["pipe fitting"],
+            "year_of_experience": 10,
+            "price_per_hour": 50.0,
+            "availability_text": "weekdays",
+            "availability_tags": ["weekday"],
+        }
+        mock_obj.references = {
+            "owned_by": MagicMock(
+                objects=[
+                    MagicMock(
+                        properties={
+                            "name": "John Doe",
+                            "email": "j@example.com",
+                            "is_service_provider": True,
+                            "last_sign_in": "2025-01-01T00:00:00Z",
+                        }
+                    )
+                ]
+            )
+        }
+        mock_collection = MagicMock()
+        mock_response = MagicMock()
+        mock_response.objects = [mock_obj]
+        mock_collection.query.hybrid.return_value = mock_response
+        return mock_collection
+
+    def test_hyde_text_passed_as_weaviate_query(self):
+        """When hyde_text is provided it must be used as the hybrid search query."""
+        mock_collection = self._mock_collection()
+        search_request = {
+            "available_time": "flexible",
+            "category": "Plumber",
+            "criterions": ["residential"],
+        }
+        hyde = "Expert plumber specialising in residential pipe repair and installation."
+
+        with patch("ai_assistant.hub_spoke_search.get_competence_collection", return_value=mock_collection), \
+             patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+            mock_fi = MagicMock()
+            mock_fi.__and__ = MagicMock(return_value=mock_fi)
+            MockFilter.by_property.return_value = mock_fi
+            MockFilter.by_ref.return_value = mock_fi
+            mock_fi.by_property.return_value = mock_fi
+            mock_fi.greater_or_equal.return_value = mock_fi
+            mock_fi.equal.return_value = mock_fi
+            mock_fi.contains_any.return_value = mock_fi
+
+            HubSpokeSearch.hybrid_search_providers(
+                search_request=search_request, limit=5, hyde_text=hyde
+            )
+
+        # The first positional arg to hybrid() must be the HyDE text
+        call_args = mock_collection.query.hybrid.call_args
+        assert call_args.kwargs.get("query") == hyde or call_args.args[0] == hyde
+
+    def test_structured_query_used_when_no_hyde_text(self):
+        """When hyde_text is empty the structured query text is used instead."""
+        mock_collection = self._mock_collection()
+        search_request = {
+            "available_time": "flexible",
+            "category": "Electrician",
+            "criterions": ["residential wiring"],
+        }
+
+        with patch("ai_assistant.hub_spoke_search.get_competence_collection", return_value=mock_collection), \
+             patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+            mock_fi = MagicMock()
+            mock_fi.__and__ = MagicMock(return_value=mock_fi)
+            MockFilter.by_property.return_value = mock_fi
+            MockFilter.by_ref.return_value = mock_fi
+            mock_fi.by_property.return_value = mock_fi
+            mock_fi.greater_or_equal.return_value = mock_fi
+            mock_fi.equal.return_value = mock_fi
+            mock_fi.contains_any.return_value = mock_fi
+
+            HubSpokeSearch.hybrid_search_providers(
+                search_request=search_request, limit=5, hyde_text=""
+            )
+
+        call_args = mock_collection.query.hybrid.call_args
+        actual_query = call_args.kwargs.get("query") or call_args.args[0]
+        # Should NOT be empty; must contain the category keyword
+        assert actual_query and "Electrician" in actual_query
+
+    def test_wide_net_fetch_limit_capped_at_30(self):
+        """fetch_limit = min(limit * 5, 30); Weaviate is called with fetch_limit * 10."""
+        mock_collection = self._mock_collection()
+        search_request = {"available_time": "flexible", "category": "X", "criterions": []}
+
+        with patch("ai_assistant.hub_spoke_search.get_competence_collection", return_value=mock_collection), \
+             patch("ai_assistant.hub_spoke_search.Filter") as MockFilter:
+            mock_fi = MagicMock()
+            mock_fi.__and__ = MagicMock(return_value=mock_fi)
+            MockFilter.by_property.return_value = mock_fi
+            MockFilter.by_ref.return_value = mock_fi
+            mock_fi.by_property.return_value = mock_fi
+            mock_fi.greater_or_equal.return_value = mock_fi
+            mock_fi.equal.return_value = mock_fi
+            mock_fi.contains_any.return_value = mock_fi
+
+            # limit=10 → fetch_limit=min(50,30)=30 → weaviate limit=300
+            HubSpokeSearch.hybrid_search_providers(
+                search_request=search_request, limit=10
+            )
+
+        call_args = mock_collection.query.hybrid.call_args
+        weaviate_limit = call_args.kwargs.get("limit") or call_args.args[1]
+        assert weaviate_limit == 300  # fetch_limit(30) * 10

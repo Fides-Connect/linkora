@@ -56,6 +56,17 @@ class WebRTCService {
   Function(String, bool, bool)? onChatMessage; // text, isUser, isChunk
   Function()? onDataChannelOpen;
   OnRuntimeStateCallback? onRuntimeState;
+  /// Called when the voice upgrade (renegotiation) does not produce a remote
+  /// audio track within 5 seconds — the client should revert to text mode.
+  Function()? onVoiceUpgradeTimeout;
+
+  // Voice upgrade timeout (cancelled when the remote audio track arrives)
+  Timer? _voiceUpgradeTimer;
+
+  // ICE disconnection grace period (GAP-5): if ICE disconnects transiently,
+  // wait 5 s for recovery before tearing down the session.
+  Timer? _iceGracePeriodTimer;
+  static const _iceGracePeriodDuration = Duration(seconds: 5);
 
   // Configuration
   late final String _serverUrl;
@@ -382,6 +393,10 @@ class WebRTCService {
       _iceConfigCompleter!.completeError('disconnected');
     }
     _iceConfigCompleter = null;
+    _voiceUpgradeTimer?.cancel();
+    _voiceUpgradeTimer = null;
+    _iceGracePeriodTimer?.cancel();
+    _iceGracePeriodTimer = null;
 
     await _signaling?.sink.close();
     _signaling = null;
@@ -736,9 +751,13 @@ class WebRTCService {
           .onConnectionState = (RTCPeerConnectionState state) async {
         if (!identical(_peerConnection, createdPc)) return; // stale pre-warm
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+
           if (!_isPrewarming) {
             _isConnected = true;
             _isConnecting = false;
+            // Cancel any in-flight grace period (recovered from transient disconnect).
+            _iceGracePeriodTimer?.cancel();
+            _iceGracePeriodTimer = null;
             onConnected?.call();
             // Safety net: if data channel was already open before this callback fired
             if (_dataChannel?.state == RTCDataChannelState.RTCDataChannelOpen &&
@@ -750,16 +769,39 @@ class WebRTCService {
           // During pre-warm: ICE is done but we wait for DC open (handled above)
           // before completing _prewarmReadyCompleter.
         } else if (state ==
+            RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
+          // GAP-5: Transient network interruptions cause a Disconnected state
+          // before ICE can attempt a restart. Allow a 5 s grace period before
+          // tearing down the session, in case ICE recovers on its own.
+          if (_isConnected || _isConnecting) {
+            _iceGracePeriodTimer ??= Timer(_iceGracePeriodDuration, () {
+              _iceGracePeriodTimer = null;
+              debugPrint('WebRTC: ICE grace period expired — disconnecting');
+              if (_isConnected || _isConnecting) {
+                unawaited(
+                  disconnect().catchError(
+                    (e) => debugPrint('WebRTC: ICE disconnect error: $e'),
+                  ),
+                );
+              }
+            });
+          }
+        } else if (state ==
                 RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-            state ==
-                RTCPeerConnectionState.RTCPeerConnectionStateDisconnected ||
             state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
           if (_isConnected || _isConnecting || _isPrewarmed || _isPrewarming) disconnect();
+          // Hard failures and explicit close are immediate.
+          _iceGracePeriodTimer?.cancel();
+          _iceGracePeriodTimer = null;
+          if (_isConnected || _isConnecting) disconnect();
         }
       };
 
       _peerConnection!.onTrack = (RTCTrackEvent event) async {
         if (event.track.kind == 'audio' && _remoteStream == null) {
+          // Remote audio track arrived — voice upgrade succeeded; cancel timeout.
+          _voiceUpgradeTimer?.cancel();
+          _voiceUpgradeTimer = null;
           _remoteStream = event.streams[0];
           onRemoteStream?.call(_remoteStream!);
         }
@@ -894,11 +936,15 @@ class WebRTCService {
   /// bypassing the speech-to-text step while maintaining the conversation
   ///
   /// [text] - The text message to send
-  void sendTextMessage(String text) {
+  /// [messageId] - Optional stable ID sent with the message so the server
+  ///   echo can be deduplicated in the UI (GAP-4).
+  void sendTextMessage(String text, {String? messageId}) {
     if (_dataChannel != null &&
         _dataChannel!.state == RTCDataChannelState.RTCDataChannelOpen) {
       try {
-        final message = jsonEncode({'type': 'text-input', 'text': text});
+        final payload = <String, dynamic>{'type': 'text-input', 'text': text};
+        if (messageId != null) payload['message_id'] = messageId;
+        final message = jsonEncode(payload);
         _dataChannel!.send(RTCDataChannelMessage(message));
         debugPrint(
           'WebRTC: Sent text message (${text.length} chars) over data channel',
@@ -1007,6 +1053,13 @@ class WebRTCService {
       if (_audioTrack != null && _localStream != null) {
         await _peerConnection!.addTrack(_audioTrack!, _localStream!);
         await _renegotiateConnection();
+        // Start a 5-second guard: if no remote audio track arrives by then,
+        // the upgrade failed and the client must revert to text mode.
+        _voiceUpgradeTimer?.cancel();
+        _voiceUpgradeTimer = Timer(const Duration(seconds: 5), () {
+          debugPrint('WebRTC: Voice upgrade timed out — no remote audio track received');
+          onVoiceUpgradeTimeout?.call();
+        });
       }
     } catch (e) {
       debugPrint('WebRTC: Error enabling voice mode: $e');

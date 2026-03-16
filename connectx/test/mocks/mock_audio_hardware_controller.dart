@@ -8,6 +8,7 @@ class MockAudioHardwareController implements AudioHardwareController {
   final List<String> _enumerateTypes = [];
   String? _selectedAudioOutputId;
   String? _selectedAudioInputId;
+  int _androidAudioConfigCallCount = 0;
 
   /// Track state for verification
   bool get speakerphoneOn => _speakerphoneOn;
@@ -15,6 +16,8 @@ class MockAudioHardwareController implements AudioHardwareController {
   List<String> get enumerateTypes => List.unmodifiable(_enumerateTypes);
   String? get selectedAudioOutputId => _selectedAudioOutputId;
   String? get selectedAudioInputId => _selectedAudioInputId;
+  /// Number of times [setAndroidAudioConfig] was invoked.
+  int get androidAudioConfigCallCount => _androidAudioConfigCallCount;
 
   /// Simulate Bluetooth device connection/disconnection
   void setBluetoothConnected(bool connected) {
@@ -65,5 +68,10 @@ class MockAudioHardwareController implements AudioHardwareController {
   @override
   set onDeviceChange(Function(dynamic)? callback) {
     // Not stored — device-change callbacks are triggered manually in tests
+  }
+
+  @override
+  Future<void> setAndroidAudioConfig() async {
+    _androidAudioConfigCallCount++;
   }
 }

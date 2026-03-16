@@ -74,9 +74,15 @@ class UserService {
       // Omit fcm_token entirely when we don't have one so we never overwrite
       // a valid token that is already stored on the backend with an empty string
       // (can happen when getToken() returns null before FCM is ready).
+      // Use displayName if set; fall back to the local-part of the email so
+      // the backend always receives a non-empty name for new Google accounts
+      // where displayName hasn't been populated yet.
+      final displayName = (user.displayName?.isNotEmpty == true)
+          ? user.displayName!
+          : (user.email?.split('@').first ?? '');
       final userData = <String, dynamic>{
         'user_id': user.uid,
-        'name': user.displayName ?? '',
+        'name': displayName,
         'email': user.email ?? '',
         'photo_url': user.photoURL ?? '',
         if (currentToken != null && currentToken.isNotEmpty)

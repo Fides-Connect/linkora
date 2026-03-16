@@ -1,9 +1,31 @@
-# Copilot Instructions — Fides
+# Copilot Instructions — Linkora
 
 ## Project Overview
-- **Platform**: Fides — AI voice/chat assistant matching users to service providers
+- **Platform**: Linkora — AI voice/chat assistant matching users to service providers
 - **Stack**: `connectx/` (Flutter), `ai-assistant/` (Python/aiohttp), `weaviate/` (vector DB)
 - **AI persona**: "Elin" — `AGENT_NAME = "Elin"` in `ai_assistant.py`
+
+## Living Specifications / Requirements Reference
+
+
+`linkora_specifications.md` at the **repo root** is the authoritative Lastenheft — the complete set of observable system behaviours, use cases, edge cases, and invariants that every agent must respect and must never violate.
+
+### How agents must use this file
+1. **Mandatory first step — read the entire file before acting**: at the start of every session, use a file-read tool to load the full contents of `linkora_specifications.md`. Do not proceed with any work until this is done.
+2. **Treat it as inviolable constraints**: every behaviour described in `linkora_specifications.md` is a hard requirement. No code change, refactor, or new feature may silently remove, bypass, or contradict a behaviour defined there. If a task appears to conflict with an existing behaviour, flag it to the user before proceeding.
+3. **During work**: if the code and `linkora_specifications.md` disagree, flag it — do not silently pick one.
+4. **Mandatory last step — Lastenheft extraction after every task**: before ending the session, re-read the full conversation and apply the following filter to every decision, fix, behaviour, or constraint that surfaced:
+   - **Ask**: *"Is this a statement about what the system shall do or how it shall behave in a specific scenario?"*
+   - **If yes** → add it to `linkora_specifications.md` in the appropriate numbered section. Write it as a clear behavioural requirement: what triggers it and what the system must do. Do **not** include class names, file paths, method names, or implementation details.
+   - **If no** (e.g. it is a code refactor detail, a test helper, a CI trick, a script invocation) → do not add it.
+   - If an existing entry is now incorrect or superseded, update it in place.
+   - If no new Lastenheft-relevant content was found, make no change to the file.
+
+### Maintenance rules
+- `linkora_specifications.md` is a **Lastenheft** — it describes observable system behaviours and scenarios only. Implementation details (class names, file paths, internal tooling, test setup) must not appear in this file.
+- One numbered section per domain. Do not create new top-level sections without user confirmation.
+- Each entry must be a concise behavioural statement: what triggers it and what the system must do.
+- The file is enriched incrementally — every agent session that surfaces a new behavioural insight should leave the file better than it found it.
 
 ## Architecture
 
@@ -33,7 +55,7 @@ ConnectX (Flutter) ──WS signaling──► SignalingServer
 | From | To (allowed) |
 |---|---|
 | `GREETING` | `TRIAGE` |
-| `TRIAGE` | `FINALIZE`, `CLARIFY`, `TOOL_EXECUTION`, `RECOVERY`, `PROVIDER_ONBOARDING` |
+| `TRIAGE` | `CONFIRMATION`, `CLARIFY`, `TOOL_EXECUTION`, `RECOVERY`, `PROVIDER_ONBOARDING` |
 | `CLARIFY` | `TRIAGE` |
 | `TOOL_EXECUTION` | `TRIAGE`, `CONFIRMATION`, `FINALIZE` |
 | `CONFIRMATION` | `FINALIZE`, `TRIAGE` |
@@ -43,7 +65,7 @@ ConnectX (Flutter) ──WS signaling──► SignalingServer
 | `PROVIDER_PITCH` | `PROVIDER_ONBOARDING`, `COMPLETED` |
 | `PROVIDER_ONBOARDING` | `COMPLETED` |
 
-Auto-triggers: `TRIAGE → FINALIZE` runs Weaviate search in the same stream; `COMPLETED → PROVIDER_PITCH` fires when user is eligible.
+Auto-triggers: `CONFIRMATION → FINALIZE` runs Weaviate search in the same stream; `COMPLETED → PROVIDER_PITCH` fires when user is eligible. Direct `TRIAGE → FINALIZE` is **illegal** — the mandatory confirmation gate requires passing through `CONFIRMATION` first.
 
 ### Provider Pitch Eligibility
 All conditions must be true:

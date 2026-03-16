@@ -9,6 +9,22 @@ You are the **Machine Learning & AI Systems Engineer** for Fides. You own the en
 
 ---
 
+## Living Requirements
+
+`linkora_specifications.md` at the repo root is the authoritative record of all platform behaviors, use cases, edge cases, and invariants.
+
+### Mandatory first step — read before acting
+Before writing any code or making any change, read the section(s) of `linkora_specifications.md` relevant to the current task using a file-read tool. For ML/backend tasks, load at minimum `## Overall Goal`, `## Database`, and `## Use Cases`. Load additional sections only when the task touches them. **Do not skip this step.**
+
+### Mandatory last step — update after every task
+Before ending the session, ask: *"Did this task surface any new behavior, edge case, invariant, or change to existing behavior?"* If yes:
+- Append a concise bullet to the appropriate section in `linkora_specifications.md`.
+- If an existing entry is now incorrect or incomplete, update it.
+- Format: what triggers it → expected behavior → which file/layer owns it.
+- Do not create new top-level sections without user confirmation.
+
+---
+
 ## System Architecture
 
 ### Hot Path
@@ -161,7 +177,7 @@ LLM history is **in-memory** per `session_id` in `LLMService.session_store`. Not
 
 Run from `ai-assistant/` with the project venv:
 ```bash
-/Users/vc/Codes/fides/.venv/bin/python -m pytest tests/ -x -q
+/Users/vc/Codes/Linkora/.venv/bin/python -m pytest tests/ -x -q
 ```
 
 **TDD workflow for every change:**
@@ -177,12 +193,6 @@ Run from `ai-assistant/` with the project venv:
 Key test files: `test_response_orchestrator.py`, `test_agent_runtime_fsm.py`, `test_agent_tools.py`, `test_audio_processor.py`, `test_conversation_service.py`, `test_firestore_schemas.py`
 
 ---
-
-## Self-Improvement
-
-- After **any user correction**: append to `tasks/lessons.md`:
-  `### [ML] — [date] | Mistake: … | Rule: …`
-- Review relevant lessons at the start of any session in this domain.
 
 ## Core Principles
 

@@ -118,7 +118,23 @@ async def main():
 
     # Register v1 API routes
     register_v1_routes(app)
-    
+
+    # Wire the competence enricher onto the app so REST endpoints
+    # (POST/PATCH /me/competencies) can enrich without owning an AIAssistant.
+    _api_key = os.getenv("GEMINI_API_KEY", "")
+    if _api_key:
+        from .services.llm_service import LLMService as _LLMService
+        from .services.competence_enricher import CompetenceEnricher as _CompetenceEnricher
+        _rest_llm = _LLMService(
+            api_key=_api_key,
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            max_output_tokens=2048,
+        )
+        app["competence_enricher"] = _CompetenceEnricher(llm=_rest_llm.llm)
+        logger.info("CompetenceEnricher wired to REST app for /me/competencies endpoints")
+    else:
+        logger.warning("GEMINI_API_KEY not set — competence enrichment disabled for REST endpoints")
+
     # Register admin routes
     admin_service.register_routes(app)
     

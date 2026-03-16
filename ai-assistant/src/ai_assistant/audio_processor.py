@@ -51,6 +51,8 @@ class AudioProcessor:
         input_track: Optional[MediaStreamTrack] = None,
         user_id: Optional[str] = None,
         language: str = "de",
+        language_fallback_from: str = "",
+        buffered_message: Optional[str] = None,
     ):
         self.connection_id = connection_id
         self.input_track = input_track
@@ -62,7 +64,6 @@ class AudioProcessor:
         self.stt_task = None
 
         # Session mode — derived from whether an audio track is provided.
-        # The ``_is_text_mode`` property below provides backward compat.
         self.session_mode: SessionMode = (
             SessionMode.TEXT if input_track is None else SessionMode.VOICE
         )
@@ -78,6 +79,12 @@ class AudioProcessor:
         # Create language-specific AI assistant for this connection
         self.ai_assistant = self._create_language_specific_assistant(language)
 
+        # B2: If the client requested an unsupported language, inject a fallback
+        # note into the conversation context so the greeting prompt can inform
+        # the user in the first turn.
+        if language_fallback_from:
+            self.ai_assistant.conversation_service.context["language_fallback_from"] = language_fallback_from
+
         logger.info(
             "AudioProcessor created for connection %s with language: %s",
             connection_id,
@@ -88,10 +95,10 @@ class AudioProcessor:
         self.audio_queue: asyncio.Queue = asyncio.Queue()
         self.sample_rate = 48000  # WebRTC sends 48kHz
 
-        # ── Phase-1 services ──────────────────────────────────────────────────
+        # ── DataChannel service ────────────────────────────────────────────────
         self._dc_bridge = DataChannelBridge()
 
-        # ── Legacy services ───────────────────────────────────────────────────
+        # ── Audio services ───────────────────────────────────────────────────
         self.frame_converter = AudioFrameConverter(self.sample_rate)
         self.debug_recorder = DebugRecorder(connection_id, self.sample_rate)
         self.transcript_processor = TranscriptProcessor(self.ai_assistant.stt_service)
@@ -103,8 +110,12 @@ class AudioProcessor:
         # Interrupt handling
         self.is_ai_speaking = False  # True when generating OR playing AI response
         self.interrupt_event = asyncio.Event()
-        # data_channel exposed as property so assignment auto-wires _dc_bridge.
-        self._data_channel = None
+
+        # Fired by process_text_input when the first non-empty message is received.
+        # TextSessionStarter awaits this event (with a 300 ms timeout) so it can
+        # decide whether to skip the autonomous greeting when a buffered DataChannel
+        # message arrives shortly after the WebRTC handshake completes.
+        self._first_message_received: asyncio.Event = asyncio.Event()
 
         # Tracks the current LLM+TTS response task so it can be cancelled on
         # interrupt.
@@ -114,35 +125,19 @@ class AudioProcessor:
         # between concurrent process_text_input() calls.
         self._text_input_lock = asyncio.Lock()
 
+        # Stash for text from interrupted/cancelled LLM turns.  When a
+        # response task is cancelled mid-stream (e.g. rapid voice-transcript
+        # bursts), the HumanMessage that LangChain already committed is popped
+        # from history and saved here.  The next process_text_input call
+        # prepends these fragments so the LLM sees the full accumulated
+        # intent in one coherent turn instead of losing earlier context.
+        self._interrupted_text_buffer: list[str] = []
+
         # ── Response delivery strategy & session starter ─────────────────────
         # Swapped on mode switch via _make_delivery() / _make_session_starter().
+        self._buffered_message: Optional[str] = buffered_message
         self._delivery: ResponseDelivery = self._make_delivery(self.session_mode)
         self._session_starter: SessionStarter = self._make_session_starter(self.session_mode)
-
-    # ── Backward-compat properties ────────────────────────────────────────────
-
-    @property
-    def _is_text_mode(self) -> bool:
-        """Read-only compat view of session_mode."""
-        return self.session_mode == SessionMode.TEXT
-
-    @property
-    def data_channel(self):
-        """The active DataChannel (or ``None``).  Setting it also wires ``_dc_bridge``."""
-        return self._data_channel
-
-    @data_channel.setter
-    def data_channel(self, channel) -> None:
-        self._data_channel = channel
-        self._dc_bridge.attach(channel)
-        # Re-emit the current FSM state so Flutter receives it even when the
-        # state was first emitted before the DataChannel existed (e.g. LISTENING
-        # fires before on_datachannel wires the channel).
-        try:
-            fsm = self.ai_assistant.response_orchestrator.runtime_fsm
-            self._dc_bridge.send_runtime_state(fsm.current_state)
-        except Exception:
-            pass  # AudioProcessor not fully initialised yet — safe to ignore
 
     # ── Factory ───────────────────────────────────────────────────────────────
 
@@ -174,9 +169,23 @@ class AudioProcessor:
     # ── DataChannel wiring ────────────────────────────────────────────────────
 
     def set_data_channel(self, channel) -> None:
-        """Attach the DataChannel for outbound messages."""
-        self.data_channel = channel  # property setter also wires _dc_bridge
+        """Attach the DataChannel for outbound messages.
+
+        Also re-emits the current AgentRuntimeFSM state so Flutter receives it
+        even when the FSM transitioned to LISTENING before the DataChannel was
+        open (common in text-mode sessions where the DC opens after the FSM
+        has already advanced past BOOTSTRAP/DATA_CHANNEL_WAIT).
+        """
+        self._dc_bridge.attach(channel)
         logger.info("Data channel set in AudioProcessor")
+
+        # Re-emit the current FSM state so the client syncs even if it missed
+        # the earlier state events that fired before the channel was ready.
+        try:
+            fsm = self.ai_assistant.response_orchestrator.runtime_fsm
+            self._emit_runtime_state(fsm.state)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Could not re-emit FSM state on DC attach: %s", exc)
 
     # ── Strategy factories ────────────────────────────────────────────────────
 
@@ -205,6 +214,10 @@ class AudioProcessor:
             connection_id=self.connection_id,
             interrupt_event=self.interrupt_event,
             on_speaking_change=lambda speaking: setattr(self, "is_ai_speaking", speaking),
+            firestore_service=self.ai_assistant.firestore_service,
+            buffered_message=self._buffered_message,
+            first_message_event=self._first_message_received,
+            monitor_playback_fn=self._monitor_playback_completion,
         )
 
     # ── DataChannel send helpers (thin wrappers over DataChannelBridge) ───────
@@ -268,6 +281,16 @@ class AudioProcessor:
         """Stop processing audio."""
         self.running = False
         await self.audio_queue.put(None)
+
+        # B7: Cancel the active response task (may hold a FINALIZE provider search)
+        # so it doesn't continue running in the background after disconnect.
+        if self._response_task and not self._response_task.done():
+            self._response_task.cancel()
+            try:
+                await self._response_task
+            except asyncio.CancelledError:
+                pass
+            self._response_task = None
 
         for task_attr in ("stt_task", "processing_task"):
             task = getattr(self, task_attr)
@@ -437,14 +460,48 @@ class AudioProcessor:
         Fires partial-transcript interrupt checks inline, delegates final
         transcripts to :meth:`_handle_final_transcript`, then refills the
         queue sentinel so the next session starts cleanly.
+
+        B6: Forces a final-transcript event after MAX_UTTERANCE_DURATION seconds
+        of continuous speech to prevent the pipeline stalling on extremely long
+        utterances (e.g. user leaves mic open).
         """
+        MAX_UTTERANCE_DURATION = 60.0  # seconds
+        utterance_start: Optional[float] = None
+        last_partial: str = ""
+
         async for transcript, is_final in self.transcript_processor.process_audio_stream(
             self._make_audio_chunks()
         ):
             if transcript and self.is_ai_speaking and len(transcript.strip()) > 0:
                 logger.info("Interrupt detected: '%s'", transcript)
                 await self._trigger_interrupt()
+                if is_final:
+                    # The triggering transcript was the AI's own TTS echo —
+                    # do NOT route it to the LLM as user input.  Reset the
+                    # queue sentinel and restart the STT session cleanly.
+                    await self.audio_queue.put(None)
+                    break
                 await asyncio.sleep(0.05)
+                # Reset utterance timer after interrupt so the next speech
+                # segment is tracked independently.
+                utterance_start = None
+                last_partial = ""
+
+            # Track utterance duration on non-final partials.
+            if transcript and not is_final:
+                last_partial = transcript
+                now = asyncio.get_event_loop().time()
+                if utterance_start is None:
+                    utterance_start = now
+                elif now - utterance_start > MAX_UTTERANCE_DURATION:
+                    logger.warning(
+                        "Utterance exceeded %.0fs — force-finalising partial: '%s'",
+                        MAX_UTTERANCE_DURATION,
+                        last_partial[:120],
+                    )
+                    await self.audio_queue.put(None)
+                    await self._handle_final_transcript(last_partial)
+                    break
 
             if is_final:
                 # Reset the queue so the *next* _stt_session starts from an
@@ -452,6 +509,13 @@ class AudioProcessor:
                 await self.audio_queue.put(None)
                 await self._handle_final_transcript(transcript)
                 break
+        else:
+            # The async-for exhausted naturally — the STT service closed its
+            # gRPC stream (e.g. idle-silence timeout). Drain _make_audio_chunks
+            # by posting a sentinel so the generator does not compete with the
+            # next _stt_session for frames from the shared audio queue.
+            await self.audio_queue.put(None)
+            logger.info("_stt_session: stream closed by STT service — restarting")
 
     async def _continuous_stt(self) -> None:
         """Outer loop — restarts :meth:`_stt_session` after each final transcript."""
@@ -483,6 +547,27 @@ class AudioProcessor:
         fsm = self.ai_assistant.response_orchestrator.runtime_fsm
         fsm.transition("interrupt")
         fsm.transition("interrupt_handled")
+        # ── History repair ────────────────────────────────────────────────────
+        # LangChain's RunnableWithMessageHistory commits the HumanMessage at
+        # the START of astream().  If the task is cancelled before the AI
+        # response is streamed back, that HumanMessage is left orphaned in
+        # history with no following AIMessage.  Rapid bursts (e.g. multiple
+        # STT transcripts) accumulate a run of bare HumanMessages that Gemini
+        # consistently mishandles by losing context and re-asking intent.
+        # Fix: pop the orphaned message and stash it; process_text_input will
+        # prepend it to the next real input so intent is never lost.
+        try:
+            llm_svc = self.ai_assistant.response_orchestrator.llm_service
+            popped = llm_svc.pop_trailing_human_message(self.connection_id)
+            if popped:
+                self._interrupted_text_buffer.append(popped)
+                logger.info(
+                    "History repair: stashed %d-char interrupted turn for %s "
+                    "(buffer depth=%d)",
+                    len(popped), self.connection_id, len(self._interrupted_text_buffer),
+                )
+        except Exception as exc:  # pragma: no cover
+            logger.warning("History repair in _trigger_interrupt failed: %s", exc)
     
     async def process_text_input(self, text: str):
         """Process a text message through the LLM pipeline.
@@ -491,11 +576,16 @@ class AudioProcessor:
         guards against provider search in progress, interrupts any in-flight
         response, then dispatches to _process_final_transcript.
         """
+        text = text.strip()
+        if not text:
+            logger.warning("process_text_input called with empty text — ignoring")
+            return
+        # Signal that a real message has arrived.  TextSessionStarter watches
+        # this latch (300 ms window) to decide whether to skip the autonomous
+        # greeting when the DataChannel delivers a buffered message right after
+        # the WebRTC handshake.
+        self._first_message_received.set()
         async with self._text_input_lock:
-            text = text.strip()
-            if not text:
-                logger.warning("process_text_input called with empty text — ignoring")
-                return
 
             # Await session initialization so the first message has user context.
             # Fast-path: skip wait_for entirely when already set — asyncio.wait_for
@@ -537,6 +627,22 @@ class AudioProcessor:
             if self.is_ai_speaking or (self._response_task and not self._response_task.done()):
                 await self._trigger_interrupt()
 
+            # Combine any text stashed from previously-interrupted turns so
+            # the LLM receives the full accumulated user intent in one turn.
+            # This prevents history from being polluted by consecutive
+            # HumanMessages (a known Gemini failure mode) and ensures the
+            # assistant never has to re-ask what the user wants.
+            if self._interrupted_text_buffer:
+                combined_parts = self._interrupted_text_buffer + [text]
+                text = " ".join(combined_parts)
+                logger.info(
+                    "Combined %d stashed turn(s) with new input for %s: %r...",
+                    len(self._interrupted_text_buffer),
+                    self.connection_id,
+                    text[:80],
+                )
+                self._interrupted_text_buffer.clear()
+
             # Advance FSM LISTENING → THINKING if not already done.
             from .services.agent_runtime_fsm import AgentRuntimeState
             fsm = self.ai_assistant.response_orchestrator.runtime_fsm
@@ -551,9 +657,10 @@ class AudioProcessor:
         """Process a final transcript through LLM -> TTS pipeline."""
         try:
             logger.info(f"Processing final transcript: '{transcript}'")
-            
-            # Notify the connection handler of activity (resets idle timer)
-            if self.on_activity:
+
+            # Notify the connection handler of activity (resets idle timer).
+            # Guard: empty/noise transcripts must not reset the idle timer (§9).
+            if self.on_activity and transcript.strip():
                 self.on_activity()
 
             # Open AI conversation session on the first turn.

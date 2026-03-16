@@ -27,7 +27,7 @@ class UserSeedingService:
     def __init__(self, firestore_service: FirestoreService):
         self.firestore_service = firestore_service
 
-    async def seed_new_user(self, user_id: str, name: str, email: str, photo_url: str = ""):
+    async def seed_new_user(self, user_id: str, name: str, email: str, photo_url: str = "", enricher=None):
         """Seed initial data for a new user if not already present."""
         if not self.firestore_service.db:
             logger.warning("Firestore not initialized, skipping seeding.")
@@ -78,14 +78,34 @@ class UserSeedingService:
             if not comp_result:
                 continue
             competence_id = comp_result.get('competence_id')
-            
+
+            # Enrich competency with LLM if enricher is available
+            enriched_doc = dict(comp_doc)
+            if enricher is not None:
+                try:
+                    enriched_doc = await enricher.enrich(comp_doc)
+                    # Persist enriched fields back to Firestore so future
+                    # --sync-to-weaviate rebuilds retain the quality summary.
+                    enrich_update = {
+                        k: enriched_doc[k]
+                        for k in ("search_optimized_summary", "skills_list", "price_per_hour")
+                        if k in enriched_doc and enriched_doc.get(k)
+                    }
+                    if enrich_update:
+                        await self.firestore_service.update_competence(user_id, competence_id, enrich_update)
+                        logger.info(f"Enriched competency {competence_id!r} for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"Enrichment failed for competency {competence_id!r}: {e}")
+
             # Collect competency data for Weaviate sync
             comp_data_weaviate = {
                 "competence_id": competence_id,
-                "title": comp_doc['title'],
-                "description": comp_doc['description'],
-                "category": comp_doc['category'],
-                "price_range": comp_doc['price_range']
+                "title": enriched_doc.get('title', comp_doc['title']),
+                "description": enriched_doc.get('description', comp_doc['description']),
+                "category": enriched_doc.get('category', comp_doc['category']),
+                "price_range": enriched_doc.get('price_range', comp_doc['price_range']),
+                "search_optimized_summary": enriched_doc.get('search_optimized_summary', ''),
+                "skills_list": enriched_doc.get('skills_list', []),
             }
             competencies_for_weaviate.append(comp_data_weaviate)
             

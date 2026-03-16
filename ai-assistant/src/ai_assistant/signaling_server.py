@@ -14,6 +14,7 @@ from aiortc import RTCSessionDescription
 from firebase_admin import auth as firebase_auth
 
 from .peer_connection_handler import PeerConnectionHandler
+from .firestore_service import FirestoreService
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +73,9 @@ async def _fetch_ice_servers() -> list[dict]:
         except Exception as exc:
             logger.warning("Failed to fetch TURN credentials: %s — using default STUN", exc)
         return _DEFAULT_ICE_SERVERS
+# Languages the LLM prompts are tested and localised for.
+# Any code outside this set falls back to English.
+SUPPORTED_LANGUAGES = {"en", "de"}
 
 
 class SignalingServer:
@@ -79,6 +83,7 @@ class SignalingServer:
     
     def __init__(self):
         self.active_connections: Dict[str, PeerConnectionHandler] = {}
+        self._firestore = FirestoreService()
         
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connection for signaling."""
@@ -91,6 +96,8 @@ class SignalingServer:
         # Extract language and session mode from query parameters.
         # user_id is always taken from the verified Firebase ID token — never trusted from the client.
         language = request.query.get('language', 'de')  # Default to German
+
+        # Session mode: 'voice' or 'text', default to 'text' if invalid or absent
         raw_mode = request.query.get('mode', 'voice')
 
         # Authenticate the connection. Non-web clients send the Firebase ID token in the
@@ -135,9 +142,9 @@ class SignalingServer:
                 return ws
         if raw_mode not in ('voice', 'text'):
             logger.warning(
-                f"Invalid session mode '{raw_mode}' from {client_ip}; defaulting to 'voice'"
+                f"Invalid session mode '{raw_mode}' from {client_ip}; defaulting to 'text'"
             )
-            session_mode = 'voice'
+            session_mode = 'text'
         else:
             session_mode = raw_mode
 
@@ -146,12 +153,57 @@ class SignalingServer:
         # client's hollow pre-warm so the server doesn't spin up STT/LLM until
         # the user actually taps the mic button.
         hold_start = request.query.get('hold_start', 'false').lower() == 'true'
+        # Language selection logic:
+        # 1. Check 'language' query parameter against SUPPORTED_LANGUAGES. If valid, use it.
+        # 2. If query parameter is invalid or absent, and we have a user_id, look up the user's stored language in Firestore. If valid, use it.
+        # 3. If both the query parameter and stored language are invalid or absent, fall back to 'en'.
+        raw_language = request.query.get('language', '')
+        stored_language = None  # populated below if a Firestore lookup is required
+        language_fallback_applied = False
+        if raw_language in SUPPORTED_LANGUAGES:
+            language = raw_language
+        else:
+            # Attempt to read the user's stored language setting from Firestore.
+            if user_id:
+                try:
+                    user_doc = await self._firestore.get_user(user_id)
+                    stored_language = (user_doc or {}).get('language')
+                except Exception as lang_exc:
+                    logger.warning(
+                        "Could not fetch user language for %s: %s", user_id, lang_exc
+                    )
+            if stored_language in SUPPORTED_LANGUAGES:
+                language = stored_language
+                if raw_language:
+                    logger.warning(
+                        "Unsupported language '%s' from %s; using stored setting '%s'",
+                        raw_language, client_ip, language,
+                    )
+            else:
+                language = 'en'
+                language_fallback_applied = bool(raw_language and raw_language not in SUPPORTED_LANGUAGES)
+                if raw_language:
+                    logger.warning(
+                        "Unsupported language '%s' from %s; falling back to 'en'",
+                        raw_language, client_ip,
+                    )
+                elif not raw_language:
+                    logger.debug("No language param; defaulting to 'en'")
         
         logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (user: {user_id}, language: {language}, mode: {session_mode})")
         
         # Create peer connection handler
         logger.debug(f"Creating PeerConnectionHandler for {connection_id}")
         ice_servers = await _fetch_ice_servers()
+        # Compute fallback_from: non-empty when the client sent a language code that
+        # is not in SUPPORTED_LANGUAGES so we fell all the way back to 'en'.
+        language_fallback_from = (
+            raw_language
+            if (raw_language and raw_language not in SUPPORTED_LANGUAGES
+                and language == 'en'
+                and (not stored_language or stored_language not in SUPPORTED_LANGUAGES))
+            else ""
+        )
         handler = PeerConnectionHandler(
             connection_id=str(connection_id),
             websocket=ws,
@@ -160,6 +212,7 @@ class SignalingServer:
             session_mode=session_mode,
             ice_servers=ice_servers,
             hold_start=hold_start,
+            language_fallback_from=language_fallback_from,
         )
         self.active_connections[str(connection_id)] = handler
         logger.debug(f"Active connections: {len(self.active_connections)}")

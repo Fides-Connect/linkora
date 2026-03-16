@@ -6,13 +6,15 @@ import json
 import logging
 from typing import AsyncIterator, Optional, Dict, Any, List
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
+from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
 logger = logging.getLogger(__name__)
+
+from ..prompts_templates import get_fallback_error_message  # noqa: E402 (after logger)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -48,7 +50,8 @@ class LLMService:
     """Service for language model interactions using LangChain and Gemini."""
     
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash-lite",
-                 temperature: float = 0.2, max_output_tokens: int = 512):
+                 temperature: float = 0.2, max_output_tokens: int = 512,
+                 language: str = "de"):
         """
         Initialize LLM service.
         
@@ -57,6 +60,8 @@ class LLMService:
             model: Model name to use
             temperature: Sampling temperature
             max_output_tokens: Maximum output tokens
+            language: Session language code ('de' or 'en'). Used for fallback
+                      error messages when the LLM fails to produce a response.
         """
         self.llm = ChatGoogleGenerativeAI(
             model=model,
@@ -65,12 +70,18 @@ class LLMService:
             top_k=4,
             top_p=0.9,
             max_output_tokens=max_output_tokens,
+            # Disable thinking: real-time voice assistant needs low latency;
+            # extended reasoning tokens also consume from max_output_tokens,
+            # which can silently exhaust the budget before any response is
+            # generated (observed with gemini-2.5-flash + thinking_budget=default).
+            thinking_budget=0,
             streaming=True,
         )
         
         self.session_store: Dict[str, BaseChatMessageHistory] = {}
         # Per-session Gemini function schemas (empty = no function calling).
         self._session_functions: Dict[str, List[Dict[str, Any]]] = {}
+        self.language: str = language
         logger.info(f"LLM service initialized with model: {model}")
     
     def get_session_history(self, session_id: str) -> BaseChatMessageHistory:
@@ -99,6 +110,31 @@ class LLMService:
         history = self.get_session_history(session_id)
         history.add_message(message)
         logger.debug(f"Added message to session {session_id}: {type(message).__name__}")
+
+    def pop_trailing_human_message(self, session_id: str) -> Optional[str]:
+        """Remove and return the last message's text if it is a trailing HumanMessage.
+
+        Called when an LLM response task is cancelled mid-stream to undo the
+        HumanMessage that LangChain's RunnableWithMessageHistory committed at
+        stream-start.  Without this repair, consecutive cancelled turns leave a
+        run of back-to-back HumanMessages in history that confuses Gemini on
+        the next real turn (it forgets context and re-asks top-level questions).
+
+        Returns the message text so the caller can prepend it to the next
+        user input, ensuring no user intent is lost.  Returns ``None`` when
+        history is empty or the last message is already an AI turn.
+        """
+        history = self.get_session_history(session_id)
+        msgs = history.messages
+        if msgs and isinstance(msgs[-1], HumanMessage):
+            popped = msgs.pop()
+            text = popped.content if isinstance(popped.content, str) else None
+            logger.debug(
+                "Popped trailing HumanMessage from session %s: %r",
+                session_id, (text or "")[:80],
+            )
+            return text
+        return None
 
     def register_functions(self, session_id: str, tool_schemas: List[Dict[str, Any]]) -> None:
         """
@@ -199,6 +235,7 @@ class LLMService:
 
             # Buffer for assembling multi-chunk tool calls (keyed by index)
             tcc_buffer: Dict[int, Dict[str, str]] = {}
+            full_text_buffer: list[str] = []
 
             async for chunk in chain_with_history.astream(
                 {"input": prompt},
@@ -241,8 +278,8 @@ class LLMService:
                     # Yield text content
                     if chunk.content:
                         text = self._content_to_text(chunk.content)
-                        logger.debug(f"LLM stream chunk: '{text}'")
                         if text:
+                            full_text_buffer.append(text)
                             yield text
 
             # Flush any remaining buffered tool calls
@@ -257,10 +294,13 @@ class LLMService:
                         "name": item["name"],
                         "args": fn_args,
                     }
-            
+
+            if full_text_buffer:
+                logger.debug("LLM complete message (%d chars)", len("".join(full_text_buffer)))
+
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)
-            yield "Entschuldigung, ich konnte keine Antwort generieren."
+            yield get_fallback_error_message(self.language)
     
     async def generate(self, messages: list) -> str:
         """
@@ -283,7 +323,7 @@ class LLMService:
             
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)
-            return "Entschuldigung, ich konnte keine Antwort generieren."
+            return get_fallback_error_message(self.language)
 
     async def prewarm(self) -> None:
         """

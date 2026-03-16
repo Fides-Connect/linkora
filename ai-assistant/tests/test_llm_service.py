@@ -210,3 +210,59 @@ class TestGenerateStreamFunctionCalls:
         fn_calls = [c for c in chunks if isinstance(c, dict) and c.get("type") == "function_call"]
         assert len(fn_calls) == 1
         assert fn_calls[0]["args"]["target_stage"] == "finalize"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# pop_trailing_human_message
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPopTrailingHumanMessage:
+    """pop_trailing_human_message repairs history after a cancelled LLM stream."""
+
+    def test_returns_none_on_empty_history(self, llm_service):
+        result = llm_service.pop_trailing_human_message("empty-session")
+        assert result is None
+
+    def test_returns_none_when_last_message_is_ai(self, llm_service):
+        from langchain_core.messages import AIMessage, HumanMessage
+        llm_service.add_message_to_history("s1", HumanMessage(content="hello"))
+        llm_service.add_message_to_history("s1", AIMessage(content="hi there"))
+        result = llm_service.pop_trailing_human_message("s1")
+        assert result is None
+        # AI message is still in history
+        assert len(llm_service.get_session_history("s1").messages) == 2
+
+    def test_pops_trailing_human_message_and_returns_text(self, llm_service):
+        from langchain_core.messages import HumanMessage
+        llm_service.add_message_to_history("s1", HumanMessage(content="find me a plumber"))
+        result = llm_service.pop_trailing_human_message("s1")
+        assert result == "find me a plumber"
+        assert len(llm_service.get_session_history("s1").messages) == 0
+
+    def test_pops_only_last_message(self, llm_service):
+        from langchain_core.messages import AIMessage, HumanMessage
+        llm_service.add_message_to_history("s1", HumanMessage(content="first"))
+        llm_service.add_message_to_history("s1", AIMessage(content="reply"))
+        llm_service.add_message_to_history("s1", HumanMessage(content="second"))
+        result = llm_service.pop_trailing_human_message("s1")
+        assert result == "second"
+        # First two messages remain
+        assert len(llm_service.get_session_history("s1").messages) == 2
+
+    def test_does_not_pop_non_trailing_human_message(self, llm_service):
+        """A HumanMessage that is NOT the last item must not be removed."""
+        from langchain_core.messages import AIMessage, HumanMessage
+        llm_service.add_message_to_history("s1", HumanMessage(content="early"))
+        llm_service.add_message_to_history("s1", AIMessage(content="response"))
+        result = llm_service.pop_trailing_human_message("s1")
+        assert result is None
+        assert len(llm_service.get_session_history("s1").messages) == 2
+
+    def test_sessions_are_independent(self, llm_service):
+        from langchain_core.messages import HumanMessage
+        llm_service.add_message_to_history("sA", HumanMessage(content="session A"))
+        llm_service.add_message_to_history("sB", HumanMessage(content="session B"))
+        resultA = llm_service.pop_trailing_human_message("sA")
+        assert resultA == "session A"
+        # Session B untouched
+        assert len(llm_service.get_session_history("sB").messages) == 1

@@ -20,10 +20,10 @@ extension ServiceRequestFormatting on ServiceRequest {
   String getDate(AppLocalizations? localizations) {
     final locale = localizations?.locale.toString();
     if (endDate == null) {
-      return _formatDate(startDate, locale);
+      return startDate != null ? _formatDate(startDate!, locale) : '';
     }
     final from = localizations?.dateFrom ?? 'From';
-    return '$from: ${_formatDate(startDate, locale)}';
+    return startDate != null ? '$from: ${_formatDate(startDate!, locale)}' : '';
   }
 
   String? getSecondDateLine(AppLocalizations? localizations) {
