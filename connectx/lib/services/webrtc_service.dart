@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'wrappers.dart';
 import 'audio_routing_service.dart';
@@ -76,27 +77,40 @@ class WebRTCService {
   final List<RTCIceCandidate> _iceCandidatesQueue = [];
   bool _remoteDescriptionSet = false;
 
+  // ICE server config received from backend (includes TURN credentials)
+  List<Map<String, dynamic>>? _iceServers;
+  Completer<void>? _iceConfigCompleter;
+  final Duration _iceConfigTimeout;
+
   // Language configuration
   final String _languageCode;
 
+  // Whether the server URL is secure (wss/https → Cloud Run auth required)
+  bool _isSecure = false;
+
   // Dependencies
   final WebRTCWrapper _webRTCWrapper;
-  final WebSocketChannel Function(Uri) _webSocketFactory;
+  final WebSocketChannel Function(Uri, Map<String, dynamic>) _webSocketFactory;
   final FirebaseAuthWrapper _firebaseAuthWrapper;
   final AudioRoutingService Function()? _audioRoutingServiceFactory;
 
   WebRTCService({
     WebRTCWrapper? webRTCWrapper,
-    WebSocketChannel Function(Uri)? webSocketFactory,
+    WebSocketChannel Function(Uri, Map<String, dynamic>)? webSocketFactory,
     FirebaseAuthWrapper? firebaseAuthWrapper,
     AudioRoutingService Function()? audioRoutingServiceFactory,
     String? serverUrl,
     String? languageCode,
+    Duration iceConfigTimeout = const Duration(seconds: 5),
   }) : _webRTCWrapper = webRTCWrapper ?? WebRTCWrapper(),
        _webSocketFactory =
-           webSocketFactory ?? ((uri) => WebSocketChannel.connect(uri)),
+           webSocketFactory ??
+               ((uri, headers) => kIsWeb
+                   ? WebSocketChannel.connect(uri)
+                   : IOWebSocketChannel.connect(uri, headers: headers)),
        _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper(),
        _audioRoutingServiceFactory = audioRoutingServiceFactory,
+       _iceConfigTimeout = iceConfigTimeout,
        _languageCode = languageCode ?? 'de' {
     // Load server URL from environment variable
     final String? rawServer =
@@ -106,7 +120,16 @@ class WebRTCService {
         'AI_ASSISTANT_SERVER_URL not set in .env. Add AI_ASSISTANT_SERVER_URL to .env',
       );
     }
-    _serverUrl = 'ws://$rawServer/ws';
+    // Detect protocol and map https→wss, http/bare→ws.
+    if (rawServer.startsWith('https://')) {
+      _serverUrl = rawServer.replaceFirst('https://', 'wss://') + '/ws';
+      _isSecure = true;
+    } else if (rawServer.startsWith('http://')) {
+      _serverUrl = rawServer.replaceFirst('http://', 'ws://') + '/ws';
+    } else {
+      // Bare host(:port) — local development
+      _serverUrl = 'ws://$rawServer/ws';
+    }
   }
 
   bool get isConnected => _isConnected;
@@ -159,6 +182,7 @@ class WebRTCService {
 
     _sessionMode = validatedMode;
     _dataChannelOpenFired = false;
+    _iceConfigCompleter = Completer<void>();
 
     _isConnecting = true;
 
@@ -176,6 +200,18 @@ class WebRTCService {
       }
 
       await _connectSignaling();
+
+      // Wait for the server to push ICE/TURN credentials before creating the
+      // peer connection.  The backend sends 'ice-config' immediately on WS
+      // connect; we give it up to 5 s before falling back to plain STUN.
+      try {
+        await _iceConfigCompleter!.future.timeout(_iceConfigTimeout);
+      } on TimeoutException {
+        debugPrint(
+          'WebRTC: Ice-config not received in time — using default STUN',
+        );
+      }
+
       await _createPeerConnection();
       await _createOffer();
     } catch (e) {
@@ -196,6 +232,11 @@ class WebRTCService {
     _isRenegotiating = false;
     _isRecreatingTrack = false;
     _iceCandidatesQueue.clear();
+    _iceServers = null;
+    if (_iceConfigCompleter != null && !_iceConfigCompleter!.isCompleted) {
+      _iceConfigCompleter!.completeError('disconnected');
+    }
+    _iceConfigCompleter = null;
     _voiceUpgradeTimer?.cancel();
     _voiceUpgradeTimer = null;
     _iceGracePeriodTimer?.cancel();
@@ -374,14 +415,40 @@ class WebRTCService {
         throw Exception('No authenticated user found');
       }
 
+      // For secure (Cloud Run) connections, pass the Firebase ID token via the
+      // Authorization header so it is never written to URL access logs.
+      // For plain ws:// (local dev) we skip the token entirely.
+      final Map<String, String> queryParams = {
+        'user_id': userId,
+        'language': _languageCode,
+        'mode': _sessionMode,
+      };
+
+      // Non-web platforms support custom headers on the WebSocket upgrade request.
+      // Always authenticate regardless of transport security (ws:// local dev or wss:// prod).
+      final Map<String, dynamic> wsHeaders = {};
+      if (!kIsWeb) {
+        final String? idToken = await _firebaseAuthWrapper.getIdToken();
+        if (idToken == null || idToken.isEmpty) {
+          throw Exception('Could not retrieve Firebase ID token for authenticated request');
+        }
+        wsHeaders['Authorization'] = 'Bearer $idToken';
+      }
+
       final Uri wsUri = Uri.parse(_serverUrl).replace(
-        queryParameters: {
-          'user_id': userId,
-          'language': _languageCode,
-          'mode': _sessionMode,
-        },
+        queryParameters: queryParams,
       );
-      _signaling = _webSocketFactory(wsUri);
+      _signaling = _webSocketFactory(wsUri, wsHeaders);
+
+      // Web browsers cannot set custom headers on WebSocket upgrade requests (browser security
+      // restriction). Send the Firebase ID token as the first message so the server can
+      // authenticate the web connection before processing any signaling messages.
+      if (kIsWeb && _isSecure) {
+        final String? idToken = await _firebaseAuthWrapper.getIdToken();
+        if (idToken != null && idToken.isNotEmpty) {
+          _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
+        }
+      }
 
       _signaling!.stream.listen(
         _handleSignalingMessage,
@@ -402,10 +469,13 @@ class WebRTCService {
   /// Create WebRTC peer connection
   Future<void> _createPeerConnection() async {
     try {
+      final List<Map<String, dynamic>> iceServerList = _iceServers ??
+          [
+            {'urls': 'stun:stun.l.google.com:19302'},
+          ];
+
       final Map<String, dynamic> configuration = {
-        'iceServers': [
-          {'urls': 'stun:stun.l.google.com:19302'},
-        ],
+        'iceServers': iceServerList,
         'sdpSemantics': 'unified-plan',
       };
 
@@ -546,6 +616,21 @@ class WebRTCService {
       final String? type = data['type'];
 
       switch (type) {
+        case 'ice-config':
+          final rawServers = data['iceServers'];
+          if (rawServers is List) {
+            _iceServers = rawServers
+                .whereType<Map<String, dynamic>>()
+                .toList();
+            debugPrint(
+              'WebRTC: Received ${_iceServers!.length} ICE server(s) from server',
+            );
+          }
+          if (_iceConfigCompleter != null &&
+              !_iceConfigCompleter!.isCompleted) {
+            _iceConfigCompleter!.complete();
+          }
+          break;
         case 'answer':
           _handleAnswer(data['sdp']);
           break;

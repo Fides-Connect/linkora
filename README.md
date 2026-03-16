@@ -14,8 +14,7 @@ A complete voice-based AI assistant platform built with Flutter and Python, feat
 - **[Weaviate (Database)](docs/weaviate.md)** - Vector database
 
 ### 🚀 Infrastructure
-- **[Helm Charts](docs/helm.md)** - Kubernetes deployment
-- **[Terraform](docs/terraform.md)** - Infrastructure as code
+- **[Deployment](docs/deployment.md)** - Cloud Run + Compute Engine setup
 
 ## 🎯 What is Linkora?
 
@@ -47,8 +46,7 @@ Fides/
 │   ├── connectx.md
 │   ├── ai-assistant.md
 │   ├── weaviate.md
-│   ├── helm.md
-│   └── terraform.md
+│   └── deployment.md
 │
 ├── connectx/             # 📱 Flutter mobile application
 │   ├── lib/             # Dart source code
@@ -64,17 +62,7 @@ Fides/
 │   ├── Dockerfile       # Container definition
 │   └── docker-compose.yml
 │
-├── weaviate/             # 🗄️ Vector database infrastructure
-│   └── docker-compose.yml
-│
-├── helm/                 # ☸️ Kubernetes Helm charts
-│   ├── ai-assistant/    # Backend deployment
-│   └── weaviate/        # Database deployment
-│
-├── terraform/            # 🏗️ Infrastructure as Code
-│   ├── main.tf          # GKE cluster configuration
-│   ├── variables.tf
-│   └── bootstrap/       # State backend setup
+├── weaviate/             # 🗄️ Weaviate docker-compose + VM startup script
 │
 ├── .github/              # 🔄 CI/CD workflows
 │   └── workflows/
@@ -141,7 +129,7 @@ cd connectx
 flutter pub get
 
 # Configure environment
-cp template.env .env
+cp .env.template .env
 # Edit .env with server URL
 
 # Run on device
@@ -181,8 +169,7 @@ All documentation is organized in the [`/docs`](docs/) directory with a consiste
 - **[Weaviate](docs/weaviate.md)** - Vector database
 
 ### Infrastructure
-- **[Helm Charts](docs/helm.md)** - Kubernetes deployment
-- **[Terraform](docs/terraform.md)** - Infrastructure provisioning
+- **[Deployment](docs/deployment.md)** - Cloud Run + Compute Engine
 
 ## 🏗️ Architecture
 
@@ -236,11 +223,10 @@ flutter test
 - See [Getting Started Guide](docs/getting-started.md)
 
 ### Production
-- Kubernetes with Helm charts
-- Terraform for infrastructure
+- Cloud Run (AI-Assistant) + Compute Engine VM (Weaviate)
 - GitHub Actions for CI/CD
 
-**See**: [Helm Documentation](docs/helm.md) and [Terraform Documentation](docs/terraform.md)
+**See**: [Deployment Documentation](docs/deployment.md)
 
 ## 🔧 CI/CD & DevContainer
 
@@ -251,7 +237,7 @@ The project includes automated CI/CD pipelines:
 1. **ConnectX Test** - Builds and tests Flutter app in devcontainer
 2. **AI-Assistant Test** - Runs Python backend tests
 3. **Build DevContainer** - Pre-builds and caches the development container
-4. **Cloud Deploy** - Deploys to GKE on successful tests
+4. **Cloud Deploy** - Deploys to Cloud Run/Compute Engine on successful tests
 
 ### DevContainer Cache & Rebuild
 

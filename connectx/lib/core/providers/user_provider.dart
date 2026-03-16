@@ -21,7 +21,18 @@ class UserProvider extends ChangeNotifier {
   Future<void> init() async {
     try {
       await _authService.initialize();
-      _authSubscription = _authService.onCurrentUserChanged.listen((user) {
+      _authSubscription = _authService.onCurrentUserChanged.listen((user) async {
+        if (user != null) {
+          // Stay in loading state while we sync — home page must not build
+          // before the user document exists in Firestore (race → 404 on /me).
+          _isLoading = true;
+          notifyListeners();
+          try {
+            await _authService.performSyncAndConnect(user);
+          } catch (e) {
+            debugPrint('[UserProvider] sync/connect error (non-fatal): $e');
+          }
+        }
         _user = user;
         _isLoading = false;
         notifyListeners();

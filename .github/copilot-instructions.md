@@ -143,7 +143,7 @@ Only `GEMINI_API_KEY` is required.
 
 ### Flutter
 ```bash
-cd connectx && cp template.env .env   # set AI_ASSISTANT_SERVER_URL (machine IP for Android emulator)
+cd connectx && cp .env.template .env   # set AI_ASSISTANT_SERVER_URL (machine IP for Android emulator)
 flutter pub get && flutter run
 flutter test                          # no emulator needed
 ```
