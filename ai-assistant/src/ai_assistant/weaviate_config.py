@@ -15,13 +15,15 @@ try:
         init_hub_spoke_schema,
         get_user_collection,
         get_competence_collection,
+        WeaviateCollection,
         cleanup_hub_spoke_schema  # noqa: F401
     )
 except ImportError:
-    from hub_spoke_schema import (
+    from hub_spoke_schema import (  # pyright: ignore[reportMissingImports]
         init_hub_spoke_schema,
         get_user_collection,
-        get_competence_collection
+        get_competence_collection,
+        WeaviateCollection,
     )
 
 logger = logging.getLogger(__name__)
@@ -98,7 +100,7 @@ class WeaviateConnection:
         return cls._client
 
     @classmethod
-    def close(cls):
+    def close(cls) -> None:
         """Close Weaviate connection."""
         if cls._client is not None:
             cls._client.close()
@@ -106,7 +108,7 @@ class WeaviateConnection:
             logger.info("Weaviate connection closed")
 
 
-def init_weaviate_schema():
+def init_weaviate_schema() -> Optional[bool]:
     """Initialize Weaviate schema with Hub and Spoke architecture."""
     try:
         # Initialize hub and spoke schema
@@ -119,11 +121,11 @@ def init_weaviate_schema():
         raise
 
 
-def get_users_collection():
+def get_users_collection() -> WeaviateCollection:
     """Get user collection."""
     return get_user_collection()
 
 
-def get_providers_collection():
+def get_providers_collection() -> WeaviateCollection:
     """Get competence entry collection."""
     return get_competence_collection()

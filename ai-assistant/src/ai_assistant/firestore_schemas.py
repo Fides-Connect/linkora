@@ -124,7 +124,7 @@ class CompetenceSchema(BaseModel):
 
     @model_validator(mode='before')
     @classmethod
-    def set_timestamps(cls, data):
+    def set_timestamps(cls, data: object) -> object:
         """Set default timestamps if not provided."""
         now = datetime.now()
         if isinstance(data, dict):
@@ -207,7 +207,7 @@ class ServiceRequestSchema(BaseModel):
 
     @model_validator(mode='before')
     @classmethod
-    def set_timestamps(cls, data):
+    def set_timestamps(cls, data: object) -> object:
         """Set default timestamps if not provided."""
         now = datetime.now()
         if isinstance(data, dict):
@@ -281,7 +281,7 @@ class ReviewSchema(BaseModel):
 
     @model_validator(mode='before')
     @classmethod
-    def set_timestamps(cls, data):
+    def set_timestamps(cls, data: object) -> object:
         """Set default timestamps if not provided."""
         now = datetime.now()
         if isinstance(data, dict):
@@ -328,7 +328,7 @@ class ChatSchema(BaseModel):
 
     @model_validator(mode='before')
     @classmethod
-    def set_timestamps(cls, data):
+    def set_timestamps(cls, data: object) -> object:
         """Set default timestamps if not provided."""
         now = datetime.now()
         if isinstance(data, dict):
@@ -377,7 +377,7 @@ class ChatMessageSchema(BaseModel):
 
     @model_validator(mode='before')
     @classmethod
-    def set_timestamps(cls, data):
+    def set_timestamps(cls, data: object) -> object:
         """Set default timestamps if not provided."""
         now = datetime.now()
         if isinstance(data, dict):
@@ -439,7 +439,7 @@ class ProviderCandidateSchema(BaseModel):
 
     @model_validator(mode='before')
     @classmethod
-    def set_timestamps(cls, data):
+    def set_timestamps(cls, data: object) -> object:
         """Set default timestamps if not provided."""
         now = datetime.now()
         if isinstance(data, dict):

@@ -2,6 +2,8 @@
 import json
 import logging
 
+from aiortc import RTCDataChannel
+
 from .agent_runtime_fsm import AgentRuntimeState
 
 logger = logging.getLogger(__name__)
@@ -23,7 +25,7 @@ class DataChannelBridge:
 
     # ── Channel lifecycle ─────────────────────────────────────────────────────
 
-    def attach(self, channel) -> None:
+    def attach(self, channel: RTCDataChannel) -> None:
         """Attach or replace the DataChannel reference."""
         self._channel = channel
 

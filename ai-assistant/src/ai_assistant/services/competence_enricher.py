@@ -24,11 +24,19 @@ Design rules:
 import json
 import logging
 import re
-from typing import Any, Optional
+from collections.abc import AsyncIterator
+from typing import Any, Optional, Protocol
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 logger = logging.getLogger(__name__)
+
+
+class SupportsStreamingChatModel(Protocol):
+    """Minimal async streaming contract used by CompetenceEnricher."""
+
+    def astream(self, messages: list[BaseMessage]) -> AsyncIterator[BaseMessage]:
+        ...
 
 
 _ENRICHMENT_SYSTEM_PROMPT = """\
@@ -80,7 +88,7 @@ class CompetenceEnricher:
              so the enricher can be mocked independently in unit tests.
     """
 
-    def __init__(self, llm: Any) -> None:
+    def __init__(self, llm: SupportsStreamingChatModel) -> None:
         self._llm = llm
 
     async def enrich(self, raw: dict[str, Any]) -> dict[str, Any]:

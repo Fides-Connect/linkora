@@ -50,7 +50,7 @@ class AIAssistant:
 
     def __init__(self, gemini_api_key: str, language: str = 'de',
                  llm_model: str = 'gemini-2.5-flash',
-                 session_id: Optional[str] = None):
+                 session_id: Optional[str] = None) -> None:
         """
         Initialize AI Assistant with all required services.
 

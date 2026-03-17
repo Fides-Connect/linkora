@@ -1,6 +1,7 @@
 import logging
 import copy
 from datetime import datetime, timezone
+from typing import Protocol
 
 from ..firestore_service import FirestoreService
 from ..seed_data import (
@@ -21,13 +22,25 @@ from ..hub_spoke_ingestion import HubSpokeIngestion
 
 logger = logging.getLogger(__name__)
 
+
+class SupportsCompetenceEnrichment(Protocol):
+    async def enrich(self, raw: dict[str, object]) -> dict[str, object]:
+        ...
+
 class UserSeedingService:
     """Service to auto-seed data for new users."""
 
-    def __init__(self, firestore_service: FirestoreService):
+    def __init__(self, firestore_service: FirestoreService) -> None:
         self.firestore_service = firestore_service
 
-    async def seed_new_user(self, user_id: str, name: str, email: str, photo_url: str = "", enricher=None):
+    async def seed_new_user(
+        self,
+        user_id: str,
+        name: str,
+        email: str,
+        photo_url: str = "",
+        enricher: SupportsCompetenceEnrichment | None = None,
+    ) -> None:
         """Seed initial data for a new user if not already present."""
         if not self.firestore_service.db:
             logger.warning("Firestore not initialized, skipping seeding.")

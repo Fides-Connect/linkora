@@ -19,7 +19,7 @@ class AudioOutputTrack(MediaStreamTrack):
 
     kind = "audio"
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.audio_queue = asyncio.Queue()
         self.sample_rate = 24000  # 24kHz: half the TTS payload vs 48kHz; aiortc resamples to 48kHz for RTP
@@ -37,12 +37,12 @@ class AudioOutputTrack(MediaStreamTrack):
         self._comfort_noise_amplitude = 20  # Very low amplitude for subtle background noise
         self._last_frame_was_silence = False
 
-    async def queue_audio(self, audio_data: bytes):
+    async def queue_audio(self, audio_data: bytes) -> None:
         """Queue audio data for playback."""
         logger.debug("Queueing %s bytes of audio, queue size before: %s", len(audio_data), self.audio_queue.qsize())
         await self.audio_queue.put(audio_data)
 
-    async def clear_queue(self):
+    async def clear_queue(self) -> None:
         """Clear all pending audio from the queue and buffer."""
         while not self.audio_queue.empty():
             try:

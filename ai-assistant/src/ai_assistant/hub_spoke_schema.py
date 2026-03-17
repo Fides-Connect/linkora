@@ -10,16 +10,18 @@ Architecture:
 """
 import os
 import logging
-from typing import Optional
+from typing import Optional, TypeAlias
 import weaviate
 from weaviate.classes.config import Configure, Property, DataType, ReferenceProperty
 from weaviate.auth import AuthApiKey
+from weaviate.collections.collection.sync import Collection
 
 logger = logging.getLogger(__name__)
 
 # Collection names
 USER_COLLECTION = "User"
 COMPETENCE_COLLECTION = "Competence"
+WeaviateCollection: TypeAlias = Collection[object, object]
 
 class HubSpokeConnection:
     """Singleton connection manager for Hub and Spoke architecture."""
@@ -70,7 +72,7 @@ class HubSpokeConnection:
         return cls._client
 
     @classmethod
-    def close(cls):
+    def close(cls) -> None:
         """Close Weaviate connection."""
         if cls._client is not None:
             cls._client.close()
@@ -78,7 +80,7 @@ class HubSpokeConnection:
             logger.info("Weaviate connection closed")
 
 
-def init_hub_spoke_schema():
+def init_hub_spoke_schema() -> Optional[bool]:
     """
     Initialize Hub and Spoke schema with bidirectional cross-references.
 
@@ -217,7 +219,7 @@ def init_hub_spoke_schema():
         raise
 
 
-def get_user_collection():
+def get_user_collection() -> WeaviateCollection:
     """Get User collection, auto-initialising schema if needed."""
     client = HubSpokeConnection.get_client()
     if not client.collections.exists(USER_COLLECTION):
@@ -226,7 +228,7 @@ def get_user_collection():
     return client.collections.get(USER_COLLECTION)
 
 
-def get_competence_collection():
+def get_competence_collection() -> WeaviateCollection:
     """Get Competence collection, auto-initialising schema if needed."""
     client = HubSpokeConnection.get_client()
     if not client.collections.exists(COMPETENCE_COLLECTION):
@@ -235,7 +237,7 @@ def get_competence_collection():
     return client.collections.get(COMPETENCE_COLLECTION)
 
 
-def cleanup_hub_spoke_schema():
+def cleanup_hub_spoke_schema() -> Optional[bool]:
     """Delete collections (for testing purposes)."""
     try:
         client = HubSpokeConnection.get_client()

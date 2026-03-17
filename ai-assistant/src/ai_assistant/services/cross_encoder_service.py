@@ -99,12 +99,12 @@ class CrossEncoderService:
     that needs reranking — do not create multiple instances.
     """
 
-    def __init__(self, model_name: str = _DEFAULT_MODEL, min_score: Optional[float] = None):
+    def __init__(self, model_name: str = _DEFAULT_MODEL, min_score: Optional[float] = None) -> None:
         # When using the default HF identifier, prefer the bundled local copy.
         self._model_name = (
             _resolve_model_name() if model_name == _DEFAULT_MODEL else model_name
         )
-        self._model: Optional[Any] = None  # loaded lazily
+        self._model: object | None = None  # loaded lazily
         if min_score is None:
             raw = os.environ.get("CROSS_ENCODER_MIN_SCORE")
             if raw is not None:
@@ -121,7 +121,7 @@ class CrossEncoderService:
             self._min_score,
         )
 
-    def _load_model(self) -> Any:
+    def _load_model(self) -> object:
         """Load the cross-encoder model (called once on first use)."""
         global CrossEncoder  # noqa: PLW0603 — populated lazily so startup is cheap
         if self._model is None:

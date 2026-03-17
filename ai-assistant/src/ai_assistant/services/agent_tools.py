@@ -17,16 +17,35 @@ Context shape expected by all execute() functions::
         "firestore_service": FirestoreService,
     }
 """
+from __future__ import annotations
+
 import asyncio
 import logging
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, NotRequired, TypedDict, cast
 
+from ..data_provider import DataProvider
+from ..firestore_service import FirestoreService
 from ..hub_spoke_ingestion import HubSpokeIngestion
 from ..firestore_schemas import AvailabilityTimeSchema, derive_availability_tags
+from .competence_enricher import CompetenceEnricher
+from .cross_encoder_service import CrossEncoderService
 
 logger = logging.getLogger(__name__)
+
+ToolParams = dict[str, object]
+ToolResult = object
+
+
+class ToolContext(TypedDict):
+    user_id: str
+    user_capabilities: list[ToolCapability]
+    data_provider: DataProvider
+    firestore_service: FirestoreService
+    cross_encoder_service: NotRequired[CrossEncoderService | None]
+    competence_enricher: NotRequired[CompetenceEnricher | None]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -81,11 +100,11 @@ class AgentTool:
     """A single tool callable by the LLM agent."""
     name: str
     description: str
-    schema: dict[str, Any]          # Gemini function-calling declaration
+    schema: dict[str, object]       # Gemini function-calling declaration
     required_capability: ToolCapability
-    _execute: Callable              # async (params: dict, context: dict) -> Any
+    _execute: Callable[[ToolParams, ToolContext], Awaitable[ToolResult]]
 
-    async def execute(self, params: dict[str, Any], context: dict[str, Any]) -> Any:
+    async def execute(self, params: ToolParams, context: ToolContext) -> ToolResult:
         return await self._execute(params, context)
 
 
@@ -108,9 +127,9 @@ class AgentToolRegistry:
     async def execute(
         self,
         name: str,
-        params: dict[str, Any],
-        context: dict[str, Any],
-    ) -> Any:
+        params: ToolParams,
+        context: ToolContext,
+    ) -> ToolResult:
         """
         Execute the named tool after permission check.
 
@@ -120,7 +139,7 @@ class AgentToolRegistry:
         """
         tool = self._tools[name]   # KeyError if not found
 
-        user_caps: list[ToolCapability] = context.get("user_capabilities", [])
+        user_caps = context.get("user_capabilities", [])
         if not check_capability(tool.required_capability, user_caps):
             raise ToolPermissionError(name, tool.required_capability)
 
@@ -132,7 +151,7 @@ class AgentToolRegistry:
             return await asyncio.shield(tool.execute(params, context))
         return await tool.execute(params, context)
 
-    def all_schemas(self) -> list[dict[str, Any]]:
+    def all_schemas(self) -> list[dict[str, object]]:
         """Return all Gemini function-calling schemas for LLMService registration."""
         return [t.schema for t in self._tools.values()]
 
@@ -141,7 +160,7 @@ class AgentToolRegistry:
 # Context helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _require_fs(context: dict[str, Any]):
+def _require_fs(context: ToolContext) -> FirestoreService:
     """Extract firestore_service from context, raising a clear error if absent."""
     fs = context.get("firestore_service")
     if fs is None:
@@ -156,9 +175,10 @@ def _require_fs(context: dict[str, Any]):
 # Built-in tool implementations — service request / search
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _search_providers(params: dict[str, Any], context: dict[str, Any]) -> Any:
-    query = params.get("query", "")
-    limit = int(params.get("limit", 5))
+async def _search_providers(params: ToolParams, context: ToolContext) -> ToolResult:
+    query = str(params.get("query", ""))
+    limit_value = params.get("limit", 5)
+    limit = int(limit_value) if isinstance(limit_value, (int, str)) else 5
     dp = context["data_provider"]
     cross_encoder = context.get("cross_encoder_service")
     # For explicit mid-conversation tool calls, apply reranking when available.
@@ -181,19 +201,19 @@ async def _search_providers(params: dict[str, Any], context: dict[str, Any]) -> 
     return raw
 
 
-async def _get_favorites(params: dict[str, Any], context: dict[str, Any]) -> Any:
+async def _get_favorites(params: ToolParams, context: ToolContext) -> ToolResult:
     fs = _require_fs(context)
-    return await fs.get_user_favorites(context["user_id"])
+    return await fs.get_favorites(context["user_id"])
 
 
-async def _get_open_requests(params: dict[str, Any], context: dict[str, Any]) -> Any:
+async def _get_open_requests(params: ToolParams, context: ToolContext) -> ToolResult:
     fs = _require_fs(context)
     return await fs.get_service_requests(user_id=context["user_id"])
 
 
-async def _create_service_request(params: dict[str, Any], context: dict[str, Any]) -> Any:
+async def _create_service_request(params: ToolParams, context: ToolContext) -> ToolResult:
     fs = _require_fs(context)
-    data: dict = {
+    data: dict[str, object] = {
         "seeker_user_id": context["user_id"],
         "title": params.get("title", ""),
         "description": params.get("description", ""),
@@ -208,7 +228,7 @@ async def _create_service_request(params: dict[str, Any], context: dict[str, Any
         data["requested_competencies"] = params["requested_competencies"]
     for date_field in ("start_date", "end_date"):
         raw = params.get(date_field)
-        if raw:
+        if isinstance(raw, str) and raw:
             try:
                 data[date_field] = datetime.fromisoformat(raw)
             except (ValueError, TypeError):
@@ -233,10 +253,10 @@ async def _create_service_request(params: dict[str, Any], context: dict[str, Any
     return result
 
 
-async def _cancel_service_request(params: dict[str, Any], context: dict[str, Any]) -> Any:
+async def _cancel_service_request(params: ToolParams, context: ToolContext) -> ToolResult:
     """Set a service request's status to 'cancelled'."""
-    fs = context["firestore_service"]
-    request_id = params.get("request_id", "")
+    fs = _require_fs(context)
+    request_id = str(params.get("request_id", ""))
     if not request_id:
         return {"error": "request_id is required"}
     await fs.update_service_request(request_id, {"status": "cancelled"})
@@ -247,7 +267,7 @@ async def _cancel_service_request(params: dict[str, Any], context: dict[str, Any
 # Provider onboarding tool implementations
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _record_provider_interest(params: dict[str, Any], context: dict[str, Any]) -> Any:
+async def _record_provider_interest(params: ToolParams, context: ToolContext) -> ToolResult:
     """
     Record the user's response to the provider pitch.
 
@@ -260,7 +280,7 @@ async def _record_provider_interest(params: dict[str, Any], context: dict[str, A
 
     fs = _require_fs(context)
     user_id = context["user_id"]
-    decision = params.get("decision", "not_now")
+    decision = str(params.get("decision", "not_now"))
     now = datetime.now(timezone.utc)
 
     if decision == "accepted":
@@ -283,13 +303,13 @@ async def _record_provider_interest(params: dict[str, Any], context: dict[str, A
         return {"status": "not_now"}
 
 
-async def _get_my_competencies(params: dict[str, Any], context: dict[str, Any]) -> Any:
+async def _get_my_competencies(params: ToolParams, context: ToolContext) -> ToolResult:
     """Fetch the current user's competency list from Firestore."""
     fs = _require_fs(context)
     return await fs.get_competencies(context["user_id"])
 
 
-async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]) -> Any:
+async def _save_competence_batch(params: ToolParams, context: ToolContext) -> ToolResult:
     """
     Create or update one or more competence entries for the user.
 
@@ -309,8 +329,8 @@ async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]
     fs = _require_fs(context)
     user_id = context["user_id"]
     enricher: CompetenceEnricher | None = context.get("competence_enricher")
-    skills: list[dict] = params.get("skills", [])
-    saved = []
+    skills = cast(list[dict[str, object]], params.get("skills", []))
+    saved: list[dict[str, object]] = []
 
     # Spec §5.8.8: capture the user's pre-save provider status so we can
     # conditionally reset the pitch cooldown timestamp after storing the
@@ -327,7 +347,7 @@ async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]
 
     # Validate: price_range is mandatory for every NEW skill (no competence_id)
     missing_price = [
-        skill.get("title", "(untitled)")
+        str(skill.get("title", "(untitled)"))
         for skill in skills
         if not skill.get("competence_id")
         and not str(skill.get("price_range", "")).strip()
@@ -347,11 +367,14 @@ async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]
     # Must happen BEFORE the availability_time check so deduplicated skills
     # (which become UPDATEs) are not incorrectly flagged as missing availability.
     try:
-        existing_competencies: list[dict] = await fs.get_competencies(user_id) or []
+        existing_competencies = cast(
+            list[dict[str, object]],
+            await fs.get_competencies(user_id) or [],
+        )
     except Exception:  # pragma: no cover
         existing_competencies = []
     existing_by_title: dict[str, str] = {
-        (c.get("title") or "").strip().lower(): c.get("competence_id", "")
+        str(c.get("title", "")).strip().lower(): str(c.get("competence_id", ""))
         for c in existing_competencies
         if c.get("competence_id")
     }
@@ -360,10 +383,10 @@ async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]
     # A skill is "truly new" when it has no competence_id AND its title does not
     # match an existing competence (which would be deduplicated to an UPDATE).
     missing_availability = [
-        skill.get("title", "(untitled)")
+        str(skill.get("title", "(untitled)"))
         for skill in skills
         if not skill.get("competence_id")
-        and (skill.get("title") or "").strip().lower() not in existing_by_title
+        and str(skill.get("title", "")).strip().lower() not in existing_by_title
         and not skill.get("availability_time")
     ]
     if missing_availability:
@@ -383,7 +406,12 @@ async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]
 
         # Pop availability_time before hitting Firestore — it's written to the
         # 'availability_time' subcollection separately, not onto the competence doc.
-        availability_time_data: dict | None = skill_copy.pop("availability_time", None)
+        availability_time_value = skill_copy.pop("availability_time", None)
+        availability_time_data = (
+            cast(dict[str, object], availability_time_value)
+            if isinstance(availability_time_value, dict)
+            else None
+        )
 
         # Validate availability_time BEFORE any Firestore write so that an invalid
         # structured-time payload is rejected before the competence doc is persisted,
@@ -410,13 +438,14 @@ async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]
         # do NOT store it in Firestore (CompetenceUpdateSchema has extra='ignore').
         # No 'availability_text' flat field exists on the schema any more.
 
-        competence_id = skill_copy.pop("competence_id", None)
+        competence_id_value = skill_copy.pop("competence_id", None)
+        competence_id = competence_id_value if isinstance(competence_id_value, str) else None
 
         # Server-side deduplication: if the LLM omitted competence_id but a
         # competence with the same title already exists, treat this as an update
         # to prevent duplicate entries.
         if not competence_id:
-            lookup_title = (skill_copy.get("title") or "").strip().lower()
+            lookup_title = str(skill_copy.get("title", "")).strip().lower()
             if lookup_title and lookup_title in existing_by_title:
                 competence_id = existing_by_title[lookup_title]
                 logger.info(
@@ -428,14 +457,14 @@ async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]
             result = await fs.update_competence(user_id, competence_id, skill_copy)
         else:
             result = await fs.create_competence(user_id, skill_copy)
+        if result is None:
+            logger.warning("Competence save returned None for user %s", user_id)
+            continue
         saved.append(result)
 
         # ── Write availability_time subcollection ─────────────────────────────────
-        saved_id = (
-            (result.get("id") or result.get("competence_id") or competence_id)
-            if result
-            else None
-        )
+        saved_id_value = result.get("id") or result.get("competence_id") or competence_id
+        saved_id = saved_id_value if isinstance(saved_id_value, str) else None
         if availability_time_data and saved_id:
             try:
                 # availability_time_data was already validated above — write directly.
@@ -445,9 +474,19 @@ async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]
                 )
                 if existing_avail:
                     avail_id = existing_avail[0].get("availability_time_id")
-                    await fs.update_availability_time(
-                        user_id, avail_id, availability_time_data, competence_id=saved_id
-                    )
+                    if isinstance(avail_id, str):
+                        await fs.update_availability_time(
+                            user_id,
+                            avail_id,
+                            availability_time_data,
+                            competence_id=saved_id,
+                        )
+                    else:
+                        await fs.create_availability_time(
+                            user_id,
+                            availability_time_data,
+                            competence_id=saved_id,
+                        )
                 else:
                     await fs.create_availability_time(
                         user_id, availability_time_data, competence_id=saved_id
@@ -466,11 +505,8 @@ async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]
         # ── LLM enrichment ───────────────────────────────────────────────────
         if enricher is not None:
             # Resolve competence_id for the write-back.
-            saved_id = (
-                result.get("id")
-                or result.get("competence_id")
-                or competence_id
-            )
+            saved_id_value = result.get("id") or result.get("competence_id") or competence_id
+            saved_id = saved_id_value if isinstance(saved_id_value, str) else None
             if saved_id:
                 enriched = await enricher.enrich(skill_copy)
                 enriched_fields = {
@@ -514,11 +550,14 @@ async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]
     # that skills saved in earlier sessions are preserved in Weaviate.
     # For each competence, fetch its availability_time subcollection and inject
     # derived availability_tags so Weaviate filtering stays accurate.
-    all_competencies = await fs.get_competencies(user_id)
+    all_competencies = cast(
+        list[dict[str, object]],
+        await fs.get_competencies(user_id) or [],
+    )
     if all_competencies:
         for comp in all_competencies:
             cid = comp.get("competence_id")
-            if cid:
+            if isinstance(cid, str):
                 avail_docs = await fs.get_availability_times(user_id, competence_id=cid)
                 if avail_docs:
                     avail_data = avail_docs[0]  # one doc per competence
@@ -547,11 +586,11 @@ async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]
     return {"saved": saved, "count": len(saved)}
 
 
-async def _delete_competences(params: dict[str, Any], context: dict[str, Any]) -> Any:
+async def _delete_competences(params: ToolParams, context: ToolContext) -> ToolResult:
     """Delete competencies by their IDs and sync to Weaviate."""
     fs = _require_fs(context)
     user_id = context["user_id"]
-    ids: list[str] = params.get("competence_ids", [])
+    ids = cast(list[str], params.get("competence_ids", []))
     deleted = []
 
     for cid in ids:

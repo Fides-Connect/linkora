@@ -3,8 +3,13 @@ import os
 from typing import Optional, Any
 from datetime import datetime, timezone, timedelta
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_collection import BaseCollectionReference
+from google.cloud.firestore_v1.client import Client
 from google.cloud.firestore_v1.base_query import FieldFilter
-from pydantic import ValidationError
+from google.cloud.firestore_v1.transforms import Increment
+from pydantic import BaseModel, ValidationError
+
+from .services.conversation_service import ConversationStage
 from .firestore_schemas import (
     UserSchema,
     UserUpdateSchema,
@@ -32,12 +37,12 @@ logger = logging.getLogger(__name__)
 class FirestoreService:
     """Service to interact with Firestore database."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize Firestore client lazily."""
-        self._db = None
+        self._db: Client | None = None
 
     @property
-    def db(self):
+    def db(self) -> Client | None:
         if self._db is None:
             try:
                 # Initialization should have happened in main.py
@@ -53,9 +58,9 @@ class FirestoreService:
                 return None
         return self._db
 
-    def _get_collection(self, collection_name: str):
-        if not self.db:
-            return None
+    def _get_collection(self, collection_name: str) -> BaseCollectionReference:
+        if self.db is None:
+            raise RuntimeError("Firestore client is not initialized")
         return self.db.collection(collection_name)
 
     def _generate_prefixed_id(self, prefix: str) -> str:
@@ -68,11 +73,17 @@ class FirestoreService:
             A prefixed ID like 'user_abc123def456'
         """
         # Generate a Firestore-style auto ID
+        assert self.db is not None
         doc_ref = self.db.collection('_temp').document()
         auto_id = doc_ref.id
         return f"{prefix}_{auto_id}"
 
-    def _validate_data(self, data: dict[str, Any], schema_class, exclude_unset: bool = False) -> dict[str, Any]:
+    def _validate_data(
+        self,
+        data: dict[str, Any],
+        schema_class: type[BaseModel],
+        exclude_unset: bool = False,
+    ) -> dict[str, Any]:
         """Validate data against a Pydantic schema.
 
         Args:
@@ -246,6 +257,8 @@ class FirestoreService:
             doc = self._get_collection('service_requests').document(request_id).get()
             if doc.exists:
                 data = doc.to_dict()
+                if data is None:
+                    return None
                 data['service_request_id'] = doc.id
                 return await self._enrich_service_request(data)
             return None
@@ -298,7 +311,7 @@ class FirestoreService:
                 logger.warning("Cannot update service request %s: service request does not exist", request_id)
                 return None
 
-            current_data = doc.to_dict()
+            current_data = doc.to_dict() or {}
             old_provider_id = current_data.get('selected_provider_user_id', '')
 
             # Validate update data against UpdateSchema (Pydantic filters out 'id' and other non-updatable fields)
@@ -344,7 +357,7 @@ class FirestoreService:
             # Get the service request data to know which users to update
             doc = service_request_ref.get()
             if doc.exists:
-                request_data = doc.to_dict()
+                request_data = doc.to_dict() or {}
                 seeker_user_id = request_data.get('seeker_user_id')
                 selected_provider_user_id = request_data.get('selected_provider_user_id')
 
@@ -809,6 +822,8 @@ class FirestoreService:
             doc = self._get_collection('users').document(user_id).get()
             if doc.exists:
                 data = doc.to_dict()
+                if data is None:
+                    return None
                 data['user_id'] = doc.id
 
                 # Fetch competencies from subcollection
@@ -854,7 +869,11 @@ class FirestoreService:
             logger.error("Error updating %s: %s", user_id, e)
             return None
 
-    async def create_user(self, user_id: Optional[str] = None, user_data: dict[str, Any] = None) -> Optional[dict[str, Any]]:
+    async def create_user(
+        self,
+        user_id: Optional[str] = None,
+        user_data: dict[str, Any] | None = None,
+    ) -> Optional[dict[str, Any]]:
         """Create a new user.
 
         Args:
@@ -867,6 +886,8 @@ class FirestoreService:
         if not self.db:
             return None
         try:
+            if user_data is None:
+                return None
             # Validate data against schema (timestamps excluded)
             validated_data = self._validate_data(user_data, UserSchema)
 
@@ -1260,7 +1281,7 @@ class FirestoreService:
             return await self.get_availability_time(user_id, availability_time_id, competence_id)
         except Exception as e:
             logger.error("Error updating availability time %s: %s", availability_time_id, e)
-            return False
+            return None
 
     async def delete_availability_time(
         self,
@@ -1496,6 +1517,8 @@ class FirestoreService:
             doc = self._get_collection('chats').document(chat_id).get()
             if doc.exists:
                 data = doc.to_dict()
+                if data is None:
+                    return None
                 data['chat_id'] = doc.id
                 return data
             return None
@@ -1519,7 +1542,7 @@ class FirestoreService:
             docs = query.stream()
             chats = []
             for doc in docs:
-                data = doc.to_dict()
+                data = doc.to_dict() or {}
                 data['chat_id'] = doc.id
                 chats.append(data)
             return chats
@@ -1550,13 +1573,13 @@ class FirestoreService:
             # Combine results and deduplicate
             chats = {}
             for doc in seeker_docs:
-                data = doc.to_dict()
+                data = doc.to_dict() or {}
                 data['chat_id'] = doc.id
                 chats[doc.id] = data
 
             for doc in provider_docs:
                 if doc.id not in chats:
-                    data = doc.to_dict()
+                    data = doc.to_dict() or {}
                     data['chat_id'] = doc.id
                     chats[doc.id] = data
 
@@ -1595,7 +1618,7 @@ class FirestoreService:
             return await self.get_chat(chat_id)
         except Exception as e:
             logger.error("Error updating chat %s: %s", chat_id, e)
-            return False
+            return None
 
     async def delete_chat(self, chat_id: str) -> bool:
         """Delete a chat and all its messages from root chats collection.
@@ -1794,7 +1817,7 @@ class FirestoreService:
             return await self.get_chat_message(chat_id, message_id)
         except Exception as e:
             logger.error("Error updating message %s in chat %s: %s", message_id, chat_id, e)
-            return False
+            return None
 
     async def delete_chat_message(self, chat_id: str, message_id: str) -> bool:
         """Delete a chat message.
@@ -1853,7 +1876,7 @@ class FirestoreService:
         conversation_id: str,
         role: str,
         text: str,
-        stage,
+        stage: ConversationStage | str,
         sequence: int,
     ) -> Optional[str]:
         """Append a message to the ai_conversation's messages subcollection.
@@ -1875,7 +1898,7 @@ class FirestoreService:
         if not self.db:
             return None
         try:
-            stage_str = stage.value if hasattr(stage, 'value') else str(stage)
+            stage_str = stage.value if isinstance(stage, ConversationStage) else str(stage)
             msg_data = {
                 "conversation_id": conversation_id,
                 "role": role,
@@ -1896,7 +1919,7 @@ class FirestoreService:
             # Update parent doc counters
             parent_update: dict[str, Any] = {
                 "last_message_at": now,
-                "message_count": firestore.Increment(1),
+                "message_count": Increment(1),
                 "updated_at": now,
             }
             if sequence == 0:

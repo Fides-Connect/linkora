@@ -81,7 +81,7 @@ SUPPORTED_LANGUAGES = {"en", "de"}
 class SignalingServer:
     """Manages WebSocket connections and WebRTC signaling."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.active_connections: dict[str, PeerConnectionHandler] = {}
         self._firestore = FirestoreService()
 
@@ -278,7 +278,7 @@ class SignalingServer:
             logger.debug("Active connections after cleanup: %s", len(self.active_connections))
         return ws
 
-    async def _handle_message(self, handler: PeerConnectionHandler, data: dict[str, Any]):
+    async def _handle_message(self, handler: PeerConnectionHandler, data: dict[str, Any]) -> None:
         """Handle signaling messages."""
         msg_type = data.get('type')
         logger.debug("Handling message type '%s' for connection %s", msg_type, handler.connection_id)

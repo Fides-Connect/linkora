@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class DebugRecorder:
     """Records audio frames for debugging."""
 
-    def __init__(self, connection_id: str, sample_rate: int = 48000, enabled: bool = None):
+    def __init__(self, connection_id: str, sample_rate: int = 48000, enabled: bool = None) -> None:
         """
         Initialize debug recorder.
 
@@ -36,7 +36,7 @@ class DebugRecorder:
         if self.enabled:
             self._setup_recording()
 
-    def _setup_recording(self):
+    def _setup_recording(self) -> None:
         """Set up recording directory and file path."""
         debug_dir = 'debug_audio'
         os.makedirs(debug_dir, exist_ok=True)
@@ -48,7 +48,7 @@ class DebugRecorder:
         )
         logger.info("Debug recording enabled: %s", self.wav_path)
 
-    def add_frame(self, audio_data: np.ndarray):
+    def add_frame(self, audio_data: np.ndarray) -> None:
         """
         Add an audio frame to the recording.
 
@@ -58,7 +58,7 @@ class DebugRecorder:
         if self.enabled:
             self.frames.append(audio_data.copy())
 
-    def save(self):
+    def save(self) -> None:
         """Save recorded audio to WAV file."""
         if not self.enabled or len(self.frames) == 0:
             if self.enabled:
@@ -77,7 +77,7 @@ class DebugRecorder:
         except Exception as e:
             logger.error("Error saving debug recording: %s", e, exc_info=True)
 
-    def _log_recording_stats(self):
+    def _log_recording_stats(self) -> None:
         """Log statistics about recorded frames."""
         frame_count = len(self.frames)
         frame_lengths = [len(f) for f in self.frames]
@@ -88,7 +88,7 @@ class DebugRecorder:
             sum(frame_lengths) / len(frame_lengths),
         )
 
-    def _log_audio_stats(self, audio: np.ndarray):
+    def _log_audio_stats(self, audio: np.ndarray) -> None:
         """Log statistics about audio data."""
         audio_min, audio_max = audio.min(), audio.max()
         audio_rms = np.sqrt(np.mean(audio.astype(float) ** 2))
@@ -98,7 +98,7 @@ class DebugRecorder:
         if audio_rms < 100:
             logger.warning("WARNING: Audio has very low RMS (%.2f) - recording might be silence or corrupted", audio_rms)
 
-    def _write_wav_file(self, audio: np.ndarray):
+    def _write_wav_file(self, audio: np.ndarray) -> None:
         """Write audio data to WAV file."""
         with wave.open(self.wav_path, 'wb') as wav_file:
             wav_file.setnchannels(1)  # Mono

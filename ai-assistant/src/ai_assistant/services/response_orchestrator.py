@@ -60,7 +60,7 @@ class ResponseOrchestrator:
         runtime_fsm: AgentRuntimeFSM | None = None,
         tool_registry: AgentToolRegistry | None = None,
         ai_conversation_service: "AIConversationService | None" = None,
-    ):
+    ) -> None:
         self.llm_service = llm_service
         self.conversation_service = conversation_service
         self.runtime_fsm: AgentRuntimeFSM = runtime_fsm or AgentRuntimeFSM()

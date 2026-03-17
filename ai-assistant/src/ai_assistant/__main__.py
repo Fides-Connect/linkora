@@ -46,7 +46,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def main():
+async def main() -> None:
     """Main application entry point."""
     # Load environment variables
     load_dotenv()

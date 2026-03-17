@@ -54,7 +54,7 @@ class AudioProcessor:
         language: str = "de",
         language_fallback_from: str = "",
         buffered_message: str | None = None,
-    ):
+    ) -> None:
         self.connection_id = connection_id
         self.input_track = input_track
         self.user_id = user_id
@@ -376,7 +376,7 @@ class AudioProcessor:
 
     # ── Audio processing ───────────────────────────────────────────────────────
 
-    async def _process_audio(self):
+    async def _process_audio(self) -> None:
         """Main audio processing loop - receives frames and queues them for STT."""
         if self.input_track is None:
             return
@@ -552,7 +552,7 @@ class AudioProcessor:
         except Exception as exc:
             logger.error("Error in continuous STT: %s", exc, exc_info=True)
 
-    async def _trigger_interrupt(self):
+    async def _trigger_interrupt(self) -> None:
         """Trigger an interrupt to stop ongoing AI speech."""
         logger.info("Triggering interrupt")
         # Stop TTS and clear audio output immediately so the user hears silence.
@@ -594,7 +594,7 @@ class AudioProcessor:
         except Exception as exc:  # pragma: no cover
             logger.warning("History repair in _trigger_interrupt failed: %s", exc)
 
-    async def process_text_input(self, text: str):
+    async def process_text_input(self, text: str) -> None:
         """Process a text message through the LLM pipeline.
 
         Awaits session initialization (handles race on very first message),
@@ -678,7 +678,7 @@ class AudioProcessor:
                 self._process_final_transcript(text)
             )
 
-    async def _process_final_transcript(self, transcript: str):
+    async def _process_final_transcript(self, transcript: str) -> None:
         """Process a final transcript through LLM -> TTS pipeline."""
         try:
             logger.info("Processing final transcript: '%s'", transcript)
@@ -725,7 +725,7 @@ class AudioProcessor:
             )
 
             # Wrap LLM stream to track first token
-            async def tracked_llm_stream():
+            async def tracked_llm_stream() -> AsyncGenerator[str, None]:
                 first_chunk = True
                 async for chunk in llm_stream:
                     # The orchestrator emits a sentinel dict before each
@@ -764,7 +764,12 @@ class AudioProcessor:
             logger.info("🔇 is_ai_speaking → False (exception in pipeline)")
             self.is_ai_speaking = False
 
-    async def _queue_audio_for_playback(self, audio_data: bytes, is_first: bool = True, is_last: bool = True):
+    async def _queue_audio_for_playback(
+        self,
+        audio_data: bytes,
+        is_first: bool = True,
+        is_last: bool = True,
+    ) -> None:
         """
         Queue audio for playback. Fades are applied only at sentence boundaries
         (is_first / is_last) so intermediate streaming chunks pass through untouched,
@@ -790,7 +795,11 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Error queueing audio for playback: {e}", exc_info=True)
 
-    async def _monitor_playback_completion(self, total_audio_bytes: int = 0, first_audio_at: float = 0.0):
+    async def _monitor_playback_completion(
+        self,
+        total_audio_bytes: int = 0,
+        first_audio_at: float = 0.0,
+    ) -> None:
         """Wait until the device has finished playing all queued audio, then clear is_ai_speaking.
 
         Computes the remaining playback time by subtracting the time already

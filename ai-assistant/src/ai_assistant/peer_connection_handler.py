@@ -8,7 +8,10 @@ import logging
 from aiohttp import web
 from aiortc import (
     RTCConfiguration,
+    RTCDataChannel,
+    RTCIceCandidate,
     RTCIceServer,
+    MediaStreamTrack,
     RTCPeerConnection,
     RTCSessionDescription,
 )
@@ -35,7 +38,7 @@ class PeerConnectionHandler:
         ice_servers: list[dict] | None = None,
         hold_start: bool = False,
         language_fallback_from: str = "",
-    ):
+    ) -> None:
         self.connection_id = connection_id
         self.websocket = websocket
         self.user_id = user_id
@@ -85,7 +88,7 @@ class PeerConnectionHandler:
 
     # ── Idle timer ────────────────────────────────────────────────────────────
 
-    def _reset_idle_timer(self):
+    def _reset_idle_timer(self) -> None:
         """Cancel existing idle task and start a fresh 10-minute countdown."""
         if self._idle_task and not self._idle_task.done():
             self._idle_task.cancel()
@@ -114,7 +117,7 @@ class PeerConnectionHandler:
                 self.connection_id, exc,
             )
 
-    async def _idle_timeout_task(self):
+    async def _idle_timeout_task(self) -> None:
         """Close the connection after 10 minutes of inactivity."""
         try:
             await asyncio.sleep(600)  # 10 minutes
@@ -235,7 +238,7 @@ class PeerConnectionHandler:
 
     # ── on_track helpers ──────────────────────────────────────────────────────
 
-    async def _on_first_voice_track(self, track) -> None:
+    async def _on_first_voice_track(self, track: MediaStreamTrack) -> None:
         """First audio track on a brand-new voice session."""
         self.audio_processor = AudioProcessor(
             connection_id=self.connection_id,
@@ -257,7 +260,7 @@ class PeerConnectionHandler:
         asyncio.create_task(self.audio_processor.start())
         self._reset_idle_timer()
 
-    async def _on_text_to_voice_upgrade(self, track) -> None:
+    async def _on_text_to_voice_upgrade(self, track: MediaStreamTrack) -> None:
         """Existing text-only session upgrading to voice."""
         assert self.audio_processor is not None
         logger.info("Text → voice upgrade detected")
@@ -275,7 +278,7 @@ class PeerConnectionHandler:
         self._flush_pending_text_inputs()
         self.track_update_ready.set()
 
-    async def _on_track_replacement(self, track) -> None:
+    async def _on_track_replacement(self, track: MediaStreamTrack) -> None:
         """Track replacement during renegotiation (e.g. Bluetooth change)."""
         assert self.audio_processor is not None
         logger.info("Track replacement detected (renegotiation)")
@@ -284,10 +287,10 @@ class PeerConnectionHandler:
 
     # ── Event handlers ────────────────────────────────────────────────────────
 
-    def _setup_event_handlers(self):
+    def _setup_event_handlers(self) -> None:
 
         @self.pc.on("icecandidate")
-        async def on_icecandidate(candidate):
+        async def on_icecandidate(candidate: RTCIceCandidate | None) -> None:
             """Send ICE candidates to client."""
             if candidate:
                 await self._send_message({
@@ -300,7 +303,7 @@ class PeerConnectionHandler:
                 })
 
         @self.pc.on("track")
-        async def on_track(track):
+        async def on_track(track: MediaStreamTrack) -> None:
             """Route incoming media track to the correct handler."""
             logger.info("Received %s track: %s", track.kind, track.id)
             if track.kind != "audio":
@@ -314,7 +317,7 @@ class PeerConnectionHandler:
                 await self._on_first_voice_track(track)
 
         @self.pc.on("datachannel")
-        def on_datachannel(channel):
+        def on_datachannel(channel: RTCDataChannel) -> None:
             """Handle incoming data channel."""
             logger.info("Data channel received: %s", channel.label)
             self.data_channel = channel
@@ -324,7 +327,7 @@ class PeerConnectionHandler:
             self._flush_pending_text_inputs()
 
             @channel.on("open")
-            def on_channel_open():
+            def on_channel_open() -> None:
                 """Re-emit current FSM state once the DataChannel is confirmed open.
 
                 set_data_channel() is called when the channel is *received* but
@@ -349,7 +352,7 @@ class PeerConnectionHandler:
                         )
 
             @channel.on("message")
-            def on_message(message):
+            def on_message(message: str | bytes) -> None:
                 """Dispatch DataChannel messages via the router."""
                 try:
                     data = json.loads(message)
@@ -359,7 +362,7 @@ class PeerConnectionHandler:
                     logger.error("Error handling data channel message: %s", exc, exc_info=True)
 
         @self.pc.on("connectionstatechange")
-        async def on_connectionstatechange():
+        async def on_connectionstatechange() -> None:
             """Handle connection state changes."""
             logger.info("Connection state: %s", self.pc.connectionState)
             if self.pc.connectionState == "failed":
@@ -481,7 +484,7 @@ class PeerConnectionHandler:
         await self.pc.setLocalDescription(answer)
         await self._send_message({'type': 'answer', 'sdp': self.pc.localDescription.sdp})
 
-    async def handle_offer(self, offer: RTCSessionDescription):
+    async def handle_offer(self, offer: RTCSessionDescription) -> None:
         """Handle WebRTC offer from client — route to the correct helper."""
         try:
             is_renegotiation = self.audio_processor is not None
@@ -510,7 +513,7 @@ class PeerConnectionHandler:
         except Exception as exc:
             logger.error("Error handling offer: %s", exc, exc_info=True)
 
-    async def handle_ice_candidate(self, candidate_data: dict):
+    async def handle_ice_candidate(self, candidate_data: dict) -> None:
         """Handle ICE candidate from client."""
         try:
             candidate_str = candidate_data.get('candidate', '')
@@ -522,15 +525,15 @@ class PeerConnectionHandler:
         except Exception as exc:
             logger.error("Error adding ICE candidate: %s", exc, exc_info=True)
 
-    async def _send_message(self, message: dict):
+    async def _send_message(self, message: dict) -> None:
         """Send message to client via WebSocket."""
         try:
             await self.websocket.send_json(message)
         except Exception as exc:
             logger.error("Error sending message: %s", exc, exc_info=True)
 
-    async def close(self):
-        """Close peer connection and cleanup resources.
+    async def close(self) -> None:
+    """Close peer connection and cleanup resources.
 
         Concurrent callers await the in-progress teardown via ``_close_lock``
         so all callers unblock only after cleanup is complete.

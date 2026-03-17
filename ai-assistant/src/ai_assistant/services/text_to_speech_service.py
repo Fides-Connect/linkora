@@ -16,7 +16,7 @@ class TextToSpeechService:
 
     def __init__(self, language_code: str = 'de-DE',
                  voice_name: str = 'de-DE-Chirp3-HD-Sulafat',
-                 max_concurrent_requests: int = 5):
+                 max_concurrent_requests: int = 5) -> None:
         """
         Initialize Text-to-Speech service.
 

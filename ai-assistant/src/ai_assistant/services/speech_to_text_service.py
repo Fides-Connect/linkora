@@ -4,7 +4,7 @@ Handles all speech recognition functionality.
 """
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from google.cloud import speech_v1 as speech
 from google.cloud.speech_v1 import SpeechAsyncClient
 from google.api_core import exceptions as google_exceptions
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class SpeechToTextService:
     """Service for speech-to-text conversion using Google Cloud Speech API."""
 
-    def __init__(self, language_code: str = 'de-DE'):
+    def __init__(self, language_code: str = 'de-DE') -> None:
         """
         Initialize Speech-to-Text service.
 
@@ -28,7 +28,10 @@ class SpeechToTextService:
 
         logger.info("STT service configured for language: %s", language_code)
 
-    async def continuous_stream(self, audio_generator) -> AsyncIterator[tuple[str, bool]]:
+    async def continuous_stream(
+        self,
+        audio_generator: AsyncIterator[bytes],
+    ) -> AsyncIterator[tuple[str, bool]]:
         """
         Continuously stream audio to STT using async gRPC.
 
@@ -125,7 +128,11 @@ class SpeechToTextService:
             use_enhanced=True
         )
 
-    async def _create_request_generator(self, streaming_config, audio_generator):
+    async def _create_request_generator(
+        self,
+        streaming_config: speech.StreamingRecognitionConfig,
+        audio_generator: AsyncIterator[bytes],
+    ) -> AsyncGenerator[speech.StreamingRecognizeRequest, None]:
         """
         Generate streaming recognition requests.
 

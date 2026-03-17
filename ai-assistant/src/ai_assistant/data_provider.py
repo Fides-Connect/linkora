@@ -43,7 +43,7 @@ class DataProvider(ABC):
 class WeaviateDataProvider(DataProvider):
     """Weaviate-based data provider using vector search."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         from .weaviate_models import UserModelWeaviate, ProviderModelWeaviate
         self.user_model = UserModelWeaviate
         self.provider_model = ProviderModelWeaviate

@@ -118,7 +118,7 @@ class TTSPlaybackManager:
         self,
         tts_service: TextToSpeechService,
         on_audio_ready: Callable[[bytes, bool, bool], Awaitable[None]]
-    ):
+    ) -> None:
         """
         Initialize TTS playback manager.
 
@@ -289,7 +289,7 @@ class TTSPlaybackManager:
             self.on_audio_ready = _original_on_audio
 
         return (self._total_audio_bytes, self._first_audio_at)
-    
+
     async def _synthesize_and_queue(self, text: str, order: int) -> None:
         """
         Synthesize text to audio and queue for playback.
@@ -386,7 +386,6 @@ class TTSPlaybackManager:
 
             if self._llm_stream_complete and order >= self._total_sentences:
                 return
-
     def interrupt(self) -> None:
         """Interrupt current playback."""
         if self._processing:

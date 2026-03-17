@@ -8,7 +8,7 @@ import logging
 from typing import Optional, Any
 from collections.abc import AsyncIterator
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
@@ -53,7 +53,7 @@ class LLMService:
 
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash",
                  temperature: float = 0.2, max_output_tokens: int = 2048,
-                 language: str = "de"):
+                 language: str = "de") -> None:
         """
         Initialize LLM service.
 
@@ -133,7 +133,7 @@ class LLMService:
             logger.debug("Created new chat history for session: %s", session_id)
         return self.session_store[session_id]
 
-    def add_message_to_history(self, session_id: str, message):
+    def add_message_to_history(self, session_id: str, message: BaseMessage) -> None:
         """
         Add a message to session history.
 
@@ -188,7 +188,7 @@ class LLMService:
         )
 
     @staticmethod
-    def _content_to_text(content: Any) -> str:
+    def _content_to_text(content: object) -> str:
         """Normalize chunk content to plain text for models that return structured parts."""
         if isinstance(content, str):
             return content
@@ -216,7 +216,7 @@ class LLMService:
         prompt_template: ChatPromptTemplate,
         session_id: str,
         tool_schemas: Optional[list[dict[str, Any]]] = None,
-    ):
+    ) -> RunnableWithMessageHistory:
         """
         Create a runnable chain with message history.
 

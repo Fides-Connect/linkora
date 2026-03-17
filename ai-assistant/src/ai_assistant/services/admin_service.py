@@ -10,6 +10,7 @@ Security:
 import logging
 import os
 import secrets
+from collections.abc import Awaitable
 from datetime import datetime, UTC
 from functools import wraps
 from typing import Any, Callable, Optional
@@ -69,7 +70,9 @@ class AdminAuth:
         return secrets.compare_digest(token, admin_secret)
 
     @staticmethod
-    def require_auth(handler: Callable) -> Callable:
+    def require_auth(
+        handler: Callable[..., Awaitable[web.Response]],
+    ) -> Callable[..., Awaitable[web.Response]]:
         """
         Decorator to require admin authentication for a handler.
 
@@ -79,7 +82,7 @@ class AdminAuth:
                 # Handler code here
         """
         @wraps(handler)
-        async def wrapper(*args, **kwargs) -> web.Response:
+        async def wrapper(*args: object, **kwargs: object) -> web.Response:
             # Handle both bound methods (self, request) and functions (request)
             request = args[1] if len(args) > 1 else args[0]
 
@@ -104,7 +107,7 @@ class AdminService:
     Admin service providing system information and administrative actions.
     """
 
-    def __init__(self, signaling_server=None):
+    def __init__(self, signaling_server: object | None = None) -> None:
         """
         Initialize admin service.
 
@@ -554,7 +557,7 @@ class AdminService:
                 "message": str(e)
             }, status=500)
 
-    def register_routes(self, app: web.Application):
+    def register_routes(self, app: web.Application) -> None:
         """
         Register all admin routes to the application.
 

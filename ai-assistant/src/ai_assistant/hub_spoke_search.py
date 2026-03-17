@@ -294,7 +294,7 @@ class HubSpokeSearch:
         return filter_clause, query_text, available_time, availability_filter_applied
 
     @staticmethod
-    def _process_search_results(response, limit: int) -> list[dict[str, Any]]:
+    def _process_search_results(response: object, limit: int) -> list[dict[str, Any]]:
         """
         Process search results: extract data, group by user, sort by score.
 

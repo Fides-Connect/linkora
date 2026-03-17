@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class TranscriptProcessor:
     """Processes audio stream through STT and manages transcription state."""
 
-    def __init__(self, stt_service: SpeechToTextService):
+    def __init__(self, stt_service: SpeechToTextService) -> None:
         """
         Initialize transcript processor.
 
@@ -81,7 +81,7 @@ class TranscriptProcessor:
         """Get the current transcript text."""
         return self._current_transcript
 
-    def reset(self):
+    def reset(self) -> None:
         """Reset processor state."""
         self._processing = False
         self._current_transcript = ""
@@ -90,12 +90,12 @@ class TranscriptProcessor:
 class TranscriptAccumulator:
     """Accumulates transcript chunks into complete text."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize transcript accumulator."""
         self._accumulated = ""
         self._lock = asyncio.Lock()
 
-    async def add(self, text: str, separator: str = " "):
+    async def add(self, text: str, separator: str = " ") -> None:
         """
         Add text to accumulated transcript.
 
@@ -113,12 +113,12 @@ class TranscriptAccumulator:
         async with self._lock:
             return self._accumulated
 
-    async def clear(self):
+    async def clear(self) -> None:
         """Clear accumulated transcript."""
         async with self._lock:
             self._accumulated = ""
 
-    async def replace(self, text: str):
+    async def replace(self, text: str) -> None:
         """
         Replace accumulated transcript with new text.
 

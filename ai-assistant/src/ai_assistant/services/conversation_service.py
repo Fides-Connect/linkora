@@ -26,12 +26,13 @@ from ..prompts_templates import (
     get_greeting_fallback,
 )
 from .cross_encoder_service import CrossEncoderService
+from .llm_service import LLMService
 
 
 logger = logging.getLogger(__name__)
 
 
-def json_serializer(obj):
+def json_serializer(obj: object) -> str:
     """JSON serializer for objects not serializable by default json code."""
     if isinstance(obj, datetime):
         return obj.isoformat()
@@ -82,10 +83,10 @@ def is_legal_transition(from_stage: ConversationStage, to_stage: ConversationSta
 class ConversationService:
     """Service for managing conversation flow and state."""
 
-    def __init__(self, llm_service, data_provider: DataProvider,
+    def __init__(self, llm_service: LLMService, data_provider: DataProvider,
                  agent_name: str = "Elin", company_name: str = "Linkora",
                  max_providers: int = 5, language: str = 'de',
-                 cross_encoder_service: "CrossEncoderService | None" = None):
+                 cross_encoder_service: "CrossEncoderService | None" = None) -> None:
         """
         Initialize Conversation service.
 
@@ -108,7 +109,7 @@ class ConversationService:
         self.language = language
         self.cross_encoder_service = cross_encoder_service
 
-        self.current_stage = ConversationStage.GREETING
+        self.current_stage: ConversationStage = ConversationStage.GREETING
         self.context: dict[str, Any] = {
             "user_problem": [],
             "ai_responses": [],
@@ -135,7 +136,7 @@ class ConversationService:
         """Get current conversation stage."""
         return self.current_stage
 
-    def set_stage(self, stage: ConversationStage):
+    def set_stage(self, stage: ConversationStage) -> None:
         """
         Set conversation stage.
 
@@ -334,7 +335,7 @@ class ConversationService:
         if topic_title:
             self.context["user_problem"] = [topic_title]
 
-        if final_stage in _MID_FLOW_STAGES:
+        if isinstance(final_stage, ConversationStage) and final_stage in _MID_FLOW_STAGES:
             self.current_stage = final_stage
             logger.info("Session restored to stage %s from previous session summary", final_stage)
         else:

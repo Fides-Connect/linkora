@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class AudioFrameConverter:
     """Converts audio frames between different formats."""
 
-    def __init__(self, sample_rate: int = 48000):
+    def __init__(self, sample_rate: int = 48000) -> None:
         """
         Initialize audio frame converter.
 
@@ -96,7 +96,7 @@ class AudioFrameConverter:
             array = array / max(abs(array_min), abs(array_max))
             return (array * 32767).astype(np.int16)
 
-    def _log_audio_stats(self, array: np.ndarray):
+    def _log_audio_stats(self, array: np.ndarray) -> None:
         """Log statistics about the audio array."""
         final_min, final_max = array.min(), array.max()
         rms = np.sqrt(np.mean(array.astype(float) ** 2))

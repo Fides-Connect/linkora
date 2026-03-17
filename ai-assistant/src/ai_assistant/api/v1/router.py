@@ -6,7 +6,7 @@ from aiohttp import web
 from .endpoints import me, users, service_requests, reviews, auth, ai_conversations, assistant
 
 
-def register_v1_routes(app: web.Application):
+def register_v1_routes(app: web.Application) -> None:
     """Register all v1 API routes to the application."""
 
     # Auth endpoints

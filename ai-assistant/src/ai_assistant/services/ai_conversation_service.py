@@ -5,6 +5,7 @@ Manages the lifecycle of one AI conversation session in Firestore.
 import logging
 from typing import Optional
 
+from ..firestore_service import FirestoreService
 from .conversation_service import ConversationStage
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ class AIConversationService:
     - Is safe to use with firestore_service=None (all methods become no-ops)
     """
 
-    def __init__(self, firestore_service) -> None:
+    def __init__(self, firestore_service: FirestoreService | None) -> None:
         self._firestore = firestore_service
         self._conversation_id: Optional[str] = None
         self._user_id: Optional[str] = None

@@ -1,5 +1,6 @@
 """API dependencies and utilities."""
 import logging
+
 from aiohttp import web
 from firebase_admin import auth
 
@@ -31,7 +32,7 @@ async def get_current_user_id(request: web.Request) -> str:
         raise web.HTTPUnauthorized(reason="Invalid authentication token")
 
 
-def serialize_datetime(obj):
+def serialize_datetime(obj: object) -> object:
     """Recursively serialize datetime objects to ISO format strings."""
     if isinstance(obj, dict):
         return {k: serialize_datetime(v) for k, v in obj.items()}
