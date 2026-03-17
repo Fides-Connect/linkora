@@ -131,6 +131,8 @@ class AudioOutputTrack(MediaStreamTrack):
                 self._start = time.time()
                 self._next_frame_time = self._start
 
+            assert self._next_frame_time is not None
+
             # Calculate when this frame should be sent
             frame_duration = self.samples_per_frame / self.sample_rate
             current_time = time.time()

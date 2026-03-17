@@ -10,6 +10,7 @@ from typing import Any
 from collections.abc import AsyncGenerator
 from aiortc import MediaStreamTrack, RTCDataChannel
 from aiortc.mediastreams import MediaStreamError
+from av import AudioFrame
 
 from .ai_assistant import AIAssistant
 from .audio_track import AudioOutputTrack
@@ -377,9 +378,11 @@ class AudioProcessor:
 
     async def _process_audio(self):
         """Main audio processing loop - receives frames and queues them for STT."""
-        try:
-            frame_count = 0
+        if self.input_track is None:
+            return
 
+        frame_count = 0
+        try:
             while self.running:
                 try:
                     frame_count += 1
@@ -394,6 +397,10 @@ class AudioProcessor:
                         break
                     except asyncio.CancelledError:
                         break
+
+                    if not isinstance(frame, AudioFrame):
+                        logger.warning("Unexpected frame type %s, skipping", type(frame))
+                        continue
 
                     audio_data = self.frame_converter.frame_to_numpy(frame)
                     self.debug_recorder.add_frame(audio_data)
