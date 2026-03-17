@@ -4,9 +4,9 @@ Data models using Hub and Spoke architecture.
 """
 import logging
 from datetime import datetime, UTC
-from typing import List, Dict, Optional, Any
+from typing import Optional, Any
 from weaviate.classes.query import Filter
-from .weaviate_config import get_users_collection, get_providers_collection
+from .weaviate_config import get_users_collection
 
 from ai_assistant.hub_spoke_search import HubSpokeSearch
 
@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 class UserModelWeaviate:
     """User data model and operations for Weaviate."""
-    
+
     @staticmethod
-    def create_user(user_data: Dict[str, Any]) -> Optional[str]:
+    def create_user(user_data: dict[str, Any]) -> Optional[str]:
         """Create a new user (User)."""
         try:
             collection = get_users_collection()
-            
+
             # Map old User fields to User fields
             uuid = collection.data.insert(
                 properties={
@@ -42,115 +42,115 @@ class UserModelWeaviate:
                     "last_sign_in": user_data.get("last_sign_in", datetime.now(UTC)),
                 }
             )
-            
-            logger.info(f"Created user: {user_data.get('name')}")
+
+            logger.info("Created user: %s", user_data.get('name'))
             return str(uuid)
-            
+
         except Exception as e:
-            logger.error(f"Error creating user: {e}")
+            logger.error("Error creating user: %s", e)
             return None
 
 
     @staticmethod
-    def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    def get_user_by_id(user_id: str) -> Optional[dict[str, Any]]:
         """Get user by ID."""
         try:
             collection = get_users_collection()
-            
+
             response = collection.query.fetch_objects(
                 filters=Filter.by_property("user_id").equal(user_id),
                 limit=1
             )
-            
+
             if response.objects:
                 obj = response.objects[0]
                 user = obj.properties.copy()
                 return user
-            
+
             return None
-            
+
         except Exception as e:
-            logger.error(f"Error fetching user: {e}")
+            logger.error("Error fetching user: %s", e)
             return None
-    
+
 
     @staticmethod
-    def update_user(user_id: str, update_data: Dict[str, Any]) -> bool:
+    def update_user(user_id: str, update_data: dict[str, Any]) -> bool:
         """Update existing user."""
         try:
             collection = get_users_collection()
-            
+
             # Find user by user_id
             response = collection.query.fetch_objects(
                 filters=Filter.by_property("user_id").equal(user_id),
                 limit=1
             )
-            
+
             if not response.objects:
-                logger.warning(f"User not found: {user_id}")
+                logger.warning("User not found: %s", user_id)
                 return False
-            
+
             obj = response.objects[0]
-            
+
             # Update last_sign_in on any update (store as datetime, not isoformat string,
             # so the DATE property type is consistent with how it is written at creation).
             update_data['last_sign_in'] = datetime.now(UTC)
-            
+
             # Merge existing properties with update data to preserve unmodified fields
             merged_properties = {**obj.properties, **update_data}
-            
+
             # Update user properties
             collection.data.update(
                 uuid=obj.uuid,
                 properties=merged_properties
             )
-            
-            logger.info(f"Updated user: {user_id}")
+
+            logger.info("Updated user: %s", user_id)
             return True
-            
+
         except Exception as e:
-            logger.error(f"Error updating user: {e}")
+            logger.error("Error updating user: %s", e)
             return False
-    
+
 
     @staticmethod
-    def get_all_users(limit: int = 100) -> List[Dict[str, Any]]:
+    def get_all_users(limit: int = 100) -> list[dict[str, Any]]:
         """Get all users."""
         try:
             collection = get_users_collection()
-            
+
             response = collection.query.fetch_objects(limit=limit)
             users = []
             for obj in response.objects:
                 user = obj.properties.copy()
                 users.append(user)
-            
-            logger.info(f"Retrieved {len(users)} users")
+
+            logger.info("Retrieved %s users", len(users))
             return users
-            
+
         except Exception as e:
-            logger.error(f"Error getting all users: {e}")
+            logger.error("Error getting all users: %s", e)
             return []
 
 
     @staticmethod
     def get_attributes_by_filter(
         filter_attr: str,
-        filter_values: List[Any],
+        filter_values: list[Any],
         return_attr: str
-    ) -> Dict[Any, Optional[Any]]:
+    ) -> dict[Any, Optional[Any]]:
         """
         Get specified attributes for users matching filter criteria.
-        
+
         Args:
             filter_attr: The attribute name to filter by (e.g., "user_id")
             filter_values: List of values to match (e.g., list of user IDs)
             return_attr: The attribute name to return (e.g., "fcm_token")
-            
+
         Returns:
             Dict mapping filter values to their corresponding return attribute values.
             Returns None for values where no match is found.
-            
+
         Example:
             >>> UserModelWeaviate.get_attributes_by_filter(
             ...     filter_attr="user_id",
@@ -162,62 +162,62 @@ class UserModelWeaviate:
         try:
             if not filter_attr or not filter_values or not return_attr:
                 return {}
-            
+
             collection = get_users_collection()
             filters = Filter.by_property(filter_attr).contains_any(filter_values)
-            
+
             # Fetch all matching objects in one query
             response = collection.query.fetch_objects(
                 filters=filters,
                 limit=len(filter_values)
             )
-            
+
             # Build result map
             result_map = {value: None for value in filter_values}
             for obj in response.objects:
                 filter_value = obj.properties.get(filter_attr)
                 if filter_value in result_map:
                     result_map[filter_value] = obj.properties.get(return_attr)
-            
-            logger.info(f"Retrieved {sum(1 for v in result_map.values() if v is not None)}/{len(filter_values)} {return_attr} values by {filter_attr}")
+
+            logger.info("Retrieved %s/%s %s values by %s", sum(1 for v in result_map.values() if v is not None), len(filter_values), return_attr, filter_attr)
             return result_map
-            
+
         except Exception as e:
-            logger.error(f"Error getting attributes by filter: {e}")
+            logger.error("Error getting attributes by filter: %s", e)
             return {value: None for value in filter_values}
 
 
 class ProviderModelWeaviate:
     """Service provider data model and operations for Weaviate."""
-    
-    
+
+
 
     @staticmethod
-    def get_provider_by_id(provider_id: str) -> Optional[Dict[str, Any]]:
+    def get_provider_by_id(provider_id: str) -> Optional[dict[str, Any]]:
         """Get provider by ID (searches User by user_id)."""
         try:
             collection = get_users_collection()
-            
+
             response = collection.query.fetch_objects(
                 filters=Filter.by_property("user_id").equal(provider_id),
                 limit=1
             )
-            
+
             if response.objects:
                 obj = response.objects[0]
                 provider = obj.properties.copy()
                 provider['provider_id'] = provider.get('user_id')
                 return provider
-            
+
             return None
-            
+
         except Exception as e:
-            logger.error(f"Error fetching provider: {e}")
+            logger.error("Error fetching provider: %s", e)
             return None
-    
+
 
     @staticmethod
-    def search_providers_by_category(category: str, limit: int = 10) -> List[Dict[str, Any]]:
+    def search_providers_by_category(category: str, limit: int = 10) -> list[dict[str, Any]]:
         """Search providers by category using hub_spoke search."""
         try:
             # Use HubSpokeSearch to find competencies in this category
@@ -227,7 +227,7 @@ class ProviderModelWeaviate:
                 max_inactive_days=180,
                 group_by_user=True  # One result per provider
             )
-            
+
             # Map to provider format
             providers = []
             for result in results:
@@ -240,17 +240,17 @@ class ProviderModelWeaviate:
                     'skills': result.get('keywords', []),
                 }
                 providers.append(provider)
-            
-            logger.info(f"Found {len(providers)} providers in category: {category}")
+
+            logger.info("Found %s providers in category: %s", len(providers), category)
             return providers
-            
+
         except Exception as e:
-            logger.error(f"Error searching providers by category: {e}")
+            logger.error("Error searching providers by category: %s", e)
             return []
-    
+
 
     @staticmethod
-    def vector_search_providers(query_text: str, limit: int = 3) -> List[Dict[str, Any]]:
+    def vector_search_providers(query_text: str, limit: int = 3) -> list[dict[str, Any]]:
         """
         Search providers using hybrid search (vector + keyword).
         Uses hub_spoke architecture with ghost filtering and grouping.
@@ -263,10 +263,10 @@ class ProviderModelWeaviate:
                 max_inactive_days=180,  # Exclude inactive providers
                 group_by_user=True   # One result per provider
             )
-            
-            logger.info(f"Vector search found {len(results)} providers for: '{query_text[:50]}...'")
+
+            logger.info("Vector search found %s providers for: '%s...'", len(results), query_text[:50])
             return results
-            
+
         except Exception as e:
-            logger.error(f"Error in vector search: {e}")
+            logger.error("Error in vector search: %s", e)
             return []

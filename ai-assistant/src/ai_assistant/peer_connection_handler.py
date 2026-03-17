@@ -5,6 +5,7 @@ Manages individual WebRTC connections and media streams.
 import asyncio
 import json
 import logging
+from aiohttp import web
 from aiortc import (
     RTCConfiguration,
     RTCIceServer,
@@ -27,8 +28,8 @@ class PeerConnectionHandler:
     def __init__(
         self,
         connection_id: str,
-        websocket,
-        user_id: str = None,
+        websocket: web.WebSocketResponse,
+        user_id: str | None = None,
         language: str = 'de',
         session_mode: str = 'voice',
         ice_servers: list[dict] | None = None,
@@ -46,7 +47,7 @@ class PeerConnectionHandler:
             configuration=self._build_rtc_config(ice_servers)
         )
         self.relay = MediaRelay()
-        self.audio_processor = None
+        self.audio_processor: AudioProcessor | None = None
         self.track_ready = asyncio.Event()
         self.track_update_ready = asyncio.Event()
         self.track_update_ready.set()  # Initially set - no update pending
@@ -57,7 +58,7 @@ class PeerConnectionHandler:
         # renegotiation offer (with audio track) is processed normally.
         self._hold_start_active = hold_start
         self._pending_text_inputs: list[str] = []
-        self._idle_task: asyncio.Task = None  # 10-minute idle timeout task
+        self._idle_task: asyncio.Task | None = None  # 10-minute idle timeout task
         # True once pc.addTrack(output_track) has been called so we never
         # try to add it a second time on a voice re-upgrade.
         self._output_track_added = False
@@ -258,6 +259,7 @@ class PeerConnectionHandler:
 
     async def _on_text_to_voice_upgrade(self, track) -> None:
         """Existing text-only session upgrading to voice."""
+        assert self.audio_processor is not None
         logger.info("Text → voice upgrade detected")
         output_track = await self.audio_processor.enable_voice_mode(track)
         if not self._output_track_added:
@@ -275,6 +277,7 @@ class PeerConnectionHandler:
 
     async def _on_track_replacement(self, track) -> None:
         """Track replacement during renegotiation (e.g. Bluetooth change)."""
+        assert self.audio_processor is not None
         logger.info("Track replacement detected (renegotiation)")
         await self.audio_processor.replace_input_track(track)
         self.track_update_ready.set()
@@ -486,7 +489,7 @@ class PeerConnectionHandler:
                 "Handling %s offer%s",
                 "renegotiation" if is_renegotiation else "initial",
                 " (text→voice upgrade)" if (
-                    is_renegotiation and self.audio_processor.session_mode == SessionMode.TEXT
+                    self.audio_processor is not None and self.audio_processor.session_mode == SessionMode.TEXT
                 ) else "",
             )
 

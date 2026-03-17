@@ -1,7 +1,6 @@
 """DataChannelBridge — typed DataChannel send helper."""
 import json
 import logging
-from typing import Optional
 
 from .agent_runtime_fsm import AgentRuntimeState
 

@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import time
-from typing import Dict
+from typing import Any
 import aiohttp
 from aiohttp import web, WSMsgType
 from aiortc import RTCSessionDescription
@@ -80,9 +80,9 @@ SUPPORTED_LANGUAGES = {"en", "de"}
 
 class SignalingServer:
     """Manages WebSocket connections and WebRTC signaling."""
-    
+
     def __init__(self):
-        self.active_connections: Dict[str, PeerConnectionHandler] = {}
+        self.active_connections: dict[str, PeerConnectionHandler] = {}
         self._firestore = FirestoreService()
 
     async def close_all_connections(self) -> None:
@@ -116,15 +116,14 @@ class SignalingServer:
         # The handle_websocket() finally blocks use pop(key, None) so they
         # are safe even if their entry has already been removed here.
         self.active_connections.clear()
-        
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connection for signaling."""
         ws = web.WebSocketResponse()
         await ws.prepare(request)
-        
+
         connection_id = id(ws)
         client_ip = request.remote
-        
+
         # Extract language and session mode from query parameters.
         # user_id is always taken from the verified Firebase ID token — never trusted from the client.
         language = request.query.get('language', 'de')  # Default to German
@@ -142,9 +141,9 @@ class SignalingServer:
             try:
                 decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
                 user_id = decoded_token['uid']
-                logger.debug(f"Token verified for uid: {user_id}")
+                logger.debug("Token verified for uid: %s", user_id)
             except Exception as e:
-                logger.warning(f"WebSocket auth failed — invalid token: {e}")
+                logger.warning("WebSocket auth failed — invalid token: %s", e)
                 await ws.close(code=4401, message=b'Unauthorized')
                 return ws
         else:
@@ -153,11 +152,11 @@ class SignalingServer:
             try:
                 first_msg = await asyncio.wait_for(ws.receive(), timeout=10.0)
             except Exception as e:
-                logger.warning(f"WebSocket auth failed — no auth message from {client_ip}: {e}")
+                logger.warning("WebSocket auth failed — no auth message from %s: %s", client_ip, e)
                 await ws.close(code=4401, message=b'Unauthorized')
                 return ws
             if first_msg.type != WSMsgType.TEXT:
-                logger.warning(f"WebSocket auth failed — unexpected message type from {client_ip}")
+                logger.warning("WebSocket auth failed — unexpected message type from %s", client_ip)
                 await ws.close(code=4401, message=b'Unauthorized')
                 return ws
             try:
@@ -167,15 +166,13 @@ class SignalingServer:
                 token = auth_data['token']
                 decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
                 user_id = decoded_token['uid']
-                logger.info(f"WebSocket web-auth from {client_ip} for uid: {user_id}")
+                logger.info("WebSocket web-auth from %s for uid: %s", client_ip, user_id)
             except Exception as e:
-                logger.warning(f"WebSocket auth failed — invalid web auth message from {client_ip}: {e}")
+                logger.warning("WebSocket auth failed — invalid web auth message from %s: %s", client_ip, e)
                 await ws.close(code=4401, message=b'Unauthorized')
                 return ws
         if raw_mode not in ('voice', 'text'):
-            logger.warning(
-                f"Invalid session mode '{raw_mode}' from {client_ip}; defaulting to 'text'"
-            )
+            logger.warning("Invalid session mode '%s' from %s; defaulting to 'text'", raw_mode, client_ip)
             session_mode = 'text'
         else:
             session_mode = raw_mode
@@ -191,7 +188,6 @@ class SignalingServer:
         # 3. If both the query parameter and stored language are invalid or absent, fall back to 'en'.
         raw_language = request.query.get('language', '')
         stored_language = None  # populated below if a Firestore lookup is required
-        language_fallback_applied = False
         if raw_language in SUPPORTED_LANGUAGES:
             language = raw_language
         else:
@@ -213,7 +209,6 @@ class SignalingServer:
                     )
             else:
                 language = 'en'
-                language_fallback_applied = bool(raw_language and raw_language not in SUPPORTED_LANGUAGES)
                 if raw_language:
                     logger.warning(
                         "Unsupported language '%s' from %s; falling back to 'en'",
@@ -221,11 +216,11 @@ class SignalingServer:
                     )
                 elif not raw_language:
                     logger.debug("No language param; defaulting to 'en'")
-        
-        logger.info(f"New WebSocket connection: {connection_id} from {client_ip} (user: {user_id}, language: {language}, mode: {session_mode})")
-        
+
+        logger.info("New WebSocket connection: %s from %s (user: %s, language: %s, mode: %s)", connection_id, client_ip, user_id, language, session_mode)
+
         # Create peer connection handler
-        logger.debug(f"Creating PeerConnectionHandler for {connection_id}")
+        logger.debug("Creating PeerConnectionHandler for %s", connection_id)
         ice_servers = await _fetch_ice_servers()
         # Compute fallback_from: non-empty when the client sent a language code that
         # is not in SUPPORTED_LANGUAGES so we fell all the way back to 'en'.
@@ -247,69 +242,68 @@ class SignalingServer:
             language_fallback_from=language_fallback_from,
         )
         self.active_connections[str(connection_id)] = handler
-        logger.debug(f"Active connections: {len(self.active_connections)}")
+        logger.debug("Active connections: %s", len(self.active_connections))
 
         # Send ICE config to client immediately so it can configure its peer
         # connection with TURN credentials before sending the offer.
         await handler.send_ice_config(ice_servers)
-        
+
         try:
-            logger.debug(f"Starting message loop for connection {connection_id}")
+            logger.debug("Starting message loop for connection %s", connection_id)
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
                     try:
-                        logger.debug(f"Received text message from {connection_id}: {msg.data[:100]}...")
+                        logger.debug("Received text message from %s: %s...", connection_id, msg.data[:100])
                         data = json.loads(msg.data)
-                        logger.debug(f"Parsed message type: {data.get('type')}")
+                        logger.debug("Parsed message type: %s", data.get('type'))
                         await self._handle_message(handler, data)
                     except json.JSONDecodeError as e:
-                        logger.error(f"Invalid JSON received from {connection_id}: {e}")
-                        logger.debug(f"Raw data: {msg.data}")
+                        logger.error("Invalid JSON received from %s: %s", connection_id, e)
+                        logger.debug("Raw data: %s", msg.data)
                     except Exception as e:
-                        logger.error(f"Error handling message from {connection_id}: {e}", exc_info=True)
-                        
+                        logger.error("Error handling message from %s: %s", connection_id, e, exc_info=True)
+
                 elif msg.type == WSMsgType.ERROR:
-                    logger.error(f"WebSocket error for {connection_id}: {ws.exception()}")
-                    
+                    logger.error("WebSocket error for %s: %s", connection_id, ws.exception())
+
                 elif msg.type == WSMsgType.CLOSE:
-                    logger.info(f"Client {connection_id} initiated close")
-                    
+                    logger.info("Client %s initiated close", connection_id)
+
         finally:
             # Cleanup
-            logger.info(f"WebSocket connection closed: {connection_id}")
-            logger.debug(f"Cleaning up connection {connection_id}")
+            logger.info("WebSocket connection closed: %s", connection_id)
+            logger.debug("Cleaning up connection %s", connection_id)
             await handler.close()
             self.active_connections.pop(str(connection_id), None)
-            logger.debug(f"Active connections after cleanup: {len(self.active_connections)}")
-            
+            logger.debug("Active connections after cleanup: %s", len(self.active_connections))
         return ws
-    
-    async def _handle_message(self, handler: PeerConnectionHandler, data: dict):
+
+    async def _handle_message(self, handler: PeerConnectionHandler, data: dict[str, Any]):
         """Handle signaling messages."""
         msg_type = data.get('type')
-        logger.debug(f"Handling message type '{msg_type}' for connection {handler.connection_id}")
-        
+        logger.debug("Handling message type '%s' for connection %s", msg_type, handler.connection_id)
+
         if msg_type == 'offer':
-            logger.debug(f"Processing offer (SDP length: {len(data.get('sdp', ''))})")
+            logger.debug("Processing offer (SDP length: %s)", len(data.get('sdp', '')))
             # Receive WebRTC offer from client
             offer = RTCSessionDescription(
                 sdp=data['sdp'],
                 type=data['type']
             )
             await handler.handle_offer(offer)
-            
+
         elif msg_type == 'ice-candidate':
             # Receive ICE candidate from client
             candidate = data.get('candidate')
             if candidate:
-                logger.debug(f"Processing ICE candidate")
+                logger.debug("Processing ICE candidate")
                 await handler.handle_ice_candidate(candidate)
             else:
-                logger.warning(f"Received ice-candidate message without candidate data")
-                
+                logger.warning("Received ice-candidate message without candidate data")
+
         else:
-            logger.warning(f"Unknown message type: {msg_type}")
-    
+            logger.warning("Unknown message type: %s", msg_type)
+
     async def health_check(self, request: web.Request) -> web.Response:
         """Health check endpoint."""
         return web.json_response({

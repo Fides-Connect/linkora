@@ -7,9 +7,9 @@ import json
 import asyncio
 from enum import Enum
 from datetime import datetime
-from typing import Optional, AsyncIterator, Dict, Any, List
+from typing import Any
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage
 
 from ..data_provider import DataProvider, SearchUnavailableError
 from ..prompts_templates import (
@@ -53,7 +53,7 @@ class ConversationStage(str, Enum):
 
 
 # Legal stage transitions: { from_stage: { allowed_to_stages } }
-_LEGAL_TRANSITIONS: Dict["ConversationStage", List["ConversationStage"]] = {
+_LEGAL_TRANSITIONS: dict["ConversationStage", list["ConversationStage"]] = {
     ConversationStage.GREETING:       [ConversationStage.TRIAGE],
     ConversationStage.TRIAGE:         [ConversationStage.CONFIRMATION, ConversationStage.CLARIFY,
                                        ConversationStage.TOOL_EXECUTION, ConversationStage.RECOVERY,
@@ -81,14 +81,14 @@ def is_legal_transition(from_stage: ConversationStage, to_stage: ConversationSta
 
 class ConversationService:
     """Service for managing conversation flow and state."""
-    
+
     def __init__(self, llm_service, data_provider: DataProvider,
                  agent_name: str = "Elin", company_name: str = "Linkora",
                  max_providers: int = 5, language: str = 'de',
-                 cross_encoder_service: Optional["CrossEncoderService"] = None):
+                 cross_encoder_service: "CrossEncoderService | None" = None):
         """
         Initialize Conversation service.
-        
+
         Args:
             llm_service: LLM service instance
             data_provider: Data provider instance
@@ -107,9 +107,9 @@ class ConversationService:
         self.max_providers = max_providers
         self.language = language
         self.cross_encoder_service = cross_encoder_service
-        
+
         self.current_stage = ConversationStage.GREETING
-        self.context: Dict[str, Any] = {
+        self.context: dict[str, Any] = {
             "user_problem": [],
             "ai_responses": [],
             "request_summary": "",
@@ -128,30 +128,30 @@ class ConversationService:
             # PROVIDER_ONBOARDING turn so the prompt can render STEP 0 correctly.
             "is_service_provider": False,
         }
-        
-        logger.info(f"Conversation service initialized: agent={agent_name}, company={company_name}")
-    
-    def get_current_stage(self) -> str:
+
+        logger.info("Conversation service initialized: agent=%s, company=%s", agent_name, company_name)
+
+    def get_current_stage(self) -> ConversationStage:
         """Get current conversation stage."""
         return self.current_stage
-    
-    def set_stage(self, stage: str):
+
+    def set_stage(self, stage: ConversationStage):
         """
         Set conversation stage.
-        
+
         Args:
             stage: New stage to set
         """
-        logger.info(f"Stage transition: {self.current_stage} -> {stage}")
+        logger.info("Stage transition: %s -> %s", self.current_stage, stage)
         self.current_stage = stage
-    
+
     def create_prompt_for_stage(self, stage: ConversationStage) -> ChatPromptTemplate:
         """
         Create appropriate prompt template based on conversation stage.
-        
+
         Args:
             stage: Conversation stage
-        
+
         Returns:
             ChatPromptTemplate for the stage
         """
@@ -173,7 +173,7 @@ class ConversationService:
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
             ])
-        
+
         elif stage == ConversationStage.TRIAGE:
             user_name = self.context.get("user_name", "")
             language_instruction = get_language_instruction(self.language)
@@ -186,7 +186,7 @@ class ConversationService:
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
             ])
-        
+
         elif stage == ConversationStage.FINALIZE:
             providers = self.context.get("providers_found", [])
             idx = self.context.get("current_provider_index", 0)
@@ -202,7 +202,7 @@ class ConversationService:
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
             ])
-        
+
         elif stage in (
             ConversationStage.CLARIFY,
             ConversationStage.TOOL_EXECUTION,
@@ -283,7 +283,7 @@ class ConversationService:
         else:
             # Default to triage
             return self.create_prompt_for_stage(ConversationStage.TRIAGE)
-    
+
     async def accumulate_problem_description(self, user_input: str) -> None:
         """Accumulate user's problem description during TRIAGE.
 
@@ -362,7 +362,7 @@ class ConversationService:
         if ai_responses:
             return ai_responses[-1]
         return " ".join(self.context["user_problem"])
-    
+
     def _clean_json_response(self, json_str: str) -> str:
         """Clean up JSON response by removing markdown code blocks."""
         json_str = json_str.strip()
@@ -373,7 +373,7 @@ class ConversationService:
         if json_str.endswith("```"):
             json_str = json_str[:-3]
         return json_str.strip()
-    
+
     async def _generate_structured_query(
         self, problem_summary: str, session_id: str = ""
     ) -> str:
@@ -450,7 +450,7 @@ class ConversationService:
         except Exception as exc:
             logger.error("Error generating HyDE text: %s", exc, exc_info=True)
             return ""
-    
+
     async def search_providers_for_request(self, session_id: str = "") -> None:
         """Search for providers based on the confirmed TRIAGE summary.
 
@@ -523,7 +523,7 @@ class ConversationService:
 
         self.context["providers_found"] = providers
         logger.info("Provider search complete — %d results", len(providers))
-    
+
     async def generate_greeting_text(
         self,
         user_name: str = "",
@@ -542,10 +542,7 @@ class ConversationService:
             Greeting text
         """
         try:
-            logger.info(
-                f"🤖 generate_greeting_text called with user_name='{user_name}', "
-                f"has_open_request={has_open_request}"
-            )
+            logger.info("🤖 generate_greeting_text called with user_name='%s', has_open_request=%s", user_name, has_open_request)
             language_instruction = get_language_instruction(self.language)
             resume_ctx = self.context.get("session_resume_context", "")
             system_prefix = f"{resume_ctx}\n\n" if resume_ctx else ""
@@ -562,12 +559,12 @@ class ConversationService:
                 language_instruction=language_instruction
             )
 
-            logger.info(f"📨 Formatted prompt with user_name='{user_name}' for LLM")
+            logger.info("📨 Formatted prompt with user_name='%s' for LLM", user_name)
 
             greeting = await self.llm_service.generate(greeting_messages)
-            logger.info(f"Generated greeting: '{greeting}'")
+            logger.info("Generated greeting: '%s'", greeting)
             return greeting
 
         except Exception as e:
-            logger.error(f"Error generating greeting text: {e}", exc_info=True)
+            logger.error("Error generating greeting text: %s", e, exc_info=True)
             return get_greeting_fallback(self.language)

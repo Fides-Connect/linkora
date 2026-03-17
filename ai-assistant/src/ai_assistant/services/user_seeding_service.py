@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 
 from ..firestore_service import FirestoreService
 from ..seed_data import (
-    USER_TEMPLATE, 
-    USER_TEMPLATE_SERVICE_REQUESTS, 
-    USER_TEMPLATE_COMPETENCIES, 
+    USER_TEMPLATE,
+    USER_TEMPLATE_SERVICE_REQUESTS,
+    USER_TEMPLATE_COMPETENCIES,
     USER_TEMPLATE_PROVIDER_CANDIDATES,
     USER_TEMPLATE_CHATS,
     USER_TEMPLATE_CHAT_MESSAGES,
@@ -33,8 +33,8 @@ class UserSeedingService:
             logger.warning("Firestore not initialized, skipping seeding.")
             return
 
-        logger.info(f"Seeding data for new user: {user_id} ({name})")
-        
+        logger.info("Seeding data for new user: %s (%s)", user_id, name)
+
         # 1. Update User with Template Defaults (intro, competencies, feedback)
         user = {k: v for k, v in USER_TEMPLATE.items()}
         user['name'] = name
@@ -42,10 +42,10 @@ class UserSeedingService:
         # Don't set created_at here - create_user handles timestamps
         if photo_url:
             user['photo_url'] = photo_url
-        
+
         # Add user document in Firestore with the provided user_id and template data
         await self.firestore_service.create_user(user_id, user)
-        
+
         # 1b. Add User Availability Times Subcollection
         for avail_time in USER_TEMPLATE_AVAILABILITY_TIMES:
             avail_doc = {
@@ -60,8 +60,8 @@ class UserSeedingService:
             }
             availability_time_id = await self.firestore_service.create_availability_time(user_id, avail_doc)
             if availability_time_id:
-                logger.info(f"Created availability time {availability_time_id} for user {user_id}")
-        
+                logger.info("Created availability time %s for user %s", availability_time_id, user_id)
+
         # 1c. Add Competencies Subcollection in Firestore and collect data for Weaviate
         competencies_for_weaviate = []
         for comp in USER_TEMPLATE_COMPETENCIES:
@@ -93,9 +93,9 @@ class UserSeedingService:
                     }
                     if enrich_update:
                         await self.firestore_service.update_competence(user_id, competence_id, enrich_update)
-                        logger.info(f"Enriched competency {competence_id!r} for user {user_id}")
+                        logger.info("Enriched competency %r for user %s", competence_id, user_id)
                 except Exception as e:
-                    logger.warning(f"Enrichment failed for competency {competence_id!r}: {e}")
+                    logger.warning("Enrichment failed for competency %r: %s", competence_id, e)
 
             # Collect competency data for Weaviate sync
             comp_data_weaviate = {
@@ -108,7 +108,7 @@ class UserSeedingService:
                 "skills_list": enriched_doc.get('skills_list', []),
             }
             competencies_for_weaviate.append(comp_data_weaviate)
-            
+
             # 1d. Add Competence Availability Times if available
             comp_key = f"competence_{{uid}}_{USER_TEMPLATE_COMPETENCIES.index(comp) + 1}"
             if comp_key in COMPETENCE_AVAILABILITY_TIMES:
@@ -127,8 +127,8 @@ class UserSeedingService:
                         user_id, comp_avail_doc, competence_id=competence_id
                     )
                     if comp_avail_id:
-                        logger.info(f"Created competence availability time {comp_avail_id} for competence {competence_id}")
-        
+                        logger.info("Created competence availability time %s for competence %s", comp_avail_id, competence_id)
+
         # 1e. Sync user and competencies to Weaviate using HubSpokeIngestion
         try:
             # HubSpokeIngestion.create_user expects 'user_id' field
@@ -140,12 +140,12 @@ class UserSeedingService:
                 apply_enrichment=True
             )
             if result:
-                logger.info(f"✓ Synced user {user_id} to Weaviate with {len(result['competence_uuids'])} competencies")
+                logger.info("✓ Synced user %s to Weaviate with %s competencies", user_id, len(result['competence_uuids']))
             else:
-                logger.error(f"Failed to sync user {user_id} to Weaviate")
+                logger.error("Failed to sync user %s to Weaviate", user_id)
         except Exception as e:
-            logger.error(f"Failed to sync user {user_id} to Weaviate: {e}")
-        
+            logger.error("Failed to sync user %s to Weaviate: %s", user_id, e)
+
         # 2. Create Sample Requests
         service_requests = USER_TEMPLATE_SERVICE_REQUESTS
         # Track which requests belong to which users for updating their open request arrays
@@ -154,50 +154,50 @@ class UserSeedingService:
         # Track created service request IDs and provider candidate IDs for chat creation
         created_request_ids = []  # List of created service request IDs
         created_provider_candidate_ids = []  # List of lists: [[req0_cand_ids], [req1_cand_ids], ...]
-        
+
         for idx, req in enumerate(service_requests):
             # Create a deep copy to modify
             req_data = copy.deepcopy(req)
-            
+
             # Replace {uid} in seeker_user_id and selected_provider_user_id
             if "seeker_user_id" in req_data and "{uid}" in req_data["seeker_user_id"]:
                 req_data["seeker_user_id"] = req_data["seeker_user_id"].format(uid=user_id)
             if "selected_provider_user_id" in req_data and "{uid}" in req_data["selected_provider_user_id"]:
                 req_data["selected_provider_user_id"] = req_data["selected_provider_user_id"].format(uid=user_id)
-            
+
             # Track the request for updating user open request arrays
             seeker_id = req_data.get("seeker_user_id")
             provider_id = req_data.get("selected_provider_user_id")
-            
+
             try:
                 # Create service request using service layer
                 req_result = await self.firestore_service.create_service_request(req_data)
                 if not req_result:
-                    logger.error(f"Failed to create service request")
+                    logger.error("Failed to create service request")
                     continue
-                
+
                 # Extract the service_request_id from the result
                 req_id = req_result.get('service_request_id')
                 if not req_id:
-                    logger.error(f"Service request created but missing service_request_id")
+                    logger.error("Service request created but missing service_request_id")
                     continue
-                    
-                logger.info(f"Created seed request: {req_id}")
-                
+
+                logger.info("Created seed request: %s", req_id)
+
                 # Track the created request ID
                 created_request_ids.append(req_id)
-                
+
                 # Track for user arrays
                 if seeker_id:
                     if seeker_id not in user_outgoing_requests:
                         user_outgoing_requests[seeker_id] = []
                     user_outgoing_requests[seeker_id].append(req_id)
-                
+
                 if provider_id:
                     if provider_id not in user_incoming_requests:
                         user_incoming_requests[provider_id] = []
                     user_incoming_requests[provider_id].append(req_id)
-                
+
                 # 2b. Add Provider Candidates as Subcollection
                 request_candidate_ids = []  # Track candidates for this specific request
                 if idx < len(USER_TEMPLATE_PROVIDER_CANDIDATES):
@@ -205,10 +205,10 @@ class UserSeedingService:
                     for candidate in candidates:
                         candidate_data = copy.deepcopy(candidate)
                         candidate_data["service_request_id"] = req_id
-                        
+
                         if "{uid}" in candidate_data.get("provider_candidate_user_id", ""):
                             candidate_data["provider_candidate_user_id"] = candidate_data["provider_candidate_user_id"].format(uid=user_id)
-                        
+
                         # Create provider candidate using service layer
                         candidate_result = await self.firestore_service.create_provider_candidate(
                             req_id, candidate_data
@@ -216,18 +216,18 @@ class UserSeedingService:
                         if candidate_result:
                             candidate_id = candidate_result.get('candidate_id')
                             if candidate_id:
-                                logger.info(f"Created provider candidate: {candidate_id} for request {req_id}")
+                                logger.info("Created provider candidate: %s for request %s", candidate_id, req_id)
                                 request_candidate_ids.append(candidate_id)
                             else:
-                                logger.error(f"Provider candidate created but missing candidate_id")
+                                logger.error("Provider candidate created but missing candidate_id")
                         else:
-                            logger.error(f"Failed to create provider candidate for request {req_id}")
-                
+                            logger.error("Failed to create provider candidate for request %s", req_id)
+
                 # Store the candidate IDs for this request (even if empty list)
                 created_provider_candidate_ids.append(request_candidate_ids)
-                        
+
             except Exception as e:
-                logger.error(f"Failed to seed request: {e}")
+                logger.error("Failed to seed request: %s", e)
 
         # 2c. Update user documents with open incoming/outgoing service request arrays
         for user_id_to_update, outgoing_req_ids in user_outgoing_requests.items():
@@ -236,19 +236,19 @@ class UserSeedingService:
                     user_id_to_update, outgoing_req_ids
                 )
                 if success:
-                    logger.info(f"Updated user {user_id_to_update} with {len(outgoing_req_ids)} outgoing requests")
+                    logger.info("Updated user %s with %s outgoing requests", user_id_to_update, len(outgoing_req_ids))
             except Exception as e:
-                logger.error(f"Failed to update outgoing requests for user {user_id_to_update}: {e}")
-        
+                logger.error("Failed to update outgoing requests for user %s: %s", user_id_to_update, e)
+
         for user_id_to_update, incoming_req_ids in user_incoming_requests.items():
             try:
                 success = await self.firestore_service.add_incoming_service_requests(
                     user_id_to_update, incoming_req_ids
                 )
                 if success:
-                    logger.info(f"Updated user {user_id_to_update} with {len(incoming_req_ids)} incoming requests")
+                    logger.info("Updated user %s with %s incoming requests", user_id_to_update, len(incoming_req_ids))
             except Exception as e:
-                logger.error(f"Failed to update incoming requests for user {user_id_to_update}: {e}")
+                logger.error("Failed to update incoming requests for user %s: %s", user_id_to_update, e)
 
         # 3. Create Sample Chats and Messages
         for chat_idx, chat_template in enumerate(USER_TEMPLATE_CHATS):
@@ -256,19 +256,19 @@ class UserSeedingService:
                 # Get the request index from the template
                 req_idx = chat_template.get("request_index")
                 if req_idx is None or req_idx >= len(created_request_ids):
-                    logger.warning(f"Skipping chat {chat_idx}: invalid request index {req_idx}")
+                    logger.warning("Skipping chat %s: invalid request index %s", chat_idx, req_idx)
                     continue
-                
+
                 # Get the service request ID and provider candidate ID
                 service_request_id = created_request_ids[req_idx]
-                
+
                 # Get the first provider candidate for this request (usually the selected one)
                 if req_idx < len(created_provider_candidate_ids) and created_provider_candidate_ids[req_idx]:
                     provider_candidate_id = created_provider_candidate_ids[req_idx][0]
                 else:
-                    logger.warning(f"Skipping chat {chat_idx}: no provider candidates found for request {req_idx}")
+                    logger.warning("Skipping chat %s: no provider candidates found for request %s", chat_idx, req_idx)
                     continue
-                
+
                 # Prepare chat data
                 chat_data = {
                     "service_request_id": service_request_id,
@@ -277,67 +277,67 @@ class UserSeedingService:
                     "provider_user_id": chat_template["provider_user_id"].format(uid=user_id) if "{uid}" in chat_template["provider_user_id"] else chat_template["provider_user_id"],
                     "title": chat_template["title"],
                 }
-                
+
                 # Create chat using service layer
                 chat_result = await self.firestore_service.create_chat(chat_data)
                 if not chat_result:
-                    logger.error(f"Failed to create chat for request {service_request_id}")
+                    logger.error("Failed to create chat for request %s", service_request_id)
                     continue
-                
+
                 chat_id = chat_result.get('chat_id')
-                logger.info(f"Created seed chat: {chat_id}")
-                
+                logger.info("Created seed chat: %s", chat_id)
+
                 # 3b. Add Chat Messages as Subcollection
                 if chat_idx < len(USER_TEMPLATE_CHAT_MESSAGES):
                     messages = USER_TEMPLATE_CHAT_MESSAGES[chat_idx]
                     for msg_template in messages:
                         msg_data = copy.deepcopy(msg_template)
                         msg_data["chat_id"] = chat_id
-                        
+
                         # Replace {uid} placeholders in sender and receiver
                         if "{uid}" in msg_data["sender_user_id"]:
                             msg_data["sender_user_id"] = msg_data["sender_user_id"].format(uid=user_id)
                         if "{uid}" in msg_data["receiver_user_id"]:
                             msg_data["receiver_user_id"] = msg_data["receiver_user_id"].format(uid=user_id)
-                        
+
                         # Create chat message using service layer
                         msg_result = await self.firestore_service.create_chat_message(chat_id, msg_data)
                         if msg_result:
                             msg_id = msg_result.get('chat_message_id')
-                            logger.info(f"Created chat message: {msg_id} for chat {chat_id}")
+                            logger.info("Created chat message: %s for chat %s", msg_id, chat_id)
                         else:
-                            logger.error(f"Failed to create chat message for chat {chat_id}")
-                            
+                            logger.error("Failed to create chat message for chat %s", chat_id)
+
             except Exception as e:
-                logger.error(f"Failed to seed chat {chat_idx}: {e}")
+                logger.error("Failed to seed chat %s: %s", chat_idx, e)
 
         # 4. Add Default Reviews
         for review_template in USER_TEMPLATE_REVIEWS:
             try:
                 review_data = copy.deepcopy(review_template)
-                
+
                 # Get the service request ID from the request_index
                 request_index = review_data.pop("request_index")
                 if request_index < len(created_request_ids):
                     service_request_id = created_request_ids[request_index]
                     review_data["service_request_id"] = service_request_id
-                    
+
                     # Replace {uid} placeholders
                     if "{uid}" in review_data["user_id"]:
                         review_data["user_id"] = review_data["user_id"].format(uid=user_id)
-                    
+
                     # Create review using service layer
                     review_result = await self.firestore_service.create_review(review_data)
                     if review_result:
                         review_id = review_result.get('review_id')
-                        logger.info(f"Created seed review: {review_id} for request {service_request_id}")
+                        logger.info("Created seed review: %s for request %s", review_id, service_request_id)
                     else:
-                        logger.error(f"Failed to create review for request {service_request_id}")
+                        logger.error("Failed to create review for request %s", service_request_id)
                 else:
-                    logger.error(f"Request index {request_index} out of range for reviews")
-                    
+                    logger.error("Request index %s out of range for reviews", request_index)
+
             except Exception as e:
-                logger.error(f"Failed to seed review: {e}")
+                logger.error("Failed to seed review: %s", e)
 
         # 5. Add Default Friend (Alice)
         # Ensure Alice exists first
@@ -345,13 +345,13 @@ class UserSeedingService:
         try:
             # No need to filter out 'id' - update_user handles it internally
             await self.firestore_service.update_user(user_a_id, USER_A)
-            
+
             # Add to user's favorites
             # Pass only the user_id, not the full dict
             await self.firestore_service.add_favorite(user_id, user_a_id)
-            logger.info(f"Added default favorite {user_a_id} for user {user_id}")
-            
+            logger.info("Added default favorite %s for user %s", user_a_id, user_id)
+
         except Exception as e:
-            logger.error(f"Failed to seed favorites for {user_id}: {e}")
-            
-        logger.info(f"Seeding complete for user {user_id}")
+            logger.error("Failed to seed favorites for %s: %s", user_id, e)
+
+        logger.info("Seeding complete for user %s", user_id)

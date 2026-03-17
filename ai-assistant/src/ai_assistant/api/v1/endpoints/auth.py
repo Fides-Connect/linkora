@@ -4,7 +4,6 @@ Authentication and user session management endpoints.
 """
 import logging
 from datetime import datetime, timedelta, UTC
-from uuid import uuid4
 from aiohttp import web
 from pydantic import ValidationError
 from firebase_admin import auth as firebase_auth
@@ -21,7 +20,7 @@ seeding_service = UserSeedingService(firestore_service)
 
 async def sign_in_google(request: web.Request) -> web.Response:
     """POST /api/v1/auth/sign-in-google - Handle user sign-in via Firebase ID token.
-    
+
     Expects a JSON body with an 'id_token' field.
     Returns user information if the token is valid.
     """
@@ -42,7 +41,7 @@ async def sign_in_google(request: web.Request) -> web.Response:
         email = decoded_token.get("email")
         name = decoded_token.get("name")
 
-        logger.info(f"User signed in: {user_id}")
+        logger.info("User signed in: %s", user_id)
 
         # Return user information
         return web.json_response({
@@ -74,7 +73,7 @@ async def sign_in_google(request: web.Request) -> web.Response:
 
 async def user_sync(request: web.Request) -> web.Response:
     """POST /api/v1/auth/sync - Sync user with backend database.
-    
+
     Creates new user if doesn't exist, updates existing user.
     Handles FCM token registration for push notifications.
     """
@@ -83,7 +82,7 @@ async def user_sync(request: web.Request) -> web.Response:
         user_id = body.get("user_id")
         if not user_id:
             return web.json_response({"error": "Missing user_id"}, status=400)
-        
+
         user_data = {
             "user_id": user_id,
             "name": body.get("name", ""),
@@ -93,7 +92,7 @@ async def user_sync(request: web.Request) -> web.Response:
             "is_service_provider": body.get("is_service_provider", False),
             "last_sign_in": datetime.now(UTC),
         }
-        
+
         existing_firestore_user = await firestore_service.get_user(user_id)
         if existing_firestore_user:
             # Session-only update — never overwrite backend-managed fields like
@@ -218,7 +217,7 @@ async def user_sync(request: web.Request) -> web.Response:
                         user_id, comp_check_exc,
                     )
 
-            logger.info(f"Updated user: {user_id}")
+            logger.info("Updated user: %s", user_id)
             status = "updated"
         else:
             try:
@@ -229,7 +228,7 @@ async def user_sync(request: web.Request) -> web.Response:
                     photo_url=user_data["photo_url"],
                     enricher=request.app.get("competence_enricher"),
                 )
-                
+
                 # Only update FCM token and last_sign_in after seeding
                 # Don't overwrite template data with empty values.
                 # Initialise last_time_asked_being_provider 60 days ago so
@@ -240,17 +239,17 @@ async def user_sync(request: web.Request) -> web.Response:
                     "last_time_asked_being_provider": datetime.now(UTC) - timedelta(days=60),
                 }
                 await firestore_service.update_user(user_id, update_data)
-                
+
             except Exception as e:
-                logger.error(f"Failed to seed data for new user {user_id}: {e}")
+                logger.error("Failed to seed data for new user %s: %s", user_id, e)
                 return web.json_response({
                     "error": f"Failed to seed user: {str(e)}"
                 }, status=500)
-            
-            logger.info(f"Created new user: {user_id}")
+
+            logger.info("Created new user: %s", user_id)
             status = "created"
             onboarding_incomplete = False  # new users always start clean
-        
+
         return web.json_response({
             "status": status,
             "onboarding_incomplete": onboarding_incomplete,
@@ -263,13 +262,13 @@ async def user_sync(request: web.Request) -> web.Response:
             }
         })
     except ValidationError as e:
-        logger.warning(f"Validation error in user_sync: {e}")
+        logger.warning("Validation error in user_sync: %s", e)
         return web.json_response({
             "error": "Validation failed",
             "details": e.errors()
         }, status=400)
     except Exception as e:
-        logger.error(f"Error in user_sync: {e}")
+        logger.error("Error in user_sync: %s", e)
         return web.json_response({
             "error": "Internal server error",
             "details": str(e)
@@ -283,11 +282,11 @@ async def user_logout(request: web.Request) -> web.Response:
         user_id = body.get("user_id")
         if not user_id:
             return web.json_response({"error": "Missing user_id"}, status=400)
-        
-        logger.info(f"User logged out: {user_id}")
+
+        logger.info("User logged out: %s", user_id)
         return web.json_response({"status": "logged_out"})
     except Exception as e:
-        logger.error(f"Error in user_logout: {e}")
+        logger.error("Error in user_logout: %s", e)
         return web.json_response({
             "error": "Internal server error",
             "details": str(e)

@@ -24,7 +24,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any, Optional
 
 # sentence_transformers is intentionally NOT imported at module scope.
 # Importing it at startup pulls in torch and other heavy deps even though the
@@ -64,7 +64,7 @@ def _resolve_model_name() -> str:
     return _HF_MODEL_ID
 
 
-def _candidate_to_text(candidate: Dict[str, Any]) -> str:
+def _candidate_to_text(candidate: dict[str, Any]) -> str:
     """Build a single string representing a provider candidate for the cross-encoder.
 
     We concatenate the most semantically rich fields so the model can judge
@@ -142,9 +142,9 @@ class CrossEncoderService:
     async def rerank(
         self,
         query: str,
-        candidates: List[Dict[str, Any]],
+        candidates: list[dict[str, Any]],
         top_k: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Re-score and sort candidates using the cross-encoder.
 
         Runs the CPU-bound `predict()` call in a thread executor to keep
@@ -171,7 +171,7 @@ class CrossEncoderService:
         loop = asyncio.get_running_loop()
         try:
             model = self._load_model()
-            scores: List[float] = await loop.run_in_executor(
+            scores: list[float] = await loop.run_in_executor(
                 None, lambda: model.predict(pairs).tolist()
             )
         except Exception as exc:

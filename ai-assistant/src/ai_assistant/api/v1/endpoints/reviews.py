@@ -16,7 +16,7 @@ firestore_service = FirestoreService()
 
 async def get_reviews(request: web.Request) -> web.Response:
     """GET /api/v1/reviews - Get reviews with optional filters.
-    
+
     Query params:
     - user_id: Get reviews for a specific user (as reviewee)
     - reviewer_id: Get reviews by a specific reviewer
@@ -24,11 +24,11 @@ async def get_reviews(request: web.Request) -> web.Response:
     """
     try:
         await get_current_user_id(request)
-        
+
         user_id = request.query.get('user_id')
         reviewer_id = request.query.get('reviewer_id')
         service_request_id = request.query.get('service_request_id')
-        
+
         if user_id:
             reviews = await firestore_service.get_reviews_by_user(user_id)
         elif reviewer_id:
@@ -38,19 +38,19 @@ async def get_reviews(request: web.Request) -> web.Response:
         else:
             # Return empty list if no filter specified
             reviews = []
-        
+
         reviews = serialize_datetime(reviews)
         return web.json_response({"reviews": reviews})
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in get_reviews: {e}")
+        logger.error("Error in get_reviews: %s", e)
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
 async def create_review(request: web.Request) -> web.Response:
     """POST /api/v1/reviews - Create a new review.
-    
+
     Body: {
         "service_request_id": "service_request_xyz",
         "user_id": "user_abc",
@@ -63,7 +63,7 @@ async def create_review(request: web.Request) -> web.Response:
     try:
         reviewer_user_id = await get_current_user_id(request)
         body = await request.json()
-        
+
         # Validate required fields
         required_fields = ['service_request_id', 'user_id', 'rating']
         for field in required_fields:
@@ -71,7 +71,7 @@ async def create_review(request: web.Request) -> web.Response:
                 return web.json_response({
                     "error": f"Missing required field: {field}"
                 }, status=400)
-        
+
         # Validate rating
         rating = body.get('rating')
         if not isinstance(rating, (int, float)) or rating < 1 or rating > 5:
@@ -112,7 +112,7 @@ async def create_review(request: web.Request) -> web.Response:
                     f"before a review can be submitted (current status: '{sr_status}')"
                 )
             }, status=422)
-        
+
         review_data = {
             'service_request_id': service_request_id,
             'user_id': body['user_id'],
@@ -123,18 +123,18 @@ async def create_review(request: web.Request) -> web.Response:
             'comment': body.get('comment', ''),
             'created_at': datetime.utcnow()
         }
-        
+
         review_id = await firestore_service.create_review(review_data)
-        
+
         if not review_id:
             return web.json_response({"error": "Failed to create review"}, status=500)
-        
+
         return web.json_response({
             "review_id": review_id,
             "status": "created"
         }, status=201)
     except ValidationError as e:
-        logger.warning(f"Validation error in create_review: {e}")
+        logger.warning("Validation error in create_review: %s", e)
         return web.json_response({
             "error": "Validation failed",
             "details": e.errors()
@@ -142,7 +142,7 @@ async def create_review(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in create_review: {e}")
+        logger.error("Error in create_review: %s", e)
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -151,24 +151,24 @@ async def get_review(request: web.Request) -> web.Response:
     try:
         await get_current_user_id(request)
         review_id = request.match_info.get('review_id')
-        
+
         review = await firestore_service.get_review(review_id)
-        
+
         if not review:
             return web.json_response({"error": "Review not found"}, status=404)
-        
+
         review = serialize_datetime(review)
         return web.json_response(review)
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in get_review: {e}")
+        logger.error("Error in get_review: %s", e)
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
 async def update_review(request: web.Request) -> web.Response:
     """PATCH /api/v1/reviews/{review_id} - Update a review.
-    
+
     Body: {
         "rating_competence": 4,
         "feedback_positive": ["Updated"],
@@ -179,12 +179,12 @@ async def update_review(request: web.Request) -> web.Response:
         await get_current_user_id(request)
         review_id = request.match_info.get('review_id')
         body = await request.json()
-        
+
         # Check if review exists
         review = await firestore_service.get_review(review_id)
         if not review:
             return web.json_response({"error": "Review not found"}, status=404)
-        
+
         # Validate rating if provided
         if 'rating' in body:
             rating = body['rating']
@@ -192,17 +192,17 @@ async def update_review(request: web.Request) -> web.Response:
                 return web.json_response({
                     "error": "Rating must be between 1 and 5"
                 }, status=400)
-        
+
         updated_review = await firestore_service.update_review(review_id, body)
-        
+
         if not updated_review:
             return web.json_response({"error": "Failed to update review"}, status=500)
-        
+
         return web.json_response(serialize_datetime(updated_review))
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in update_review: {e}")
+        logger.error("Error in update_review: %s", e)
         return web.json_response({"error": "Internal server error"}, status=500)
 
 
@@ -211,15 +211,15 @@ async def delete_review(request: web.Request) -> web.Response:
     try:
         await get_current_user_id(request)
         review_id = request.match_info.get('review_id')
-        
+
         success = await firestore_service.delete_review(review_id)
-        
+
         if not success:
             return web.json_response({"error": "Failed to delete review"}, status=500)
-        
+
         return web.json_response({"status": "deleted"})
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in delete_review: {e}")
+        logger.error("Error in delete_review: %s", e)
         return web.json_response({"error": "Internal server error"}, status=500)

@@ -23,7 +23,8 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Callable, Coroutine, Optional
+from typing import Callable, Optional
+from collections.abc import Coroutine
 
 from ai_assistant.services.ai_conversation_service import AIConversationService
 from langchain_core.messages import AIMessage

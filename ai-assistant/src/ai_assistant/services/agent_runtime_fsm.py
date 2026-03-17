@@ -8,7 +8,7 @@ this FSM only tracks low-level runtime execution state.
 """
 import logging
 from enum import Enum
-from typing import Callable, Dict, Optional
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class AgentRuntimeState(str, Enum):
 # "interrupt" and "terminate" are handled as universal cross-cutting events.
 # ---------------------------------------------------------------------------
 
-_TRANSITIONS: Dict[AgentRuntimeState, Dict[str, AgentRuntimeState]] = {
+_TRANSITIONS: dict[AgentRuntimeState, dict[str, AgentRuntimeState]] = {
     AgentRuntimeState.BOOTSTRAP: {
         "data_channel_wait": AgentRuntimeState.DATA_CHANNEL_WAIT,
     },
@@ -83,7 +83,7 @@ _TRANSITIONS: Dict[AgentRuntimeState, Dict[str, AgentRuntimeState]] = {
 }
 
 # Events that fire regardless of source state (except TERMINATED)
-_UNIVERSAL_EVENTS: Dict[str, AgentRuntimeState] = {
+_UNIVERSAL_EVENTS: dict[str, AgentRuntimeState] = {
     "interrupt": AgentRuntimeState.INTERRUPTING,
     "terminate": AgentRuntimeState.TERMINATED,
 }

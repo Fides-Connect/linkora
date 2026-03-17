@@ -35,6 +35,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      - name: Lint (ruff)
+        working-directory: ai-assistant
+        run: ruff check src/
+
+      - name: Type-check (mypy)
+        working-directory: ai-assistant
+        run: |
+          mypy src/ai_assistant/services/conversation_service.py \
+            src/ai_assistant/services/response_orchestrator.py \
+            src/ai_assistant/services/agent_tools.py \
+            src/ai_assistant/firestore_schemas.py \
+            src/ai_assistant/peer_connection_handler.py \
+            src/ai_assistant/audio_processor.py \
+            src/ai_assistant/signaling_server.py \
+            src/ai_assistant/api/v1/endpoints/me.py \
+            src/ai_assistant/prompts_templates.py
+
       - name: Run unit tests
         working-directory: ai-assistant
         run: |

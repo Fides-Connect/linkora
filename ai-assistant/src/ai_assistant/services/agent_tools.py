@@ -21,7 +21,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 from ..hub_spoke_ingestion import HubSpokeIngestion
 from ..firestore_schemas import AvailabilityTimeSchema, derive_availability_tags
@@ -51,7 +51,7 @@ class ToolCapability:
         return f"ToolCapability(scope={self.scope!r}, action={self.action!r})"
 
 
-def check_capability(required: ToolCapability, caps: List[ToolCapability]) -> bool:
+def check_capability(required: ToolCapability, caps: list[ToolCapability]) -> bool:
     """Return True when *required* is present in the user's *caps* list."""
     return required in caps
 
@@ -81,11 +81,11 @@ class AgentTool:
     """A single tool callable by the LLM agent."""
     name: str
     description: str
-    schema: Dict[str, Any]          # Gemini function-calling declaration
+    schema: dict[str, Any]          # Gemini function-calling declaration
     required_capability: ToolCapability
     _execute: Callable              # async (params: dict, context: dict) -> Any
 
-    async def execute(self, params: Dict[str, Any], context: Dict[str, Any]) -> Any:
+    async def execute(self, params: dict[str, Any], context: dict[str, Any]) -> Any:
         return await self._execute(params, context)
 
 
@@ -97,19 +97,19 @@ class AgentToolRegistry:
     """Registry of AgentTool instances; dispatches execute() with permission checks."""
 
     def __init__(self) -> None:
-        self._tools: Dict[str, AgentTool] = {}
+        self._tools: dict[str, AgentTool] = {}
 
     def register(self, tool: AgentTool) -> None:
         self._tools[tool.name] = tool
 
-    def get(self, name: str) -> Optional[AgentTool]:
+    def get(self, name: str) -> AgentTool | None:
         return self._tools.get(name)
 
     async def execute(
         self,
         name: str,
-        params: Dict[str, Any],
-        context: Dict[str, Any],
+        params: dict[str, Any],
+        context: dict[str, Any],
     ) -> Any:
         """
         Execute the named tool after permission check.
@@ -120,7 +120,7 @@ class AgentToolRegistry:
         """
         tool = self._tools[name]   # KeyError if not found
 
-        user_caps: List[ToolCapability] = context.get("user_capabilities", [])
+        user_caps: list[ToolCapability] = context.get("user_capabilities", [])
         if not check_capability(tool.required_capability, user_caps):
             raise ToolPermissionError(name, tool.required_capability)
 
@@ -132,7 +132,7 @@ class AgentToolRegistry:
             return await asyncio.shield(tool.execute(params, context))
         return await tool.execute(params, context)
 
-    def all_schemas(self) -> List[Dict[str, Any]]:
+    def all_schemas(self) -> list[dict[str, Any]]:
         """Return all Gemini function-calling schemas for LLMService registration."""
         return [t.schema for t in self._tools.values()]
 
@@ -141,7 +141,7 @@ class AgentToolRegistry:
 # Context helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _require_fs(context: dict):
+def _require_fs(context: dict[str, Any]):
     """Extract firestore_service from context, raising a clear error if absent."""
     fs = context.get("firestore_service")
     if fs is None:
@@ -156,7 +156,7 @@ def _require_fs(context: dict):
 # Built-in tool implementations — service request / search
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _search_providers(params: dict, context: dict) -> Any:
+async def _search_providers(params: dict[str, Any], context: dict[str, Any]) -> Any:
     query = params.get("query", "")
     limit = int(params.get("limit", 5))
     dp = context["data_provider"]
@@ -181,17 +181,17 @@ async def _search_providers(params: dict, context: dict) -> Any:
     return raw
 
 
-async def _get_favorites(params: dict, context: dict) -> Any:
+async def _get_favorites(params: dict[str, Any], context: dict[str, Any]) -> Any:
     fs = _require_fs(context)
     return await fs.get_user_favorites(context["user_id"])
 
 
-async def _get_open_requests(params: dict, context: dict) -> Any:
+async def _get_open_requests(params: dict[str, Any], context: dict[str, Any]) -> Any:
     fs = _require_fs(context)
     return await fs.get_service_requests(user_id=context["user_id"])
 
 
-async def _create_service_request(params: dict, context: dict) -> Any:
+async def _create_service_request(params: dict[str, Any], context: dict[str, Any]) -> Any:
     fs = _require_fs(context)
     data: dict = {
         "seeker_user_id": context["user_id"],
@@ -233,7 +233,7 @@ async def _create_service_request(params: dict, context: dict) -> Any:
     return result
 
 
-async def _cancel_service_request(params: dict, context: dict) -> Any:
+async def _cancel_service_request(params: dict[str, Any], context: dict[str, Any]) -> Any:
     """Set a service request's status to 'cancelled'."""
     fs = context["firestore_service"]
     request_id = params.get("request_id", "")
@@ -247,7 +247,7 @@ async def _cancel_service_request(params: dict, context: dict) -> Any:
 # Provider onboarding tool implementations
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _record_provider_interest(params: dict, context: dict) -> Any:
+async def _record_provider_interest(params: dict[str, Any], context: dict[str, Any]) -> Any:
     """
     Record the user's response to the provider pitch.
 
@@ -283,13 +283,13 @@ async def _record_provider_interest(params: dict, context: dict) -> Any:
         return {"status": "not_now"}
 
 
-async def _get_my_competencies(params: dict, context: dict) -> Any:
+async def _get_my_competencies(params: dict[str, Any], context: dict[str, Any]) -> Any:
     """Fetch the current user's competency list from Firestore."""
     fs = _require_fs(context)
     return await fs.get_competencies(context["user_id"])
 
 
-async def _save_competence_batch(params: dict, context: dict) -> Any:
+async def _save_competence_batch(params: dict[str, Any], context: dict[str, Any]) -> Any:
     """
     Create or update one or more competence entries for the user.
 
@@ -308,8 +308,8 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
 
     fs = _require_fs(context)
     user_id = context["user_id"]
-    enricher: Optional[CompetenceEnricher] = context.get("competence_enricher")
-    skills: List[dict] = params.get("skills", [])
+    enricher: CompetenceEnricher | None = context.get("competence_enricher")
+    skills: list[dict] = params.get("skills", [])
     saved = []
 
     # Spec §5.8.8: capture the user's pre-save provider status so we can
@@ -383,7 +383,7 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
 
         # Pop availability_time before hitting Firestore — it's written to the
         # 'availability_time' subcollection separately, not onto the competence doc.
-        availability_time_data: Optional[dict] = skill_copy.pop("availability_time", None)
+        availability_time_data: dict | None = skill_copy.pop("availability_time", None)
 
         # Validate availability_time BEFORE any Firestore write so that an invalid
         # structured-time payload is rejected before the competence doc is persisted,
@@ -547,11 +547,11 @@ async def _save_competence_batch(params: dict, context: dict) -> Any:
     return {"saved": saved, "count": len(saved)}
 
 
-async def _delete_competences(params: dict, context: dict) -> Any:
+async def _delete_competences(params: dict[str, Any], context: dict[str, Any]) -> Any:
     """Delete competencies by their IDs and sync to Weaviate."""
     fs = _require_fs(context)
     user_id = context["user_id"]
-    ids: List[str] = params.get("competence_ids", [])
+    ids: list[str] = params.get("competence_ids", [])
     deleted = []
 
     for cid in ids:
@@ -874,7 +874,7 @@ def build_default_registry() -> AgentToolRegistry:
 # Intercepted directly by ResponseOrchestrator._handle_finalize_tool().
 # ─────────────────────────────────────────────────────────────────────────────
 
-FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA: Dict[str, Any] = {
+FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA: dict[str, Any] = {
     "name": "accept_provider",
     "description": (
         "Accept the currently presented provider and create the service request. "
@@ -935,7 +935,7 @@ FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA: Dict[str, Any] = {
     },
 }
 
-FINALIZE_TOOL_REJECT_AND_FETCH_NEXT_SCHEMA: Dict[str, Any] = {
+FINALIZE_TOOL_REJECT_AND_FETCH_NEXT_SCHEMA: dict[str, Any] = {
     "name": "reject_and_fetch_next",
     "description": (
         "Reject the currently presented provider and request the next candidate from the list. "
@@ -948,7 +948,7 @@ FINALIZE_TOOL_REJECT_AND_FETCH_NEXT_SCHEMA: Dict[str, Any] = {
     },
 }
 
-FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA: Dict[str, Any] = {
+FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA: dict[str, Any] = {
     "name": "cancel_search",
     "description": (
         "Cancel the entire provider search and return to the start. "
@@ -962,7 +962,7 @@ FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA: Dict[str, Any] = {
 }
 
 # Convenience list for LLM tool registration in the FINALIZE stage.
-FINALIZE_TOOL_SCHEMAS: List[Dict[str, Any]] = [
+FINALIZE_TOOL_SCHEMAS: list[dict[str, Any]] = [
     FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA,
     FINALIZE_TOOL_REJECT_AND_FETCH_NEXT_SCHEMA,
     FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA,

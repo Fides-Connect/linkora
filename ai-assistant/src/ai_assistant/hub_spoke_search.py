@@ -7,11 +7,10 @@ Handles:
 2. Hybrid Search (vector + keyword, alpha=0.5)
 3. Result Grouping (client-side by owned_by)
 """
-import json
 import logging
 import re
 from datetime import datetime, UTC, timedelta
-from typing import List, Dict, Any
+from typing import Any
 from weaviate.classes.query import Filter, QueryReference, MetadataQuery
 
 # Handle both package and direct imports
@@ -34,13 +33,13 @@ _AVAILABILITY_TOKENS: frozenset = frozenset({
 class HubSpokeSearch:
     """
     Search manager for Hub and Spoke architecture.
-    
+
     Implements:
     1. Hybrid search on Competence (vector + keyword)
     2. Ghost user filtering (excludes inactive users)
     3. Result grouping (one result per user)
     """
-    
+
     @staticmethod
     def search_competencies(
         query: str,
@@ -48,31 +47,31 @@ class HubSpokeSearch:
         max_inactive_days: int = 180,
         group_by_user: bool = True,
         alpha: float = 0.5
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Search for competencies with ghost filtering and grouping.
-        
+
         Search Strategy:
         1. Perform hybrid search on Competence.description
         2. Filter by owned_by.last_sign_in (ghost filtering)
         3. Group by owned_by to prevent duplicate users
-        
+
         Args:
             query: Search query text
             limit: Maximum results
             max_inactive_days: Maximum days since last_sign_in
             group_by_user: Whether to group results by user
             alpha: Hybrid search weight (0=pure vector, 1=pure keyword, 0.5=balanced)
-            
+
         Returns:
             List of competence results with user info
         """
         try:
             competence_collection = get_competence_collection()
-            
+
             # Calculate cutoff date for ghost filtering
             cutoff_date = datetime.now(UTC) - timedelta(days=max_inactive_days)
-            
+
             # Build query with ghost filtering and provider filtering.
             # Null last_sign_in is treated as active (providers who signed in before
             # the field was tracked are included rather than silently excluded).
@@ -84,7 +83,7 @@ class HubSpokeSearch:
                 )
                 & Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
             )
-            
+
             if group_by_user:
                 # Note: Weaviate's GroupBy doesn't work with reference properties,
                 # so we'll fetch more results and do client-side grouping
@@ -99,14 +98,14 @@ class HubSpokeSearch:
                         return_properties=["user_id", "name", "email", "is_service_provider", "last_sign_in"]
                     )
                 )
-                
+
                 # Client-side grouping: Keep only the best competence per user
                 seen_users = {}
                 for obj in response.objects:
                     competence = obj.properties.copy()
                     competence['uuid'] = str(obj.uuid)
                     competence['score'] = obj.metadata.score if obj.metadata else 0
-                    
+
                     # Extract user info from references
                     user_uuid = None
                     if obj.references and 'owned_by' in obj.references:
@@ -122,17 +121,17 @@ class HubSpokeSearch:
                                 'is_service_provider': user.get('is_service_provider', False),
                                 'last_sign_in': user.get('last_sign_in'),
                             }
-                    
+
                     # Keep only the best-scoring competence per user
                     if user_uuid:
                         if user_uuid not in seen_users or competence['score'] > seen_users[user_uuid]['score']:
                             seen_users[user_uuid] = competence
-                
+
                 results = list(seen_users.values())[:limit]  # Limit to requested number
-                
-                logger.info(f"Grouped search found {len(results)} unique users for: '{query[:50]}...'")
+
+                logger.info("Grouped search found %s unique users for: '%s...'", len(results), query[:50])
                 return results
-                
+
             else:
                 # Hybrid search WITHOUT grouping (may return multiple competencies per user)
                 response = competence_collection.query.hybrid(
@@ -146,13 +145,13 @@ class HubSpokeSearch:
                         return_properties=["user_id", "name", "email", "is_service_provider", "last_sign_in"]
                     )
                 )
-                
+
                 results = []
                 for obj in response.objects:
                     competence = obj.properties.copy()
                     competence['uuid'] = str(obj.uuid)
                     competence['score'] = obj.metadata.score if obj.metadata else 0
-                    
+
                     # Extract user info
                     if obj.references and 'owned_by' in obj.references:
                         owned_by_refs = obj.references['owned_by'].objects
@@ -165,30 +164,30 @@ class HubSpokeSearch:
                                 'email': user.get('email'),
                                 'last_sign_in': user.get('last_sign_in'),
                             }
-                    
+
                     results.append(competence)
-                
-                logger.info(f"Ungrouped search found {len(results)} competencies for: '{query[:50]}...'")
+
+                logger.info("Ungrouped search found %s competencies for: '%s...'", len(results), query[:50])
                 return results
-            
+
         except Exception as e:
-            logger.error(f"Error searching competencies: {e}")
+            logger.error("Error searching competencies: %s", e)
             return []
-    
+
     @staticmethod
-    def get_user_competencies(user_uuid: str) -> List[Dict[str, Any]]:
+    def get_user_competencies(user_uuid: str) -> list[dict[str, Any]]:
         """
         Get all competencies for a specific user.
-        
+
         Args:
             user_uuid: UUID of the user
-            
+
         Returns:
             List of competence dictionaries
         """
         try:
             user_collection = get_user_collection()
-            
+
             # Fetch user with competence references
             response = user_collection.query.fetch_object_by_id(
                 uuid=user_uuid,
@@ -197,10 +196,10 @@ class HubSpokeSearch:
                     return_properties=["title", "description", "category", "price_range"]
                 )
             )
-            
+
             if not response:
                 return []
-            
+
             # Extract competencies from references
             competencies = []
             if response.references and 'has_competencies' in response.references:
@@ -208,17 +207,17 @@ class HubSpokeSearch:
                     comp = comp_obj.properties.copy()
                     comp['uuid'] = str(comp_obj.uuid)
                     competencies.append(comp)
-            
-            logger.info(f"Retrieved {len(competencies)} competencies for user {user_uuid}")
+
+            logger.info("Retrieved %s competencies for user %s", len(competencies), user_uuid)
             return competencies
-            
+
         except Exception as e:
-            logger.error(f"Error getting user competencies: {e}")
+            logger.error("Error getting user competencies: %s", e)
             return []
-    
+
     @staticmethod
     def _build_filters_and_query(
-        search_request: Dict[str, Any],
+        search_request: dict[str, Any],
         max_inactive_days: int
     ) -> tuple[Filter, str, str, bool]:
         """
@@ -242,14 +241,14 @@ class HubSpokeSearch:
             )
             & Filter.by_ref("owned_by").by_property("is_service_provider").equal(True)
         )
-        
+
         # Extract and normalize availability
         available_time = search_request.get("available_time") or ""
         if isinstance(available_time, str):
             available_time = available_time.strip()
         else:
             available_time = ""
-        
+
         # Add availability filter if specified and not flexible.
         # The Weaviate schema stores normalised tokens in `availability_tags` (TEXT_ARRAY).
         # The LLM may produce a free-form string (e.g. "nächste Woche", "Monday morning"),
@@ -265,7 +264,7 @@ class HubSpokeSearch:
                 logger.info("Added availability filter: %r → tokens: %s", available_time, matched_tokens)
             else:
                 logger.info("Availability filter skipped — no known tokens in %r", available_time)
-        
+
         # Build query text from category and criterions
         # STRATEGY: Combine category and criteria into a natural language sentence
         # to avoid semantic dilution in vector space while retaining keywords.
@@ -274,7 +273,7 @@ class HubSpokeSearch:
             category = category.strip()
         else:
             category = ""
-        
+
         criterions = search_request.get("criterions") or []
         # specific clean up for criterions
         clean_criterions = []
@@ -291,28 +290,28 @@ class HubSpokeSearch:
             query_text = ", ".join(clean_criterions)
         else:
             query_text = "service provider"
-        
+
         return filter_clause, query_text, available_time, availability_filter_applied
 
     @staticmethod
-    def _process_search_results(response, limit: int) -> List[Dict[str, Any]]:
+    def _process_search_results(response, limit: int) -> list[dict[str, Any]]:
         """
         Process search results: extract data, group by user, sort by score.
-        
+
         Args:
             response: Weaviate query response
             limit: Maximum number of results to return
-            
+
         Returns:
             List of provider results sorted by relevance
         """
         seen_users = {}
-        
+
         for obj in response.objects:
             competence = obj.properties.copy()
             competence['uuid'] = str(obj.uuid)
             competence['score'] = obj.metadata.score if obj.metadata else 0
-            
+
             # Extract user info from references
             user_uuid = None
             if obj.references and 'owned_by' in obj.references:
@@ -328,23 +327,23 @@ class HubSpokeSearch:
                         'is_service_provider': user.get('is_service_provider', False),
                         'last_sign_in': user.get('last_sign_in'),
                     }
-            
+
             # Keep only the best-scoring competence per user
             if user_uuid:
                 if user_uuid not in seen_users or competence['score'] > seen_users[user_uuid]['score']:
                     seen_users[user_uuid] = competence
-        
+
         # Sort by score and limit
         return sorted(seen_users.values(), key=lambda x: x.get('score', 0), reverse=True)[:limit]
-    
+
     @staticmethod
     def hybrid_search_providers(
-        search_request: Dict[str, Any],
+        search_request: dict[str, Any],
         limit: int = 10,
         max_inactive_days: int = 180,
         alpha: float = 0.5,
         hyde_text: str = "",
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Hybrid search for providers with structured filtering.
 
@@ -418,7 +417,7 @@ class HubSpokeSearch:
                 query_text[:200],
             )
 
-            logger.info(f"Hybrid search query ({'HyDE' if hyde_text else 'structured'}): '{query_text[:120]}...'")
+            logger.info("Hybrid search query (%s): '%s...'", 'HyDE' if hyde_text else 'structured', query_text[:120])
             if availability_filter_applied:
                 logger.info("Availability filter applied: %r → filtering on availability_tags", available_time)
             else:
@@ -471,11 +470,11 @@ class HubSpokeSearch:
                 len(response.objects),
                 [(o.properties.get("title"), round(o.metadata.score or 0, 4)) for o in response.objects[:5]],
             )
-            
+
             # Process results: group by user and sort; use fetch_limit so we
             # pass enough candidates to the cross-encoder reranker upstream.
             results = HubSpokeSearch._process_search_results(response, fetch_limit)
-            
+
             # ── DEBUG Step 6: final grouped results ──────────────────────────
             logger.debug(
                 "[HyDE Step 6] Final grouped providers (%d): %s",
@@ -512,9 +511,9 @@ class HubSpokeSearch:
                         available_time or "none",
                     )
             return results
-            
+
         except Exception as e:
-            logger.error(f"Error in hybrid_search_providers: {e}", exc_info=True)
+            logger.error("Error in hybrid_search_providers: %s", e, exc_info=True)
             # Distinguish connectivity failures from data/logic errors so callers
             # can route to RECOVERY instead of silently presenting zero results.
             err_lower = (type(e).__name__ + " " + str(e)).lower()

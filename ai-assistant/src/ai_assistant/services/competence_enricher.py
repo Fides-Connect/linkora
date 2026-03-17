@@ -24,7 +24,7 @@ Design rules:
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -83,7 +83,7 @@ class CompetenceEnricher:
     def __init__(self, llm: Any) -> None:
         self._llm = llm
 
-    async def enrich(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    async def enrich(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Return *raw* merged with enriched fields.
 
         On any error (LLM failure, JSON parse, etc.) logs a warning and returns
@@ -147,7 +147,7 @@ class CompetenceEnricher:
     # ─────────────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _availability_time_to_text(availability_time: Dict[str, Any]) -> str:
+    def _availability_time_to_text(availability_time: dict[str, Any]) -> str:
         """Derive a short human-readable availability string from a structured dict.
 
         Only used as context input to the LLM — not stored in Firestore.
@@ -186,7 +186,7 @@ class CompetenceEnricher:
         return "; ".join(parts) if parts else ""
 
     @staticmethod
-    def _build_user_message(raw: Dict[str, Any]) -> str:
+    def _build_user_message(raw: dict[str, Any]) -> str:
         # Derive availability text for context: prefer structured availability_time;
         # fall back to plain 'availability' or 'availability_text' string.
         avail_time = raw.get("availability_time")
@@ -205,13 +205,13 @@ class CompetenceEnricher:
         return "\n".join(lines)
 
     @staticmethod
-    def _parse_response(text: str) -> Dict[str, Any]:
+    def _parse_response(text: str) -> dict[str, Any]:
         """Extract and validate the JSON payload from the LLM response."""
         # Strip markdown code fences if the model forgets the instruction.
         cleaned = re.sub(r"```(?:json)?|```", "", text).strip()
         data = json.loads(cleaned)
 
-        skills_list: List[str] = [
+        skills_list: list[str] = [
             s.strip().lower() for s in data.get("skills_list", []) if isinstance(s, str) and s.strip()
         ]
         summary: str = str(data.get("search_optimized_summary", "")).strip()
@@ -219,7 +219,7 @@ class CompetenceEnricher:
         price_raw = data.get("price_per_hour")
         price_per_hour: Optional[float] = float(price_raw) if price_raw is not None else None
 
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "skills_list": skills_list,
             "search_optimized_summary": summary,
             "price_per_hour": price_per_hour,

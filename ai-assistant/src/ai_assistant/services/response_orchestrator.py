@@ -9,7 +9,11 @@ import json
 import math
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import AsyncIterator, Optional, Union
+from typing import Union, Any, TYPE_CHECKING
+from collections.abc import AsyncIterator
+
+if TYPE_CHECKING:
+    from .ai_conversation_service import AIConversationService
 
 from langchain_core.messages import AIMessage
 
@@ -53,9 +57,9 @@ class ResponseOrchestrator:
         self,
         llm_service: LLMService,
         conversation_service: ConversationService,
-        runtime_fsm: Optional[AgentRuntimeFSM] = None,
-        tool_registry: Optional[AgentToolRegistry] = None,
-        ai_conversation_service=None,
+        runtime_fsm: AgentRuntimeFSM | None = None,
+        tool_registry: AgentToolRegistry | None = None,
+        ai_conversation_service: "AIConversationService | None" = None,
     ):
         self.llm_service = llm_service
         self.conversation_service = conversation_service
@@ -105,8 +109,8 @@ class ResponseOrchestrator:
         self,
         target: str,
         session_id: str,
-        context: Optional[dict],
-        pending: list,
+        context: dict[str, Any] | None,
+        pending: list[tuple[str, Any]],
         user_input: str = "",
     ) -> bool:
         """Apply a stage transition, run its side effects, and append a structured
@@ -144,7 +148,7 @@ class ResponseOrchestrator:
         if target_stage == ConversationStage.FINALIZE:
             if previous_stage == ConversationStage.PROVIDER_ONBOARDING:
                 logger.warning("Skipping provider search: previous stage was PROVIDER_ONBOARDING")
-                providers: list = []
+                providers: list[dict] = []
             else:
                 await self.conversation_service.search_providers_for_request(session_id)
                 # Divert to RECOVERY if Weaviate was unreachable. This prevents the
@@ -157,7 +161,7 @@ class ResponseOrchestrator:
                     return True
                 # Read providers stored by search_providers_for_request; avoids
                 # the previous `await … or []` pattern that overwrote context.
-                providers: list = self.conversation_service.context.get("providers_found", [])
+                providers = self.conversation_service.context.get("providers_found", [])
             # Keep context cache in sync for follow-up stream cache-hit logic.
             self.conversation_service.context["providers_found"] = providers
             # Reset provider cursor so the LLM always starts from the first result.
@@ -255,7 +259,7 @@ class ResponseOrchestrator:
     # ── Tool dispatch ──────────────────────────────────────────────────────────
 
     @staticmethod
-    def _should_pitch_provider(context: Optional[dict]) -> bool:
+    def _should_pitch_provider(context: dict[str, Any] | None) -> bool:
         """
         Return True when all eligibility conditions for the provider pitch are met:
           1. user_context is present in context
@@ -285,7 +289,7 @@ class ResponseOrchestrator:
             last_asked = last_asked.replace(tzinfo=timezone.utc)
         return (now - last_asked) >= timedelta(days=30)
 
-    async def _should_pitch_provider_async(self, context: Optional[dict]) -> bool:
+    async def _should_pitch_provider_async(self, context: dict[str, Any] | None) -> bool:
         """Async variant of _should_pitch_provider that adds a real-time Firestore
         sanity check just before entering PROVIDER_PITCH.
 
@@ -354,12 +358,12 @@ class ResponseOrchestrator:
 
     async def _run_follow_up_stream(
         self,
-        pending: list,
+        pending: list[tuple[str, Any]],
         follow_up_input: str,
         session_id: str,
-        context: Optional[dict],
-        ai_response_parts: list,
-        new_pending: list,
+        context: dict[str, Any] | None,
+        ai_response_parts: list[str],
+        new_pending: list[tuple[str, Any]],
     ) -> AsyncIterator[Union[str, dict]]:
         """Run one follow-up LLM stream after a batch of pending tool results.
 
@@ -411,7 +415,7 @@ class ResponseOrchestrator:
 
         # Extract zero_result_event hint from any triage payload (set by reject_and_fetch_next
         # when the provider list is exhausted) so we can inject it into the human turn.
-        _zero_event: Optional[str] = None
+        _zero_event: str | None = None
         for _pname, _ppayload in pending:
             if isinstance(_ppayload, dict) and _ppayload.get("stage") == "triage":
                 _zero_event = _ppayload.get("zero_result_event")
@@ -492,8 +496,8 @@ class ResponseOrchestrator:
         fn_name: str,
         fn_args: dict,
         session_id: str,
-        context: Optional[dict],
-        pending: list,
+        context: dict[str, Any] | None,
+        pending: list[tuple[str, Any]],
     ) -> None:
         """Dispatch FINALIZE-stage tool calls outside the tool registry.
 
@@ -543,7 +547,7 @@ class ResponseOrchestrator:
                 if reasons:
                     csr_args["_candidate_matching_score_reasons"] = reasons
 
-            result: Optional[dict] = None
+            result: dict | None = None
             if self.tool_registry:
                 try:
                     result = await self.tool_registry.execute(
@@ -614,8 +618,8 @@ class ResponseOrchestrator:
         self,
         user_input: str,
         session_id: str,
-        context: Optional[dict] = None,
-    ) -> AsyncIterator[str]:
+        context: dict[str, Any] | None = None,
+    ) -> AsyncIterator[str | dict[str, Any]]:
         """
         Generate streaming response with stage-aware conversation flow.
 
@@ -912,7 +916,7 @@ class ResponseOrchestrator:
             for follow_up_iter in range(MAX_FOLLOW_UP_DEPTH):
                 if not current_pending:
                     break
-                next_pending: list[tuple[str, object]] = []
+                next_pending: list[tuple[str, Any]] = []
                 # Only the first follow-up stream sees the real user utterance.
                 follow_up_user_input = user_input if follow_up_iter == 0 else " "
                 async for chunk in self._run_follow_up_stream(

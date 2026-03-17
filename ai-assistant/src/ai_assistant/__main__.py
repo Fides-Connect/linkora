@@ -53,21 +53,21 @@ async def main():
 
     # Set log level from environment
     logging.getLogger().setLevel(os.getenv('LOG_LEVEL', 'INFO').upper())
-    
+
     logger.info("=" * 60)
     logger.info("AI Assistant Service Starting")
     logger.info("=" * 60)
-    
+
     # Verify required environment variables
     required_vars = [
         'GEMINI_API_KEY'
     ]
-    
+
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     if missing_vars:
-        logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
+        logger.error("Missing required environment variables: %s", ', '.join(missing_vars))
         return
-    
+
     # Initialize Firebase Admin SDK using Application Default Credentials (WIF / Cloud Run ADC)
     logger.info("Initializing Firebase Admin SDK...")
     try:
@@ -77,35 +77,35 @@ async def main():
         else:
             logger.info("Firebase Admin SDK already initialized")
     except Exception as e:
-        logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
+        logger.error("Failed to initialize Firebase Admin SDK: %s", e)
         logger.error("Firebase ID token verification will not work!")
         return
-    
+
     # Log configuration
     logger.info("Configuration:")
-    logger.info(f"  Firestore Database: {os.getenv('FIRESTORE_DATABASE_NAME', '(default)')}")
-    logger.info(f"  Language DE: {os.getenv('LANGUAGE_CODE_DE', 'de-DE')}")
-    logger.info(f"  Voice DE: {os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat')}")
-    logger.info(f"  Language EN: {os.getenv('LANGUAGE_CODE_EN', 'en-US')}")
-    logger.info(f"  Voice EN: {os.getenv('VOICE_NAME_EN', 'en-US-Chirp3-HD-Sulafat')}")
-    logger.info(f"  Host: {os.getenv('HOST', '0.0.0.0')}")
-    logger.info(f"  Port: {os.getenv('PORT', 8080)}")
-    logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
-    logger.info(f"  Google TTS API Concurrency: {os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5')}")
-    logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
-    logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}")
-    
+    logger.info("  Firestore Database: %s", os.getenv('FIRESTORE_DATABASE_NAME', '(default)'))
+    logger.info("  Language DE: %s", os.getenv('LANGUAGE_CODE_DE', 'de-DE'))
+    logger.info("  Voice DE: %s", os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat'))
+    logger.info("  Language EN: %s", os.getenv('LANGUAGE_CODE_EN', 'en-US'))
+    logger.info("  Voice EN: %s", os.getenv('VOICE_NAME_EN', 'en-US-Chirp3-HD-Sulafat'))
+    logger.info("  Host: %s", os.getenv('HOST', '0.0.0.0'))
+    logger.info("  Port: %s", os.getenv('PORT', 8080))
+    logger.info("  Log Level: %s", os.getenv('LOG_LEVEL', 'INFO'))
+    logger.info("  Google TTS API Concurrency: %s", os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5'))
+    logger.info("  Debug Audio Record: %s", os.getenv('DEBUG_RECORD_AUDIO', 'false'))
+    logger.info("  LLM Model: %s", os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'))
+
     # Sync Firestore → Weaviate (opt-in via WEAVIATE_SYNC_ON_STARTUP=true)
     await run_startup_sync()
 
     # Initialize signaling server
     logger.info("Initializing signaling server...")
     signaling_server = SignalingServer()
-    
+
     # Initialize admin service
     logger.info("Initializing admin service...")
     admin_service = AdminService(signaling_server=signaling_server)
-    
+
     # Create web application
     app = web.Application()
     app.router.add_get('/ws', signaling_server.handle_websocket)
@@ -132,23 +132,23 @@ async def main():
 
     # Register admin routes
     admin_service.register_routes(app)
-    
+
     # Start server
     host = os.getenv('HOST', '0.0.0.0')
     port = int(os.getenv('PORT', 8080))
-    
-    logger.info(f"Starting AI Assistant server on {host}:{port}")
-    logger.info(f"WebSocket endpoint: ws://{host}:{port}/ws")
-    logger.info(f"Health check: http://{host}:{port}/health")
-    logger.info(f"API v1: http://{host}:{port}/api/v1/")
-    logger.info(f"Sign-In: http://{host}:{port}/api/v1/auth/sign-in-google")
-    
+
+    logger.info("Starting AI Assistant server on %s:%s", host, port)
+    logger.info("WebSocket endpoint: ws://%s:%s/ws", host, port)
+    logger.info("Health check: http://%s:%s/health", host, port)
+    logger.info("API v1: http://%s:%s/api/v1/", host, port)
+    logger.info("Sign-In: http://%s:%s/api/v1/auth/sign-in-google", host, port)
+
     runner = web.AppRunner(app)
     setup_cors(app)
     await runner.setup()
     site = web.TCPSite(runner, host, port)
     await site.start()
-    
+
     logger.info("=" * 60)
     logger.info("AI Assistant server is running")
     logger.info("=" * 60)

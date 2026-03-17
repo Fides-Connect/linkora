@@ -4,7 +4,7 @@ Replaces the ``if/elif`` chain in ``PeerConnectionHandler``'s ``on_message``
 closure.  New message types are a single ``register()`` call.
 """
 import logging
-from typing import Callable, Dict, Optional
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class DataChannelMessageRouter:
     """
 
     def __init__(self) -> None:
-        self._handlers: Dict[str, Callable[[dict], None]] = {}
+        self._handlers: dict[str, Callable[[dict], None]] = {}
 
     def register(self, msg_type: str, handler: Callable[[dict], None]) -> None:
         """Register *handler* for *msg_type*, replacing any previous handler."""
