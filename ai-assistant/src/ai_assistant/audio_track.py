@@ -3,6 +3,7 @@ Audio Output Track
 Custom MediaStreamTrack for streaming audio output.
 """
 import asyncio
+import collections
 import logging
 import numpy as np
 import time
@@ -21,14 +22,17 @@ class AudioOutputTrack(MediaStreamTrack):
     def __init__(self):
         super().__init__()
         self.audio_queue = asyncio.Queue()
-        self.sample_rate = 48000  # Match WebRTC native rate
+        self.sample_rate = 24000  # 24kHz: half the TTS payload vs 48kHz; aiortc resamples to 48kHz for RTP
         self.channels = 1  
-        self.samples_per_frame = 960  # 20ms at 48kHz
+        self.samples_per_frame = 480  # 20ms at 24kHz
         self._timestamp = 0
         self._start = None
         self._next_frame_time = None
-        self._buffer = np.array([], dtype=np.int16)
-        
+        # Ring-buffer implemented as a deque of raw int16 bytes chunks.
+        # Avoids O(N) np.concatenate allocations at 50 Hz.
+        self._buffer: collections.deque[bytes] = collections.deque()
+        self._buffer_samples = 0  # total int16 samples across all chunks
+
         # Comfort noise parameters
         self._comfort_noise_amplitude = 20  # Very low amplitude for subtle background noise
         self._last_frame_was_silence = False
@@ -40,16 +44,58 @@ class AudioOutputTrack(MediaStreamTrack):
     
     async def clear_queue(self):
         """Clear all pending audio from the queue and buffer."""
-        # Clear the queue
         while not self.audio_queue.empty():
             try:
                 self.audio_queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
-        
-        # Clear the buffer
-        self._buffer = np.array([], dtype=np.int16)
+        self._buffer.clear()
+        self._buffer_samples = 0
         logger.info("Audio queue and buffer cleared for interrupt")
+
+    def _drain_queue_into_buffer(self) -> None:
+        """Move all currently available queue items into the sample buffer (non-blocking)."""
+        while True:
+            try:
+                audio_data: bytes = self.audio_queue.get_nowait()
+                self._buffer.append(audio_data)
+                self._buffer_samples += len(audio_data) // 2  # int16 = 2 bytes
+                logger.debug(f"Got {len(audio_data)} bytes from queue, buffer={self._buffer_samples} samples")
+            except asyncio.QueueEmpty:
+                break
+
+    def _read_samples_from_buffer(self, n: int) -> np.ndarray:
+        """Consume exactly *n* int16 samples from the deque buffer."""
+        # Fast path — single chunk covers the entire request
+        if self._buffer and len(self._buffer[0]) // 2 >= n:
+            chunk = self._buffer[0]
+            arr = np.frombuffer(chunk[:n * 2], dtype=np.int16).copy()
+            remainder = chunk[n * 2:]
+            if remainder:
+                self._buffer[0] = remainder
+            else:
+                self._buffer.popleft()
+            self._buffer_samples -= n
+            return arr
+
+        # General path — gather from multiple chunks
+        out = np.empty(n, dtype=np.int16)
+        written = 0
+        while written < n and self._buffer:
+            chunk = self._buffer[0]
+            chunk_samples = len(chunk) // 2
+            need = n - written
+            if chunk_samples <= need:
+                out[written:written + chunk_samples] = np.frombuffer(chunk, dtype=np.int16)
+                written += chunk_samples
+                self._buffer_samples -= chunk_samples
+                self._buffer.popleft()
+            else:
+                out[written:] = np.frombuffer(chunk[:need * 2], dtype=np.int16)
+                self._buffer[0] = chunk[need * 2:]
+                self._buffer_samples -= need
+                written = n
+        return out[:written]
     
     def _generate_comfort_noise(self, num_samples: int) -> np.ndarray:
         """Generate comfort noise to keep the audio stream alive.
@@ -94,45 +140,36 @@ class AudioOutputTrack(MediaStreamTrack):
             if current_time < self._next_frame_time:
                 await asyncio.sleep(self._next_frame_time - current_time)
             
-            logger.debug(f"recv() called - queue size: {self.audio_queue.qsize()}, buffer size: {len(self._buffer)} samples")
-            
-            # Try to get audio from queue (non-blocking with short timeout)
-            try:
-                audio_data = await asyncio.wait_for(
-                    self.audio_queue.get(),
-                    timeout=0.001  # Very short timeout - don't wait long
-                )
-                logger.debug(f"Got {len(audio_data)} bytes from queue")
-                
-                # Convert bytes to numpy array and append to buffer
-                new_samples = np.frombuffer(audio_data, dtype=np.int16)
-                self._buffer = np.concatenate([self._buffer, new_samples])
-                logger.debug(f"Buffer now has {len(self._buffer)} samples")
-                
-            except asyncio.TimeoutError:
-                # No audio available - we'll send comfort noise
-                pass
-            
-            # Check if we have enough samples for a frame
-            if len(self._buffer) >= self.samples_per_frame:
-                # Extract exactly one frame worth of samples
-                audio_array = self._buffer[:self.samples_per_frame]
-                # Keep the rest in the buffer for next frame
-                self._buffer = self._buffer[self.samples_per_frame:]
-                logger.debug(f"Extracted {len(audio_array)} samples, {len(self._buffer)} samples remain in buffer")
+            logger.debug(f"recv() called - queue size: {self.audio_queue.qsize()}, buffer size: {self._buffer_samples} samples")
+
+            # Drain all currently available queue items into the deque buffer.
+            self._drain_queue_into_buffer()
+
+            # If the buffer is short, wait out the remaining frame budget before
+            # padding — a late-arriving TTS chunk can still fill the frame cleanly
+            # rather than mixing real audio with comfort noise at sentence starts.
+            if self._buffer_samples < self.samples_per_frame:
+                remaining = self._next_frame_time - time.time()
+                if remaining > 0.001:  # only worth waiting if > 1 ms remains
+                    await asyncio.sleep(remaining)
+                    self._drain_queue_into_buffer()
+
+            if self._buffer_samples >= self.samples_per_frame:
+                audio_array = self._read_samples_from_buffer(self.samples_per_frame)
+                logger.debug(f"Extracted {self.samples_per_frame} samples, {self._buffer_samples} remain")
                 self._last_frame_was_silence = False
-                
-            elif len(self._buffer) > 0:
-                # Not enough for a full frame, but we have some - pad with comfort noise
-                logger.debug(f"Padding: {len(self._buffer)} -> {self.samples_per_frame} samples")
-                padding_size = self.samples_per_frame - len(self._buffer)
+
+            elif self._buffer_samples > 0:
+                # Still short after waiting — pad the tail with comfort noise.
+                partial = self._read_samples_from_buffer(self._buffer_samples)
+                padding_size = self.samples_per_frame - len(partial)
+                logger.debug(f"Padding: {len(partial)} -> {self.samples_per_frame} samples")
                 comfort_noise = self._generate_comfort_noise(padding_size)
-                audio_array = np.concatenate([self._buffer, comfort_noise])
-                self._buffer = np.array([], dtype=np.int16)
+                audio_array = np.concatenate([partial, comfort_noise])
                 self._last_frame_was_silence = False
-                
+
             else:
-                # No audio available, generate comfort noise
+                # Silence — generate comfort noise
                 if not self._last_frame_was_silence:
                     logger.debug("No audio in buffer - generating comfort noise")
                     self._last_frame_was_silence = True

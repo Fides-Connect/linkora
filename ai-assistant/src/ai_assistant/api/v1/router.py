@@ -3,7 +3,7 @@ API v1 Router
 Registers all v1 API endpoints.
 """
 from aiohttp import web
-from .endpoints import me, users, service_requests, reviews, auth, ai_conversations
+from .endpoints import me, users, service_requests, reviews, auth, ai_conversations, assistant
 
 
 def register_v1_routes(app: web.Application):
@@ -71,3 +71,6 @@ def register_v1_routes(app: web.Application):
         '/api/v1/ai-conversations/{conversation_id}/messages',
         ai_conversations.get_ai_conversation_messages,
     )
+
+    # Assistant utility endpoints
+    app.router.add_post('/api/v1/assistant/greet-warmup', assistant.greet_warmup)

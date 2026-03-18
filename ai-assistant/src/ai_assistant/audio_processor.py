@@ -361,11 +361,11 @@ class AudioProcessor:
         """Main audio processing loop - receives frames and queues them for STT."""
         try:
             frame_count = 0
-            
+
             while self.running:
                 try:
                     frame_count += 1
-                    
+
                     try:
                         frame = await asyncio.wait_for(
                             self.input_track.recv(),
@@ -376,17 +376,21 @@ class AudioProcessor:
                         break
                     except asyncio.CancelledError:
                         break
-                    
+
                     audio_data = self.frame_converter.frame_to_numpy(frame)
                     self.debug_recorder.add_frame(audio_data)
-                    audio_bytes = audio_data.tobytes()
+                    # Downsample 48kHz → 8kHz (factor 6) to match the telephony
+                    # model's native rate. Box-filter (reshape + mean) acts as a
+                    # simple anti-aliasing low-pass before decimation.
+                    n = (len(audio_data) // 6) * 6
+                    audio_bytes = audio_data[:n].reshape(-1, 6).mean(axis=1).astype(np.int16).tobytes()
                     await self.audio_queue.put(audio_bytes)
-                    
+
                 except asyncio.TimeoutError:
                     continue
                 except Exception as e:
                     logger.error(f"Error receiving frame: {e}", exc_info=True)
-                    
+
         except asyncio.CancelledError:
             logger.info(f"Audio processing cancelled (frames={frame_count})")
         except Exception as e:
@@ -518,7 +522,6 @@ class AudioProcessor:
         try:
             while self.running:
                 await self._stt_session()
-                await asyncio.sleep(0.1)
         except asyncio.CancelledError:
             logger.info("Continuous STT cancelled")
         except Exception as exc:
@@ -530,6 +533,7 @@ class AudioProcessor:
         # Stop TTS and clear audio output immediately so the user hears silence.
         self.tts_manager.interrupt()
         await self.output_track.clear_queue()
+        logger.info("🔇 is_ai_speaking → False (interrupt triggered)")
         self.is_ai_speaking = False
         self.interrupt_event.set()
         # Cancel the ongoing LLM/TTS response task (fire-and-forget; the task
@@ -659,7 +663,10 @@ class AudioProcessor:
             if self.on_activity and transcript.strip():
                 self.on_activity()
 
-            # Open AI conversation session on the first turn (idempotent after that)
+            # Open AI conversation session on the first turn.
+            # Awaited (not fire-and-forget) so _conversation_id is set before
+            # generate_response_stream() schedules save_message() — preventing
+            # the first user-turn message from being silently dropped.
             ai_conv = self.ai_assistant.response_orchestrator.ai_conversation_service
             if ai_conv is not None and self.user_id:
                 await ai_conv.open_session(
@@ -674,6 +681,7 @@ class AudioProcessor:
             
             # Reset interrupt event and set speaking flag
             self.interrupt_event.clear()
+            logger.info("🔊 is_ai_speaking → True (response started)")
             self.is_ai_speaking = True
             
             # Performance tracking
@@ -723,67 +731,72 @@ class AudioProcessor:
         except asyncio.CancelledError:
             # User interrupted — reset state and let the task exit cleanly.
             logger.info(f"Response generation interrupted for: '{transcript}'")
+            logger.info("🔇 is_ai_speaking → False (task cancelled)")
             self.is_ai_speaking = False
             raise
         except Exception as e:
             logger.error(f"Error processing final transcript: {e}", exc_info=True)
+            logger.info("🔇 is_ai_speaking → False (exception in pipeline)")
             self.is_ai_speaking = False
     
-    async def _queue_audio_for_playback(self, audio_data: bytes):
+    async def _queue_audio_for_playback(self, audio_data: bytes, is_first: bool = True, is_last: bool = True):
         """
-        Queue audio for playback with fade effects to prevent crackling.
-        
-        Args:
-            audio_data: Audio data as bytes (int16)
+        Queue audio for playback. Fades are applied only at sentence boundaries
+        (is_first / is_last) so intermediate streaming chunks pass through untouched,
+        preventing per-chunk amplitude discontinuities that cause crackling.
         """
         try:
-            # Convert to numpy array (make writable copy)
             audio_samples = np.frombuffer(audio_data, dtype=np.int16).copy()
-            
-            # Apply smooth fade-in at start and fade-out at end
-            # Using cosine curve for smoother transitions
-            fade_in_samples = min(480, len(audio_samples) // 2)  # 10ms at 48kHz
-            fade_out_samples = min(144, len(audio_samples) // 2)  # 3ms at 48kHz
-            
-            if fade_in_samples > 0:
-                # Cosine fade-in: 0 to 1
-                fade_in = (1.0 - np.cos(np.linspace(0, np.pi, fade_in_samples))) / 2.0
-                audio_samples[:fade_in_samples] = (audio_samples[:fade_in_samples] * fade_in).astype(np.int16)
-            
-            if fade_out_samples > 0:
-                # Cosine fade-out: 1 to 0
-                fade_out = (1.0 + np.cos(np.linspace(0, np.pi, fade_out_samples))) / 2.0
-                audio_samples[-fade_out_samples:] = (audio_samples[-fade_out_samples:] * fade_out).astype(np.int16)
-            
-            # Queue the processed audio
+
+            if is_first:
+                fade_in_samples = min(240, len(audio_samples) // 2)  # 10ms at 24kHz
+                if fade_in_samples > 0:
+                    fade_in = (1.0 - np.cos(np.linspace(0, np.pi, fade_in_samples))) / 2.0
+                    audio_samples[:fade_in_samples] = (audio_samples[:fade_in_samples] * fade_in).astype(np.int16)
+
+            if is_last:
+                fade_out_samples = min(72, len(audio_samples) // 2)  # 3ms at 24kHz
+                if fade_out_samples > 0:
+                    fade_out = (1.0 + np.cos(np.linspace(0, np.pi, fade_out_samples))) / 2.0
+                    audio_samples[-fade_out_samples:] = (audio_samples[-fade_out_samples:] * fade_out).astype(np.int16)
+
             await self.output_track.queue_audio(audio_samples.tobytes())
             
         except Exception as e:
             logger.error(f"Error queueing audio for playback: {e}", exc_info=True)
     
-    async def _monitor_playback_completion(self):
-        """Monitor the audio queue and clear speaking flag when playback is done."""
+    async def _monitor_playback_completion(self, total_audio_bytes: int = 0, first_audio_at: float = 0.0):
+        """Wait until the device has finished playing all queued audio, then clear is_ai_speaking.
+
+        Computes the remaining playback time by subtracting the time already
+        elapsed since the first audio bytes were forwarded to the output track
+        (``first_audio_at``, recorded by ``TTSPlaybackManager``) from the
+        total theoretical duration.  This accounts for audio that was already
+        playing in parallel with TTS streaming and avoids keeping
+        ``is_ai_speaking`` set longer than necessary.
+        """
         try:
-            # Wait a bit for audio to start queueing
-            await asyncio.sleep(0.1)
-            
-            # Monitor queue size - when it stays at 0 for a bit, we're done playing
-            empty_count = 0
-            while self.is_ai_speaking and not self.interrupt_event.is_set():
-                queue_size = self.output_track.audio_queue.qsize()
-                buffer_size = len(self.output_track._buffer)
-                
-                if queue_size == 0 and buffer_size == 0:
-                    empty_count += 1
-                    # If queue and buffer are empty for 5 consecutive checks (100ms), we're done
-                    if empty_count >= 5:
-                        self.is_ai_speaking = False
-                        break
+            if total_audio_bytes > 0:
+                # int16 mono @ 24 kHz → 2 bytes per sample, 24 000 samples/s
+                total_wait_s = total_audio_bytes / (24_000 * 2)
+                # Subtract time already elapsed since the first audio bytes were queued
+                # (audio plays in parallel with TTS streaming, so some portion has
+                # already played by the time this monitor task starts).
+                if first_audio_at > 0:
+                    elapsed_s = asyncio.get_event_loop().time() - first_audio_at
+                    wait_s = max(0.0, total_wait_s - elapsed_s)
                 else:
-                    empty_count = 0
-                
-                await asyncio.sleep(0.02)  # Check every 20ms
-            
+                    wait_s = total_wait_s
+                try:
+                    await asyncio.wait_for(self.interrupt_event.wait(), timeout=wait_s)
+                except asyncio.TimeoutError:
+                    pass  # Normal completion — not interrupted
+            # else: no audio was queued (e.g. text-mode or empty response) — fall through
+
+            logger.info("🔇 is_ai_speaking → False (playback complete)")
+            self.is_ai_speaking = False
+
         except Exception as e:
             logger.error(f"Error in playback monitor: {e}", exc_info=True)
+            logger.info("🔇 is_ai_speaking → False (monitor exception)")
             self.is_ai_speaking = False

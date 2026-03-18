@@ -7,7 +7,7 @@ import logging
 from typing import AsyncIterator, Optional, Dict, Any, List
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
@@ -50,7 +50,7 @@ class LLMService:
     """Service for language model interactions using LangChain and Gemini."""
     
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash",
-                 temperature: float = 0.2, max_output_tokens: int = 8192,
+                 temperature: float = 0.2, max_output_tokens: int = 2048,
                  language: str = "de"):
         """
         Initialize LLM service.
@@ -67,7 +67,7 @@ class LLMService:
             model=model,
             google_api_key=api_key,
             temperature=temperature,
-            top_k=8,
+            top_k=4,
             top_p=0.9,
             max_output_tokens=max_output_tokens,
             # Disable thinking: real-time voice assistant needs low latency;
@@ -324,3 +324,34 @@ class LLMService:
         except Exception as e:
             logger.error(f"LLM generation error: {e}", exc_info=True)
             return get_fallback_error_message(self.language)
+
+    async def prewarm(self) -> None:
+        """
+        Force LangChain's one-time per-process initialisation to run at server
+        startup rather than on the first real user utterance.
+
+        On the first call to ``RunnableWithMessageHistory.astream()`` LangChain
+        performs internal introspection (``asyncio.iscoroutinefunction`` checks,
+        callback-manager wiring, etc.) that adds noticeable latency.  Draining a
+        single minimal streaming request here moves that cost to startup.
+
+        The dummy session is removed from the store afterwards so it does not
+        consume memory.
+        """
+        _SESSION = "__prewarm__"
+        _PROMPT = ChatPromptTemplate.from_messages([
+            ("system", "Reply with exactly one word."),
+            MessagesPlaceholder(variable_name="history"),
+            ("human", "{input}"),
+        ])
+        try:
+            logger.info("LLM pre-warm: priming LangChain internals...")
+            async for _ in self.generate_stream("Hi", _PROMPT, _SESSION):
+                pass
+            logger.info("LLM pre-warm: complete.")
+        except Exception as exc:
+            # Pre-warm failures must never crash the server.
+            logger.warning("LLM pre-warm failed (non-fatal): %s", exc)
+        finally:
+            self.session_store.pop(_SESSION, None)
+            self._session_functions.pop(_SESSION, None)
