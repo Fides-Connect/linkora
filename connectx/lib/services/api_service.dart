@@ -187,6 +187,14 @@ class ApiService {
     }
   }
 
+  /// Validates [response] and converts the body into a convenient Dart value.
+  ///
+  /// Successful `2xx` responses are decoded as follows:
+  /// - JSON object or array bodies are returned via `jsonDecode`
+  /// - empty bodies return `null`
+  /// - non-JSON bodies fall back to the raw response text
+  ///
+  /// Non-success responses throw [ApiException] with the original status code.
   dynamic _processResponse(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (response.body.isEmpty) return null;

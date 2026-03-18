@@ -16,7 +16,7 @@ from aiortc import (
     RTCSessionDescription,
 )
 from aiortc.contrib.media import MediaRelay
-from aiortc.sdp import candidate_from_sdp
+from aiortc.sdp import candidate_from_sdp, candidate_to_sdp
 
 from .audio_processor import AudioProcessor
 from .services.data_channel_message_router import DataChannelMessageRouter
@@ -54,7 +54,7 @@ class PeerConnectionHandler:
         self.track_ready = asyncio.Event()
         self.track_update_ready = asyncio.Event()
         self.track_update_ready.set()  # Initially set - no update pending
-        self.data_channel = None
+        self.data_channel: RTCDataChannel | None = None
         # One-shot flag: when True, the first voice offer is a hollow pre-warm
         # (no audio track).  We send the SDP answer immediately without waiting
         # for on_track.  Cleared after the hollow answer is sent so the real
@@ -296,7 +296,7 @@ class PeerConnectionHandler:
                 await self._send_message({
                     'type': 'ice-candidate',
                     'candidate': {
-                        'candidate': candidate.candidate,
+                        'candidate': candidate_to_sdp(candidate),
                         'sdpMid': candidate.sdpMid,
                         'sdpMLineIndex': candidate.sdpMLineIndex
                     }
@@ -339,10 +339,10 @@ class PeerConnectionHandler:
                 if self.audio_processor:
                     try:
                         fsm = self.audio_processor.ai_assistant.response_orchestrator.runtime_fsm
-                        self.audio_processor._emit_runtime_state(fsm.state)
+                        self.audio_processor._emit_runtime_state(fsm.current_state)
                         logger.info(
                             "DataChannel open — re-emitted FSM state '%s' for connection %s",
-                            fsm.state,
+                            fsm.current_state,
                             self.connection_id,
                         )
                     except AttributeError as exc:
@@ -533,7 +533,7 @@ class PeerConnectionHandler:
             logger.error("Error sending message: %s", exc, exc_info=True)
 
     async def close(self) -> None:
-    """Close peer connection and cleanup resources.
+        """Close peer connection and cleanup resources.
 
         Concurrent callers await the in-progress teardown via ``_close_lock``
         so all callers unblock only after cleanup is complete.

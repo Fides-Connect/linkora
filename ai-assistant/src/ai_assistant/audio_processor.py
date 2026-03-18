@@ -6,7 +6,7 @@ import asyncio
 import logging
 import os
 import numpy as np
-from typing import Any
+from typing import Any, Optional
 from collections.abc import AsyncGenerator
 from aiortc import MediaStreamTrack, RTCDataChannel
 from aiortc.mediastreams import MediaStreamError
@@ -187,7 +187,7 @@ class AudioProcessor:
         # the earlier state events that fired before the channel was ready.
         try:
             fsm = self.ai_assistant.response_orchestrator.runtime_fsm
-            self._emit_runtime_state(fsm.state)  # type: ignore[attr-defined]
+            self._emit_runtime_state(fsm.current_state)
         except Exception as exc:  # pragma: no cover
             logger.warning("Could not re-emit FSM state on DC attach: %s", exc)
 
@@ -742,8 +742,9 @@ class AudioProcessor:
                         self._send_chat_message(chunk, is_user=False, is_chunk=not first_chunk)
 
                     if first_chunk and chunk:
-                        perf_times['llm_first_token'] = asyncio.get_event_loop().time()
-                        logger.info("⚡ Time to first LLM token: %.3fs", perf_times['llm_first_token'] - llm_start)
+                        llm_first_token = asyncio.get_event_loop().time()
+                        perf_times['llm_first_token'] = llm_first_token
+                        logger.info("⚡ Time to first LLM token: %.3fs", llm_first_token - llm_start)
                         first_chunk = False
                     yield chunk
 

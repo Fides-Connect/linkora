@@ -139,7 +139,7 @@ class TTSPlaybackManager:
         self._total_sentences = 0
         self._llm_stream_complete = False
         self._first_audio_at: float = 0.0  # monotonic time when first audio byte was forwarded
-        self._synthesis_tasks: list[asyncio.Task] = []
+        self._synthesis_tasks: list[asyncio.Task[None]] = []
     
     async def process_llm_stream(
         self,
@@ -172,10 +172,10 @@ class TTSPlaybackManager:
         # subtract actual elapsed playback time rather than guessing.
         _original_on_audio = self.on_audio_ready
 
-        async def _timestamped_audio(*args, **kwargs):
+        async def _timestamped_audio(audio_data: bytes, is_first: bool, is_last: bool) -> None:
             if self._first_audio_at == 0.0:
                 self._first_audio_at = asyncio.get_event_loop().time()
-            await _original_on_audio(*args, **kwargs)
+            await _original_on_audio(audio_data, is_first, is_last)
 
         self.on_audio_ready = _timestamped_audio
 
@@ -290,6 +290,11 @@ class TTSPlaybackManager:
 
         return (self._total_audio_bytes, self._first_audio_at)
 
+    def _remove_synthesis_task(self, task: asyncio.Task[None]) -> None:
+        """Remove completed synthesis tasks from the active task list."""
+        if task in self._synthesis_tasks:
+            self._synthesis_tasks.remove(task)
+
     async def _synthesize_and_queue(self, text: str, order: int) -> None:
         """
         Synthesize text to audio and queue for playback.
@@ -308,9 +313,7 @@ class TTSPlaybackManager:
 
         task = asyncio.create_task(self._synthesize_chunk(order, text))
         self._synthesis_tasks.append(task)
-        task.add_done_callback(
-            lambda t, tasks=self._synthesis_tasks: tasks.remove(t) if t in tasks else None
-        )
+        task.add_done_callback(self._remove_synthesis_task)
 
     async def _synthesize_chunk(self, order: int, text: str) -> None:
         """
