@@ -10,6 +10,7 @@ Architecture:
 """
 import os
 import logging
+from typing import Any, TypeAlias
 import weaviate
 from weaviate.classes.config import Configure, Property, DataType, ReferenceProperty
 from weaviate.auth import AuthApiKey
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 # Collection names
 USER_COLLECTION = "User"
 COMPETENCE_COLLECTION = "Competence"
-type WeaviateCollection = Collection[object, object]
+WeaviateCollection: TypeAlias = Collection[Any, Any]
 
 class HubSpokeConnection:
     """Singleton connection manager for Hub and Spoke architecture."""

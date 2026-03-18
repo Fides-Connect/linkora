@@ -9,7 +9,7 @@ import json
 import math
 import logging
 from datetime import datetime, timedelta, UTC
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, cast
 from collections.abc import AsyncIterator
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ from langchain_core.messages import AIMessage
 from .conversation_service import ConversationService, ConversationStage, is_legal_transition
 from .llm_service import LLMService, SIGNAL_TRANSITION_SCHEMA
 from .agent_runtime_fsm import AgentRuntimeFSM
-from .agent_tools import AgentToolRegistry, ToolPermissionError, FINALIZE_TOOL_SCHEMAS
+from .agent_tools import AgentToolRegistry, ToolContext, ToolPermissionError, FINALIZE_TOOL_SCHEMAS
 from ..prompts_templates import get_fallback_error_message
 from ..data_provider import SearchUnavailableError  # noqa: F401 (used below)
 
@@ -193,7 +193,7 @@ class ResponseOrchestrator:
             if self.tool_registry:
                 try:
                     result = await self.tool_registry.execute(
-                        "get_my_competencies", {}, context or {}
+                        "get_my_competencies", {}, cast(ToolContext, context or {})
                     )
                     comps = result if isinstance(result, list) else []
                 except Exception as exc:  # pragma: no cover
@@ -340,7 +340,7 @@ class ResponseOrchestrator:
             return
 
         try:
-            result = await self.tool_registry.execute(name, params, context)
+            result = await self.tool_registry.execute(name, params, cast(ToolContext, context))
             yield result
         except ToolPermissionError as exc:
             yield {
@@ -551,7 +551,7 @@ class ResponseOrchestrator:
             if self.tool_registry:
                 try:
                     result = await self.tool_registry.execute(
-                        "create_service_request", csr_args, context or {}
+                        "create_service_request", csr_args, cast(ToolContext, context or {})
                     )
                 except Exception as exc:
                     logger.warning("accept_provider: create_service_request failed: %s", exc)
@@ -678,7 +678,7 @@ class ResponseOrchestrator:
             if current_stage == ConversationStage.PROVIDER_ONBOARDING and self.tool_registry:
                 try:
                     competencies = await self.tool_registry.execute(
-                        "get_my_competencies", {}, context or {}
+                        "get_my_competencies", {}, cast(ToolContext, context or {})
                     )
                     self.conversation_service.context["current_competencies"] = (
                         competencies if isinstance(competencies, list) else []
@@ -872,7 +872,7 @@ class ResponseOrchestrator:
                                 ):
                                     try:
                                         refreshed = await self.tool_registry.execute(
-                                            "get_my_competencies", {}, context or {}
+                                            "get_my_competencies", {}, cast(ToolContext, context or {})
                                         )
                                         self.conversation_service.context["current_competencies"] = (
                                             refreshed if isinstance(refreshed, list) else []

@@ -37,7 +37,7 @@ from .cross_encoder_service import CrossEncoderService
 logger = logging.getLogger(__name__)
 
 ToolParams = dict[str, object]
-ToolResult = object
+ToolResult = Any
 
 
 class ToolContext(TypedDict):
