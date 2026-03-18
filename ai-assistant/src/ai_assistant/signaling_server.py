@@ -84,6 +84,38 @@ class SignalingServer:
     def __init__(self):
         self.active_connections: Dict[str, PeerConnectionHandler] = {}
         self._firestore = FirestoreService()
+
+    async def close_all_connections(self) -> None:
+        """Close all active WebRTC/WebSocket connections for graceful shutdown.
+
+        Must be called before ``AppRunner.cleanup()`` to prevent it from
+        blocking indefinitely on open WebSocket handlers.
+        """
+        if not self.active_connections:
+            return
+        handlers = list(self.active_connections.values())
+        # Close WebSockets first so the handle_websocket message-loops exit
+        # promptly — this unblocks AppRunner.cleanup() regardless of how long
+        # handler teardown takes.  The per-connection finally blocks then call
+        # handler.close() as a safety net (idempotent).
+        await asyncio.gather(
+            *(
+                h.websocket.close()
+                for h in handlers
+                if hasattr(h, "websocket")
+                and h.websocket is not None
+                and not h.websocket.closed
+            ),
+            return_exceptions=True,
+        )
+        # Tear down audio processors and peer connections in parallel.  We do
+        # this after closing websockets so no new tasks are spawned, but we
+        # don't let slow teardown block the WS close above.
+        await asyncio.gather(*(h.close() for h in handlers), return_exceptions=True)
+        # Release all handler references now that teardown is complete.
+        # The handle_websocket() finally blocks use pop(key, None) so they
+        # are safe even if their entry has already been removed here.
+        self.active_connections.clear()
         
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connection for signaling."""
@@ -247,7 +279,7 @@ class SignalingServer:
             logger.info(f"WebSocket connection closed: {connection_id}")
             logger.debug(f"Cleaning up connection {connection_id}")
             await handler.close()
-            del self.active_connections[str(connection_id)]
+            self.active_connections.pop(str(connection_id), None)
             logger.debug(f"Active connections after cleanup: {len(self.active_connections)}")
             
         return ws

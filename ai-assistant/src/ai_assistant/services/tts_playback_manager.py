@@ -96,6 +96,7 @@ class TTSPlaybackManager:
         self._total_sentences = 0
         self._llm_stream_complete = False
         self._first_audio_at: float = 0.0  # monotonic time when first audio byte was forwarded
+        self._synthesis_tasks: list[asyncio.Task] = []
     
     async def process_llm_stream(
         self,
@@ -121,6 +122,7 @@ class TTSPlaybackManager:
         self._llm_stream_complete = False
         self._chunk_registered.clear()
         self._first_audio_at = 0.0
+        self._synthesis_tasks = []
 
         # Wrap the audio callback to capture the timestamp of the very first
         # audio byte forwarded.  This lets _monitor_playback_completion
@@ -206,6 +208,40 @@ class TTSPlaybackManager:
                 pass
             raise
         finally:
+            # Cancel any synthesis tasks still running (occurs on interrupt or error).
+            # This prevents stale gRPC streams from holding the TTS concurrency slot
+            # and stops them from retaining a reference to this manager after it is done.
+            tasks = list(self._synthesis_tasks)
+            for t in tasks:
+                if not t.done():
+                    t.cancel()
+            if tasks:
+                # Await all tasks so their CancelledError cleanup runs (e.g. the
+                # queue sentinel put in _synthesize_chunk that unblocks the playback
+                # loop) before we reset state.  We need synthesis tasks to fully
+                # finish even when this coroutine itself is being cancelled.
+                # asyncio.shield() prevents the inner gather from being cancelled,
+                # but the outer coroutine still receives CancelledError at the await.
+                # Catching it and awaiting the (now unshielded) task ensures all
+                # tasks finish before cancellation propagates.
+                cleanup = asyncio.ensure_future(
+                    asyncio.gather(*tasks, return_exceptions=True)
+                )
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    # On Python 3.14, catching CancelledError does not clear
+                    # the cancellation state of the current task, so an
+                    # unshielded `await cleanup` would re-raise immediately and
+                    # skip synthesis task cleanup.  Call uncancel() to
+                    # temporarily clear the cancellation flag so we can
+                    # reliably drain all synthesis tasks, then re-raise.
+                    current_task = asyncio.current_task()
+                    if current_task is not None:
+                        current_task.uncancel()
+                    await cleanup
+                    raise
+            self._synthesis_tasks = []
             self._processing = False
             self.on_audio_ready = _original_on_audio
 
@@ -227,7 +263,11 @@ class TTSPlaybackManager:
             self._chunks[order] = chunk
         self._chunk_registered.set()
 
-        asyncio.create_task(self._synthesize_chunk(order, text))
+        task = asyncio.create_task(self._synthesize_chunk(order, text))
+        self._synthesis_tasks.append(task)
+        task.add_done_callback(
+            lambda t, tasks=self._synthesis_tasks: tasks.remove(t) if t in tasks else None
+        )
 
     async def _synthesize_chunk(self, order: int, text: str):
         """

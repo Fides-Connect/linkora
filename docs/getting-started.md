@@ -34,7 +34,7 @@ Linkora is a complete voice-based AI assistant platform that enables natural voi
 - Xcode (for iOS) or Android Studio (for Android)
 
 ### For Backend Development (AI-Assistant)
-- Python 3.11+
+- Python 3.14+
 - Docker and Docker Compose
 - Google Cloud Platform account
 - Google Gemini API key
