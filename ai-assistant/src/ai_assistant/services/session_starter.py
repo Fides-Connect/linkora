@@ -23,9 +23,8 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Coroutine
-from datetime import datetime, UTC
-from typing import TYPE_CHECKING
-from collections.abc import Callable
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Callable
 
 from ai_assistant.services.ai_conversation_service import AIConversationService
 from langchain_core.messages import AIMessage
@@ -48,10 +47,10 @@ logger = logging.getLogger(__name__)
 
 
 async def _fetch_user_data(
-    data_provider: DataProvider,
+    data_provider: "DataProvider",
     user_id: str | None,
     *,
-    firestore_service: FirestoreService | None = None,
+    firestore_service: "FirestoreService | None" = None,
 ) -> tuple[str, bool]:
     """Return (first_name, has_open_request) from the data provider.
 
@@ -120,18 +119,18 @@ class VoiceSessionStarter(SessionStarter):
     def __init__(
         self,
         *,
-        conversation_service: ConversationService,
-        response_orchestrator: ResponseOrchestrator,
-        data_provider: DataProvider,
-        tts_service: TextToSpeechService,
-        llm_service: LLMService,
+        conversation_service: "ConversationService",
+        response_orchestrator: "ResponseOrchestrator",
+        data_provider: "DataProvider",
+        tts_service: "TextToSpeechService",
+        llm_service: "LLMService",
         dc_bridge: DataChannelBridge,
-        output_track: AudioOutputTrack,
+        output_track: "AudioOutputTrack",
         user_id: str | None,
         connection_id: str,
         interrupt_event: asyncio.Event,
         on_speaking_change: Callable[[bool], None],
-        firestore_service: FirestoreService | None = None,
+        firestore_service: "FirestoreService | None" = None,
         ai_conversation_service: AIConversationService | None = None,
         monitor_playback_fn: Callable[[], Coroutine] | None = None,
     ) -> None:
@@ -168,10 +167,10 @@ class VoiceSessionStarter(SessionStarter):
                 _summary = await self._ai_conv_service.get_recent_session_summary(self._user_id)
                 if _summary:
                     _ended = _summary.get("ended_at")
-                    _now = datetime.now(UTC)
+                    _now = datetime.now(timezone.utc)
                     if _ended:
                         if _ended.tzinfo is None:
-                            _ended = _ended.replace(tzinfo=UTC)
+                            _ended = _ended.replace(tzinfo=timezone.utc)
                         _mins = int((_now - _ended).total_seconds() / 60)
                         _ctx = (
                             f"[System Context: The user's previous session ended {_mins} minutes ago "
@@ -293,14 +292,14 @@ class TextSessionStarter(SessionStarter):
     def __init__(
         self,
         *,
-        conversation_service: ConversationService,
-        response_orchestrator: ResponseOrchestrator,
-        data_provider: DataProvider,
-        llm_service: LLMService,
+        conversation_service: "ConversationService",
+        response_orchestrator: "ResponseOrchestrator",
+        data_provider: "DataProvider",
+        llm_service: "LLMService",
         dc_bridge: DataChannelBridge,
         user_id: str | None,
         connection_id: str,
-        firestore_service: FirestoreService | None = None,
+        firestore_service: "FirestoreService | None" = None,
         ai_conversation_service: AIConversationService | None = None,
         buffered_message: str | None = None,
         first_message_event: asyncio.Event | None = None,
@@ -333,10 +332,10 @@ class TextSessionStarter(SessionStarter):
                 _summary = await self._ai_conv_service.get_recent_session_summary(self._user_id)
                 if _summary:
                     _ended = _summary.get("ended_at")
-                    _now = datetime.now(UTC)
+                    _now = datetime.now(timezone.utc)
                     if _ended:
                         if _ended.tzinfo is None:
-                            _ended = _ended.replace(tzinfo=UTC)
+                            _ended = _ended.replace(tzinfo=timezone.utc)
                         _mins = int((_now - _ended).total_seconds() / 60)
                         _ctx = (
                             f"[System Context: The user's previous session ended {_mins} minutes ago "
@@ -387,7 +386,7 @@ class TextSessionStarter(SessionStarter):
                         self._connection_id,
                     )
                     return
-                except TimeoutError:
+                except asyncio.TimeoutError:
                     pass  # No early message — proceed with autonomous greeting.
 
             greeting_text = await self._conv.generate_greeting_text(
@@ -429,18 +428,18 @@ class SessionStarterFactory:
     def create(
         mode: SessionMode,
         *,
-        conversation_service: ConversationService,
-        response_orchestrator: ResponseOrchestrator,
-        data_provider: DataProvider,
-        tts_service: TextToSpeechService | None = None,
-        llm_service: LLMService | None = None,
+        conversation_service: "ConversationService",
+        response_orchestrator: "ResponseOrchestrator",
+        data_provider: "DataProvider",
+        tts_service: "TextToSpeechService | None" = None,
+        llm_service: "LLMService | None" = None,
         dc_bridge: DataChannelBridge | None = None,
-        output_track: AudioOutputTrack | None = None,
+        output_track: "AudioOutputTrack | None" = None,
         user_id: str | None = None,
         connection_id: str = "",
         interrupt_event: asyncio.Event | None = None,
         on_speaking_change: Callable[[bool], None] | None = None,
-        firestore_service: FirestoreService | None = None,
+        firestore_service: "FirestoreService | None" = None,
         ai_conversation_service: AIConversationService | None = None,
         buffered_message: str | None = None,
         first_message_event: asyncio.Event | None = None,

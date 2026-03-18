@@ -13,8 +13,7 @@ import secrets
 from collections.abc import Awaitable
 from datetime import datetime, UTC
 from functools import wraps
-from typing import Any
-from collections.abc import Callable
+from typing import Any, Callable
 
 from aiohttp import web
 from weaviate.classes.query import QueryReference
