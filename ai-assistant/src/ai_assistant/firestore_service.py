@@ -1087,8 +1087,6 @@ class FirestoreService:
         availability_data: dict[str, Any],
         competence_id: str | None = None
     ) -> dict[str, Any] | None:
-        competence_id: Optional[str] = None
-    ) -> Optional[dict[str, Any]]:
         """Create an availability time for a user or competence.
 
         Args:
@@ -1186,8 +1184,6 @@ class FirestoreService:
         availability_time_id: str,
         competence_id: str | None = None
     ) -> dict[str, Any] | None:
-        competence_id: Optional[str] = None
-    ) -> Optional[dict[str, Any]]:
         """Fetch a single availability time.
 
         Args:
@@ -1235,8 +1231,6 @@ class FirestoreService:
         update_data: dict[str, Any],
         competence_id: str | None = None
     ) -> dict[str, Any] | None:
-        competence_id: Optional[str] = None
-    ) -> Optional[dict[str, Any]]:
         """Update an availability time.
 
         Args:
