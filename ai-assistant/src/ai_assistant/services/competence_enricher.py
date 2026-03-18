@@ -25,7 +25,7 @@ import json
 import logging
 import re
 from collections.abc import AsyncIterator
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
@@ -225,7 +225,7 @@ class CompetenceEnricher:
         summary: str = str(data.get("search_optimized_summary", "")).strip()
         category: str = str(data.get("category", "")).strip()
         price_raw = data.get("price_per_hour")
-        price_per_hour: Optional[float] = float(price_raw) if price_raw is not None else None
+        price_per_hour: float | None = float(price_raw) if price_raw is not None else None
 
         result: dict[str, Any] = {
             "skills_list": skills_list,

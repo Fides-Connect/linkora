@@ -5,7 +5,7 @@ Handles all language model interactions.
 import inspect
 import json
 import logging
-from typing import Optional, Any
+from typing import Any
 from collections.abc import AsyncIterator
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import BaseMessage, HumanMessage
@@ -145,7 +145,7 @@ class LLMService:
         history.add_message(message)
         logger.debug("Added message to session %s: %s", session_id, type(message).__name__)
 
-    def pop_trailing_human_message(self, session_id: str) -> Optional[str]:
+    def pop_trailing_human_message(self, session_id: str) -> str | None:
         """Remove and return the last message's text if it is a trailing HumanMessage.
 
         Called when an LLM response task is cancelled mid-stream to undo the
@@ -215,7 +215,7 @@ class LLMService:
         self,
         prompt_template: ChatPromptTemplate,
         session_id: str,
-        tool_schemas: Optional[list[dict[str, Any]]] = None,
+        tool_schemas: list[dict[str, Any]] | None = None,
     ) -> RunnableWithMessageHistory:
         """
         Create a runnable chain with message history.

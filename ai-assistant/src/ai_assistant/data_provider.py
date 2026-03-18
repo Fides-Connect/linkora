@@ -5,7 +5,7 @@ Provides a clean abstraction for switching between Weaviate vector database and 
 import json
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 from abc import ABC, abstractmethod
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ class DataProvider(ABC):
     """Abstract base class for data providers."""
 
     @abstractmethod
-    async def get_user_by_id(self, user_id: str) -> Optional[dict[str, Any]]:
+    async def get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
         """Get user by ID."""
         pass
 
@@ -35,7 +35,7 @@ class DataProvider(ABC):
         pass
 
     @abstractmethod
-    async def get_provider_by_id(self, provider_id: str) -> Optional[dict[str, Any]]:
+    async def get_provider_by_id(self, provider_id: str) -> dict[str, Any] | None:
         """Get provider by ID."""
         pass
 
@@ -49,7 +49,7 @@ class WeaviateDataProvider(DataProvider):
         self.provider_model = ProviderModelWeaviate
         logger.info("Initialized Weaviate data provider")
 
-    async def get_user_by_id(self, user_id: str) -> Optional[dict[str, Any]]:
+    async def get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
         """Get user from Weaviate."""
         return self.user_model.get_user_by_id(user_id)
 
@@ -94,7 +94,7 @@ class WeaviateDataProvider(DataProvider):
         logger.info("Returning %s providers from search", len(providers))
         return providers
 
-    async def get_provider_by_id(self, provider_id: str) -> Optional[dict[str, Any]]:
+    async def get_provider_by_id(self, provider_id: str) -> dict[str, Any] | None:
         """Get provider from Weaviate."""
         return self.provider_model.get_provider_by_id(provider_id)
 

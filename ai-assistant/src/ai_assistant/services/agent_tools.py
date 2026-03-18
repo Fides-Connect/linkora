@@ -23,8 +23,9 @@ import asyncio
 import logging
 from collections.abc import Awaitable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Callable, NotRequired, TypedDict, cast
+from datetime import datetime, UTC
+from typing import Any, NotRequired, TypedDict, cast
+from collections.abc import Callable
 
 from ..data_provider import DataProvider
 from ..firestore_service import FirestoreService
@@ -281,7 +282,7 @@ async def _record_provider_interest(params: ToolParams, context: ToolContext) ->
     fs = _require_fs(context)
     user_id = context["user_id"]
     decision = str(params.get("decision", "not_now"))
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if decision == "accepted":
         # Spec §4.3: Deliberately do NOT write to Firestore here.
@@ -324,7 +325,6 @@ async def _save_competence_batch(params: ToolParams, context: ToolContext) -> To
     params["skills"] is a list of dicts. Each dict may optionally contain
     "competence_id" to signal an update; otherwise a new entry is created.
     """
-    from .competence_enricher import CompetenceEnricher  # local import avoids circular deps
 
     fs = _require_fs(context)
     user_id = context["user_id"]
@@ -538,7 +538,7 @@ async def _save_competence_batch(params: ToolParams, context: ToolContext) -> To
     # not re-pitched for another 30 days.
     if not was_provider:
         await fs.update_user(user_id, {
-            "last_time_asked_being_provider": datetime.now(timezone.utc),
+            "last_time_asked_being_provider": datetime.now(UTC),
         })
     # Immediately mirror the flag to the Weaviate User hub so that the
     # is_service_provider==True filter in provider searches becomes visible

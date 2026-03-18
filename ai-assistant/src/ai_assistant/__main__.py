@@ -26,17 +26,17 @@ warnings.filterwarnings(
     category=DeprecationWarning,
 )
 
-from aiohttp import web
-from dotenv import load_dotenv
-import firebase_admin
+from aiohttp import web  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
+import firebase_admin  # noqa: E402
 
-from .signaling_server import SignalingServer
-from .common_endpoints import setup_cors
-from .services.admin_service import AdminService
-from .api.v1.router import register_v1_routes
-from .weaviate_sync import run_startup_sync
-from .services.llm_service import LLMService
-from .hub_spoke_schema import HubSpokeConnection
+from .signaling_server import SignalingServer  # noqa: E402
+from .common_endpoints import setup_cors  # noqa: E402
+from .services.admin_service import AdminService  # noqa: E402
+from .api.v1.router import register_v1_routes  # noqa: E402
+from .weaviate_sync import run_startup_sync  # noqa: E402
+from .services.llm_service import LLMService  # noqa: E402
+from .hub_spoke_schema import HubSpokeConnection  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -177,7 +177,7 @@ async def main() -> None:
     # utterance doesn't pay the one-time initialisation cost.
     prewarm_llm = LLMService(
         api_key=os.getenv('GEMINI_API_KEY', ''),
-        model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),        
+        model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
     )
     prewarm_task = asyncio.create_task(prewarm_llm.prewarm())
 
@@ -228,7 +228,7 @@ async def main() -> None:
         # to press Ctrl+C multiple times.
         try:
             await asyncio.wait_for(signaling_server.close_all_connections(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "Timed out waiting for close_all_connections(); "
                 "some WebSocket connections may still be open."
@@ -243,7 +243,7 @@ async def main() -> None:
             )
         try:
             await asyncio.wait_for(runner.cleanup(), timeout=10.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error(
                 "Timed out waiting for runner.cleanup(); "
                 "aborting to prevent hanging indefinitely."

@@ -4,14 +4,14 @@ All schemas use ConfigDict with extra='forbid' to reject unknown fields.
 Timestamps (created_at, updated_at) are auto-injected and not part of validation.
 """
 from typing import ClassVar
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
 # Sentinel value for permanent opt-out of the provider pitch flow.
 # Stored as a far-future datetime so the field stays a single Optional[datetime]
 # type without needing a Union. Any value equal to this constant means the user
 # has permanently opted out and must never be pitched again.
-PROVIDER_PITCH_OPT_OUT_SENTINEL: datetime = datetime(9999, 1, 1, tzinfo=timezone.utc)
+PROVIDER_PITCH_OPT_OUT_SENTINEL: datetime = datetime(9999, 1, 1, tzinfo=UTC)
 
 
 class UserSchema(BaseModel):
@@ -684,13 +684,13 @@ class AIConversationSchema(BaseModel):
     last_message_at: datetime | None = Field(default=None)
     message_count: int = Field(default=0, ge=0)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(UTC)
     )
     updated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(UTC)
     )
     expires_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc) + timedelta(days=_AI_CONV_TTL_DAYS)
+        default_factory=lambda: datetime.now(UTC) + timedelta(days=_AI_CONV_TTL_DAYS)
     )
 
 
@@ -723,8 +723,8 @@ class AIConversationMessageSchema(BaseModel):
     stage: str = Field(default="")
     sequence: int = Field(..., ge=0)
     created_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc)
+        default_factory=lambda: datetime.now(UTC)
     )
     expires_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc) + timedelta(days=_AI_CONV_TTL_DAYS)
+        default_factory=lambda: datetime.now(UTC) + timedelta(days=_AI_CONV_TTL_DAYS)
     )

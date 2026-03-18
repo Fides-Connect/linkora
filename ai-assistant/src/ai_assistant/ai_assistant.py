@@ -5,7 +5,6 @@ Core orchestration layer that coordinates services.
 import inspect
 import logging
 import os
-from typing import Optional
 from collections.abc import AsyncIterator
 
 from .services import (
@@ -50,7 +49,7 @@ class AIAssistant:
 
     def __init__(self, gemini_api_key: str, language: str = 'de',
                  llm_model: str = 'gemini-2.5-flash',
-                 session_id: Optional[str] = None) -> None:
+                 session_id: str | None = None) -> None:
         """
         Initialize AI Assistant with all required services.
 
@@ -151,7 +150,7 @@ class AIAssistant:
                 )
 
     async def generate_llm_response_stream(
-        self, prompt: str, user_id: Optional[str] = None
+        self, prompt: str, user_id: str | None = None
     ) -> AsyncIterator[str]:
         """
         Generate streaming response using LLM.

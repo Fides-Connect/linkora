@@ -5,7 +5,7 @@ Handles conversation flow, stage management, and orchestration.
 import logging
 import json
 import asyncio
-from enum import Enum
+from enum import StrEnum
 from datetime import datetime
 from typing import Any
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
@@ -39,7 +39,7 @@ def json_serializer(obj: object) -> str:
     raise TypeError(f"Type {type(obj)} not serializable")
 
 
-class ConversationStage(str, Enum):
+class ConversationStage(StrEnum):
     """External conversation stage — owned exclusively by ResponseOrchestrator."""
     GREETING      = "greeting"
     TRIAGE        = "triage"
@@ -54,7 +54,7 @@ class ConversationStage(str, Enum):
 
 
 # Legal stage transitions: { from_stage: { allowed_to_stages } }
-_LEGAL_TRANSITIONS: dict["ConversationStage", list["ConversationStage"]] = {
+_LEGAL_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
     ConversationStage.GREETING:       [ConversationStage.TRIAGE],
     ConversationStage.TRIAGE:         [ConversationStage.CONFIRMATION, ConversationStage.CLARIFY,
                                        ConversationStage.TOOL_EXECUTION, ConversationStage.RECOVERY,
@@ -86,7 +86,7 @@ class ConversationService:
     def __init__(self, llm_service: LLMService, data_provider: DataProvider,
                  agent_name: str = "Elin", company_name: str = "Linkora",
                  max_providers: int = 5, language: str = 'de',
-                 cross_encoder_service: "CrossEncoderService | None" = None) -> None:
+                 cross_encoder_service: CrossEncoderService | None = None) -> None:
         """
         Initialize Conversation service.
 

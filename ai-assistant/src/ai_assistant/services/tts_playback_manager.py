@@ -7,7 +7,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from collections.abc import AsyncIterator
-from typing import Optional, Callable
+from collections.abc import Callable
 from collections.abc import Awaitable
 
 from ..services.text_to_speech_service import TextToSpeechService
@@ -128,7 +128,7 @@ class TTSPlaybackManager:
         """
         self.tts_service = tts_service
         self.on_audio_ready: Callable[[bytes, bool, bool], Awaitable[None]] = on_audio_ready
-        
+
         self._chunks: dict[int, SentenceChunk] = {}
         self._next_to_play = 0
         self._lock = asyncio.Lock()
@@ -140,11 +140,11 @@ class TTSPlaybackManager:
         self._llm_stream_complete = False
         self._first_audio_at: float = 0.0  # monotonic time when first audio byte was forwarded
         self._synthesis_tasks: list[asyncio.Task[None]] = []
-    
+
     async def process_llm_stream(
         self,
         llm_stream: AsyncIterator[str],
-        sentence_parser: Optional[SentenceParser] = None
+        sentence_parser: SentenceParser | None = None
     ) -> tuple[int, float]:
         """
         Process LLM stream: accumulate sentences, synthesize TTS, and play in order.
@@ -304,7 +304,7 @@ class TTSPlaybackManager:
             order: Playback order
         """
         logger.info("Synthesizing sentence %s: %s...", order, text[:50])
-        
+
         # Register chunk and start synthesis task
         chunk = SentenceChunk(order=order, text=text)
         async with self._lock:
@@ -356,19 +356,19 @@ class TTSPlaybackManager:
                     return
                 try:
                     await asyncio.wait_for(self._chunk_registered.wait(), timeout=1.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     if self._interrupted:
                         return
 
             # Stream bytes to output as synthesis produces them.
             # Track first/last position so on_audio_ready can apply fades only at
             # sentence boundaries and not on every intermediate streaming chunk.
-            prev_bytes: Optional[bytes] = None
+            prev_bytes: bytes | None = None
             is_first = True
             while not self._interrupted:
                 try:
                     audio_bytes = await asyncio.wait_for(chunk.audio_queue.get(), timeout=1.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
                 if audio_bytes is None:  # sentinel: synthesis for this sentence is done
                     # Flush the last buffered chunk as the sentence-final one

@@ -4,7 +4,7 @@ Replaces the ``if/elif`` chain in ``PeerConnectionHandler``'s ``on_message``
 closure.  New message types are a single ``register()`` call.
 """
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 

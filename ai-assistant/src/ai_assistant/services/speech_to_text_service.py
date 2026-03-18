@@ -103,8 +103,8 @@ class SpeechToTextService:
                 break  # propagate inner break to the outer async-for
 
             logger.info("🏁 STT streaming recognition completed (processed %s responses)", response_count)
-        
-        except google_exceptions.OutOfRange as grpc_error:
+
+        except google_exceptions.OutOfRange:
             logger.info("STT duration limit reached without audio. Refreshing stream.")
             yield ("", False)
         except Exception as e:
@@ -132,7 +132,7 @@ class SpeechToTextService:
         self,
         streaming_config: speech.StreamingRecognitionConfig,
         audio_generator: AsyncIterator[bytes],
-    ) -> AsyncGenerator[speech.StreamingRecognizeRequest, None]:
+    ) -> AsyncGenerator[speech.StreamingRecognizeRequest]:
         """
         Generate streaming recognition requests.
 

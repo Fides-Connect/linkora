@@ -7,7 +7,6 @@ import os
 import logging
 import weaviate
 from weaviate.auth import AuthApiKey
-from typing import Optional
 
 # Handle both package and direct imports
 try:
@@ -37,7 +36,7 @@ class WeaviateConnection:
     2. Cloud (WCS): Uses WEAVIATE_CLUSTER_URL + WEAVIATE_API_KEY
     """
 
-    _client: Optional[weaviate.WeaviateClient] = None
+    _client: weaviate.WeaviateClient | None = None
 
     @classmethod
     def get_client(cls) -> weaviate.WeaviateClient:
@@ -108,7 +107,7 @@ class WeaviateConnection:
             logger.info("Weaviate connection closed")
 
 
-def init_weaviate_schema() -> Optional[bool]:
+def init_weaviate_schema() -> bool | None:
     """Initialize Weaviate schema with Hub and Spoke architecture."""
     try:
         # Initialize hub and spoke schema

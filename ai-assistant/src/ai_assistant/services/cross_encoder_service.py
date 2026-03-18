@@ -24,7 +24,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # sentence_transformers is intentionally NOT imported at module scope.
 # Importing it at startup pulls in torch and other heavy deps even though the
@@ -99,7 +99,7 @@ class CrossEncoderService:
     that needs reranking — do not create multiple instances.
     """
 
-    def __init__(self, model_name: str = _DEFAULT_MODEL, min_score: Optional[float] = None) -> None:
+    def __init__(self, model_name: str = _DEFAULT_MODEL, min_score: float | None = None) -> None:
         # When using the default HF identifier, prefer the bundled local copy.
         self._model_name = (
             _resolve_model_name() if model_name == _DEFAULT_MODEL else model_name

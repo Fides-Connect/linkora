@@ -1,6 +1,6 @@
 import logging
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from typing import Any, cast
 
 from ..firestore_service import FirestoreService
@@ -153,7 +153,7 @@ class UserSeedingService:
         # 1e. Sync user and competencies to Weaviate using HubSpokeIngestion
         try:
             # HubSpokeIngestion.create_user expects 'user_id' field
-            user_data_for_weaviate = {**user, 'user_id': user_id, 'created_at': datetime.now(timezone.utc)}
+            user_data_for_weaviate = {**user, 'user_id': user_id, 'created_at': datetime.now(UTC)}
             result = HubSpokeIngestion.create_user_with_competencies(
                 user_data=user_data_for_weaviate,
                 competencies_data=competencies_for_weaviate,

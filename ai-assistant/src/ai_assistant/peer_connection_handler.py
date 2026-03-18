@@ -94,7 +94,7 @@ class PeerConnectionHandler:
             self._idle_task.cancel()
         self._idle_task = asyncio.create_task(self._idle_timeout_task())
 
-    def _wire_runtime_fsm(self, audio_processor: "AudioProcessor") -> None:
+    def _wire_runtime_fsm(self, audio_processor: AudioProcessor) -> None:
         """Wire the AgentRuntimeFSM on_state_change callback to emit DataChannel events.
 
         After wiring, immediately advances the FSM from BOOTSTRAP through
@@ -386,7 +386,7 @@ class PeerConnectionHandler:
         else:
             try:
                 await asyncio.wait_for(self.track_update_ready.wait(), timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.debug(
                     "Renegotiation for connection %s: no new track within %.1f s "
                     "— SDP-only renegotiation, continuing without track_update_ready",

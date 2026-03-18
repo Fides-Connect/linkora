@@ -4,7 +4,7 @@ Data models using Hub and Spoke architecture.
 """
 import logging
 from datetime import datetime, UTC
-from typing import Optional, Any
+from typing import Any
 from weaviate.classes.query import Filter
 from .weaviate_config import get_users_collection
 
@@ -17,7 +17,7 @@ class UserModelWeaviate:
     """User data model and operations for Weaviate."""
 
     @staticmethod
-    def create_user(user_data: dict[str, Any]) -> Optional[str]:
+    def create_user(user_data: dict[str, Any]) -> str | None:
         """Create a new user (User)."""
         try:
             collection = get_users_collection()
@@ -52,7 +52,7 @@ class UserModelWeaviate:
 
 
     @staticmethod
-    def get_user_by_id(user_id: str) -> Optional[dict[str, Any]]:
+    def get_user_by_id(user_id: str) -> dict[str, Any] | None:
         """Get user by ID."""
         try:
             collection = get_users_collection()
@@ -138,7 +138,7 @@ class UserModelWeaviate:
         filter_attr: str,
         filter_values: list[Any],
         return_attr: str
-    ) -> dict[Any, Optional[Any]]:
+    ) -> dict[Any, Any | None]:
         """
         Get specified attributes for users matching filter criteria.
 
@@ -193,7 +193,7 @@ class ProviderModelWeaviate:
 
 
     @staticmethod
-    def get_provider_by_id(provider_id: str) -> Optional[dict[str, Any]]:
+    def get_provider_by_id(provider_id: str) -> dict[str, Any] | None:
         """Get provider by ID (searches User by user_id)."""
         try:
             collection = get_users_collection()

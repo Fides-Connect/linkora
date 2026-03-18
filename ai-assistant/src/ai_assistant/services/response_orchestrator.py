@@ -8,8 +8,8 @@ import re
 import json
 import math
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Union, Any, TYPE_CHECKING
+from datetime import datetime, timedelta, UTC
+from typing import Any, TYPE_CHECKING
 from collections.abc import AsyncIterator
 
 if TYPE_CHECKING:
@@ -59,7 +59,7 @@ class ResponseOrchestrator:
         conversation_service: ConversationService,
         runtime_fsm: AgentRuntimeFSM | None = None,
         tool_registry: AgentToolRegistry | None = None,
-        ai_conversation_service: "AIConversationService | None" = None,
+        ai_conversation_service: AIConversationService | None = None,
     ) -> None:
         self.llm_service = llm_service
         self.conversation_service = conversation_service
@@ -284,9 +284,9 @@ class ResponseOrchestrator:
         if last_asked == PROVIDER_PITCH_OPT_OUT_SENTINEL:
             return False
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if last_asked.tzinfo is None:
-            last_asked = last_asked.replace(tzinfo=timezone.utc)
+            last_asked = last_asked.replace(tzinfo=UTC)
         return (now - last_asked) >= timedelta(days=30)
 
     async def _should_pitch_provider_async(self, context: dict[str, Any] | None) -> bool:
@@ -328,7 +328,7 @@ class ResponseOrchestrator:
         name: str,
         params: dict,
         context: dict,
-    ) -> AsyncIterator[Union[str, dict]]:
+    ) -> AsyncIterator[str | dict]:
         """
         Dispatch a tool call through the registry.
 
@@ -364,7 +364,7 @@ class ResponseOrchestrator:
         context: dict[str, Any] | None,
         ai_response_parts: list[str],
         new_pending: list[tuple[str, Any]],
-    ) -> AsyncIterator[Union[str, dict]]:
+    ) -> AsyncIterator[str | dict]:
         """Run one follow-up LLM stream after a batch of pending tool results.
 
         1. All pending results are added to LLM history as AIMessages.
@@ -843,12 +843,12 @@ class ResponseOrchestrator:
                                 if fn_name == "record_provider_interest" and isinstance(tool_result, dict):
                                     status = tool_result.get("status")
                                     if context and "user_context" in context:
-                                        from datetime import datetime as _dt, timezone as _tz
+                                        from datetime import datetime as _dt
                                         from ..firestore_schemas import PROVIDER_PITCH_OPT_OUT_SENTINEL
                                         if status == "never":
                                             context["user_context"]["last_time_asked_being_provider"] = PROVIDER_PITCH_OPT_OUT_SENTINEL
                                         elif status in ("not_now", "accepted"):
-                                            context["user_context"]["last_time_asked_being_provider"] = _dt.now(_tz.utc)
+                                            context["user_context"]["last_time_asked_being_provider"] = _dt.now(UTC)
                                         if status == "accepted":
                                             context["user_context"]["is_service_provider"] = True
                                             # Also mirror into conversation context so the next

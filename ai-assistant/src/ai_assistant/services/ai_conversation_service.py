@@ -3,7 +3,6 @@ AI Conversation Service
 Manages the lifecycle of one AI conversation session in Firestore.
 """
 import logging
-from typing import Optional
 
 from ..firestore_service import FirestoreService
 from .conversation_service import ConversationStage
@@ -24,13 +23,13 @@ class AIConversationService:
 
     def __init__(self, firestore_service: FirestoreService | None) -> None:
         self._firestore = firestore_service
-        self._conversation_id: Optional[str] = None
-        self._user_id: Optional[str] = None
+        self._conversation_id: str | None = None
+        self._user_id: str | None = None
         self._sequence: int = 0
-        self._request_id: Optional[str] = None
+        self._request_id: str | None = None
 
     @property
-    def conversation_id(self) -> Optional[str]:
+    def conversation_id(self) -> str | None:
         return self._conversation_id
 
     async def open_session(
@@ -114,7 +113,7 @@ class AIConversationService:
         except Exception as exc:
             logger.error("AIConversationService.set_request_id error: %s", exc, exc_info=True)
 
-    async def get_request_id(self) -> Optional[str]:
+    async def get_request_id(self) -> str | None:
         """Return the service request ID linked to this conversation (in-memory cache)."""
         return self._request_id
 
@@ -136,7 +135,7 @@ class AIConversationService:
         except Exception as exc:
             logger.error("AIConversationService.close_session error: %s", exc, exc_info=True)
 
-    async def get_recent_session_summary(self, user_id: str) -> Optional[dict]:
+    async def get_recent_session_summary(self, user_id: str) -> dict | None:
         """Return a summary dict of the most recent session if within 24 hours, else None.
 
         Returns dict with keys: final_stage, topic_title, request_summary, ended_at.

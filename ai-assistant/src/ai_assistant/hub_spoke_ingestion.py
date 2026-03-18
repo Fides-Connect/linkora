@@ -10,7 +10,7 @@ Handles:
 import re
 import logging
 from datetime import datetime, UTC
-from typing import Any, Optional
+from typing import Any
 
 from ai_assistant.hub_spoke_schema import (
     get_user_collection,
@@ -134,7 +134,7 @@ class HubSpokeIngestion:
     """
 
     @staticmethod
-    def create_user(user_data: dict[str, Any]) -> Optional[str]:
+    def create_user(user_data: dict[str, Any]) -> str | None:
         """
         Creates a User (Hub).
 
@@ -232,7 +232,7 @@ class HubSpokeIngestion:
         user_uuid: str,
         apply_sanitization: bool = True,
         apply_enrichment: bool = True
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Create a Competence (Spoke) with bidirectional link to User.
 
@@ -327,7 +327,7 @@ class HubSpokeIngestion:
         competencies_data: list[dict[str, Any]],
         apply_sanitization: bool = True,
         apply_enrichment: bool = True
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Create a complete User with multiple Competencies.
 
@@ -451,7 +451,7 @@ class HubSpokeIngestion:
     @staticmethod
     def update_competencies_by_user_id(
         user_id: str,
-        competencies: "str | list[str] | list[dict[str, Any]]",
+        competencies: str | list[str] | list[dict[str, Any]],
     ) -> dict[str, Any]:
         """Replace all Weaviate competencies for a user with fresh enriched data.
 

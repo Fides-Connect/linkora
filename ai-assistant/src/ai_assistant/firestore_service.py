@@ -1,7 +1,7 @@
 import logging
 import os
-from typing import Optional, Any
-from datetime import datetime, timezone, timedelta
+from typing import Any
+from datetime import datetime, timedelta, UTC
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_collection import BaseCollectionReference
 from google.cloud.firestore_v1.client import Client
@@ -208,7 +208,7 @@ class FirestoreService:
             logger.error("Error fetching requests for user %s: %s", user_id, e)
             return []
 
-    async def create_service_request(self, request_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    async def create_service_request(self, request_data: dict[str, Any]) -> dict[str, Any] | None:
         """Create a new service request.
 
         Returns:
@@ -221,8 +221,8 @@ class FirestoreService:
             service_request_id = self._generate_prefixed_id('service_request')
 
             # Add timestamps before validation (they will be validated as well)
-            request_data['created_at'] = datetime.now(timezone.utc)
-            request_data['updated_at'] = datetime.now(timezone.utc)
+            request_data['created_at'] = datetime.now(UTC)
+            request_data['updated_at'] = datetime.now(UTC)
 
             # Validate data against schema (timestamps excluded)
             validated_data = self._validate_data(request_data, ServiceRequestSchema)
@@ -249,7 +249,7 @@ class FirestoreService:
             logger.error("Error creating request: %s", e)
             return None
 
-    async def get_service_request(self, request_id: str) -> Optional[dict[str, Any]]:
+    async def get_service_request(self, request_id: str) -> dict[str, Any] | None:
         """Fetch a single service request by ID."""
         if not self.db:
             return None
@@ -266,7 +266,7 @@ class FirestoreService:
             logger.error("Error fetching request %s: %s", request_id, e)
             return None
 
-    async def update_service_request_status(self, request_id: str, status: str) -> Optional[dict[str, Any]]:
+    async def update_service_request_status(self, request_id: str, status: str) -> dict[str, Any] | None:
         """Update service request status.
 
         Returns:
@@ -282,7 +282,7 @@ class FirestoreService:
             ref = self._get_collection('service_requests').document(request_id)
             ref.update({
                 'status': validated_data['status'],
-                'updated_at': datetime.now(timezone.utc)
+                'updated_at': datetime.now(UTC)
             })
 
             # Fetch and return the updated object
@@ -291,7 +291,7 @@ class FirestoreService:
             logger.error("Error updating request status %s: %s", request_id, e)
             return None
 
-    async def update_service_request(self, request_id: str, update_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    async def update_service_request(self, request_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
         """Update a service request with full data.
 
         Args:
@@ -318,7 +318,7 @@ class FirestoreService:
             validated_data = self._validate_data(update_data, ServiceRequestUpdateSchema, exclude_unset=True)
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Check if selected_provider_user_id is being updated
             new_provider_id = validated_data.get('selected_provider_user_id')
@@ -400,7 +400,7 @@ class FirestoreService:
         self,
         service_request_id: str,
         candidate_data: dict[str, Any]
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Create a new provider candidate for a service request.
 
         Args:
@@ -421,8 +421,8 @@ class FirestoreService:
             validated_data = self._validate_data(candidate_data, ProviderCandidateSchema)
 
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.now(timezone.utc)
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['created_at'] = datetime.now(UTC)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Create document as subcollection under service_request
             ref = (self._get_collection('service_requests')
@@ -478,7 +478,7 @@ class FirestoreService:
         self,
         service_request_id: str,
         provider_candidate_id: str
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Fetch a single provider candidate.
 
         Args:
@@ -510,7 +510,7 @@ class FirestoreService:
         service_request_id: str,
         provider_candidate_id: str,
         update_data: dict[str, Any]
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Update a provider candidate.
 
         Args:
@@ -546,7 +546,7 @@ class FirestoreService:
             )
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Check if provider_candidate_user_id is being updated
             new_provider_user_id = validated_data.get('provider_candidate_user_id')
@@ -666,7 +666,7 @@ class FirestoreService:
                   .document(favorite_user_id))
             ref.set({
                 'user_id': favorite_user_id,
-                'created_at': datetime.now(timezone.utc)
+                'created_at': datetime.now(UTC)
             })
             return True
         except Exception as e:
@@ -700,7 +700,7 @@ class FirestoreService:
                       .document(request_id))
                 ref.set({
                     'service_request_id': request_id,
-                    'created_at': datetime.now(timezone.utc)
+                    'created_at': datetime.now(UTC)
                 })
             return True
         except Exception as e:
@@ -719,7 +719,7 @@ class FirestoreService:
                       .document(request_id))
                 ref.set({
                     'service_request_id': request_id,
-                    'created_at': datetime.now(timezone.utc)
+                    'created_at': datetime.now(UTC)
                 })
             return True
         except Exception as e:
@@ -814,7 +814,7 @@ class FirestoreService:
             logger.error("Error fetching competencies for %s: %s", user_id, e)
             return []
 
-    async def get_user(self, user_id: str) -> Optional[dict[str, Any]]:
+    async def get_user(self, user_id: str) -> dict[str, Any] | None:
         """Get user with competencies from subcollection."""
         if not self.db:
             return None
@@ -837,7 +837,7 @@ class FirestoreService:
             logger.error("Error getting user %s: %s", user_id, e)
             return None
 
-    async def update_user(self, user_id: str, user_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    async def update_user(self, user_id: str, user_data: dict[str, Any]) -> dict[str, Any] | None:
         """Update user.
 
         Args:
@@ -860,7 +860,7 @@ class FirestoreService:
             validated_data = self._validate_data(user_data, UserUpdateSchema, exclude_unset=True)
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Update the document (will fail if document doesn't exist)
             user_ref.update(validated_data)
@@ -871,9 +871,9 @@ class FirestoreService:
 
     async def create_user(
         self,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         user_data: dict[str, Any] | None = None,
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Create a new user.
 
         Args:
@@ -892,8 +892,8 @@ class FirestoreService:
             validated_data = self._validate_data(user_data, UserSchema)
 
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.now(timezone.utc)
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['created_at'] = datetime.now(UTC)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Create the user document
             if user_id:
@@ -959,7 +959,7 @@ class FirestoreService:
             logger.error("Error deleting user %s: %s", user_id, e)
             return False
 
-    async def create_competence(self, user_id: str, competence: dict) -> Optional[dict[str, Any]]:
+    async def create_competence(self, user_id: str, competence: dict) -> dict[str, Any] | None:
         """Create a competence for user's competencies subcollection.
 
         Args:
@@ -1025,7 +1025,7 @@ class FirestoreService:
             logger.error("Error removing competence %s for %s: %s", competence_id, user_id, e)
             return False
 
-    async def update_competence(self, user_id: str, competence_id: str, update_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    async def update_competence(self, user_id: str, competence_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
         """Update a competence.
 
         Args:
@@ -1049,7 +1049,7 @@ class FirestoreService:
             validated_data = self._validate_data(update_data, CompetenceUpdateSchema, exclude_unset=True)
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Update document in competencies subcollection
             competence_ref.update(validated_data)
@@ -1058,7 +1058,7 @@ class FirestoreService:
             logger.error("Error updating competence %s for %s: %s", competence_id, user_id, e)
             return None
 
-    async def get_competence(self, user_id: str, competence_id: str) -> Optional[dict[str, Any]]:
+    async def get_competence(self, user_id: str, competence_id: str) -> dict[str, Any] | None:
         """Get a single competence by ID.
 
         Args:
@@ -1086,8 +1086,8 @@ class FirestoreService:
         self,
         user_id: str,
         availability_data: dict[str, Any],
-        competence_id: Optional[str] = None
-    ) -> Optional[dict[str, Any]]:
+        competence_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Create an availability time for a user or competence.
 
         Args:
@@ -1108,8 +1108,8 @@ class FirestoreService:
             validated_data = self._validate_data(availability_data, AvailabilityTimeSchema)
 
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.now(timezone.utc)
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['created_at'] = datetime.now(UTC)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Determine the collection reference
             if competence_id:
@@ -1140,7 +1140,7 @@ class FirestoreService:
     async def get_availability_times(
         self,
         user_id: str,
-        competence_id: Optional[str] = None
+        competence_id: str | None = None
     ) -> list[dict[str, Any]]:
         """Fetch all availability times for a user or competence.
 
@@ -1183,8 +1183,8 @@ class FirestoreService:
         self,
         user_id: str,
         availability_time_id: str,
-        competence_id: Optional[str] = None
-    ) -> Optional[dict[str, Any]]:
+        competence_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Fetch a single availability time.
 
         Args:
@@ -1230,8 +1230,8 @@ class FirestoreService:
         user_id: str,
         availability_time_id: str,
         update_data: dict[str, Any],
-        competence_id: Optional[str] = None
-    ) -> Optional[dict[str, Any]]:
+        competence_id: str | None = None
+    ) -> dict[str, Any] | None:
         """Update an availability time.
 
         Args:
@@ -1274,7 +1274,7 @@ class FirestoreService:
             )
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Update document
             ref.update(validated_data)
@@ -1287,7 +1287,7 @@ class FirestoreService:
         self,
         user_id: str,
         availability_time_id: str,
-        competence_id: Optional[str] = None
+        competence_id: str | None = None
     ) -> bool:
         """Delete an availability time.
 
@@ -1326,7 +1326,7 @@ class FirestoreService:
 
     # --- Review Operations ---
 
-    async def create_review(self, review_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    async def create_review(self, review_data: dict[str, Any]) -> dict[str, Any] | None:
         """Create a new review.
 
         Args:
@@ -1371,7 +1371,7 @@ class FirestoreService:
             logger.error("Error creating review: %s", e)
             return None
 
-    async def get_review(self, review_id: str) -> Optional[dict[str, Any]]:
+    async def get_review(self, review_id: str) -> dict[str, Any] | None:
         """Get a review by ID."""
         if not self.db:
             return None
@@ -1420,7 +1420,7 @@ class FirestoreService:
             logger.error("Error getting reviews for request %s: %s", service_request_id, e)
             return []
 
-    async def update_review(self, review_id: str, update_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    async def update_review(self, review_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
         """Update a review.
 
         Args:
@@ -1460,7 +1460,7 @@ class FirestoreService:
 
     # --- Chat Operations ---
 
-    async def create_chat(self, chat_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    async def create_chat(self, chat_data: dict[str, Any]) -> dict[str, Any] | None:
         """Create a new chat in root chats collection.
 
         Args:
@@ -1487,8 +1487,8 @@ class FirestoreService:
             validated_data = self._validate_data(chat_data, ChatSchema)
 
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.now(timezone.utc)
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['created_at'] = datetime.now(UTC)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Create document in root chats collection
             ref = self._get_collection('chats').document(chat_id)
@@ -1502,7 +1502,7 @@ class FirestoreService:
             logger.error("Error creating chat: %s", e)
             return None
 
-    async def get_chat(self, chat_id: str) -> Optional[dict[str, Any]]:
+    async def get_chat(self, chat_id: str) -> dict[str, Any] | None:
         """Get a chat by ID from root chats collection.
 
         Args:
@@ -1588,7 +1588,7 @@ class FirestoreService:
             logger.error("Error getting chats for user %s: %s", user_id, e)
             return []
 
-    async def update_chat(self, chat_id: str, update_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    async def update_chat(self, chat_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
         """Update a chat in root chats collection.
 
         Args:
@@ -1611,7 +1611,7 @@ class FirestoreService:
             validated_data = self._validate_data(update_data, ChatUpdateSchema, exclude_unset=True)
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Update the document
             ref.update(validated_data)
@@ -1649,7 +1649,7 @@ class FirestoreService:
 
     # --- Chat Message Operations ---
 
-    async def create_chat_message(self, chat_id: str, message_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    async def create_chat_message(self, chat_id: str, message_data: dict[str, Any]) -> dict[str, Any] | None:
         """Create a new chat message in a chat's messages subcollection.
 
         Args:
@@ -1691,8 +1691,8 @@ class FirestoreService:
             validated_data = self._validate_data(message_data, ChatMessageSchema)
 
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.now(timezone.utc)
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['created_at'] = datetime.now(UTC)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Create document in messages subcollection under chat
             ref = (self._get_collection('chats')
@@ -1732,7 +1732,7 @@ class FirestoreService:
             logger.error("Error getting messages for chat %s: %s", chat_id, e)
             return []
 
-    async def get_chat_message(self, chat_id: str, message_id: str) -> Optional[dict[str, Any]]:
+    async def get_chat_message(self, chat_id: str, message_id: str) -> dict[str, Any] | None:
         """Get a specific chat message.
 
         Args:
@@ -1757,7 +1757,7 @@ class FirestoreService:
             logger.error("Error getting message %s from chat %s: %s", message_id, chat_id, e)
             return None
 
-    async def update_chat_message(self, chat_id: str, message_id: str, update_data: dict[str, Any]) -> Optional[dict[str, Any]]:
+    async def update_chat_message(self, chat_id: str, message_id: str, update_data: dict[str, Any]) -> dict[str, Any] | None:
         """Update a chat message.
 
         Args:
@@ -1810,7 +1810,7 @@ class FirestoreService:
             validated_data = self._validate_data(update_data, ChatMessageUpdateSchema, exclude_unset=True)
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Update the document
             ref.update(validated_data)
@@ -1844,7 +1844,7 @@ class FirestoreService:
 
     # ── AI Conversations ─────────────────────────────────────────────────────
 
-    async def create_ai_conversation(self, user_id: str, data: dict[str, Any]) -> Optional[str]:
+    async def create_ai_conversation(self, user_id: str, data: dict[str, Any]) -> str | None:
         """Create a new AI conversation document under users/{user_id}/ai_conversations.
 
         Args:
@@ -1878,7 +1878,7 @@ class FirestoreService:
         text: str,
         stage: ConversationStage | str,
         sequence: int,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Append a message to the ai_conversation's messages subcollection.
 
         Also updates first_message_at / last_message_at / message_count on the
@@ -1907,7 +1907,7 @@ class FirestoreService:
                 "sequence": sequence,
             }
             validated = self._validate_data(msg_data, AIConversationMessageSchema)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             conv_ref = (
                 self._get_collection('users')
                 .document(user_id)
@@ -1941,7 +1941,7 @@ class FirestoreService:
             return False
         try:
             validated = self._validate_data(update_data, AIConversationUpdateSchema, exclude_unset=True)
-            validated["updated_at"] = datetime.now(timezone.utc)
+            validated["updated_at"] = datetime.now(UTC)
             (
                 self._get_collection('users')
                 .document(user_id)
@@ -1958,7 +1958,7 @@ class FirestoreService:
         self,
         user_id: str,
         limit: int = 20,
-        start_after_id: Optional[str] = None,
+        start_after_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """List AI conversations for a user, ordered by last_message_at DESC.
 
@@ -2035,7 +2035,7 @@ class FirestoreService:
 
     async def get_ai_conversation(
         self, user_id: str, conversation_id: str
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Fetch a single AI conversation document by owner + ID (O(1) lookup).
 
         Returns the conversation dict (including 'conversation_id') or None if
@@ -2064,7 +2064,7 @@ class FirestoreService:
 
     async def get_recent_ai_conversation(
         self, user_id: str, within_hours: int = 24
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Return the most recent AI conversation if it ended within *within_hours* hours.
 
         Fetches the single most recent conversation ordered by last_message_at DESC.
@@ -2078,10 +2078,9 @@ class FirestoreService:
         last_message_at = recent.get("last_message_at")
         if last_message_at is None:
             return None
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=within_hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=within_hours)
         if hasattr(last_message_at, "tzinfo") and last_message_at.tzinfo is None:
-            from datetime import timezone as _tz
-            last_message_at = last_message_at.replace(tzinfo=_tz.utc)
+            last_message_at = last_message_at.replace(tzinfo=UTC)
         if last_message_at < cutoff:
             return None
         return recent

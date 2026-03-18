@@ -10,7 +10,6 @@ Architecture:
 """
 import os
 import logging
-from typing import Optional, TypeAlias
 import weaviate
 from weaviate.classes.config import Configure, Property, DataType, ReferenceProperty
 from weaviate.auth import AuthApiKey
@@ -21,12 +20,12 @@ logger = logging.getLogger(__name__)
 # Collection names
 USER_COLLECTION = "User"
 COMPETENCE_COLLECTION = "Competence"
-WeaviateCollection: TypeAlias = Collection[object, object]
+type WeaviateCollection = Collection[object, object]
 
 class HubSpokeConnection:
     """Singleton connection manager for Hub and Spoke architecture."""
 
-    _client: Optional[weaviate.WeaviateClient] = None
+    _client: weaviate.WeaviateClient | None = None
 
     @classmethod
     def get_client(cls) -> weaviate.WeaviateClient:
@@ -80,7 +79,7 @@ class HubSpokeConnection:
             logger.info("Weaviate connection closed")
 
 
-def init_hub_spoke_schema() -> Optional[bool]:
+def init_hub_spoke_schema() -> bool | None:
     """
     Initialize Hub and Spoke schema with bidirectional cross-references.
 
@@ -237,7 +236,7 @@ def get_competence_collection() -> WeaviateCollection:
     return client.collections.get(COMPETENCE_COLLECTION)
 
 
-def cleanup_hub_spoke_schema() -> Optional[bool]:
+def cleanup_hub_spoke_schema() -> bool | None:
     """Delete collections (for testing purposes)."""
     try:
         client = HubSpokeConnection.get_client()

@@ -13,7 +13,8 @@ import secrets
 from collections.abc import Awaitable
 from datetime import datetime, UTC
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 
 from aiohttp import web
 from weaviate.classes.query import QueryReference
@@ -35,7 +36,7 @@ class AdminAuth:
     """
 
     @staticmethod
-    def get_admin_secret() -> Optional[str]:
+    def get_admin_secret() -> str | None:
         """Get the admin secret key from environment."""
         return os.getenv('ADMIN_SECRET_KEY')
 

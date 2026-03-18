@@ -6,7 +6,7 @@ import asyncio
 import logging
 import os
 import numpy as np
-from typing import Any, Optional
+from typing import Any
 from collections.abc import AsyncGenerator
 from aiortc import MediaStreamTrack, RTCDataChannel
 from aiortc.mediastreams import MediaStreamError
@@ -120,10 +120,10 @@ class AudioProcessor:
 
         # Tracks the current LLM+TTS response task so it can be cancelled on
         # interrupt.
-        self._response_task: Optional[asyncio.Task] = None
+        self._response_task: asyncio.Task | None = None
         # Tracks the session-starter initialize() task so it can be cancelled
         # before closing clients (prevents use-after-close if still in flight).
-        self._session_starter_task: Optional[asyncio.Task] = None
+        self._session_starter_task: asyncio.Task | None = None
 
         # Serializes text-input handling from the DataChannel to avoid races
         # between concurrent process_text_input() calls.
@@ -145,7 +145,7 @@ class AudioProcessor:
 
     # ── Factory ───────────────────────────────────────────────────────────────
 
-    def _create_language_specific_assistant(self, language: str) -> "AIAssistant":
+    def _create_language_specific_assistant(self, language: str) -> AIAssistant:
         """Create a language-specific AI assistant instance."""
         logger.info("Creating language-specific AI assistant for language: %s", language)
 
@@ -325,7 +325,7 @@ class AudioProcessor:
 
     # ── Voice mode toggle ─────────────────────────────────────────────────────
 
-    async def enable_voice_mode(self, input_track: MediaStreamTrack | None = None) -> 'AudioOutputTrack':
+    async def enable_voice_mode(self, input_track: MediaStreamTrack | None = None) -> AudioOutputTrack:
         """Resume or start voice mode."""
         logger.info("Enabling voice mode for connection %s", self.connection_id)
         self.session_mode = SessionMode.VOICE
@@ -411,7 +411,7 @@ class AudioProcessor:
                     audio_bytes = audio_data[:n].reshape(-1, 6).mean(axis=1).astype(np.int16).tobytes()
                     await self.audio_queue.put(audio_bytes)
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
                 except Exception as e:
                     logger.error(f"Error receiving frame: {e}", exc_info=True)
@@ -423,7 +423,7 @@ class AudioProcessor:
 
     # ── STT pipeline (decomposed) ──────────────────────────────────────────────
 
-    async def _make_audio_chunks(self) -> AsyncGenerator[bytes, None]:
+    async def _make_audio_chunks(self) -> AsyncGenerator[bytes]:
         """Async generator that yields raw PCM bytes from the audio queue.
 
         Terminates when the queue delivers ``None`` (sentinel from :meth:`stop`
@@ -435,7 +435,7 @@ class AudioProcessor:
                 if chunk is None:
                     break
                 yield chunk
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
             except Exception as exc:
                 logger.error("Audio generator error: %s", exc, exc_info=True)
@@ -622,7 +622,7 @@ class AudioProcessor:
                     await asyncio.wait_for(
                         self._session_starter.initialized_event.wait(), timeout=2.0
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning(
                         "Session initialization timeout for %s — proceeding without user context",
                         self.connection_id,
@@ -725,7 +725,7 @@ class AudioProcessor:
             )
 
             # Wrap LLM stream to track first token
-            async def tracked_llm_stream() -> AsyncGenerator[str, None]:
+            async def tracked_llm_stream() -> AsyncGenerator[str]:
                 first_chunk = True
                 async for chunk in llm_stream:
                     # The orchestrator emits a sentinel dict before each
@@ -824,7 +824,7 @@ class AudioProcessor:
                     wait_s = total_wait_s
                 try:
                     await asyncio.wait_for(self.interrupt_event.wait(), timeout=wait_s)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass  # Normal completion — not interrupted
             # else: no audio was queued (e.g. text-mode or empty response) — fall through
 

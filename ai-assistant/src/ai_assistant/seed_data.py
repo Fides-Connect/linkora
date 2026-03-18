@@ -4,6 +4,7 @@ Contains User Templates for seeding and static Test Personas.
 """
 
 # Data template for new users
+from datetime import UTC
 USER_TEMPLATE = {
     # id matches firebase uid
     # name comes from auth provider
@@ -698,9 +699,9 @@ def get_lawn_mowing_service_request(
         A dict compatible with ``ServiceRequestSchema`` (excluding timestamps,
         which are injected by ``FirestoreService.create_service_request``).
     """
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
 
-    start = datetime.now(timezone.utc).replace(
+    start = datetime.now(UTC).replace(
         hour=10, minute=0, second=0, microsecond=0
     ) + timedelta(weeks=2)
     end = start + timedelta(hours=3)
