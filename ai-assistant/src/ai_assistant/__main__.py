@@ -175,8 +175,6 @@ async def main():
 
     # Fire-and-forget: prime LangChain internals so the first real user
     # utterance doesn't pay the one-time initialisation cost.
-
-
     prewarm_llm = LLMService(
         api_key=os.getenv('GEMINI_API_KEY', ''),
         model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-lite'),        
