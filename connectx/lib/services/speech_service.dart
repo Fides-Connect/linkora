@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:http/http.dart' as http;
+import 'package:permission_handler/permission_handler.dart';
 import 'webrtc_service.dart';
 import 'wrappers.dart';
 import '../models/app_types.dart';
@@ -17,6 +19,7 @@ class SpeechService {
 
   // Dependencies
   final PermissionWrapper _permissionWrapper;
+  final FirebaseAuthWrapper _firebaseAuthWrapper;
   final WebRTCService Function(String) _webRTCServiceFactory;
 
   // Language configuration
@@ -37,14 +40,87 @@ class SpeechService {
   SpeechService({
     PermissionWrapper? permissionWrapper,
     WebRTCService Function(String)? webRTCServiceFactory,
+    FirebaseAuthWrapper? firebaseAuthWrapper,
   }) : _permissionWrapper = permissionWrapper ?? PermissionWrapper(),
        _webRTCServiceFactory =
            webRTCServiceFactory ??
-           ((lang) => WebRTCService(languageCode: lang));
+           ((lang) => WebRTCService(languageCode: lang)),
+       _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper();
 
   /// Set the language code for the AI Assistant
   void setLanguageCode(String languageCode) {
     _languageCode = languageCode;
+  }
+
+  /// Pre-warm the WebSocket signaling connection and fetch ICE credentials.
+  ///
+  /// Call this as soon as the user opens the assistant tab.  By the time they
+  /// tap the mic button the WebRTC handshake overhead (~300–500 ms) is already
+  /// done.  Safe to call without awaiting — failures are silently absorbed.
+  Future<void> preWarmConnection() async {
+    if (_webrtcService == null) {
+      _initializeWebRTC();
+    }
+    try {
+      await _webrtcService!.preWarm();
+    } catch (e) {
+      debugPrint('SpeechService: preWarmConnection failed (non-critical): $e');
+    }
+  }
+
+  /// Pre-generate the personalised greeting (LLM + TTS) on the server.
+  ///
+  /// Calls ``POST /api/v1/assistant/greet-warmup`` so the server caches the
+  /// greeting audio before the user taps the mic.  When the voice session
+  /// starts the server plays the cached audio immediately (~0 ms) instead of
+  /// running LLM + TTS live (~1.5–2.5 s).
+  ///
+  /// Safe to call without awaiting — failures are silently absorbed.
+  Future<void> warmUpGreeting() async {
+    try {
+      final rawServer = dotenv.env['AI_ASSISTANT_SERVER_URL'];
+      if (rawServer == null || rawServer.isEmpty) return;
+
+      final httpBase = _toHttpUrl(rawServer);
+      final uri = Uri.parse('$httpBase/api/v1/assistant/greet-warmup');
+
+      final idToken = await _firebaseAuthWrapper.getIdToken();
+      if (idToken == null || idToken.isEmpty) return;
+
+      final response = await http.post(
+        uri,
+        headers: {'Authorization': 'Bearer $idToken'},
+      ).timeout(const Duration(seconds: 5));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint('SpeechService: warmUpGreeting got HTTP ${response.statusCode}');
+      } else {
+        debugPrint('SpeechService: Greeting warmup triggered');
+      }
+    } catch (e) {
+      debugPrint('SpeechService: warmUpGreeting failed (non-critical): $e');
+    }
+  }
+
+  /// Convert a raw server URL (as stored in [AI_ASSISTANT_SERVER_URL]) to an
+  /// HTTP/HTTPS base URL, normalising the scheme (ws→http, wss→https).
+  ///
+  /// In release builds, plain HTTP and bare-host URLs are rejected to prevent
+  /// Firebase ID tokens from being sent over unencrypted connections.
+  static String _toHttpUrl(String raw) {
+    // Secure schemes — always allowed.
+    if (raw.startsWith('https://')) return raw;
+    if (raw.startsWith('wss://')) return raw.replaceFirst('wss://', 'https://');
+
+    // Insecure schemes — only permitted in non-release (local dev) builds.
+    if (kReleaseMode) {
+      throw StateError(
+        'AI_ASSISTANT_SERVER_URL must use https:// or wss:// in release builds. '
+        'Got: $raw',
+      );
+    }
+    if (raw.startsWith('http://')) return raw;
+    if (raw.startsWith('ws://')) return raw.replaceFirst('ws://', 'http://');
+    return 'http://$raw'; // bare host:port — local dev only
   }
 
   /// Check if microphone is currently muted
@@ -126,7 +202,7 @@ class SpeechService {
 
     _webrtcService!.onRemoteStream = (MediaStream stream) {
       debugPrint('SpeechService: Received remote audio stream');
-      Future.microtask(() => _handleRemoteStream(stream));
+      unawaited(_handleRemoteStream(stream));
     };
 
     _webrtcService!.onDataChannelOpen = () {
@@ -213,6 +289,14 @@ class SpeechService {
   /// so no WebRTC renegotiation is needed.
   void notifyModeSwitch(String mode) {
     _webrtcService?.sendModeSwitch(mode);
+  }
+
+  /// Release the microphone so the OS clears the mic-in-use indicator.
+  ///
+  /// Removes the audio track from the WebRTC connection and disposes the
+  /// local audio stream.  Call when switching from voice to text mode.
+  Future<void> stopVoiceMode() async {
+    await _webrtcService?.stopVoiceMode();
   }
 
   /// Upgrade the current text session to voice mode by acquiring the

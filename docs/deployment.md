@@ -107,11 +107,14 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${CI_SA}" \
   --role="roles/compute.instanceAdmin.v1"
 
+<<<<<<< HEAD
+=======
 # Open IAP TCP tunnel to the VM (required for --tunnel-through-iap)
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${CI_SA}" \
   --role="roles/iap.tunnelResourceAccessor"
 
+>>>>>>> origin/main
 # Allow CI SA to impersonate the default Compute Engine SA
 # (required so gcloud compute ssh can inject ephemeral SSH keys)
 gcloud iam service-accounts add-iam-policy-binding \
@@ -125,6 +128,13 @@ gcloud iam service-accounts add-iam-policy-binding \
   --member="serviceAccount:${CI_SA}" \
   --role="roles/iam.serviceAccountUser"
 
+<<<<<<< HEAD
+# Add new Secret Manager versions on every deploy
+# (secrets must already exist — create them manually first, see step 4)
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member="serviceAccount:${CI_SA}" \
+  --role="roles/secretmanager.secretVersionAdder"
+=======
 # Create secrets and add new versions on every deploy.
 # No predefined role covers both — use a custom role created once below.
 gcloud iam roles create secretManagerCiRole \
@@ -137,6 +147,7 @@ gcloud iam roles create secretManagerCiRole \
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${CI_SA}" \
   --role="projects/${PROJECT_ID}/roles/secretManagerCiRole"
+>>>>>>> origin/main
 ```
 
 **Runtime service account** (`linkora-rt-service-account-dev`) — attached to Cloud Run; used at runtime.

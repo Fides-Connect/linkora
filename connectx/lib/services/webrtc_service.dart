@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode, debugPrint;
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/io.dart';
@@ -81,6 +81,14 @@ class WebRTCService {
   List<Map<String, dynamic>>? _iceServers;
   Completer<void>? _iceConfigCompleter;
   final Duration _iceConfigTimeout;
+
+  // Deep pre-warm state — true once the hollow pre-warm connection (ICE + DC)
+  // is fully established and waiting for the user to tap.
+  bool _isPrewarmed = false;
+  // True only for the duration of preWarm() itself (before _isPrewarmed is set).
+  bool _isPrewarming = false;
+  // Completed when the pre-warm DC opens (ICE+DTLS already done by then).
+  Completer<void>? _prewarmReadyCompleter;
 
   // Language configuration
   final String _languageCode;
@@ -165,8 +173,30 @@ class WebRTCService {
     }
   }
 
-  /// Initialize and connect to the AI-Assistant server
+  /// Initialize and connect to the AI-Assistant server.
+  ///
+  /// When [preWarm] has already established a hollow connection (ICE + DC
+  /// done, no mic), this activates it: acquires the mic, adds the audio track,
+  /// fires [onConnected] / [onDataChannelOpen] immediately (ICE is done), then
+  /// renegotiates in the background so the server creates its AudioProcessor
+  /// and plays the cached greeting.  Tap-to-first-audio is reduced to the
+  /// renegotiation RTT (~50–100 ms) instead of the full ICE path (~900 ms).
   Future<void> connect({String mode = 'voice'}) async {
+    // If a deep pre-warm is still in flight, wait for it (user tapped early).
+    if (_isPrewarming) {
+      debugPrint('WebRTC: connect() called during pre-warm — waiting (up to 8 s)');
+      final completer = _prewarmReadyCompleter;
+      if (completer != null) {
+        try {
+          await completer.future.timeout(const Duration(seconds: 8));
+        } catch (_) {
+          // Pre-warm timed out or failed — fall through to normal connect.
+          _isPrewarmed = false;
+        }
+      }
+      _isPrewarming = false;
+    }
+
     if (_isConnected || _isConnecting) return;
 
     const validModes = {'voice', 'text'};
@@ -180,10 +210,76 @@ class WebRTCService {
       validatedMode = 'voice';
     }
 
+    // Capture the mode the pre-warm was established for before overwriting it.
+    // The pre-warm mode check below compares this against the requested mode
+    // to decide whether the pre-warm can be activated or must be discarded.
+    final String prewarmedMode = _sessionMode;
     _sessionMode = validatedMode;
     _dataChannelOpenFired = false;
     _iceConfigCompleter = Completer<void>();
 
+    // ── Activate hollow pre-warm (fastest path) ──────────────────────────────
+    // If a hollow pre-warm exists for the same mode, ICE + DTLS + DC are
+    // already established.  We only need to acquire the mic, add the audio
+    // track, and renegotiate — the server plays the greeting from cache the
+    // moment it receives the audio track.
+    if (_isPrewarmed) {
+      if (prewarmedMode == validatedMode) {
+        debugPrint('WebRTC: Activating hollow pre-warm (ICE + DC already established)');
+        _isPrewarmed = false;
+        _isConnecting = true;
+        try {
+          if (validatedMode == 'voice') {
+            if (!kIsWeb) {
+              _audioRoutingService =
+                  _audioRoutingServiceFactory?.call() ?? AudioRoutingService();
+              _audioRoutingService!.onInputDeviceChanged = _recreateAudioTrack;
+              await _audioRoutingService!.initialize();
+            }
+            // getUserMedia runs HERE — OS mic indicator appears at user-intent time.
+            await _createLocalStream();
+            await _peerConnection!.addTrack(_audioTrack!, _localStream!);
+          }
+          // ICE is done — fire callbacks immediately so the ViewModel transitions.
+          _isConnected = true;
+          _isConnecting = false;
+          onConnected?.call();
+          _dataChannelOpenFired = true;
+          onDataChannelOpen?.call();
+          if (validatedMode == 'voice') {
+            // Renegotiate in background: server receives audio track →
+            // _on_first_voice_track() → AudioProcessor.start() → cached greeting.
+            unawaited(_renegotiateConnection());
+          }
+        } catch (e) {
+          debugPrint('WebRTC: Pre-warm activation failed: $e');
+          _isConnecting = false;
+          onError?.call('Connection failed: $e');
+          await disconnect();
+          rethrow;
+        }
+        return;
+      } else {
+        // Mode mismatch — discard the pre-warmed connection and start fresh.
+        debugPrint('WebRTC: Discarding pre-warm (mode mismatch)');
+        _isPrewarmed = false;
+        try { await _signaling?.sink.close(); } catch (_) {}
+        _signaling = null;
+        await _peerConnection?.close();
+        _peerConnection = null;
+        _dataChannel = null;
+        _iceServers = null;
+        _remoteDescriptionSet = false;
+      }
+    } else if (_signaling != null) {
+      // Stale partial pre-warm (WS open but no PC) — discard.
+      try { await _signaling!.sink.close(); } catch (_) {}
+      _signaling = null;
+      _iceServers = null;
+    }
+
+    // ── Normal (cold) connect path ────────────────────────────────────────────
+    _iceConfigCompleter = Completer<void>();
     _isConnecting = true;
 
     try {
@@ -202,8 +298,7 @@ class WebRTCService {
       await _connectSignaling();
 
       // Wait for the server to push ICE/TURN credentials before creating the
-      // peer connection.  The backend sends 'ice-config' immediately on WS
-      // connect; we give it up to 5 s before falling back to plain STUN.
+      // peer connection.  Falls back to plain STUN on timeout.
       try {
         await _iceConfigCompleter!.future.timeout(_iceConfigTimeout);
       } on TimeoutException {
@@ -223,10 +318,72 @@ class WebRTCService {
     }
   }
 
+  /// Deep pre-warm: establish the full WebRTC connection (WS → ICE config →
+  /// offer/answer → ICE negotiation → data channel open) in the background
+  /// while the user is on the assistant tab — WITHOUT acquiring the microphone.
+  ///
+  /// When the user taps the mic button, [connect] detects the pre-warmed state
+  /// and activates it: acquires the mic, adds the audio track, fires
+  /// [onConnected]/[onDataChannelOpen] immediately (ICE is already done), then
+  /// renegotiates in the background so the server can start playing the cached
+  /// greeting.  Tap-to-first-audio drops from ~900 ms to ~50–150 ms.
+  ///
+  /// A "hollow" SDP offer (no audio m-line) is sent to the server together with
+  /// [hold_start=true] so the server completes the SDP handshake immediately
+  /// without waiting for an audio track or creating an AudioProcessor.
+  ///
+  /// Safe to call without awaiting — any failure is silently absorbed.
+  Future<void> preWarm() async {
+    if (_isConnected || _isConnecting || _isPrewarmed || _isPrewarming) return;
+    _sessionMode = 'voice';
+    _isPrewarming = true;
+    _prewarmReadyCompleter = Completer<void>();
+    _dataChannelOpenFired = false;
+    _iceConfigCompleter = Completer<void>();
+    try {
+      // Open WS — _connectSignaling() sees _isPrewarming and adds hold_start=true.
+      await _connectSignaling();
+      try {
+        await _iceConfigCompleter!.future.timeout(_iceConfigTimeout);
+      } on TimeoutException {
+        debugPrint('WebRTC: Pre-warm ice-config timeout — using default STUN');
+      }
+      // Create peer connection without a local audio track (no getUserMedia).
+      await _createPeerConnection();
+      // Send a hollow offer (data channel only, no audio m-line) with hold_start.
+      await _createHollowOffer();
+      // Wait until ICE + DTLS + DC are fully established.
+      await _prewarmReadyCompleter!.future.timeout(const Duration(seconds: 15));
+      _isPrewarmed = true;
+      debugPrint('WebRTC: Deep pre-warm complete — ICE negotiated, DC open, server holding');
+    } catch (e) {
+      debugPrint('WebRTC: Deep pre-warm failed (non-critical): $e');
+      _isPrewarmed = false;
+      _prewarmReadyCompleter = null;
+      try { await _signaling?.sink.close(); } catch (_) {}
+      _signaling = null;
+      _iceServers = null;
+      if (_peerConnection != null) {
+        await _peerConnection!.close();
+        _peerConnection = null;
+      }
+      _dataChannel = null;
+      _remoteDescriptionSet = false;
+    } finally {
+      _isPrewarming = false;
+    }
+  }
+
   /// Disconnect from the AI-Assistant server
   Future<void> disconnect() async {
     _isConnected = false;
     _isConnecting = false;
+    _isPrewarmed = false;
+    _isPrewarming = false;
+    if (_prewarmReadyCompleter != null && !_prewarmReadyCompleter!.isCompleted) {
+      _prewarmReadyCompleter!.completeError('disconnected');
+    }
+    _prewarmReadyCompleter = null;
     _remoteDescriptionSet = false;
     _dataChannelOpenFired = false;
     _isRenegotiating = false;
@@ -286,7 +443,6 @@ class WebRTCService {
             'googEchoCancellation': 'true',
             'googEchoCancellation2': 'true',
             'googAutoGainControl': 'true',
-            'googAutoGainControl2': 'true',
             'googNoiseSuppression': 'true',
             'googHighpassFilter': 'true',
             'googTypingNoiseDetection': 'true',
@@ -417,17 +573,23 @@ class WebRTCService {
 
       // For secure (Cloud Run) connections, pass the Firebase ID token via the
       // Authorization header so it is never written to URL access logs.
-      // For plain ws:// (local dev) we skip the token entirely.
+      // For plain ws:// (local dev, non-web), the token is sent as the first
+      // WebSocket message after the connection is established (never in headers).
+      // Tell the server to complete the SDP handshake without waiting for an
+      // audio track. Used by the hollow pre-warm so the server doesn't spin
+      // up STT/LLM before the user taps the mic button.
       final Map<String, String> queryParams = {
         'user_id': userId,
         'language': _languageCode,
         'mode': _sessionMode,
+        if (_isPrewarming) 'hold_start': 'true',
       };
 
       // Non-web platforms support custom headers on the WebSocket upgrade request.
-      // Always authenticate regardless of transport security (ws:// local dev or wss:// prod).
+      // Only attach the Authorization header over secure (wss://) connections;
+      // never send bearer tokens over plaintext ws:// transport.
       final Map<String, dynamic> wsHeaders = {};
-      if (!kIsWeb) {
+      if (!kIsWeb && _isSecure) {
         final String? idToken = await _firebaseAuthWrapper.getIdToken();
         if (idToken == null || idToken.isEmpty) {
           throw Exception('Could not retrieve Firebase ID token for authenticated request');
@@ -440,24 +602,60 @@ class WebRTCService {
       );
       _signaling = _webSocketFactory(wsUri, wsHeaders);
 
-      // Web browsers cannot set custom headers on WebSocket upgrade requests (browser security
-      // restriction). Send the Firebase ID token as the first message so the server can
-      // authenticate the web connection before processing any signaling messages.
-      if (kIsWeb && _isSecure) {
-        final String? idToken = await _firebaseAuthWrapper.getIdToken();
-        if (idToken != null && idToken.isNotEmpty) {
-          _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
+      // Web browsers cannot set custom headers on WebSocket upgrade requests
+      // (browser security restriction). Send the Firebase ID token as the first
+      // message so the server can authenticate before processing any signaling.
+      // Non-web on ws:// (local dev) also uses this path: bearer tokens must
+      // not be transmitted in headers over plaintext transport.
+      if (!_isSecure) {
+        // ws:// — insecure connection (web or non-web).
+        // In release builds, fail fast: never allow unencrypted connections.
+        if (kReleaseMode) {
+          onError?.call(
+            'Insecure ws:// connection is not permitted in release builds. '
+            'Set AI_ASSISTANT_SERVER_URL to a wss:// or https:// address.',
+          );
+          await disconnect();
+          throw Exception(
+            'Insecure ws:// connection is not permitted in release builds.',
+          );
         }
+        // Local dev (debug/profile): send token as first WS message.
+        // Browsers cannot set headers; non-web avoids plaintext header exposure.
+        final String? idToken = await _firebaseAuthWrapper.getIdToken();
+        if (idToken == null || idToken.isEmpty) {
+          await disconnect();
+          throw Exception('Cannot authenticate: Firebase ID token is unavailable.');
+        }
+        _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
+      } else if (kIsWeb) {
+        // wss:// on web — headers are blocked by browser security; send token
+        // as the first WS message instead.
+        final String? idToken = await _firebaseAuthWrapper.getIdToken();
+        if (idToken == null || idToken.isEmpty) {
+          await disconnect();
+          throw Exception('Cannot authenticate: Firebase ID token is unavailable.');
+        }
+        _signaling!.sink.add(json.encode({'type': 'auth', 'token': idToken}));
       }
 
-      _signaling!.stream.listen(
+      // Capture the specific instance so the onDone guard below can detect
+      // whether this socket is still the active one.  If the connection was
+      // discarded (mode mismatch) and _signaling was nulled out before the
+      // server's close-frame arrives, the stale onDone must NOT trigger a
+      // disconnect() on a new connection that is already in progress.
+      final activeSignaling = _signaling!;
+      activeSignaling.stream.listen(
         _handleSignalingMessage,
         onError: (error) {
           debugPrint('WebRTC: Signaling error: $error');
           onError?.call('Signaling error: $error');
         },
         onDone: () {
-          if (_isConnected || _isConnecting) disconnect();
+          if (identical(_signaling, activeSignaling) &&
+              (_isConnected || _isConnecting)) {
+            disconnect();
+          }
         },
       );
     } catch (e) {
@@ -479,9 +677,14 @@ class WebRTCService {
         'sdpSemantics': 'unified-plan',
       };
 
-      _peerConnection = await _webRTCWrapper.createPeerConnection(
+      // Capture the PC in a local so that all closures below can guard against
+      // stale callbacks from a discarded pre-warm connection.  When a mode-
+      // mismatch discard replaces _peerConnection (or nulls it), these old
+      // callbacks check `identical(_peerConnection, createdPc)` before acting.
+      final createdPc = await _webRTCWrapper.createPeerConnection(
         configuration,
       );
+      _peerConnection = createdPc;
 
       final dataChannelInit = RTCDataChannelInit()..ordered = true;
       _dataChannel = await _peerConnection!.createDataChannel(
@@ -513,10 +716,20 @@ class WebRTCService {
 
       // Primary gate: fire when the data channel explicitly opens
       _dataChannel!.onDataChannelState = (RTCDataChannelState state) {
+        if (!identical(_peerConnection, createdPc)) return; // stale pre-warm
         if (state == RTCDataChannelState.RTCDataChannelOpen &&
             !_dataChannelOpenFired) {
-          _dataChannelOpenFired = true;
-          onDataChannelOpen?.call();
+          if (_isPrewarming) {
+            // Pre-warm path: DC open means ICE+DTLS+SCTP are all done.
+            // Complete the prewarm completer; suppress the ViewModel callback.
+            if (_prewarmReadyCompleter != null &&
+                !_prewarmReadyCompleter!.isCompleted) {
+              _prewarmReadyCompleter!.complete();
+            }
+          } else {
+            _dataChannelOpenFired = true;
+            onDataChannelOpen?.call();
+          }
         }
       };
 
@@ -537,19 +750,25 @@ class WebRTCService {
 
       _peerConnection!
           .onConnectionState = (RTCPeerConnectionState state) async {
+        if (!identical(_peerConnection, createdPc)) return; // stale pre-warm
         if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-          _isConnected = true;
-          _isConnecting = false;
-          // Cancel any in-flight grace period (recovered from transient disconnect).
-          _iceGracePeriodTimer?.cancel();
-          _iceGracePeriodTimer = null;
-          onConnected?.call();
-          // Safety net: if data channel was already open before this callback fired
-          if (_dataChannel?.state == RTCDataChannelState.RTCDataChannelOpen &&
-              !_dataChannelOpenFired) {
-            _dataChannelOpenFired = true;
-            onDataChannelOpen?.call();
+
+          if (!_isPrewarming) {
+            _isConnected = true;
+            _isConnecting = false;
+            // Cancel any in-flight grace period (recovered from transient disconnect).
+            _iceGracePeriodTimer?.cancel();
+            _iceGracePeriodTimer = null;
+            onConnected?.call();
+            // Safety net: if data channel was already open before this callback fired
+            if (_dataChannel?.state == RTCDataChannelState.RTCDataChannelOpen &&
+                !_dataChannelOpenFired) {
+              _dataChannelOpenFired = true;
+              onDataChannelOpen?.call();
+            }
           }
+          // During pre-warm: ICE is done but we wait for DC open (handled above)
+          // before completing _prewarmReadyCompleter.
         } else if (state ==
             RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
           // GAP-5: Transient network interruptions cause a Disconnected state
@@ -571,6 +790,7 @@ class WebRTCService {
         } else if (state ==
                 RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
             state == RTCPeerConnectionState.RTCPeerConnectionStateClosed) {
+          if (_isConnected || _isConnecting || _isPrewarmed || _isPrewarming) disconnect();
           // Hard failures and explicit close are immediate.
           _iceGracePeriodTimer?.cancel();
           _iceGracePeriodTimer = null;
@@ -605,6 +825,26 @@ class WebRTCService {
       _sendSignalingMessage({'type': 'offer', 'sdp': offer.sdp});
     } catch (e) {
       debugPrint('WebRTC: Error creating offer: $e');
+      rethrow;
+    }
+  }
+
+  /// Create and send a hollow offer (no audio m-line) for the deep pre-warm.
+  ///
+  /// The server receives this offer with [hold_start=true] set in the WS query
+  /// params and immediately returns an answer without waiting for an audio
+  /// track.  The resulting SDP-only handshake lets ICE + DTLS + the data
+  /// channel negotiate fully before the user taps the mic button.
+  Future<void> _createHollowOffer() async {
+    try {
+      final RTCSessionDescription offer = await _peerConnection!.createOffer({
+        'offerToReceiveAudio': false,
+        'offerToReceiveVideo': false,
+      });
+      await _peerConnection!.setLocalDescription(offer);
+      _sendSignalingMessage({'type': 'offer', 'sdp': offer.sdp});
+    } catch (e) {
+      debugPrint('WebRTC: Error creating hollow offer: $e');
       rethrow;
     }
   }
@@ -740,6 +980,51 @@ class WebRTCService {
     } else {
       debugPrint('WebRTC: Cannot send mode-switch \u2014 data channel not open');
     }
+  }
+
+  /// Release the microphone when switching to text mode.
+  ///
+  /// Removes the audio sender from the peer connection, stops and disposes the
+  /// local audio stream so the OS releases the hardware (mic indicator gone),
+  /// then renegotiates so the server drops the audio track.  The server
+  /// receives a "mode-switch" → "text" message first so it can interrupt TTS
+  /// before the renegotiation arrives.
+  Future<void> stopVoiceMode() async {
+    if (!_isConnected || _peerConnection == null) return;
+    if (_audioTrack == null && _localStream == null) return; // already released
+
+    final trackToStop = _audioTrack;
+    final streamToStop = _localStream;
+    _audioTrack = null;
+    _localStream = null;
+
+    // Remove the sender so the server-side aiortc drops the audio track.
+    if (trackToStop != null) {
+      try {
+        final senders = await _peerConnection!.getSenders();
+        for (final sender in senders) {
+          if (sender.track?.id == trackToStop.id) {
+            await _peerConnection!.removeTrack(sender);
+            break;
+          }
+        }
+      } catch (e) {
+        debugPrint('WebRTC: Error removing audio sender: $e');
+      }
+    }
+
+    // Stop the OS capture — this is what clears the Android mic indicator.
+    if (streamToStop != null) {
+      streamToStop.getTracks().forEach((track) => track.stop());
+      await streamToStop.dispose();
+    }
+
+    // Release the AudioRoutingService device-change listener.
+    _audioRoutingService?.dispose();
+    _audioRoutingService = null;
+
+    // Renegotiate so the server's SDP no longer contains the audio m-line.
+    await _renegotiateConnection();
   }
 
   /// Upgrade a text session to voice by creating a local audio track and

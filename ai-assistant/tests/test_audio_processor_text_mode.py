@@ -469,7 +469,7 @@ class TestProcessFinalTranscript:
         )
 
         with patch.object(
-            text_proc.tts_manager, "process_llm_stream", new=AsyncMock(return_value=None)
+            text_proc.tts_manager, "process_llm_stream", new=AsyncMock(return_value=(0, 0.0))
         ) as mock_tts:
             await text_proc._process_final_transcript("hi")
 
@@ -504,7 +504,7 @@ class TestProcessFinalTranscript:
         _dc.send = Mock()
 
         with patch.object(
-            voice_proc.tts_manager, "process_llm_stream", new=AsyncMock(return_value=None)
+            voice_proc.tts_manager, "process_llm_stream", new=AsyncMock(return_value=(0, 0.0))
         ) as mock_tts:
             await voice_proc._process_final_transcript("hello")
 
@@ -583,7 +583,7 @@ class TestProcessFinalTranscript:
 
         # Patch TTS manager so we don't need real audio
         voice_proc.tts_manager = AsyncMock()
-        voice_proc.tts_manager.process_llm_stream = AsyncMock(return_value=None)
+        voice_proc.tts_manager.process_llm_stream = AsyncMock(return_value=(0, 0.0))
 
         await voice_proc._process_final_transcript("I need a plumber")
 
@@ -630,20 +630,14 @@ class TestContinuousSttTaskScheduling:
         with patch.object(
             voice_proc, "_process_final_transcript", side_effect=fake_pft
         ):
-            # Run _continuous_stt for just long enough to issue the task
             voice_proc.running = True
-            stt_task = asyncio.create_task(voice_proc._continuous_stt())
-
-            # Wait for _process_final_transcript to be called
+            await voice_proc._stt_session()
+            # _handle_final_transcript schedules fake_pft via create_task;
+            # wait for it to be invoked (gives up to 1 s before failing).
             try:
                 await asyncio.wait_for(pft_started.wait(), timeout=1.0)
             finally:
                 voice_proc.running = False
-                stt_task.cancel()
-                try:
-                    await stt_task
-                except asyncio.CancelledError:
-                    pass
 
         assert pft_started.is_set(), "_process_final_transcript was never called"
 
@@ -671,14 +665,8 @@ class TestContinuousSttTaskScheduling:
             patch.object(voice_proc, "_process_final_transcript", new=AsyncMock()),
         ):
             voice_proc.running = True
-            stt_task = asyncio.create_task(voice_proc._continuous_stt())
-            await asyncio.sleep(0.05)
-            voice_proc.running = False
-            stt_task.cancel()
-            try:
-                await stt_task
-            except asyncio.CancelledError:
-                pass
+            await voice_proc._stt_session()
+            await asyncio.sleep(0)  # flush the create_task for _process_final_transcript
 
         assert interrupted, "_trigger_interrupt must be called before new response"
 
@@ -712,14 +700,8 @@ class TestContinuousSttTaskScheduling:
             ),
         ):
             voice_proc.running = True
-            stt_task = asyncio.create_task(voice_proc._continuous_stt())
-            await asyncio.sleep(0.05)
-            voice_proc.running = False
-            stt_task.cancel()
-            try:
-                await stt_task
-            except asyncio.CancelledError:
-                pass
+            await voice_proc._stt_session()
+            await asyncio.sleep(0)  # flush any background tasks
 
         assert not pft_called, (
             "_process_final_transcript must NOT be called for a FINAL echo "

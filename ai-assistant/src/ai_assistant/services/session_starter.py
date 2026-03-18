@@ -30,6 +30,7 @@ from langchain_core.messages import AIMessage
 
 from .conversation_service import ConversationStage
 from .data_channel_bridge import DataChannelBridge
+from .greeting_cache import get_greeting_cache
 from .session_mode import SessionMode
 
 logger = logging.getLogger(__name__)
@@ -180,10 +181,33 @@ class VoiceSessionStarter(SessionStarter):
                             _summary["final_stage"].value, self._user_id,
                         )
 
-            greeting_text = await self._conv.generate_greeting_text(
-                user_name=user_name,
-                has_open_request=has_open_request,
+            # Check the greeting cache first — the REST warmup endpoint may
+            # have already generated text + TTS audio while the user was on
+            # the assistant tab, saving ~1.5–2.5 s of LLM + TTS latency.
+            language = getattr(self._conv, "language", "de")
+            cache_entry = (
+                get_greeting_cache().get(self._user_id, language)
+                if self._user_id
+                else None
             )
+
+            if cache_entry:
+                logger.info(
+                    "Cache hit — using pre-generated greeting for %s (skipping LLM+TTS)",
+                    self._connection_id,
+                )
+                greeting_text = cache_entry.text
+                audio_bytes: bytes | None = cache_entry.audio_bytes
+            else:
+                logger.info(
+                    "Cache miss — generating greeting on the fly for %s",
+                    self._connection_id,
+                )
+                greeting_text = await self._conv.generate_greeting_text(
+                    user_name=user_name,
+                    has_open_request=has_open_request,
+                )
+                audio_bytes = None  # will synthesise via streaming below
 
             # Add greeting to LLM history so subsequent turns are coherent.
             history = self._llm.get_session_history(self._connection_id)
@@ -192,21 +216,34 @@ class VoiceSessionStarter(SessionStarter):
             # Push greeting bubble to Flutter.
             self._dc.send_chat(greeting_text, is_user=False, is_chunk=False)
 
-            # Stream TTS audio to output track, honouring interrupt.
-            async for chunk in self._tts.synthesize_stream(
-                greeting_text, chunk_size=2048
-            ):
-                if chunk:
+            # Advance stage GREETING → TRIAGE immediately so user messages
+            # aren't blocked while greeting audio plays.
+            await self._orchestrator.handle_signal_transition_async("triage")
+            self.initialized_event.set()
+
+            # Play audio.
+            if audio_bytes:  # treat empty bytes as a cache miss — fall through to TTS
+                # Fast path: replay pre-synthesised bytes from the cache.
+                for i in range(0, len(audio_bytes), 2048):
                     if self._interrupt_event.is_set():
                         logger.info(
-                            "Voice greeting interrupted for %s",
-                            self._connection_id,
+                            "Voice greeting interrupted for %s", self._connection_id
                         )
                         break
-                    await self._output_track.queue_audio(chunk)
-
-            # Advance stage GREETING → TRIAGE.
-            await self._orchestrator.handle_signal_transition_async("triage")
+                    await self._output_track.queue_audio(audio_bytes[i : i + 2048])
+            else:
+                # Normal path: stream TTS synthesis on the fly.
+                async for chunk in self._tts.synthesize_stream(
+                    greeting_text, chunk_size=2048
+                ):
+                    if chunk:
+                        if self._interrupt_event.is_set():
+                            logger.info(
+                                "Voice greeting interrupted for %s",
+                                self._connection_id,
+                            )
+                            break
+                        await self._output_track.queue_audio(chunk)
 
         except Exception as exc:
             logger.error(

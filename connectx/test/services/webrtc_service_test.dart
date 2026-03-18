@@ -366,11 +366,16 @@ void main() {
 
     test('http:// URL produces ws connection and attaches Firebase ID token', () async {
       // Arrange
+      // For ws:// (non-secure) connections the token is NOT attached as an
+      // Authorization header (that would send it in the clear over an
+      // unencrypted channel). Instead it is sent as the first WebSocket
+      // message after the connection is established.
       final httpService = WebRTCService(
         webRTCWrapper: mockWebRTCWrapper,
         webSocketFactory: (uri, headers) {
           expect(uri.scheme, 'ws');
-          expect(headers['Authorization'], 'Bearer fake-id-token');
+          // No Authorization header for plaintext ws:// connections.
+          expect(headers['Authorization'], isNull);
           return mockWebSocketChannel;
         },
         audioRoutingServiceFactory: () => AudioRoutingService(
@@ -387,7 +392,10 @@ void main() {
 
       await httpService.connect();
 
+      // Token must still be fetched …
       verify(mockFirebaseAuthWrapper.getIdToken()).called(1);
+      // … and sent as the first WS message (not as a header).
+      verify(mockWebSocketSink.add(argThat(contains('fake-id-token')))).called(1);
 
       await httpService.disconnect();
     });

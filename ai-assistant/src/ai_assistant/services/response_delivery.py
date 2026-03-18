@@ -49,7 +49,7 @@ class VoiceResponseDelivery(ResponseDelivery):
         tts_manager: TTSPlaybackManager,
         dc_bridge: DataChannelBridge,
         on_speaking_change: Callable[[bool], None],
-        monitor_playback_fn: Callable[[], Awaitable[None]],
+        monitor_playback_fn: Callable[[int, float], Awaitable[None]],
     ) -> None:
         self._tts_manager = tts_manager
         self._dc_bridge = dc_bridge
@@ -60,8 +60,8 @@ class VoiceResponseDelivery(ResponseDelivery):
         self._dc_bridge.send_chat(transcript, is_user=True, is_chunk=False)
 
     async def stream_response(self, llm_stream: AsyncIterator[str]) -> None:
-        await self._tts_manager.process_llm_stream(llm_stream)
-        asyncio.create_task(self._monitor_playback_fn())
+        total_bytes, first_audio_at = await self._tts_manager.process_llm_stream(llm_stream)
+        asyncio.create_task(self._monitor_playback_fn(total_bytes or 0, first_audio_at))
 
 
 class TextResponseDelivery(ResponseDelivery):
@@ -93,7 +93,7 @@ class ResponseDeliveryFactory:
         tts_manager: TTSPlaybackManager,
         dc_bridge: DataChannelBridge,
         on_speaking_change: Callable[[bool], None],
-        monitor_playback_fn: Callable[[], Awaitable[None]],
+        monitor_playback_fn: Callable[[int, float], Awaitable[None]],
     ) -> ResponseDelivery:
         if mode == SessionMode.VOICE:
             return VoiceResponseDelivery(

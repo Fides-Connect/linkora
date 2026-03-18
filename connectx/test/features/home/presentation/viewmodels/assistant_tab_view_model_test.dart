@@ -364,11 +364,11 @@ void main() {
           .thenAnswer((_) async {});
     });
 
-    test('mutes microphone', () async {
+    test('releases microphone via stopVoiceMode', () async {
       await vm.startChat(voiceMode: true);
       clearInteractions(mockSpeech);
       vm.switchToTextMode();
-      verify(mockSpeech.setMicrophoneMuted(true)).called(1);
+      verify(mockSpeech.stopVoiceMode()).called(1);
     });
 
     test('sets isVoiceMode to false', () async {
