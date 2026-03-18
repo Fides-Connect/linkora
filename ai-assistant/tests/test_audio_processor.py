@@ -215,8 +215,9 @@ class TestTrackReplacement:
     @pytest.mark.asyncio
     async def test_replace_input_track(self, audio_processor, mock_input_track):
         """Test replacing input track during renegotiation."""
-        # Mock _process_audio to prevent it from actually running
-        with patch.object(audio_processor, '_process_audio', new=AsyncMock()) as mock_process:
+        # Mock both background tasks so replace_input_track doesn't spin the event loop
+        with patch.object(audio_processor, '_process_audio', new=AsyncMock()) as mock_process, \
+             patch.object(audio_processor, '_continuous_stt', new=AsyncMock()):
             # Setup processor in running state
             audio_processor.running = True
             audio_processor.processing_task = asyncio.create_task(asyncio.sleep(0.1))
@@ -239,8 +240,9 @@ class TestTrackReplacement:
     @pytest.mark.asyncio
     async def test_replace_input_track_cancels_old_task(self, audio_processor):
         """Test that old processing task is cancelled during track replacement."""
-        # Mock _process_audio to prevent it from actually running
-        with patch.object(audio_processor, '_process_audio', new=AsyncMock()):
+        # Mock both background tasks so replace_input_track doesn't spin the event loop
+        with patch.object(audio_processor, '_process_audio', new=AsyncMock()), \
+             patch.object(audio_processor, '_continuous_stt', new=AsyncMock()):
             # Setup processor with running task
             audio_processor.running = True
             old_task = asyncio.create_task(asyncio.sleep(0.1))
@@ -260,8 +262,9 @@ class TestTrackReplacement:
     @pytest.mark.asyncio
     async def test_replace_input_track_preserves_audio_queue(self, audio_processor):
         """Test that audio queue is preserved during track replacement to avoid audio loss."""
-        # Mock _process_audio to prevent it from actually running
-        with patch.object(audio_processor, '_process_audio', new=AsyncMock()):
+        # Mock both background tasks so replace_input_track doesn't spin the event loop
+        with patch.object(audio_processor, '_process_audio', new=AsyncMock()), \
+             patch.object(audio_processor, '_continuous_stt', new=AsyncMock()):
             # Setup processor
             audio_processor.running = True
             audio_processor.processing_task = asyncio.create_task(asyncio.sleep(0.1))
@@ -285,8 +288,9 @@ class TestTrackReplacement:
     @pytest.mark.asyncio
     async def test_replace_input_track_restarts_processing(self, audio_processor):
         """Test that processing is restarted after track replacement."""
-        # Mock _process_audio to prevent it from actually running
-        with patch.object(audio_processor, '_process_audio', new=AsyncMock()) as mock_process:
+        # Mock both background tasks so replace_input_track doesn't spin the event loop
+        with patch.object(audio_processor, '_process_audio', new=AsyncMock()) as mock_process, \
+             patch.object(audio_processor, '_continuous_stt', new=AsyncMock()):
             # Setup processor
             audio_processor.running = True
             old_task = asyncio.create_task(asyncio.sleep(0.1))
@@ -389,7 +393,7 @@ class TestTranscriptCallback:
 
     @pytest.mark.asyncio
     async def test_on_transcript_final_callback_used_when_set(self, audio_processor):
-        """When on_transcript_final is set, _continuous_stt calls it for final transcripts."""
+        """When on_transcript_final is set, _stt_session dispatches it for final transcripts."""
         called_with = []
 
         async def capture(text: str):
@@ -405,14 +409,10 @@ class TestTranscriptCallback:
             return_value=fake_audio_stream(None)
         )
         audio_processor.running = True
-        stt_task = asyncio.create_task(audio_processor._continuous_stt())
-        await asyncio.sleep(0.05)
-        audio_processor.running = False
-        stt_task.cancel()
-        try:
-            await stt_task
-        except asyncio.CancelledError:
-            pass
+        await audio_processor._stt_session()
+        # _handle_final_transcript schedules the callback via create_task;
+        # one sleep(0) tick is enough to let it run.
+        await asyncio.sleep(0)
 
         assert called_with == ["hello world"]
 
@@ -420,7 +420,7 @@ class TestTranscriptCallback:
     async def test_fallback_to_process_final_transcript_when_callback_is_none(
         self, audio_processor
     ):
-        """When on_transcript_final is None, _continuous_stt falls back to _process_final_transcript."""
+        """When on_transcript_final is None, _stt_session falls back to _process_final_transcript."""
         audio_processor.on_transcript_final = None
 
         pft_called = []
@@ -436,14 +436,8 @@ class TestTranscriptCallback:
         )
         audio_processor.running = True
         with patch.object(audio_processor, "_process_final_transcript", side_effect=fake_pft):
-            stt_task = asyncio.create_task(audio_processor._continuous_stt())
-            await asyncio.sleep(0.05)
-            audio_processor.running = False
-            stt_task.cancel()
-            try:
-                await stt_task
-            except asyncio.CancelledError:
-                pass
+            await audio_processor._stt_session()
+            await asyncio.sleep(0)
 
         assert pft_called == ["fallback text"]
 
@@ -459,6 +453,10 @@ class TestRuntimeStateEmission:
         sent = []
         dc.send = Mock(side_effect=lambda m: sent.append(m))
         audio_processor._dc_bridge.attach(dc)
+
+        # Setting data_channel re-emits the current FSM state (LISTENING) once.
+        # Clear that so we can assert only on the explicit _emit_runtime_state call.
+        sent.clear()
 
         audio_processor._emit_runtime_state(AgentRuntimeState.LISTENING)
 
@@ -512,14 +510,7 @@ class TestVoiceFinalizeGuard:
                 return_value=fake_audio_stream(None)
             )
             audio_processor.running = True
-            stt_task = asyncio.create_task(audio_processor._continuous_stt())
-            await asyncio.sleep(0.05)
-            audio_processor.running = False
-            stt_task.cancel()
-            try:
-                await stt_task
-            except asyncio.CancelledError:
-                pass
+            await audio_processor._stt_session()
 
         running_task.cancel()
         try:
@@ -551,14 +542,7 @@ class TestVoiceFinalizeGuard:
                 return_value=fake_audio_stream(None)
             )
             audio_processor.running = True
-            stt_task = asyncio.create_task(audio_processor._continuous_stt())
-            await asyncio.sleep(0.05)
-            audio_processor.running = False
-            stt_task.cancel()
-            try:
-                await stt_task
-            except asyncio.CancelledError:
-                pass
+            await audio_processor._stt_session()
 
         assert not never_done.cancelled(), (
             "Running provider-search task must NOT be cancelled during FINALIZE stage"

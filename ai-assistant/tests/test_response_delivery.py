@@ -36,7 +36,7 @@ class TestVoiceResponseDeliveryEchoUserTranscript:
         dc_bridge = Mock()
         dc_bridge.send_chat = Mock()
         tts_manager = Mock()
-        tts_manager.process_llm_stream = AsyncMock()
+        tts_manager.process_llm_stream = AsyncMock(return_value=(0, 0.0))
         on_speaking_change = Mock()
         monitor_fn = Mock()
         return VoiceResponseDelivery(
@@ -63,7 +63,7 @@ class TestVoiceResponseDeliveryStreamResponse:
     def _make_delivery(self):
         dc_bridge = Mock()
         tts_manager = Mock()
-        tts_manager.process_llm_stream = AsyncMock()
+        tts_manager.process_llm_stream = AsyncMock(return_value=(0, 0.0))
         on_speaking_change = Mock()
         monitor_fn = AsyncMock()  # must return a coroutine for asyncio.create_task
         return VoiceResponseDelivery(

@@ -32,6 +32,7 @@ class PeerConnectionHandler:
         language: str = 'de',
         session_mode: str = 'voice',
         ice_servers: list[dict] | None = None,
+        hold_start: bool = False,
         language_fallback_from: str = "",
     ):
         self.connection_id = connection_id
@@ -50,8 +51,21 @@ class PeerConnectionHandler:
         self.track_update_ready = asyncio.Event()
         self.track_update_ready.set()  # Initially set - no update pending
         self.data_channel = None
+        # One-shot flag: when True, the first voice offer is a hollow pre-warm
+        # (no audio track).  We send the SDP answer immediately without waiting
+        # for on_track.  Cleared after the hollow answer is sent so the real
+        # renegotiation offer (with audio track) is processed normally.
+        self._hold_start_active = hold_start
         self._pending_text_inputs: list[str] = []
         self._idle_task: asyncio.Task = None  # 10-minute idle timeout task
+        # True once pc.addTrack(output_track) has been called so we never
+        # try to add it a second time on a voice re-upgrade.
+        self._output_track_added = False
+        # Set by the mode-switch→text handler to signal that the next
+        # renegotiation offer is a voice→text downgrade (track removal), not
+        # a text→voice upgrade.  Allows _handle_renegotiation_offer to answer
+        # immediately without waiting for on_track.
+        self._voice_to_text_downgrade_pending = False
 
         # DataChannel message dispatch table
         self._dc_router = DataChannelMessageRouter()
@@ -206,6 +220,11 @@ class PeerConnectionHandler:
         self._reset_idle_timer()
         if mode == 'text' and self.audio_processor.session_mode != SessionMode.TEXT:
             logger.info("mode-switch → text: pausing voice pipeline")
+            # Signal that the next renegotiation offer removes the audio track
+            # (voice→text downgrade) so _handle_renegotiation_offer skips the
+            # track-update wait.  Only set when coming from voice mode;
+            # pure text sessions never renegotiate on mode-switch.
+            self._voice_to_text_downgrade_pending = True
             asyncio.create_task(self.audio_processor.disable_voice_mode())
         elif mode == 'voice' and self.audio_processor.session_mode == SessionMode.TEXT:
             logger.info("mode-switch → voice: resuming voice pipeline")
@@ -239,7 +258,14 @@ class PeerConnectionHandler:
         """Existing text-only session upgrading to voice."""
         logger.info("Text → voice upgrade detected")
         output_track = await self.audio_processor.enable_voice_mode(track)
-        self.pc.addTrack(output_track)
+        if not self._output_track_added:
+            # First time voice mode is activated: add the TTS output track.
+            self.pc.addTrack(output_track)
+            self._output_track_added = True
+        else:
+            # The output sender already exists from a previous voice phase;
+            # aiortc does not allow adding the same track twice.
+            logger.info("Output track sender already present — skipping addTrack")
         self.audio_processor.on_activity = self._reset_idle_timer
         self._reset_idle_timer()
         self._flush_pending_text_inputs()
@@ -360,12 +386,34 @@ class PeerConnectionHandler:
                 )
 
     async def _handle_initial_voice_offer(self) -> None:
-        """Complete initial voice offer: wait for track, add output, send answer."""
+        """Complete initial voice offer: wait for track, add output, send answer.
+
+        When ``_hold_start_active`` is True (hollow pre-warm), the client sent
+        an offer with no audio track so the full ICE + DC handshake can be
+        completed before the user taps the mic.  We send the answer immediately
+        without waiting for ``on_track``.  The flag is cleared after so the
+        next offer (the real voice offer with audio track sent on mic tap) is
+        processed via the normal path, which creates the AudioProcessor and
+        plays the cached greeting.
+        """
+        if self._hold_start_active:
+            self._hold_start_active = False  # one-shot
+            answer = await self.pc.createAnswer()
+            await self.pc.setLocalDescription(answer)
+            await self._send_message({'type': 'answer', 'sdp': self.pc.localDescription.sdp})
+            logger.info(
+                "Hollow pre-warm: SDP handshake complete for connection %s "
+                "(AudioProcessor deferred until real voice offer)",
+                self.connection_id,
+            )
+            return
+
         await asyncio.wait_for(self.track_ready.wait(), timeout=5.0)
         if self.audio_processor:
             output_track = self.audio_processor.get_output_track()
             logger.info("Adding output track: %s", output_track.id)
             self.pc.addTrack(output_track)
+            self._output_track_added = True
         else:
             logger.error("Audio processor not ready after track_ready signal")
         answer = await self.pc.createAnswer()
@@ -410,15 +458,19 @@ class PeerConnectionHandler:
         await self._send_message({'type': 'answer', 'sdp': self.pc.localDescription.sdp})
 
     async def _handle_renegotiation_offer(self) -> None:
-        """Handle renegotiation: text→voice upgrade (hard wait) or track swap (soft wait)."""
-        is_text_to_voice_upgrade = (
-            self.audio_processor is not None and self.audio_processor.session_mode == SessionMode.TEXT
-        )
-        if is_text_to_voice_upgrade:
+        """Handle renegotiation: text→voice upgrade (hard wait), voice→text
+        downgrade (no wait), or SDP-only track swap (soft wait)."""
+        if self._voice_to_text_downgrade_pending:
+            # Voice→text downgrade: the client removed its audio sender.
+            # on_track will not fire, so answer immediately without waiting.
+            self._voice_to_text_downgrade_pending = False
+            logger.info("Renegotiation for connection %s: voice→text downgrade, answering immediately",
+                        self.connection_id)
+        elif self.audio_processor is not None and self.audio_processor == SessionMode.TEXT:
             # Hard wait: on_track MUST fire to add the TTS output track before answer.
             await self._await_track_update(timeout=5.0, hard=True)
         else:
-            # Soft wait: SDP-only renegotiations never fire on_track; continue on timeout.
+            # Soft wait: SDP-only renegotiations (e.g. track swap) continue on timeout.
             await self._await_track_update(timeout=2.0, hard=False)
         answer = await self.pc.createAnswer()
         await self.pc.setLocalDescription(answer)

@@ -43,6 +43,12 @@ class AssistantTabViewModel extends ChangeNotifier {
   Timer? _idleTimer;
   static const _idleTimeout = Duration(minutes: 10);
 
+  /// Deduplication guard: tracks the language for which warmup was last
+  /// triggered.  Prevents re-firing warmup on every [initialize] call (which
+  /// can happen on every rebuild) while still re-firing when the UI language
+  /// actually changes.
+  String? _warmupLanguage;
+
   /// Stored so _handleIdleTimeout can restore the hint text
   String _resetStatusText = '';
 
@@ -68,6 +74,16 @@ class AssistantTabViewModel extends ChangeNotifier {
     if (!_areCallbacksSetup) {
       _setupCallbacks();
       _areCallbacksSetup = true;
+    }
+
+    // Fire-and-forget warmup whenever the language changes (including the
+    // first call).  This pre-warms the WebSocket connection AND pre-generates
+    // the greeting (LLM + TTS) so both are ready by the time the user taps
+    // the mic button.
+    if (_warmupLanguage != languageCode) {
+      _warmupLanguage = languageCode;
+      unawaited(_speechService.preWarmConnection());
+      unawaited(_speechService.warmUpGreeting());
     }
   }
 
@@ -311,9 +327,10 @@ class AssistantTabViewModel extends ChangeNotifier {
   void switchToTextMode() {
     if (_isVoiceMode) {
       _isVoiceMode = false;
-      _speechService.setMicrophoneMuted(true);
-      // Notify server so ongoing TTS is interrupted immediately.
+      // Notify the server first so it can interrupt TTS immediately, then
+      // release the hardware so the OS clears the Android mic indicator.
       _speechService.notifyModeSwitch('text');
+      unawaited(_speechService.stopVoiceMode());
       notifyListeners();
     }
   }

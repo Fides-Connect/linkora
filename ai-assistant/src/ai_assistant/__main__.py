@@ -4,8 +4,34 @@ AI Assistant Service
 Provides WebRTC-based voice assistant functionality using Google Cloud services.
 """
 import asyncio
+import inspect
 import logging
 import os
+import sys
+import warnings
+
+# ── Python 3.14 compatibility patches (applied before any third-party imports) ─
+#
+# LangChain calls asyncio.iscoroutinefunction() on every streaming request.
+# In Python 3.14 that function is a deprecated wrapper around
+# inspect.iscoroutinefunction() that emits a DeprecationWarning on every
+# invocation.  Replacing it process-wide with the non-deprecated equivalent
+# eliminates the per-call warning overhead for all LLMService instances.
+# The guard ensures no-op on Python 3.11/3.12/3.13 where the two functions
+# are already equivalent and asyncio does not yet emit the warning.
+if sys.version_info >= (3, 14):
+    asyncio.iscoroutinefunction = inspect.iscoroutinefunction  # type: ignore[attr-defined]
+
+# google-genai re-defines AiohttpClientSession (an aiohttp.ClientSession
+# subclass) inside a factory function, so aiohttp emits its "Inheritance …
+# is discouraged" warning on each new API-client creation.  This is purely
+# cosmetic — suppress it.
+warnings.filterwarnings(
+    "ignore",
+    message=r"Inheritance class .+ from ClientSession is discouraged",
+    category=DeprecationWarning,
+)
+
 from aiohttp import web
 from dotenv import load_dotenv
 import firebase_admin
@@ -15,6 +41,7 @@ from .common_endpoints import setup_cors
 from .services.admin_service import AdminService
 from .api.v1.router import register_v1_routes
 from .weaviate_sync import run_startup_sync
+from .services.llm_service import LLMService
 
 # Configure logging
 logging.basicConfig(
@@ -130,7 +157,16 @@ async def main():
     logger.info("=" * 60)
     logger.info("AI Assistant server is running")
     logger.info("=" * 60)
-    
+
+    # Fire-and-forget: prime LangChain internals so the first real user
+    # utterance doesn't pay the one-time initialisation cost.
+    asyncio.create_task(
+        LLMService(
+            api_key=os.getenv('GEMINI_API_KEY', ''),
+            model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
+        ).prewarm()
+    )
+
     # Keep running
     try:
         await asyncio.Event().wait()

@@ -148,6 +148,11 @@ class SignalingServer:
         else:
             session_mode = raw_mode
 
+        # hold_start=true: complete ICE/DC handshake but defer AudioProcessor start
+        # until a real voice offer (with audio track) arrives.  Used by the Flutter
+        # client's hollow pre-warm so the server doesn't spin up STT/LLM until
+        # the user actually taps the mic button.
+        hold_start = request.query.get('hold_start', 'false').lower() == 'true'
         # Language selection logic:
         # 1. Check 'language' query parameter against SUPPORTED_LANGUAGES. If valid, use it.
         # 2. If query parameter is invalid or absent, and we have a user_id, look up the user's stored language in Firestore. If valid, use it.
@@ -206,6 +211,7 @@ class SignalingServer:
             language=language,
             session_mode=session_mode,
             ice_servers=ice_servers,
+            hold_start=hold_start,
             language_fallback_from=language_fallback_from,
         )
         self.active_connections[str(connection_id)] = handler

@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 class TextToSpeechService:
     """Service for text-to-speech conversion using Google Cloud TTS API."""
-    
-    def __init__(self, language_code: str = 'de-DE', 
+
+    def __init__(self, language_code: str = 'de-DE',
                  voice_name: str = 'de-DE-Chirp3-HD-Sulafat',
                  max_concurrent_requests: int = 5):
         """
@@ -28,11 +28,10 @@ class TextToSpeechService:
         self.language_code = language_code
         self.voice_name = voice_name
         self.client = TextToSpeechAsyncClient()
-        
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
         logger.info(f"TTS service configured: language={language_code}, voice={voice_name}, "
-                   f"max_concurrent={max_concurrent_requests}")
-    
+                    f"max_concurrent={max_concurrent_requests}")
+
     async def synthesize_stream(self, text: str, chunk_size: int = 2048) -> AsyncIterator[bytes]:
         """
         Convert text to speech and stream audio chunks.
@@ -46,37 +45,30 @@ class TextToSpeechService:
         """
         try:
             synthesis_input = tts.SynthesisInput(text=text)
-            
             voice = tts.VoiceSelectionParams(
                 language_code=self.language_code,
                 name=self.voice_name,
             )
-            
             audio_config = tts.AudioConfig(
                 audio_encoding=tts.AudioEncoding.LINEAR16,
-                sample_rate_hertz=48000,
+                sample_rate_hertz=24000,
             )
-            
-            logger.debug(f"Starting TTS synthesis for text: '{text[:50]}...' (acquiring semaphore)")
+
             async with self.semaphore:
-                logger.debug("Semaphore acquired for TTS synthesis")
                 response = await self.client.synthesize_speech(
                     input=synthesis_input,
                     voice=voice,
-                    audio_config=audio_config
+                    audio_config=audio_config,
                 )
-            
+
             audio_content = response.audio_content
-            logger.debug(f"TTS synthesis complete, streaming {len(audio_content)} bytes in chunks of {chunk_size}")
-            
             for i in range(0, len(audio_content), chunk_size):
-                chunk = audio_content[i:i + chunk_size]
-                yield chunk
-                
+                yield audio_content[i:i + chunk_size]
+
         except Exception as e:
             logger.error(f"TTS synthesis error: {e}", exc_info=True)
             yield b''
-    
+
     async def synthesize(self, text: str) -> bytes:
         """
         Convert text to speech and return all audio data.
@@ -91,3 +83,4 @@ class TextToSpeechService:
         async for chunk in self.synthesize_stream(text):
             chunks.append(chunk)
         return b''.join(chunks)
+
