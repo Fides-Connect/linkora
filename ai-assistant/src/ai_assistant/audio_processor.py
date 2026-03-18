@@ -186,7 +186,7 @@ class AudioProcessor:
         # the earlier state events that fired before the channel was ready.
         try:
             fsm = self.ai_assistant.response_orchestrator.runtime_fsm
-            self._emit_runtime_state(fsm.state)
+            self._emit_runtime_state(fsm.current_state)
         except Exception as exc:  # pragma: no cover
             logger.warning("Could not re-emit FSM state on DC attach: %s", exc)
 

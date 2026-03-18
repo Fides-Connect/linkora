@@ -333,10 +333,10 @@ class PeerConnectionHandler:
                 if self.audio_processor:
                     try:
                         fsm = self.audio_processor.ai_assistant.response_orchestrator.runtime_fsm
-                        self.audio_processor._emit_runtime_state(fsm.state)
+                        self.audio_processor._emit_runtime_state(fsm.current_state)
                         logger.info(
                             "DataChannel open — re-emitted FSM state '%s' for connection %s",
-                            fsm.state,
+                            fsm.current_state,
                             self.connection_id,
                         )
                     except AttributeError as exc:
