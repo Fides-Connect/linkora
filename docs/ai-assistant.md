@@ -205,7 +205,7 @@ AudioProcessor
 
 ### Prerequisites
 
-- **Python**: 3.11 or higher
+- **Python**: 3.14 or higher
 - **Docker**: For containerized deployment
 - **Google Cloud Platform**: Account with enabled APIs
 - **Google Gemini**: API key

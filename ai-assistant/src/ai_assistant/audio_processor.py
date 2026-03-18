@@ -120,6 +120,9 @@ class AudioProcessor:
         # Tracks the current LLM+TTS response task so it can be cancelled on
         # interrupt.
         self._response_task: Optional[asyncio.Task] = None
+        # Tracks the session-starter initialize() task so it can be cancelled
+        # before closing clients (prevents use-after-close if still in flight).
+        self._session_starter_task: Optional[asyncio.Task] = None
 
         # Serializes text-input handling from the DataChannel to avoid races
         # between concurrent process_text_input() calls.
@@ -247,7 +250,7 @@ class AudioProcessor:
                 "Text-only mode — skipping audio tasks for connection %s",
                 self.connection_id,
             )
-        asyncio.create_task(self._session_starter.initialize())
+        self._session_starter_task = asyncio.create_task(self._session_starter.initialize())
         logger.info("Audio processor started for connection %s", self.connection_id)
 
     async def replace_input_track(self, new_track: MediaStreamTrack) -> None:
@@ -301,7 +304,22 @@ class AudioProcessor:
                 except asyncio.CancelledError:
                     pass
 
+        if self._session_starter_task and not self._session_starter_task.done():
+            self._session_starter_task.cancel()
+            try:
+                await self._session_starter_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._response_task and not self._response_task.done():
+            self._response_task.cancel()
+            try:
+                await self._response_task
+            except asyncio.CancelledError:
+                pass
+
         self.debug_recorder.save()
+        await self.ai_assistant.aclose()
         logger.info("Audio processor stopped for connection %s", self.connection_id)
 
     # ── Voice mode toggle ─────────────────────────────────────────────────────

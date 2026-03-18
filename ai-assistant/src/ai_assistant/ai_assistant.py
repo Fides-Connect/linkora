@@ -2,6 +2,7 @@
 AI Assistant
 Core orchestration layer that coordinates services.
 """
+import inspect
 import logging
 import os
 from typing import AsyncIterator, Optional
@@ -119,7 +120,35 @@ class AIAssistant:
         )
         
         logger.info("AI Assistant initialized with service-oriented architecture")
-    
+
+    async def aclose(self) -> None:
+        """Close all underlying Google API connections for graceful shutdown."""
+        await self.llm_service.aclose()
+        # Google Cloud gapic-generated async clients (SpeechAsyncClient,
+        # TextToSpeechAsyncClient) don't expose close() on the client itself —
+        # it lives on client.transport.  We use getattr chains so this stays
+        # correct if a future SDK version moves or adds a direct close().
+        for label, client in [
+            ("STT", self.stt_service.client),
+            ("TTS", self.tts_service.client),
+        ]:
+            try:
+                close_fn = getattr(client, "close", None)
+                if close_fn is None:
+                    transport = getattr(client, "transport", None)
+                    close_fn = getattr(transport, "close", None) if transport is not None else None
+                if not callable(close_fn):
+                    logger.debug("AIAssistant.aclose: %s client has no close(); skipping.", label)
+                    continue
+                result = close_fn()
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as exc:
+                logger.warning(
+                    "AIAssistant.aclose: error closing %s client: %s",
+                    label, exc, exc_info=True,
+                )
+
     async def generate_llm_response_stream(
         self, prompt: str, user_id: Optional[str] = None
     ) -> AsyncIterator[str]:
