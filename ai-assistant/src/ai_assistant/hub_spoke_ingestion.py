@@ -451,7 +451,7 @@ class HubSpokeIngestion:
     @staticmethod
     def update_competencies_by_user_id(
         user_id: str,
-        competencies: "str | list[str] | list[dict[str, Any]]",
+        competencies: str | list[str] | list[dict[str, Any]],
     ) -> dict[str, Any]:
         """Replace all Weaviate competencies for a user with fresh enriched data.
 

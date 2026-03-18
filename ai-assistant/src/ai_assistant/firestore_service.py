@@ -1,7 +1,7 @@
 import logging
 import os
 from typing import Any
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, UTC
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_collection import BaseCollectionReference
 from google.cloud.firestore_v1.client import Client
@@ -220,8 +220,8 @@ class FirestoreService:
             # Generate prefixed service request ID
             service_request_id = self._generate_prefixed_id('service_request')
 
-            request_data['created_at'] = datetime.now(timezone.utc)
-            request_data['updated_at'] = datetime.now(timezone.utc)
+            request_data['created_at'] = datetime.now(UTC)
+            request_data['updated_at'] = datetime.now(UTC)
 
             # Validate data against schema (timestamps excluded)
             validated_data = self._validate_data(request_data, ServiceRequestSchema)
@@ -281,7 +281,7 @@ class FirestoreService:
             ref = self._get_collection('service_requests').document(request_id)
             ref.update({
                 'status': validated_data['status'],
-                'updated_at': datetime.now(timezone.utc)
+                'updated_at': datetime.now(UTC)
             })
 
             # Fetch and return the updated object
@@ -317,7 +317,7 @@ class FirestoreService:
             validated_data = self._validate_data(update_data, ServiceRequestUpdateSchema, exclude_unset=True)
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Check if selected_provider_user_id is being updated
             new_provider_id = validated_data.get('selected_provider_user_id')
@@ -420,8 +420,8 @@ class FirestoreService:
             validated_data = self._validate_data(candidate_data, ProviderCandidateSchema)
 
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.now(timezone.utc)
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['created_at'] = datetime.now(UTC)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Create document as subcollection under service_request
             ref = (self._get_collection('service_requests')
@@ -545,7 +545,7 @@ class FirestoreService:
             )
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Check if provider_candidate_user_id is being updated
             new_provider_user_id = validated_data.get('provider_candidate_user_id')
@@ -665,7 +665,7 @@ class FirestoreService:
                   .document(favorite_user_id))
             ref.set({
                 'user_id': favorite_user_id,
-                'created_at': datetime.now(timezone.utc)
+                'created_at': datetime.now(UTC)
             })
             return True
         except Exception as e:
@@ -699,7 +699,7 @@ class FirestoreService:
                       .document(request_id))
                 ref.set({
                     'service_request_id': request_id,
-                    'created_at': datetime.now(timezone.utc)
+                    'created_at': datetime.now(UTC)
                 })
             return True
         except Exception as e:
@@ -718,7 +718,7 @@ class FirestoreService:
                       .document(request_id))
                 ref.set({
                     'service_request_id': request_id,
-                    'created_at': datetime.now(timezone.utc)
+                    'created_at': datetime.now(UTC)
                 })
             return True
         except Exception as e:
@@ -859,7 +859,7 @@ class FirestoreService:
             validated_data = self._validate_data(user_data, UserUpdateSchema, exclude_unset=True)
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Update the document (will fail if document doesn't exist)
             user_ref.update(validated_data)
@@ -891,8 +891,8 @@ class FirestoreService:
             validated_data = self._validate_data(user_data, UserSchema)
 
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.now(timezone.utc)
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['created_at'] = datetime.now(UTC)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Create the user document
             if user_id:
@@ -1048,7 +1048,7 @@ class FirestoreService:
             validated_data = self._validate_data(update_data, CompetenceUpdateSchema, exclude_unset=True)
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Update document in competencies subcollection
             competence_ref.update(validated_data)
@@ -1107,8 +1107,8 @@ class FirestoreService:
             validated_data = self._validate_data(availability_data, AvailabilityTimeSchema)
 
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.now(timezone.utc)
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['created_at'] = datetime.now(UTC)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Determine the collection reference
             if competence_id:
@@ -1273,7 +1273,7 @@ class FirestoreService:
             )
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Update document
             ref.update(validated_data)
@@ -1486,8 +1486,8 @@ class FirestoreService:
             validated_data = self._validate_data(chat_data, ChatSchema)
 
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.now(timezone.utc)
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['created_at'] = datetime.now(UTC)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Create document in root chats collection
             ref = self._get_collection('chats').document(chat_id)
@@ -1610,7 +1610,7 @@ class FirestoreService:
             validated_data = self._validate_data(update_data, ChatUpdateSchema, exclude_unset=True)
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Update the document
             ref.update(validated_data)
@@ -1690,8 +1690,8 @@ class FirestoreService:
             validated_data = self._validate_data(message_data, ChatMessageSchema)
 
             # Add timestamps after validation
-            validated_data['created_at'] = datetime.now(timezone.utc)
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['created_at'] = datetime.now(UTC)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Create document in messages subcollection under chat
             ref = (self._get_collection('chats')
@@ -1809,7 +1809,7 @@ class FirestoreService:
             validated_data = self._validate_data(update_data, ChatMessageUpdateSchema, exclude_unset=True)
 
             # Add updated_at timestamp after validation
-            validated_data['updated_at'] = datetime.now(timezone.utc)
+            validated_data['updated_at'] = datetime.now(UTC)
 
             # Update the document
             ref.update(validated_data)
@@ -1906,7 +1906,7 @@ class FirestoreService:
                 "sequence": sequence,
             }
             validated = self._validate_data(msg_data, AIConversationMessageSchema)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             conv_ref = (
                 self._get_collection('users')
                 .document(user_id)
@@ -1940,7 +1940,7 @@ class FirestoreService:
             return False
         try:
             validated = self._validate_data(update_data, AIConversationUpdateSchema, exclude_unset=True)
-            validated["updated_at"] = datetime.now(timezone.utc)
+            validated["updated_at"] = datetime.now(UTC)
             (
                 self._get_collection('users')
                 .document(user_id)
@@ -2077,10 +2077,9 @@ class FirestoreService:
         last_message_at = recent.get("last_message_at")
         if last_message_at is None:
             return None
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=within_hours)
+        cutoff = datetime.now(UTC) - timedelta(hours=within_hours)
         if hasattr(last_message_at, "tzinfo") and last_message_at.tzinfo is None:
-            from datetime import timezone as _tz
-            last_message_at = last_message_at.replace(tzinfo=_tz.utc)
+            last_message_at = last_message_at.replace(tzinfo=UTC)
         if last_message_at < cutoff:
             return None
         return recent
