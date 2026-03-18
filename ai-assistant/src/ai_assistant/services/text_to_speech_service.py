@@ -17,6 +17,14 @@ class TextToSpeechService:
     def __init__(self, language_code: str = 'de-DE',
                  voice_name: str = 'de-DE-Chirp3-HD-Sulafat',
                  max_concurrent_requests: int = 5):
+        """
+        Initialize Text-to-Speech service.
+        
+        Args:
+            language_code: Language code for TTS
+            voice_name: Voice name to use for synthesis
+            max_concurrent_requests: Maximum concurrent API requests
+        """
         self.language_code = language_code
         self.voice_name = voice_name
         self.client = TextToSpeechAsyncClient()
@@ -25,7 +33,16 @@ class TextToSpeechService:
                     f"max_concurrent={max_concurrent_requests}")
 
     async def synthesize_stream(self, text: str, chunk_size: int = 2048) -> AsyncIterator[bytes]:
-        """Convert text to speech and stream audio chunks."""
+        """
+        Convert text to speech and stream audio chunks.
+        
+        Args:
+            text: Text to synthesize
+            chunk_size: Size of audio chunks to yield
+        
+        Yields:
+            Audio data chunks as bytes
+        """
         try:
             synthesis_input = tts.SynthesisInput(text=text)
             voice = tts.VoiceSelectionParams(
@@ -53,7 +70,15 @@ class TextToSpeechService:
             yield b''
 
     async def synthesize(self, text: str) -> bytes:
-        """Convert text to speech and return all audio data."""
+        """
+        Convert text to speech and return all audio data.
+        
+        Args:
+            text: Text to synthesize
+        
+        Returns:
+            Complete audio data as bytes
+        """
         chunks = []
         async for chunk in self.synthesize_stream(text):
             chunks.append(chunk)

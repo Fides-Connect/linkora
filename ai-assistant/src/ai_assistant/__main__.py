@@ -177,7 +177,7 @@ async def main():
     # utterance doesn't pay the one-time initialisation cost.
     prewarm_llm = LLMService(
         api_key=os.getenv('GEMINI_API_KEY', ''),
-        model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash-lite'),        
+        model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),        
     )
     prewarm_task = asyncio.create_task(prewarm_llm.prewarm())
 
