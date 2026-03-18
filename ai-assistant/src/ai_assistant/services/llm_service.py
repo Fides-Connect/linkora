@@ -83,6 +83,36 @@ class LLMService:
         self._session_functions: Dict[str, List[Dict[str, Any]]] = {}
         self.language: str = language
         logger.info(f"LLM service initialized with model: {model}")
+
+    async def aclose(self) -> None:
+        """Close the underlying google-genai async HTTP client (connection pool).
+
+        Best-effort shutdown: missing/renamed attributes are logged at debug level
+        and failures are logged at warning level, but neither is propagated.
+        """
+        async_client = getattr(self.llm, "async_client", None)
+        if async_client is None:
+            logger.debug(
+                "LLMService.aclose: LLM instance %r has no 'async_client'; skipping.",
+                self.llm,
+            )
+            return
+        aclose_fn = getattr(async_client, "aclose", None)
+        if not callable(aclose_fn):
+            logger.debug(
+                "LLMService.aclose: async_client %r has no callable 'aclose'; skipping.",
+                async_client,
+            )
+            return
+        try:
+            await aclose_fn()
+        except Exception as exc:
+            logger.warning(
+                "LLMService.aclose: error closing async client %s: %s",
+                type(async_client).__name__,
+                exc,
+                exc_info=True,
+            )
     
     def get_session_history(self, session_id: str) -> BaseChatMessageHistory:
         """

@@ -7,7 +7,7 @@ name = "ai-assistant"
 version = "0.1.0"
 description = "AI Assistant with Hub and Spoke Architecture"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.14"
 dependencies = [
     "aiortc>=1.14.0",
     "aiohttp>=3.13.2",

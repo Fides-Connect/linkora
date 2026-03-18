@@ -66,6 +66,8 @@ class PeerConnectionHandler:
         # a text→voice upgrade.  Allows _handle_renegotiation_offer to answer
         # immediately without waiting for on_track.
         self._voice_to_text_downgrade_pending = False
+        self._closed = False      # True once teardown fully completes
+        self._close_lock = asyncio.Lock()  # serialises concurrent close() calls
 
         # DataChannel message dispatch table
         self._dc_router = DataChannelMessageRouter()
@@ -525,34 +527,72 @@ class PeerConnectionHandler:
             logger.error("Error sending message: %s", exc, exc_info=True)
 
     async def close(self):
-        """Close peer connection and cleanup resources."""
-        logger.info("Closing connection %s", self.connection_id)
+        """Close peer connection and cleanup resources.
 
-        # Cancel idle timer
-        if self._idle_task and not self._idle_task.done():
-            self._idle_task.cancel()
+        Concurrent callers await the in-progress teardown via ``_close_lock``
+        so all callers unblock only after cleanup is complete.
 
-        if self.audio_processor:
-            # Persist final conversation state before tearing down the processor.
+        Idempotence: ``_closed`` is set only after ``pc.close()`` succeeds.
+        If ``pc.close()`` raises or the coroutine is cancelled mid-way,
+        ``_closed`` stays ``False`` so the call can be retried.  Concurrent
+        calls are still serialised by the lock and will not start a second
+        teardown while one is already in progress.
+        """
+        if self._closed:
+            return
+        async with self._close_lock:
+            if self._closed:  # re-check after acquiring lock
+                return
+            logger.info("Closing connection %s", self.connection_id)
+
+            # _close_lock serialises concurrent calls so only one teardown runs
+            # at a time.  _closed is set only after all steps complete — if this
+            # coroutine is cancelled mid-way (e.g. asyncio.wait_for timeout
+            # during shutdown), _closed stays False and a subsequent sequential
+            # call can retry.  CancelledError (BaseException) propagates
+            # naturally out of the lock context; only Exception is caught below.
+
+            # Cancel idle timer.
+            # Guard against self-cancellation when close() is called from within
+            # the idle task itself (e.g. _idle_timeout_task calls close() on expiry).
+            # Also await the cancellation to avoid 'Task exception was never retrieved'.
             try:
-                orchestrator = self.audio_processor.ai_assistant.response_orchestrator
-                ai_conv = orchestrator.ai_conversation_service
-                if ai_conv is not None:
-                    final_stage = (
-                        self.audio_processor.ai_assistant.conversation_service
-                        .get_current_stage()
-                    )
-                    request_summary = (
-                        self.audio_processor.ai_assistant.conversation_service
-                        .context.get("request_summary", "")
-                    )
-                    await ai_conv.close_session(final_stage, request_summary=request_summary)
-                orchestrator.runtime_fsm.transition("terminate")
+                idle_task = self._idle_task
+                if idle_task and not idle_task.done():
+                    current = asyncio.current_task()
+                    if idle_task is not current:
+                        idle_task.cancel()
+                        try:
+                            await idle_task
+                        except asyncio.CancelledError:
+                            pass
             except Exception as exc:
-                logger.warning(
-                    "Could not persist conversation on close for %s: %s",
-                    self.connection_id, exc,
-                )
-            await self.audio_processor.stop()
+                logger.warning("Error cancelling idle timer for %s: %s", self.connection_id, exc)
 
-        await self.pc.close()
+            if self.audio_processor:
+                # Persist final conversation state before tearing down the processor.
+                try:
+                    orchestrator = self.audio_processor.ai_assistant.response_orchestrator
+                    ai_conv = orchestrator.ai_conversation_service
+                    if ai_conv is not None:
+                        final_stage = (
+                            self.audio_processor.ai_assistant.conversation_service
+                            .get_current_stage()
+                        )
+                        await ai_conv.close_session(final_stage)
+                    orchestrator.runtime_fsm.transition("terminate")
+                except Exception as exc:
+                    logger.warning(
+                        "Could not persist conversation on close for %s: %s",
+                        self.connection_id, exc,
+                    )
+                try:
+                    await self.audio_processor.stop()
+                except Exception as exc:
+                    logger.warning("Error stopping audio processor for %s: %s", self.connection_id, exc)
+
+            try:
+                await self.pc.close()
+                self._closed = True
+            except Exception as exc:
+                logger.warning("Error closing peer connection for %s: %s", self.connection_id, exc)

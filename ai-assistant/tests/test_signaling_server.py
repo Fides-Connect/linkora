@@ -532,3 +532,56 @@ class TestFetchIceServers:
         assert result == sig_mod._DEFAULT_ICE_SERVERS
         assert sig_mod._ICE_CACHE is None
 
+
+class TestCloseAllConnections:
+    """Tests for SignalingServer.close_all_connections()."""
+
+    async def test_no_active_connections_is_noop(self, signaling_server):
+        """Should return immediately without error when there are no connections."""
+        assert signaling_server.active_connections == {}
+        await signaling_server.close_all_connections()  # must not raise
+
+    async def test_close_awaits_all_handler_close_methods(self, signaling_server):
+        """close() must be awaited on every active handler."""
+        h1 = Mock()
+        h1.close = AsyncMock()
+        h1.websocket = Mock()
+        h1.websocket.closed = True
+
+        h2 = Mock()
+        h2.close = AsyncMock()
+        h2.websocket = Mock()
+        h2.websocket.closed = True
+
+        signaling_server.active_connections = {"c1": h1, "c2": h2}
+        await signaling_server.close_all_connections()
+
+        h1.close.assert_awaited_once()
+        h2.close.assert_awaited_once()
+
+    async def test_close_closes_open_websockets(self, signaling_server):
+        """Open WebSocket connections are closed so aiohttp can exit cleanly."""
+        h = Mock()
+        h.close = AsyncMock()
+        h.websocket = Mock()
+        h.websocket.closed = False
+        h.websocket.close = AsyncMock()
+
+        signaling_server.active_connections = {"c1": h}
+        await signaling_server.close_all_connections()
+
+        h.websocket.close.assert_awaited_once()
+
+    async def test_already_closed_websockets_are_skipped(self, signaling_server):
+        """Websockets that are already closed must not be closed again."""
+        h = Mock()
+        h.close = AsyncMock()
+        h.websocket = Mock()
+        h.websocket.closed = True
+        h.websocket.close = AsyncMock()
+
+        signaling_server.active_connections = {"c1": h}
+        await signaling_server.close_all_connections()
+
+        h.websocket.close.assert_not_called()
+

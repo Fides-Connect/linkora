@@ -155,8 +155,8 @@ Server → Network → RTC DataChannel → AudioTrack → Speaker
 ## 🤖 AI-Assistant (Backend Server)
 
 ### Technology Stack
-- **Language**: Python 3.11+
-- **Framework**: FastAPI (async)
+- **Language**: Python 3.14+
+- **Framework**: aiohttp (async, WebSocket + HTTP)
 - **WebRTC**: aiortc library
 - **APIs**: Google Cloud STT/TTS, Gemini
 - **Database**: Weaviate (vector search)
