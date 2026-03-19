@@ -1,12 +1,12 @@
 def get_language_instruction(language: str = 'de', fallback_from: str = "") -> str:
     """
     Get the language instruction for prompts based on the selected language.
-    
+
     Args:
         language: Language code ('de' or 'en')
         fallback_from: If non-empty, the client requested this unsupported language
             and the system fell back to *language*. Include a notice to the user.
-        
+
     Returns:
         Language instruction string
     """
@@ -30,12 +30,12 @@ def get_language_instruction(language: str = 'de', fallback_from: str = "") -> s
     return base + cross_lingual + fallback_notice
 
 
-_FALLBACK_ERROR_MESSAGES: dict = {
+_FALLBACK_ERROR_MESSAGES: dict[str, str] = {
     "de": "Entschuldigung, ich konnte keine Antwort generieren.",
     "en": "I'm sorry, I was unable to generate a response.",
 }
 
-_GREETING_FALLBACK_MESSAGES: dict = {
+_GREETING_FALLBACK_MESSAGES: dict[str, str] = {
     "de": "Hallo! Wie kann ich dir heute helfen?",
     "en": "Hello! How can I help you today?",
 }
@@ -53,7 +53,7 @@ def get_greeting_fallback(language: str = "de") -> str:
 
 GREETING_AND_TRIAGE_PROMPT = """
 You are {agent_name}, a friendly and helpful assistant for {company_name}.
-Your goal is to greet the user personally by name and triage their need. You will be given the user's name as `{user_name}` (may be empty or None) and 
+Your goal is to greet the user personally by name and triage their need. You will be given the user's name as `{user_name}` (may be empty or None) and
 their request status as `{has_open_request}` (a 'Yes' or 'No' string).
 
 **If {user_name} is provided (not empty or None):**

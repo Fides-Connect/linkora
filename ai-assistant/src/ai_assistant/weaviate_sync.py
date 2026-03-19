@@ -7,7 +7,7 @@ Weaviate vector index.
 """
 import logging
 import os
-from typing import List, Tuple, Dict, Any, NamedTuple
+from typing import Any, NamedTuple
 
 from .hub_spoke_ingestion import HubSpokeIngestion
 from .hub_spoke_schema import init_hub_spoke_schema, cleanup_hub_spoke_schema
@@ -24,7 +24,7 @@ class SyncResult(NamedTuple):
     total_competencies: int
 
 
-async def load_users_from_firestore() -> List[Tuple[Dict[str, Any], List]]:
+async def load_users_from_firestore() -> list[tuple[dict[str, Any], list]]:
     """Read all users and their competencies from Firestore.
 
     Returns:
@@ -42,20 +42,20 @@ async def load_users_from_firestore() -> List[Tuple[Dict[str, Any], List]]:
     db = fs_admin.client()
     user_docs = list(db.collection("users").stream())
 
-    users_payload: List[Tuple[Dict[str, Any], List]] = []
+    users_payload: list[tuple[dict[str, Any], list]] = []
     for doc in user_docs:
         user_data = doc.to_dict()
         user_data["user_id"] = doc.id
         competencies = await firestore_service.get_competencies(doc.id)
         users_payload.append((user_data, competencies))
-        logger.debug(f"  Loaded user {doc.id!r} with {len(competencies)} competence(s).")
+        logger.debug("  Loaded user %r with %s competence(s).", doc.id, len(competencies))
 
     return users_payload
 
 
 def ingest_users_into_weaviate(
-    users_payload: List[Tuple[Dict[str, Any], List]],
-) -> Tuple[int, int]:
+    users_payload: list[tuple[dict[str, Any], list]],
+) -> tuple[int, int]:
     """Ingest ``(user_data, competencies)`` pairs into Weaviate.
 
     Args:
@@ -79,16 +79,13 @@ def ingest_users_into_weaviate(
             )
             if result:
                 success_count += 1
-                logger.info(
-                    f"  ✓ {user_data.get('name', user_id)!r} "
-                    f"({len(competencies)} competence(s))"
-                )
+                logger.info("  ✓ %r (%s competence(s))", user_data.get('name', user_id), len(competencies))
             else:
                 failure_count += 1
-                logger.warning(f"  ✗ Failed to ingest user {user_id!r} (returned falsy).")
+                logger.warning("  ✗ Failed to ingest user %r (returned falsy).", user_id)
         except Exception as exc:
             failure_count += 1
-            logger.error(f"  ✗ Exception ingesting user {user_id!r}: {exc}")
+            logger.error("  ✗ Exception ingesting user %r: %s", user_id, exc)
 
     return success_count, failure_count
 
@@ -112,12 +109,12 @@ async def rebuild_weaviate_from_firestore() -> SyncResult:
     try:
         users_payload = await load_users_from_firestore()
     except Exception as exc:
-        logger.error(f"Could not read Firestore: {exc}. Weaviate was not modified.")
+        logger.error("Could not read Firestore: %s. Weaviate was not modified.", exc)
         return SyncResult(0, 1, 0, 0)
 
     total_users = len(users_payload)
     total_competencies = sum(len(c) for _, c in users_payload)
-    logger.info(f"  Found {total_users} user(s) and {total_competencies} competence(s) to sync.")
+    logger.info("  Found %s user(s) and %s competence(s) to sync.", total_users, total_competencies)
 
     # ── Step 2: wipe and reinitialise Weaviate ────────────────────────────────
     logger.info("[Sync 2/3] Rebuilding Weaviate schema...")
@@ -158,7 +155,7 @@ async def run_startup_sync() -> None:
     try:
         result = await rebuild_weaviate_from_firestore()
     except Exception as exc:
-        logger.error(f"Weaviate sync aborted — schema rebuild failed: {exc}")
+        logger.error("Weaviate sync aborted — schema rebuild failed: %s", exc)
         return
 
     logger.info("=" * 60)
@@ -173,13 +170,7 @@ async def run_startup_sync() -> None:
             "Weaviate schema was reset but left empty."
         )
     elif result.failure_count == 0:
-        logger.info(
-            f"Weaviate Startup Sync — completed successfully "
-            f"({result.success_count} user(s), {result.total_competencies} competence(s))."
-        )
+        logger.info("Weaviate Startup Sync — completed successfully (%s user(s), %s competence(s)).", result.success_count, result.total_competencies)
     else:
-        logger.warning(
-            f"Weaviate Startup Sync — completed with {result.failure_count} error(s) "
-            f"({result.success_count}/{result.total_users} user(s) synced)."
-        )
+        logger.warning("Weaviate Startup Sync — completed with %s error(s) (%s/%s user(s) synced).", result.failure_count, result.success_count, result.total_users)
     logger.info("=" * 60)

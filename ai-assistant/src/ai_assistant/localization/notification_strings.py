@@ -19,9 +19,11 @@ from __future__ import annotations
 from .notifications_de import NotificationsDE
 from .notifications_en import NotificationsEN
 
+_NotificationsClass = type[NotificationsDE] | type[NotificationsEN]
+
 # Map ISO 639-1 language code → string-constant class.
 # Unknown codes fall back to English (see ``NotificationStrings.__init__``).
-_LANGUAGE_MAP: dict[str, type] = {
+_LANGUAGE_MAP: dict[str, _NotificationsClass] = {
     "en": NotificationsEN,
     "de": NotificationsDE,
 }
@@ -39,7 +41,7 @@ class NotificationStrings:
         # Normalize inputs like "DE" or " de " so callers don't need to
         # guarantee formatting before constructing NotificationStrings.
         normalized_language = (language or "").strip().lower()
-        self._msgs = _LANGUAGE_MAP.get(normalized_language, NotificationsEN)
+        self._msgs: _NotificationsClass = _LANGUAGE_MAP.get(normalized_language, NotificationsEN)
 
     # ── Service-request status-change strings ─────────────────────────────────
 

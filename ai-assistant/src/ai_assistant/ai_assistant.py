@@ -5,7 +5,8 @@ Core orchestration layer that coordinates services.
 import inspect
 import logging
 import os
-from typing import AsyncIterator, Optional
+from collections.abc import AsyncIterator
+from typing import Any
 
 from .services import (
     SpeechToTextService,
@@ -38,7 +39,7 @@ def get_language_config(language: str) -> tuple[str, str]:
         # German configuration (default)
         language_code = os.getenv('LANGUAGE_CODE_DE', 'de-DE')
         voice_name = os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat')
-    
+
     return language_code, voice_name
 
 class AIAssistant:
@@ -46,13 +47,13 @@ class AIAssistant:
     AI Assistant orchestrator that coordinates services.
     This class acts as a facade, delegating work to specialized services.
     """
-    
+
     def __init__(self, gemini_api_key: str, language: str = 'de',
                  llm_model: str = 'gemini-2.5-flash',
-                 session_id: Optional[str] = None):
+                 session_id: str | None = None) -> None:
         """
         Initialize AI Assistant with all required services.
-        
+
         Args:
             gemini_api_key: API key for Gemini LLM
             language: Language code ('de' or 'en')
@@ -61,25 +62,25 @@ class AIAssistant:
         """
         self.language = language
         self.session_id = session_id or "default"
-        
+
         # Get language-specific configuration
         self.language_code, self.voice_name = get_language_config(language)
-        
+
         # Initialize data provider
         self.data_provider = get_data_provider()
-        
+
         # Initialize services
         self.stt_service = SpeechToTextService(
             language_code=self.language_code
         )
-        
+
         max_concurrency = int(os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5'))
         self.tts_service = TextToSpeechService(
             language_code=self.language_code,
             voice_name=self.voice_name,
             max_concurrent_requests=max_concurrency
         )
-        
+
         self.llm_service = LLMService(
             api_key=gemini_api_key,
             model=llm_model,
@@ -101,7 +102,7 @@ class AIAssistant:
             language=self.language,
             cross_encoder_service=self.cross_encoder_service,
         )
-        
+
         # Build agentic runtime FSM and tool registry
         self.runtime_fsm = AgentRuntimeFSM()
         self.firestore_service = None  # injected by PeerConnectionHandler after construction
@@ -109,7 +110,7 @@ class AIAssistant:
 
         # Competence enricher: LLM-powered enrichment of provider competence data.
         # Uses the same underlying LLM instance (no extra API key needed).
-        self.competence_enricher = CompetenceEnricher(llm=self.llm_service.llm)
+        self.competence_enricher = CompetenceEnricher(llm=self.llm_service.llm)  # type: ignore[arg-type]
 
         # Initialize orchestration services
         self.response_orchestrator = ResponseOrchestrator(
@@ -118,7 +119,7 @@ class AIAssistant:
             runtime_fsm=self.runtime_fsm,
             tool_registry=self.tool_registry,
         )
-        
+
         logger.info("AI Assistant initialized with service-oriented architecture")
 
     async def aclose(self) -> None:
@@ -150,8 +151,8 @@ class AIAssistant:
                 )
 
     async def generate_llm_response_stream(
-        self, prompt: str, user_id: Optional[str] = None
-    ) -> AsyncIterator[str]:
+        self, prompt: str, user_id: str | None = None
+    ) -> AsyncIterator[str | dict[str, Any]]:
         """
         Generate streaming response using LLM.
         Delegates to ResponseOrchestrator for stage-aware conversation flow.
@@ -192,5 +193,5 @@ class AIAssistant:
             prompt, self.session_id, context=context
         ):
             yield chunk
-    
+
 

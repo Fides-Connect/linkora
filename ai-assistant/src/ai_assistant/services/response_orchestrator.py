@@ -8,15 +8,19 @@ import re
 import json
 import math
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import AsyncIterator, Optional, Union
+from datetime import datetime, timedelta, UTC
+from typing import Any, TYPE_CHECKING, cast
+from collections.abc import AsyncIterator
+
+if TYPE_CHECKING:
+    from .ai_conversation_service import AIConversationService
 
 from langchain_core.messages import AIMessage
 
 from .conversation_service import ConversationService, ConversationStage, is_legal_transition
 from .llm_service import LLMService, SIGNAL_TRANSITION_SCHEMA
 from .agent_runtime_fsm import AgentRuntimeFSM
-from .agent_tools import AgentToolRegistry, ToolPermissionError, FINALIZE_TOOL_SCHEMAS
+from .agent_tools import AgentToolRegistry, ToolContext, ToolPermissionError, FINALIZE_TOOL_SCHEMAS
 from ..prompts_templates import get_fallback_error_message
 from ..data_provider import SearchUnavailableError  # noqa: F401 (used below)
 
@@ -53,10 +57,10 @@ class ResponseOrchestrator:
         self,
         llm_service: LLMService,
         conversation_service: ConversationService,
-        runtime_fsm: Optional[AgentRuntimeFSM] = None,
-        tool_registry: Optional[AgentToolRegistry] = None,
-        ai_conversation_service=None,
-    ):
+        runtime_fsm: AgentRuntimeFSM | None = None,
+        tool_registry: AgentToolRegistry | None = None,
+        ai_conversation_service: AIConversationService | None = None,
+    ) -> None:
         self.llm_service = llm_service
         self.conversation_service = conversation_service
         self.runtime_fsm: AgentRuntimeFSM = runtime_fsm or AgentRuntimeFSM()
@@ -105,8 +109,8 @@ class ResponseOrchestrator:
         self,
         target: str,
         session_id: str,
-        context: Optional[dict],
-        pending: list,
+        context: dict[str, Any] | None,
+        pending: list[tuple[str, Any]],
         user_input: str = "",
     ) -> bool:
         """Apply a stage transition, run its side effects, and append a structured
@@ -144,7 +148,7 @@ class ResponseOrchestrator:
         if target_stage == ConversationStage.FINALIZE:
             if previous_stage == ConversationStage.PROVIDER_ONBOARDING:
                 logger.warning("Skipping provider search: previous stage was PROVIDER_ONBOARDING")
-                providers: list = []
+                providers: list[dict] = []
             else:
                 await self.conversation_service.search_providers_for_request(session_id)
                 # Divert to RECOVERY if Weaviate was unreachable. This prevents the
@@ -157,7 +161,7 @@ class ResponseOrchestrator:
                     return True
                 # Read providers stored by search_providers_for_request; avoids
                 # the previous `await … or []` pattern that overwrote context.
-                providers: list = self.conversation_service.context.get("providers_found", [])
+                providers = self.conversation_service.context.get("providers_found", [])
             # Keep context cache in sync for follow-up stream cache-hit logic.
             self.conversation_service.context["providers_found"] = providers
             # Reset provider cursor so the LLM always starts from the first result.
@@ -189,7 +193,7 @@ class ResponseOrchestrator:
             if self.tool_registry:
                 try:
                     result = await self.tool_registry.execute(
-                        "get_my_competencies", {}, context or {}
+                        "get_my_competencies", {}, cast(ToolContext, context or {})
                     )
                     comps = result if isinstance(result, list) else []
                 except Exception as exc:  # pragma: no cover
@@ -255,7 +259,7 @@ class ResponseOrchestrator:
     # ── Tool dispatch ──────────────────────────────────────────────────────────
 
     @staticmethod
-    def _should_pitch_provider(context: Optional[dict]) -> bool:
+    def _should_pitch_provider(context: dict[str, Any] | None) -> bool:
         """
         Return True when all eligibility conditions for the provider pitch are met:
           1. user_context is present in context
@@ -280,12 +284,12 @@ class ResponseOrchestrator:
         if last_asked == PROVIDER_PITCH_OPT_OUT_SENTINEL:
             return False
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         if last_asked.tzinfo is None:
-            last_asked = last_asked.replace(tzinfo=timezone.utc)
-        return (now - last_asked) >= timedelta(days=30)
+            last_asked = last_asked.replace(tzinfo=UTC)
+        return bool((now - last_asked) >= timedelta(days=30))
 
-    async def _should_pitch_provider_async(self, context: Optional[dict]) -> bool:
+    async def _should_pitch_provider_async(self, context: dict[str, Any] | None) -> bool:
         """Async variant of _should_pitch_provider that adds a real-time Firestore
         sanity check just before entering PROVIDER_PITCH.
 
@@ -324,7 +328,7 @@ class ResponseOrchestrator:
         name: str,
         params: dict,
         context: dict,
-    ) -> AsyncIterator[Union[str, dict]]:
+    ) -> AsyncIterator[str | dict]:
         """
         Dispatch a tool call through the registry.
 
@@ -336,7 +340,7 @@ class ResponseOrchestrator:
             return
 
         try:
-            result = await self.tool_registry.execute(name, params, context)
+            result = await self.tool_registry.execute(name, params, cast(ToolContext, context))
             yield result
         except ToolPermissionError as exc:
             yield {
@@ -354,13 +358,13 @@ class ResponseOrchestrator:
 
     async def _run_follow_up_stream(
         self,
-        pending: list,
+        pending: list[tuple[str, Any]],
         follow_up_input: str,
         session_id: str,
-        context: Optional[dict],
-        ai_response_parts: list,
-        new_pending: list,
-    ) -> AsyncIterator[Union[str, dict]]:
+        context: dict[str, Any] | None,
+        ai_response_parts: list[str],
+        new_pending: list[tuple[str, Any]],
+    ) -> AsyncIterator[str | dict]:
         """Run one follow-up LLM stream after a batch of pending tool results.
 
         1. All pending results are added to LLM history as AIMessages.
@@ -411,7 +415,7 @@ class ResponseOrchestrator:
 
         # Extract zero_result_event hint from any triage payload (set by reject_and_fetch_next
         # when the provider list is exhausted) so we can inject it into the human turn.
-        _zero_event: Optional[str] = None
+        _zero_event: str | None = None
         for _pname, _ppayload in pending:
             if isinstance(_ppayload, dict) and _ppayload.get("stage") == "triage":
                 _zero_event = _ppayload.get("zero_result_event")
@@ -492,8 +496,8 @@ class ResponseOrchestrator:
         fn_name: str,
         fn_args: dict,
         session_id: str,
-        context: Optional[dict],
-        pending: list,
+        context: dict[str, Any] | None,
+        pending: list[tuple[str, Any]],
     ) -> None:
         """Dispatch FINALIZE-stage tool calls outside the tool registry.
 
@@ -543,11 +547,11 @@ class ResponseOrchestrator:
                 if reasons:
                     csr_args["_candidate_matching_score_reasons"] = reasons
 
-            result: Optional[dict] = None
+            result: dict | None = None
             if self.tool_registry:
                 try:
                     result = await self.tool_registry.execute(
-                        "create_service_request", csr_args, context or {}
+                        "create_service_request", csr_args, cast(ToolContext, context or {})
                     )
                 except Exception as exc:
                     logger.warning("accept_provider: create_service_request failed: %s", exc)
@@ -614,8 +618,8 @@ class ResponseOrchestrator:
         self,
         user_input: str,
         session_id: str,
-        context: Optional[dict] = None,
-    ) -> AsyncIterator[str]:
+        context: dict[str, Any] | None = None,
+    ) -> AsyncIterator[str | dict[str, Any]]:
         """
         Generate streaming response with stage-aware conversation flow.
 
@@ -674,7 +678,7 @@ class ResponseOrchestrator:
             if current_stage == ConversationStage.PROVIDER_ONBOARDING and self.tool_registry:
                 try:
                     competencies = await self.tool_registry.execute(
-                        "get_my_competencies", {}, context or {}
+                        "get_my_competencies", {}, cast(ToolContext, context or {})
                     )
                     self.conversation_service.context["current_competencies"] = (
                         competencies if isinstance(competencies, list) else []
@@ -839,12 +843,12 @@ class ResponseOrchestrator:
                                 if fn_name == "record_provider_interest" and isinstance(tool_result, dict):
                                     status = tool_result.get("status")
                                     if context and "user_context" in context:
-                                        from datetime import datetime as _dt, timezone as _tz
+                                        from datetime import datetime as _dt
                                         from ..firestore_schemas import PROVIDER_PITCH_OPT_OUT_SENTINEL
                                         if status == "never":
                                             context["user_context"]["last_time_asked_being_provider"] = PROVIDER_PITCH_OPT_OUT_SENTINEL
                                         elif status in ("not_now", "accepted"):
-                                            context["user_context"]["last_time_asked_being_provider"] = _dt.now(_tz.utc)
+                                            context["user_context"]["last_time_asked_being_provider"] = _dt.now(UTC)
                                         if status == "accepted":
                                             context["user_context"]["is_service_provider"] = True
                                             # Also mirror into conversation context so the next
@@ -868,7 +872,7 @@ class ResponseOrchestrator:
                                 ):
                                     try:
                                         refreshed = await self.tool_registry.execute(
-                                            "get_my_competencies", {}, context or {}
+                                            "get_my_competencies", {}, cast(ToolContext, context or {})
                                         )
                                         self.conversation_service.context["current_competencies"] = (
                                             refreshed if isinstance(refreshed, list) else []
@@ -912,7 +916,7 @@ class ResponseOrchestrator:
             for follow_up_iter in range(MAX_FOLLOW_UP_DEPTH):
                 if not current_pending:
                     break
-                next_pending: list[tuple[str, object]] = []
+                next_pending: list[tuple[str, Any]] = []
                 # Only the first follow-up stream sees the real user utterance.
                 follow_up_user_input = user_input if follow_up_iter == 0 else " "
                 async for chunk in self._run_follow_up_stream(
