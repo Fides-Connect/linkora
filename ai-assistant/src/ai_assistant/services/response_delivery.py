@@ -19,7 +19,8 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from typing import Callable, Awaitable
+from collections.abc import Callable
+from collections.abc import Awaitable
 
 from .data_channel_bridge import DataChannelBridge
 from .session_mode import SessionMode
@@ -61,7 +62,7 @@ class VoiceResponseDelivery(ResponseDelivery):
 
     async def stream_response(self, llm_stream: AsyncIterator[str]) -> None:
         total_bytes, first_audio_at = await self._tts_manager.process_llm_stream(llm_stream)
-        asyncio.create_task(self._monitor_playback_fn(total_bytes or 0, first_audio_at))
+        asyncio.create_task(self._monitor_playback_fn(total_bytes or 0, first_audio_at))  # type: ignore[arg-type]
 
 
 class TextResponseDelivery(ResponseDelivery):

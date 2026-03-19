@@ -19,6 +19,7 @@ void main() {
     // Mock initial calls
     when(mockAuthService.initialize()).thenAnswer((_) async {});
     when(mockAuthService.onCurrentUserChanged).thenAnswer((_) => authStreamController.stream);
+    // ignore: argument_type_not_assignable
     when(mockAuthService.performSyncAndConnect(any)).thenAnswer((_) async {});
   });
 

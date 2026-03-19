@@ -10,47 +10,47 @@ Architecture:
 """
 import os
 import logging
-from datetime import datetime, UTC
-from typing import List, Dict, Any, Optional
+from typing import Any, TypeAlias
 import weaviate
 from weaviate.classes.config import Configure, Property, DataType, ReferenceProperty
-from weaviate.classes.query import Filter, QueryReference
 from weaviate.auth import AuthApiKey
+from weaviate.collections.collection.sync import Collection
 
 logger = logging.getLogger(__name__)
 
 # Collection names
 USER_COLLECTION = "User"
 COMPETENCE_COLLECTION = "Competence"
+WeaviateCollection: TypeAlias = Collection[Any, Any]
 
 class HubSpokeConnection:
     """Singleton connection manager for Hub and Spoke architecture."""
-    
-    _client: Optional[weaviate.WeaviateClient] = None
-    
+
+    _client: weaviate.WeaviateClient | None = None
+
     @classmethod
     def get_client(cls) -> weaviate.WeaviateClient:
         """Get or create Weaviate client."""
         if cls._client is None:
             cluster_url = os.getenv('WEAVIATE_CLUSTER_URL')
             api_key = os.getenv('WEAVIATE_API_KEY')
-            
+
             try:
                 if cluster_url and api_key:
-                    logger.info(f"Connecting to Weaviate Cloud Services at {cluster_url}")
+                    logger.info("Connecting to Weaviate Cloud Services at %s", cluster_url)
                     cls._client = weaviate.connect_to_wcs(
                         cluster_url=cluster_url,
                         auth_credentials=AuthApiKey(api_key),
                     )
                 else:
                     weaviate_url = os.getenv('WEAVIATE_URL', 'http://localhost:8090')
-                    logger.info(f"Connecting to local Weaviate at {weaviate_url}")
-                    
+                    logger.info("Connecting to local Weaviate at %s", weaviate_url)
+
                     url_parts = weaviate_url.replace('http://', '').replace('https://', '')
                     host = url_parts.split(':')[0]
                     port = int(url_parts.split(':')[-1].split('/')[0]) if ':' in url_parts else 8080
                     is_https = weaviate_url.startswith('https')
-                    
+
                     cls._client = weaviate.connect_to_custom(
                         http_host=host,
                         http_port=port,
@@ -59,20 +59,20 @@ class HubSpokeConnection:
                         grpc_port=50051,
                         grpc_secure=is_https
                     )
-                
+
                 if not cls._client.is_ready():
                     raise ConnectionError("Weaviate is not ready")
-                    
+
                 logger.info("Successfully connected to Weaviate")
-                
+
             except Exception as e:
-                logger.error(f"Failed to connect to Weaviate: {e}")
+                logger.error("Failed to connect to Weaviate: %s", e)
                 raise
-        
+
         return cls._client
-    
+
     @classmethod
-    def close(cls):
+    def close(cls) -> None:
         """Close Weaviate connection."""
         if cls._client is not None:
             cls._client.close()
@@ -80,21 +80,21 @@ class HubSpokeConnection:
             logger.info("Weaviate connection closed")
 
 
-def init_hub_spoke_schema():
+def init_hub_spoke_schema() -> bool | None:
     """
     Initialize Hub and Spoke schema with bidirectional cross-references.
-    
+
     Collections:
     1. Competence (Spoke) - Created FIRST
     2. User (Hub) - Created SECOND with reference to Competence
     3. Add owned_by reference to Competence after User exists
-    
+
     Note: Weaviate v4 Python client handles cross-references at data insertion time,
     but we define the schema properties for explicit structure.
     """
     try:
         client = HubSpokeConnection.get_client()
-        
+
         # Step 1: Create Competence FIRST (without owned_by reference initially)
         if not client.collections.exists(COMPETENCE_COLLECTION):
             try:
@@ -144,12 +144,12 @@ def init_hub_spoke_schema():
                                  skip_vectorization=True),
                     ],
                 )
-                logger.info(f"Created collection with vectorization: {COMPETENCE_COLLECTION}")
+                logger.info("Created collection with vectorization: %s", COMPETENCE_COLLECTION)
             except weaviate.exceptions.ObjectAlreadyExistsError:
-                logger.warning(f"Collection {COMPETENCE_COLLECTION} already exists — skipping creation")
+                logger.warning("Collection %s already exists — skipping creation", COMPETENCE_COLLECTION)
         else:
-            logger.info(f"Collection already exists: {COMPETENCE_COLLECTION}")
-        
+            logger.info("Collection already exists: %s", COMPETENCE_COLLECTION)
+
         # Step 2: Create User SECOND (now it can reference existing Competence)
         if not client.collections.exists(USER_COLLECTION):
             try:
@@ -183,20 +183,20 @@ def init_hub_spoke_schema():
                         )
                     ]
                 )
-                logger.info(f"Created collection: {USER_COLLECTION}")
+                logger.info("Created collection: %s", USER_COLLECTION)
             except weaviate.exceptions.ObjectAlreadyExistsError:
-                logger.warning(f"Collection {USER_COLLECTION} already exists — skipping creation")
+                logger.warning("Collection %s already exists — skipping creation", USER_COLLECTION)
         else:
-            logger.info(f"Collection already exists: {USER_COLLECTION}")
-        
+            logger.info("Collection already exists: %s", USER_COLLECTION)
+
         # Step 3: Add owned_by reference to Competence (now that User exists)
         # Update the collection to add the cross-reference
         competence_collection = client.collections.get(COMPETENCE_COLLECTION)
         config = competence_collection.config.get()
-        
+
         # Check if owned_by reference already exists
         has_owned_by = any(ref.name == "owned_by" for ref in (config.references or []))
-        
+
         if not has_owned_by:
             try:
                 competence_collection.config.add_reference(
@@ -205,21 +205,21 @@ def init_hub_spoke_schema():
                         target_collection=USER_COLLECTION
                     )
                 )
-                logger.info(f"Added 'owned_by' reference to {COMPETENCE_COLLECTION}")
+                logger.info("Added 'owned_by' reference to %s", COMPETENCE_COLLECTION)
             except weaviate.exceptions.ObjectAlreadyExistsError:
-                logger.warning(f"'owned_by' reference in {COMPETENCE_COLLECTION} already exists — skipping")
+                logger.warning("'owned_by' reference in %s already exists — skipping", COMPETENCE_COLLECTION)
         else:
-            logger.info(f"'owned_by' reference already exists in {COMPETENCE_COLLECTION}")
-        
+            logger.info("'owned_by' reference already exists in %s", COMPETENCE_COLLECTION)
+
         logger.info("Hub and Spoke schema initialization complete")
         return True
-        
+
     except Exception as e:
-        logger.error(f"Error initializing Hub and Spoke schema: {e}")
+        logger.error("Error initializing Hub and Spoke schema: %s", e)
         raise
 
 
-def get_user_collection():
+def get_user_collection() -> WeaviateCollection:
     """Get User collection, auto-initialising schema if needed."""
     client = HubSpokeConnection.get_client()
     if not client.collections.exists(USER_COLLECTION):
@@ -228,7 +228,7 @@ def get_user_collection():
     return client.collections.get(USER_COLLECTION)
 
 
-def get_competence_collection():
+def get_competence_collection() -> WeaviateCollection:
     """Get Competence collection, auto-initialising schema if needed."""
     client = HubSpokeConnection.get_client()
     if not client.collections.exists(COMPETENCE_COLLECTION):
@@ -237,22 +237,22 @@ def get_competence_collection():
     return client.collections.get(COMPETENCE_COLLECTION)
 
 
-def cleanup_hub_spoke_schema():
+def cleanup_hub_spoke_schema() -> bool | None:
     """Delete collections (for testing purposes)."""
     try:
         client = HubSpokeConnection.get_client()
-        
+
         if client.collections.exists(COMPETENCE_COLLECTION):
             client.collections.delete(COMPETENCE_COLLECTION)
-            logger.info(f"Deleted collection: {COMPETENCE_COLLECTION}")
-        
+            logger.info("Deleted collection: %s", COMPETENCE_COLLECTION)
+
         if client.collections.exists(USER_COLLECTION):
             client.collections.delete(USER_COLLECTION)
-            logger.info(f"Deleted collection: {USER_COLLECTION}")
-        
+            logger.info("Deleted collection: %s", USER_COLLECTION)
+
         logger.info("Hub and Spoke schema cleanup complete")
         return True
-        
+
     except Exception as e:
-        logger.error(f"Error cleaning up Hub and Spoke schema: {e}")
+        logger.error("Error cleaning up Hub and Spoke schema: %s", e)
         raise

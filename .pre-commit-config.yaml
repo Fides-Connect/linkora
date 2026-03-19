@@ -1,0 +1,16 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-lint
+        name: Ruff lint (ai-assistant)
+        entry: bash -c 'cd ai-assistant && ruff check --fix src/'
+        language: system
+        pass_filenames: false
+        files: '^ai-assistant/src/.*\.py$'
+
+      - id: mypy-type-check
+        name: MyPy type-check (ai-assistant)
+        entry: bash -c 'cd ai-assistant && mypy src/ai_assistant/'
+        language: system
+        pass_filenames: false
+        files: '^ai-assistant/src/.*\.py$'

@@ -14,7 +14,7 @@ import warnings
 # inspect.iscoroutinefunction() that emits a DeprecationWarning on every
 # invocation.  Replacing it process-wide with the non-deprecated equivalent
 # eliminates the per-call warning overhead for all LLMService instances.
-asyncio.iscoroutinefunction = inspect.iscoroutinefunction  # type: ignore[attr-defined]
+asyncio.iscoroutinefunction = inspect.iscoroutinefunction  # type: ignore[assignment, attr-defined]
 
 # google-genai re-defines AiohttpClientSession (an aiohttp.ClientSession
 # subclass) inside a factory function, so aiohttp emits its "Inheritance …
@@ -26,17 +26,17 @@ warnings.filterwarnings(
     category=DeprecationWarning,
 )
 
-from aiohttp import web
-from dotenv import load_dotenv
-import firebase_admin
+from aiohttp import web  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402
+import firebase_admin  # noqa: E402
 
-from .signaling_server import SignalingServer
-from .common_endpoints import setup_cors
-from .services.admin_service import AdminService
-from .api.v1.router import register_v1_routes
-from .weaviate_sync import run_startup_sync
-from .services.llm_service import LLMService
-from .hub_spoke_schema import HubSpokeConnection
+from .signaling_server import SignalingServer  # noqa: E402
+from .common_endpoints import setup_cors  # noqa: E402
+from .services.admin_service import AdminService  # noqa: E402
+from .api.v1.router import register_v1_routes  # noqa: E402
+from .weaviate_sync import run_startup_sync  # noqa: E402
+from .services.llm_service import LLMService  # noqa: E402
+from .hub_spoke_schema import HubSpokeConnection  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -46,28 +46,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def main():
+async def main() -> None:
     """Main application entry point."""
     # Load environment variables
     load_dotenv()
 
     # Set log level from environment
     logging.getLogger().setLevel(os.getenv('LOG_LEVEL', 'INFO').upper())
-    
+
     logger.info("=" * 60)
     logger.info("AI Assistant Service Starting")
     logger.info("=" * 60)
-    
+
     # Verify required environment variables
     required_vars = [
         'GEMINI_API_KEY'
     ]
-    
+
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     if missing_vars:
-        logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
+        logger.error("Missing required environment variables: %s", ', '.join(missing_vars))
         return
-    
+
     # Initialize Firebase Admin SDK using Application Default Credentials (WIF / Cloud Run ADC)
     logger.info("Initializing Firebase Admin SDK...")
     try:
@@ -77,35 +77,35 @@ async def main():
         else:
             logger.info("Firebase Admin SDK already initialized")
     except Exception as e:
-        logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
+        logger.error("Failed to initialize Firebase Admin SDK: %s", e)
         logger.error("Firebase ID token verification will not work!")
         return
-    
+
     # Log configuration
     logger.info("Configuration:")
-    logger.info(f"  Firestore Database: {os.getenv('FIRESTORE_DATABASE_NAME', '(default)')}")
-    logger.info(f"  Language DE: {os.getenv('LANGUAGE_CODE_DE', 'de-DE')}")
-    logger.info(f"  Voice DE: {os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat')}")
-    logger.info(f"  Language EN: {os.getenv('LANGUAGE_CODE_EN', 'en-US')}")
-    logger.info(f"  Voice EN: {os.getenv('VOICE_NAME_EN', 'en-US-Chirp3-HD-Sulafat')}")
-    logger.info(f"  Host: {os.getenv('HOST', '0.0.0.0')}")
-    logger.info(f"  Port: {os.getenv('PORT', 8080)}")
-    logger.info(f"  Log Level: {os.getenv('LOG_LEVEL', 'INFO')}")
-    logger.info(f"  Google TTS API Concurrency: {os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5')}")
-    logger.info(f"  Debug Audio Record: {os.getenv('DEBUG_RECORD_AUDIO', 'false')}")
-    logger.info(f"  LLM Model: {os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')}")
-    
+    logger.info("  Firestore Database: %s", os.getenv('FIRESTORE_DATABASE_NAME', '(default)'))
+    logger.info("  Language DE: %s", os.getenv('LANGUAGE_CODE_DE', 'de-DE'))
+    logger.info("  Voice DE: %s", os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat'))
+    logger.info("  Language EN: %s", os.getenv('LANGUAGE_CODE_EN', 'en-US'))
+    logger.info("  Voice EN: %s", os.getenv('VOICE_NAME_EN', 'en-US-Chirp3-HD-Sulafat'))
+    logger.info("  Host: %s", os.getenv('HOST', '0.0.0.0'))
+    logger.info("  Port: %s", os.getenv('PORT', 8080))
+    logger.info("  Log Level: %s", os.getenv('LOG_LEVEL', 'INFO'))
+    logger.info("  Google TTS API Concurrency: %s", os.getenv('GOOGLE_TTS_API_CONCURRENCY', '5'))
+    logger.info("  Debug Audio Record: %s", os.getenv('DEBUG_RECORD_AUDIO', 'false'))
+    logger.info("  LLM Model: %s", os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'))
+
     # Sync Firestore → Weaviate (opt-in via WEAVIATE_SYNC_ON_STARTUP=true)
     await run_startup_sync()
 
     # Initialize signaling server
     logger.info("Initializing signaling server...")
     signaling_server = SignalingServer()
-    
+
     # Initialize admin service
     logger.info("Initializing admin service...")
     admin_service = AdminService(signaling_server=signaling_server)
-    
+
     # Create web application
     app = web.Application()
     app.router.add_get('/ws', signaling_server.handle_websocket)
@@ -125,30 +125,30 @@ async def main():
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             max_output_tokens=2048,
         )
-        app["competence_enricher"] = _CompetenceEnricher(llm=_rest_llm.llm)
+        app["competence_enricher"] = _CompetenceEnricher(llm=_rest_llm.llm)  # type: ignore[arg-type]
         logger.info("CompetenceEnricher wired to REST app for /me/competencies endpoints")
     else:
         logger.warning("GEMINI_API_KEY not set — competence enrichment disabled for REST endpoints")
 
     # Register admin routes
     admin_service.register_routes(app)
-    
+
     # Start server
     host = os.getenv('HOST', '0.0.0.0')
     port = int(os.getenv('PORT', 8080))
-    
-    logger.info(f"Starting AI Assistant server on {host}:{port}")
-    logger.info(f"WebSocket endpoint: ws://{host}:{port}/ws")
-    logger.info(f"Health check: http://{host}:{port}/health")
-    logger.info(f"API v1: http://{host}:{port}/api/v1/")
-    logger.info(f"Sign-In: http://{host}:{port}/api/v1/auth/sign-in-google")
-    
+
+    logger.info("Starting AI Assistant server on %s:%s", host, port)
+    logger.info("WebSocket endpoint: ws://%s:%s/ws", host, port)
+    logger.info("Health check: http://%s:%s/health", host, port)
+    logger.info("API v1: http://%s:%s/api/v1/", host, port)
+    logger.info("Sign-In: http://%s:%s/api/v1/auth/sign-in-google", host, port)
+
     runner = web.AppRunner(app)
     setup_cors(app)
     await runner.setup()
     site = web.TCPSite(runner, host, port)
     await site.start()
-    
+
     logger.info("=" * 60)
     logger.info("AI Assistant server is running")
     logger.info("=" * 60)
@@ -177,7 +177,7 @@ async def main():
     # utterance doesn't pay the one-time initialisation cost.
     prewarm_llm = LLMService(
         api_key=os.getenv('GEMINI_API_KEY', ''),
-        model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),        
+        model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
     )
     prewarm_task = asyncio.create_task(prewarm_llm.prewarm())
 
@@ -228,7 +228,7 @@ async def main():
         # to press Ctrl+C multiple times.
         try:
             await asyncio.wait_for(signaling_server.close_all_connections(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "Timed out waiting for close_all_connections(); "
                 "some WebSocket connections may still be open."
@@ -243,7 +243,7 @@ async def main():
             )
         try:
             await asyncio.wait_for(runner.cleanup(), timeout=10.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error(
                 "Timed out waiting for runner.cleanup(); "
                 "aborting to prevent hanging indefinitely."

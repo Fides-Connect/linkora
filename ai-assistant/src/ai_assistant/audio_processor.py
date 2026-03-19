@@ -4,12 +4,13 @@ Handles the audio processing pipeline: STT -> LLM -> TTS
 """
 import asyncio
 import logging
-import json
 import os
 import numpy as np
-from typing import AsyncGenerator, Optional
-from aiortc import MediaStreamTrack
+from typing import Any
+from collections.abc import AsyncGenerator
+from aiortc import MediaStreamTrack, RTCDataChannel
 from aiortc.mediastreams import MediaStreamError
+from av import AudioFrame
 
 from .ai_assistant import AIAssistant
 from .audio_track import AudioOutputTrack
@@ -21,7 +22,7 @@ from .services.response_delivery import ResponseDelivery, ResponseDeliveryFactor
 from .services.session_starter import SessionStarter, SessionStarterFactory
 from .services.session_mode import SessionMode
 from .services.transcript_processor import TranscriptProcessor
-from .services.tts_playback_manager import TTSPlaybackManager, SentenceParser
+from .services.tts_playback_manager import TTSPlaybackManager
 from .services.conversation_service import ConversationStage
 from .services.agent_runtime_fsm import AgentRuntimeState
 from .services.ai_conversation_service import AIConversationService
@@ -48,20 +49,20 @@ class AudioProcessor:
     def __init__(
         self,
         connection_id: str,
-        input_track: Optional[MediaStreamTrack] = None,
-        user_id: Optional[str] = None,
+        input_track: MediaStreamTrack | None = None,
+        user_id: str | None = None,
         language: str = "de",
         language_fallback_from: str = "",
-        buffered_message: Optional[str] = None,
-    ):
+        buffered_message: str | None = None,
+    ) -> None:
         self.connection_id = connection_id
         self.input_track = input_track
         self.user_id = user_id
         self.language = language
         self.output_track = AudioOutputTrack()
         self.running = False
-        self.processing_task = None
-        self.stt_task = None
+        self.processing_task: asyncio.Task[Any] | None = None
+        self.stt_task: asyncio.Task[Any] | None = None
 
         # Session mode — derived from whether an audio track is provided.
         self.session_mode: SessionMode = (
@@ -70,11 +71,11 @@ class AudioProcessor:
 
         # Activity hook: called on every _process_final_transcript invocation.
         # Used by PeerConnectionHandler to reset the idle timer.
-        self.on_activity = None
+        self.on_activity: Any = None
 
         # Composability hook: when set, _continuous_stt calls this instead of
         # _process_final_transcript directly.
-        self.on_transcript_final = None
+        self.on_transcript_final: Any = None
 
         # Create language-specific AI assistant for this connection
         self.ai_assistant = self._create_language_specific_assistant(language)
@@ -92,7 +93,7 @@ class AudioProcessor:
         )
 
         # Audio streaming for continuous STT
-        self.audio_queue: asyncio.Queue = asyncio.Queue()
+        self.audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self.sample_rate = 48000  # WebRTC sends 48kHz
 
         # ── DataChannel service ────────────────────────────────────────────────
@@ -119,10 +120,10 @@ class AudioProcessor:
 
         # Tracks the current LLM+TTS response task so it can be cancelled on
         # interrupt.
-        self._response_task: Optional[asyncio.Task] = None
+        self._response_task: asyncio.Task | None = None
         # Tracks the session-starter initialize() task so it can be cancelled
         # before closing clients (prevents use-after-close if still in flight).
-        self._session_starter_task: Optional[asyncio.Task] = None
+        self._session_starter_task: asyncio.Task | None = None
 
         # Serializes text-input handling from the DataChannel to avoid races
         # between concurrent process_text_input() calls.
@@ -138,18 +139,18 @@ class AudioProcessor:
 
         # ── Response delivery strategy & session starter ─────────────────────
         # Swapped on mode switch via _make_delivery() / _make_session_starter().
-        self._buffered_message: Optional[str] = buffered_message
+        self._buffered_message: str | None = buffered_message
         self._delivery: ResponseDelivery = self._make_delivery(self.session_mode)
         self._session_starter: SessionStarter = self._make_session_starter(self.session_mode)
 
     # ── Factory ───────────────────────────────────────────────────────────────
 
-    def _create_language_specific_assistant(self, language: str):
+    def _create_language_specific_assistant(self, language: str) -> AIAssistant:
         """Create a language-specific AI assistant instance."""
         logger.info("Creating language-specific AI assistant for language: %s", language)
 
         assistant = AIAssistant(
-            gemini_api_key=os.getenv('GEMINI_API_KEY'),
+            gemini_api_key=os.getenv('GEMINI_API_KEY') or "",
             language=language,
             llm_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
             session_id=self.connection_id
@@ -161,7 +162,7 @@ class AudioProcessor:
 
         # Inject the same FirestoreService so the tool-context has a live client.
         # Without this, all Firestore-dependent tools receive None and crash.
-        assistant.firestore_service = _firestore_service
+        assistant.firestore_service = _firestore_service  # type: ignore[attr-defined, assignment]
 
         logger.info(
             "AI Assistant created with language '%s': %s, %s",
@@ -171,7 +172,7 @@ class AudioProcessor:
 
     # ── DataChannel wiring ────────────────────────────────────────────────────
 
-    def set_data_channel(self, channel) -> None:
+    def set_data_channel(self, channel: RTCDataChannel) -> None:
         """Attach the DataChannel for outbound messages.
 
         Also re-emits the current AgentRuntimeFSM state so Flutter receives it
@@ -186,7 +187,7 @@ class AudioProcessor:
         # the earlier state events that fired before the channel was ready.
         try:
             fsm = self.ai_assistant.response_orchestrator.runtime_fsm
-            self._emit_runtime_state(fsm.state)
+            self._emit_runtime_state(fsm.current_state)
         except Exception as exc:  # pragma: no cover
             logger.warning("Could not re-emit FSM state on DC attach: %s", exc)
 
@@ -324,7 +325,7 @@ class AudioProcessor:
 
     # ── Voice mode toggle ─────────────────────────────────────────────────────
 
-    async def enable_voice_mode(self, input_track: Optional[MediaStreamTrack] = None) -> 'AudioOutputTrack':
+    async def enable_voice_mode(self, input_track: MediaStreamTrack | None = None) -> AudioOutputTrack:
         """Resume or start voice mode."""
         logger.info("Enabling voice mode for connection %s", self.connection_id)
         self.session_mode = SessionMode.VOICE
@@ -375,11 +376,13 @@ class AudioProcessor:
 
     # ── Audio processing ───────────────────────────────────────────────────────
 
-    async def _process_audio(self):
+    async def _process_audio(self) -> None:
         """Main audio processing loop - receives frames and queues them for STT."""
-        try:
-            frame_count = 0
+        if self.input_track is None:
+            return
 
+        frame_count = 0
+        try:
             while self.running:
                 try:
                     frame_count += 1
@@ -390,10 +393,14 @@ class AudioProcessor:
                             timeout=5.0
                         )
                     except MediaStreamError:
-                        logger.warning(f"Input track closed (frame {frame_count})")
+                        logger.warning("Input track closed (frame %s)", frame_count)
                         break
                     except asyncio.CancelledError:
                         break
+
+                    if not isinstance(frame, AudioFrame):
+                        logger.warning("Unexpected frame type %s, skipping", type(frame))
+                        continue
 
                     audio_data = self.frame_converter.frame_to_numpy(frame)
                     self.debug_recorder.add_frame(audio_data)
@@ -404,19 +411,19 @@ class AudioProcessor:
                     audio_bytes = audio_data[:n].reshape(-1, 6).mean(axis=1).astype(np.int16).tobytes()
                     await self.audio_queue.put(audio_bytes)
 
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
                 except Exception as e:
                     logger.error(f"Error receiving frame: {e}", exc_info=True)
 
         except asyncio.CancelledError:
-            logger.info(f"Audio processing cancelled (frames={frame_count})")
+            logger.info("Audio processing cancelled (frames=%s)", frame_count)
         except Exception as e:
-            logger.error(f"Error in audio processing: {e}", exc_info=True)
-    
+            logger.error("Error in audio processing: %s", e, exc_info=True)
+
     # ── STT pipeline (decomposed) ──────────────────────────────────────────────
 
-    async def _make_audio_chunks(self) -> AsyncGenerator[bytes, None]:
+    async def _make_audio_chunks(self) -> AsyncGenerator[bytes]:
         """Async generator that yields raw PCM bytes from the audio queue.
 
         Terminates when the queue delivers ``None`` (sentinel from :meth:`stop`
@@ -428,7 +435,7 @@ class AudioProcessor:
                 if chunk is None:
                     break
                 yield chunk
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 continue
             except Exception as exc:
                 logger.error("Audio generator error: %s", exc, exc_info=True)
@@ -484,7 +491,7 @@ class AudioProcessor:
         utterances (e.g. user leaves mic open).
         """
         MAX_UTTERANCE_DURATION = 60.0  # seconds
-        utterance_start: Optional[float] = None
+        utterance_start: float | None = None
         last_partial: str = ""
 
         async for transcript, is_final in self.transcript_processor.process_audio_stream(
@@ -545,7 +552,7 @@ class AudioProcessor:
         except Exception as exc:
             logger.error("Error in continuous STT: %s", exc, exc_info=True)
 
-    async def _trigger_interrupt(self):
+    async def _trigger_interrupt(self) -> None:
         """Trigger an interrupt to stop ongoing AI speech."""
         logger.info("Triggering interrupt")
         # Stop TTS and clear audio output immediately so the user hears silence.
@@ -586,8 +593,8 @@ class AudioProcessor:
                 )
         except Exception as exc:  # pragma: no cover
             logger.warning("History repair in _trigger_interrupt failed: %s", exc)
-    
-    async def process_text_input(self, text: str):
+
+    async def process_text_input(self, text: str) -> None:
         """Process a text message through the LLM pipeline.
 
         Awaits session initialization (handles race on very first message),
@@ -615,7 +622,7 @@ class AudioProcessor:
                     await asyncio.wait_for(
                         self._session_starter.initialized_event.wait(), timeout=2.0
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning(
                         "Session initialization timeout for %s — proceeding without user context",
                         self.connection_id,
@@ -671,10 +678,10 @@ class AudioProcessor:
                 self._process_final_transcript(text)
             )
 
-    async def _process_final_transcript(self, transcript: str):
+    async def _process_final_transcript(self, transcript: str) -> None:
         """Process a final transcript through LLM -> TTS pipeline."""
         try:
-            logger.info(f"Processing final transcript: '{transcript}'")
+            logger.info("Processing final transcript: '%s'", transcript)
 
             # Notify the connection handler of activity (resets idle timer).
             # Guard: empty/noise transcripts must not reset the idle timer (§9).
@@ -694,31 +701,31 @@ class AudioProcessor:
 
             # Echo transcript to client — delivery strategy decides whether to send it.
             self._delivery.echo_user_transcript(transcript)
-            
+
             start_time = asyncio.get_event_loop().time()
-            
+
             # Reset interrupt event and set speaking flag
             self.interrupt_event.clear()
             logger.info("🔊 is_ai_speaking → True (response started)")
             self.is_ai_speaking = True
-            
+
             # Performance tracking
             perf_times = {
                 'start': start_time,
                  'llm_first_token': None,
                 'tts_first_audio': None,
             }
-            
+
             # Get LLM stream
             llm_start = asyncio.get_event_loop().time()
-            
+
             # Create LLM stream
             llm_stream = self.ai_assistant.generate_llm_response_stream(
                 transcript, user_id=self.user_id
             )
-            
+
             # Wrap LLM stream to track first token
-            async def tracked_llm_stream():
+            async def tracked_llm_stream() -> AsyncGenerator[str]:
                 first_chunk = True
                 async for chunk in llm_stream:
                     # The orchestrator emits a sentinel dict before each
@@ -729,22 +736,26 @@ class AudioProcessor:
                         first_chunk = True
                         continue
 
+                    if not isinstance(chunk, str):
+                        continue
+
                     if chunk:
                         # First chunk of each turn → is_chunk=False → new bubble.
                         # Remaining chunks → is_chunk=True → append.
                         self._send_chat_message(chunk, is_user=False, is_chunk=not first_chunk)
 
                     if first_chunk and chunk:
-                        perf_times['llm_first_token'] = asyncio.get_event_loop().time()
-                        logger.info(f"⚡ Time to first LLM token: {perf_times['llm_first_token'] - llm_start:.3f}s")
+                        llm_first_token = asyncio.get_event_loop().time()
+                        perf_times['llm_first_token'] = llm_first_token
+                        logger.info("⚡ Time to first LLM token: %.3fs", llm_first_token - llm_start)
                         first_chunk = False
                     yield chunk
-            
+
             # Delegate output to the active delivery strategy.
             await self._delivery.stream_response(tracked_llm_stream())
 
             total_time = asyncio.get_event_loop().time() - start_time
-            logger.info(f"✅ Pipeline complete in {total_time:.3f}s")
+            logger.info("✅ Pipeline complete in %.3fs", total_time)
 
         except asyncio.CancelledError:
             # User interrupted — reset state and let the task exit cleanly.
@@ -756,8 +767,13 @@ class AudioProcessor:
             logger.error(f"Error processing final transcript: {e}", exc_info=True)
             logger.info("🔇 is_ai_speaking → False (exception in pipeline)")
             self.is_ai_speaking = False
-    
-    async def _queue_audio_for_playback(self, audio_data: bytes, is_first: bool = True, is_last: bool = True):
+
+    async def _queue_audio_for_playback(
+        self,
+        audio_data: bytes,
+        is_first: bool = True,
+        is_last: bool = True,
+    ) -> None:
         """
         Queue audio for playback. Fades are applied only at sentence boundaries
         (is_first / is_last) so intermediate streaming chunks pass through untouched,
@@ -779,11 +795,15 @@ class AudioProcessor:
                     audio_samples[-fade_out_samples:] = (audio_samples[-fade_out_samples:] * fade_out).astype(np.int16)
 
             await self.output_track.queue_audio(audio_samples.tobytes())
-            
+
         except Exception as e:
             logger.error(f"Error queueing audio for playback: {e}", exc_info=True)
-    
-    async def _monitor_playback_completion(self, total_audio_bytes: int = 0, first_audio_at: float = 0.0):
+
+    async def _monitor_playback_completion(
+        self,
+        total_audio_bytes: int = 0,
+        first_audio_at: float = 0.0,
+    ) -> None:
         """Wait until the device has finished playing all queued audio, then clear is_ai_speaking.
 
         Computes the remaining playback time by subtracting the time already
@@ -807,7 +827,7 @@ class AudioProcessor:
                     wait_s = total_wait_s
                 try:
                     await asyncio.wait_for(self.interrupt_event.wait(), timeout=wait_s)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass  # Normal completion — not interrupted
             # else: no audio was queued (e.g. text-mode or empty response) — fall through
 

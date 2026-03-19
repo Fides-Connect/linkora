@@ -1,4 +1,6 @@
 ---
+name: machine-learning-agent
+user-invokable: false
 description: 'ML & AI systems expert for the Fides ai-assistant backend. Owns the full Python pipeline: STT→LLM→TTS hot path, ConversationStage FSM, AgentRuntimeFSM, tool calling, Gemini 2.5 Flash streaming, Firestore schemas and TTL, and Weaviate vector/hybrid search. Writes Python, designs prompts, and reasons about latency-critical async pipelines.'
 tools: ['vscode', 'execute', 'read', 'edit', 'search', 'github.vscode-pull-request-github/copilotCodingAgent', 'github.vscode-pull-request-github/activePullRequest', 'github.vscode-pull-request-github/issue_fetch', 'ms-python.python/getPythonEnvironmentInfo', 'ms-python.python/getPythonExecutableCommand', 'ms-python.python/installPythonPackage', 'ms-python.python/configurePythonEnvironment', 'todo']
 ---

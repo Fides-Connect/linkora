@@ -7,13 +7,13 @@ The ConversationStage (external, semantic) is owned by ResponseOrchestrator;
 this FSM only tracks low-level runtime execution state.
 """
 import logging
-from enum import Enum
-from typing import Callable, Dict, Optional
+from enum import StrEnum
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
 
-class AgentRuntimeState(str, Enum):
+class AgentRuntimeState(StrEnum):
     """Internal runtime states for the audio/transport pipeline."""
     BOOTSTRAP          = "bootstrap"
     DATA_CHANNEL_WAIT  = "data_channel_wait"
@@ -34,7 +34,7 @@ class AgentRuntimeState(str, Enum):
 # "interrupt" and "terminate" are handled as universal cross-cutting events.
 # ---------------------------------------------------------------------------
 
-_TRANSITIONS: Dict[AgentRuntimeState, Dict[str, AgentRuntimeState]] = {
+_TRANSITIONS: dict[AgentRuntimeState, dict[str, AgentRuntimeState]] = {
     AgentRuntimeState.BOOTSTRAP: {
         "data_channel_wait": AgentRuntimeState.DATA_CHANNEL_WAIT,
     },
@@ -83,7 +83,7 @@ _TRANSITIONS: Dict[AgentRuntimeState, Dict[str, AgentRuntimeState]] = {
 }
 
 # Events that fire regardless of source state (except TERMINATED)
-_UNIVERSAL_EVENTS: Dict[str, AgentRuntimeState] = {
+_UNIVERSAL_EVENTS: dict[str, AgentRuntimeState] = {
     "interrupt": AgentRuntimeState.INTERRUPTING,
     "terminate": AgentRuntimeState.TERMINATED,
 }
@@ -106,7 +106,7 @@ class AgentRuntimeFSM:
     def __init__(self) -> None:
         self._current_state: AgentRuntimeState = AgentRuntimeState.BOOTSTRAP
         # Optional callback: (old: AgentRuntimeState, new: AgentRuntimeState) -> None
-        self.on_state_change: Optional[Callable[[AgentRuntimeState, AgentRuntimeState], None]] = None
+        self.on_state_change: Callable[[AgentRuntimeState, AgentRuntimeState], None] | None = None
 
     @property
     def current_state(self) -> AgentRuntimeState:

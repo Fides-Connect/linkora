@@ -24,7 +24,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 # sentence_transformers is intentionally NOT imported at module scope.
 # Importing it at startup pulls in torch and other heavy deps even though the
@@ -64,7 +64,7 @@ def _resolve_model_name() -> str:
     return _HF_MODEL_ID
 
 
-def _candidate_to_text(candidate: Dict[str, Any]) -> str:
+def _candidate_to_text(candidate: dict[str, Any]) -> str:
     """Build a single string representing a provider candidate for the cross-encoder.
 
     We concatenate the most semantically rich fields so the model can judge
@@ -99,12 +99,12 @@ class CrossEncoderService:
     that needs reranking — do not create multiple instances.
     """
 
-    def __init__(self, model_name: str = _DEFAULT_MODEL, min_score: Optional[float] = None):
+    def __init__(self, model_name: str = _DEFAULT_MODEL, min_score: float | None = None) -> None:
         # When using the default HF identifier, prefer the bundled local copy.
         self._model_name = (
             _resolve_model_name() if model_name == _DEFAULT_MODEL else model_name
         )
-        self._model: Optional[Any] = None  # loaded lazily
+        self._model: object | None = None  # loaded lazily
         if min_score is None:
             raw = os.environ.get("CROSS_ENCODER_MIN_SCORE")
             if raw is not None:
@@ -121,7 +121,7 @@ class CrossEncoderService:
             self._min_score,
         )
 
-    def _load_model(self) -> Any:
+    def _load_model(self) -> object:
         """Load the cross-encoder model (called once on first use)."""
         global CrossEncoder  # noqa: PLW0603 — populated lazily so startup is cheap
         if self._model is None:
@@ -142,9 +142,9 @@ class CrossEncoderService:
     async def rerank(
         self,
         query: str,
-        candidates: List[Dict[str, Any]],
+        candidates: list[dict[str, Any]],
         top_k: int = 5,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Re-score and sort candidates using the cross-encoder.
 
         Runs the CPU-bound `predict()` call in a thread executor to keep
@@ -171,8 +171,8 @@ class CrossEncoderService:
         loop = asyncio.get_running_loop()
         try:
             model = self._load_model()
-            scores: List[float] = await loop.run_in_executor(
-                None, lambda: model.predict(pairs).tolist()
+            scores: list[float] = await loop.run_in_executor(
+                None, lambda: model.predict(pairs).tolist()  # type: ignore[attr-defined]
             )
         except Exception as exc:
             logger.error("Cross-encoder reranking failed: %s — returning original order", exc, exc_info=True)
