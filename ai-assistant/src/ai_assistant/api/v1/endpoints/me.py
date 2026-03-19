@@ -2,6 +2,7 @@
 /api/v1/me/* endpoints
 Current user management endpoints.
 """
+from typing import Any
 import logging
 from aiohttp import web
 from pydantic import ValidationError
@@ -22,16 +23,16 @@ async def get_me(request: web.Request) -> web.Response:
     try:
         user_id = await get_current_user_id(request)
         user = await firestore_service.get_user(user_id)
-        
+
         if user:
             user = serialize_datetime(user)
             return web.json_response(user)
-        
+
         return web.json_response({"error": "User not found"}, status=404)
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in get_me: {e}")
+        logger.error("Error in get_me: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -40,25 +41,25 @@ async def update_me(request: web.Request) -> web.Response:
     try:
         user_id = await get_current_user_id(request)
         body = await request.json()
-        
+
         # Check if user exists
         user = await firestore_service.get_user(user_id)
         if not user:
             return web.json_response({"error": "User not found"}, status=404)
-        
+
         updated_user = await firestore_service.update_user(user_id, body)
         if updated_user:
             # Sync to Weaviate
             try:
                 UserModelWeaviate.update_user(user_id, body)
             except Exception as e:
-                logger.error(f"Failed to sync user {user_id} update to Weaviate: {e}")
+                logger.error("Failed to sync user %s update to Weaviate: %s", user_id, e)
 
             return web.json_response(serialize_datetime(updated_user))
         else:
             return web.json_response({"error": "Failed to update user"}, status=500)
     except ValidationError as e:
-        logger.warning(f"Validation error in update_me: {e}")
+        logger.warning("Validation error in update_me: %s", e)
         return web.json_response({
             "error": "Validation failed",
             "details": e.errors()
@@ -66,7 +67,7 @@ async def update_me(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in update_me: {e}")
+        logger.error("Error in update_me: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -80,7 +81,7 @@ async def get_my_favorites(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in get_my_favorites: {e}")
+        logger.error("Error in get_my_favorites: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -90,10 +91,10 @@ async def add_my_favorite(request: web.Request) -> web.Response:
         user_id = await get_current_user_id(request)
         body = await request.json()
         favorite_user_id = body.get('user_id')
-        
+
         if not favorite_user_id:
             return web.json_response({"error": "Missing user_id in request body"}, status=400)
-        
+
         # Verify the user exists
         user = await firestore_service.get_user(favorite_user_id)
         if not user:
@@ -108,7 +109,7 @@ async def add_my_favorite(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in add_my_favorite: {e}")
+        logger.error("Error in add_my_favorite: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -117,7 +118,7 @@ async def remove_my_favorite(request: web.Request) -> web.Response:
     try:
         user_id = await get_current_user_id(request)
         favorite_user_id = request.match_info['user_id']
-        
+
         success = await firestore_service.remove_favorite(user_id, favorite_user_id)
         if success:
             return web.json_response({"status": "removed"})
@@ -126,7 +127,7 @@ async def remove_my_favorite(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in remove_my_favorite: {e}")
+        logger.error("Error in remove_my_favorite: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -136,13 +137,13 @@ async def add_my_outgoing_service_requests(request: web.Request) -> web.Response
         user_id = await get_current_user_id(request)
         body = await request.json()
         request_ids = body.get('request_ids', [])
-        
+
         if not request_ids:
             return web.json_response({"error": "Missing request_ids in request body"}, status=400)
-        
+
         if not isinstance(request_ids, list):
             return web.json_response({"error": "request_ids must be an array"}, status=400)
-        
+
         success = await firestore_service.add_outgoing_service_requests(user_id, request_ids)
         if success:
             return web.json_response({
@@ -154,7 +155,7 @@ async def add_my_outgoing_service_requests(request: web.Request) -> web.Response
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in add_my_outgoing_service_requests: {e}")
+        logger.error("Error in add_my_outgoing_service_requests: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -164,13 +165,13 @@ async def add_my_incoming_service_requests(request: web.Request) -> web.Response
         user_id = await get_current_user_id(request)
         body = await request.json()
         request_ids = body.get('request_ids', [])
-        
+
         if not request_ids:
             return web.json_response({"error": "Missing request_ids in request body"}, status=400)
-        
+
         if not isinstance(request_ids, list):
             return web.json_response({"error": "request_ids must be an array"}, status=400)
-        
+
         success = await firestore_service.add_incoming_service_requests(user_id, request_ids)
         if success:
             return web.json_response({
@@ -182,7 +183,7 @@ async def add_my_incoming_service_requests(request: web.Request) -> web.Response
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in add_my_incoming_service_requests: {e}")
+        logger.error("Error in add_my_incoming_service_requests: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -192,13 +193,13 @@ async def remove_my_outgoing_service_requests(request: web.Request) -> web.Respo
         user_id = await get_current_user_id(request)
         body = await request.json()
         request_ids = body.get('request_ids', [])
-        
+
         if not request_ids:
             return web.json_response({"error": "Missing request_ids in request body"}, status=400)
-        
+
         if not isinstance(request_ids, list):
             return web.json_response({"error": "request_ids must be an array"}, status=400)
-        
+
         success = await firestore_service.remove_outgoing_service_requests(user_id, request_ids)
         if success:
             return web.json_response({
@@ -210,7 +211,7 @@ async def remove_my_outgoing_service_requests(request: web.Request) -> web.Respo
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in remove_my_outgoing_service_requests: {e}")
+        logger.error("Error in remove_my_outgoing_service_requests: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -220,13 +221,13 @@ async def remove_my_incoming_service_requests(request: web.Request) -> web.Respo
         user_id = await get_current_user_id(request)
         body = await request.json()
         request_ids = body.get('request_ids', [])
-        
+
         if not request_ids:
             return web.json_response({"error": "Missing request_ids in request body"}, status=400)
-        
+
         if not isinstance(request_ids, list):
             return web.json_response({"error": "request_ids must be an array"}, status=400)
-        
+
         success = await firestore_service.remove_incoming_service_requests(user_id, request_ids)
         if success:
             return web.json_response({
@@ -238,7 +239,7 @@ async def remove_my_incoming_service_requests(request: web.Request) -> web.Respo
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in remove_my_incoming_service_requests: {e}")
+        logger.error("Error in remove_my_incoming_service_requests: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -247,17 +248,17 @@ async def get_my_competencies(request: web.Request) -> web.Response:
     try:
         user_id = await get_current_user_id(request)
         user = await firestore_service.get_user(user_id)
-        
+
         if not user:
             return web.json_response({"error": "User not found"}, status=404)
-        
+
         # Return competencies from user object
         competencies = user.get('competencies', [])
         return web.json_response({"competencies": competencies})
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in get_my_competencies: {e}")
+        logger.error("Error in get_my_competencies: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -267,12 +268,12 @@ async def create_my_competence(request: web.Request) -> web.Response:
         user_id = await get_current_user_id(request)
         body = await request.json()
         competence = body.get('competence')
-        
+
         if not competence or not isinstance(competence, dict) or 'title' not in competence:
             return web.json_response({
                 "error": "Missing or invalid competence object. Must include 'title' field."
             }, status=400)
-        
+
         created_competence = await firestore_service.create_competence(user_id, competence)
         if created_competence:
             # Enrich before writing to Weaviate so the vector and BM25 fields
@@ -304,7 +305,7 @@ async def create_my_competence(request: web.Request) -> web.Response:
                             )
                         created_competence = {**created_competence, **enriched_fields}
                 except Exception as enr_exc:
-                    logger.error(f"Competence enrichment failed (non-fatal): {enr_exc}")
+                    logger.error("Competence enrichment failed (non-fatal): %s", enr_exc)
             # Sync to Weaviate
             try:
                 coll = get_user_collection()
@@ -322,7 +323,7 @@ async def create_my_competence(request: web.Request) -> web.Response:
                             filters=Filter.by_property("user_id").equal(user_id),
                             limit=1
                         )
-                        logger.info(f"Self-healed missing Weaviate user for {user_id}")
+                        logger.info("Self-healed missing Weaviate user for %s", user_id)
                 if res.objects:
                     user_uuid = str(res.objects[0].uuid)
                     HubSpokeIngestion.create_competence(
@@ -330,9 +331,9 @@ async def create_my_competence(request: web.Request) -> web.Response:
                         user_uuid=user_uuid
                     )
                 else:
-                    logger.error(f"Weaviate user still not found after self-heal for {user_id}")
+                    logger.error("Weaviate user still not found after self-heal for %s", user_id)
             except Exception as e:
-                logger.error(f"Failed to sync new competence to Weaviate: {e}")
+                logger.error("Failed to sync new competence to Weaviate: %s", e)
 
             # Creating a competence means this user is now offering services.
             # Mirror is_service_provider=True to Firestore and Weaviate so they
@@ -341,7 +342,7 @@ async def create_my_competence(request: web.Request) -> web.Response:
                 await firestore_service.update_user(user_id, {"is_service_provider": True})
                 HubSpokeIngestion.update_user_hub_properties(user_id, {"is_service_provider": True})
             except Exception as e:
-                logger.error(f"Failed to set is_service_provider=True for {user_id}: {e}")
+                logger.error("Failed to set is_service_provider=True for %s: %s", user_id, e)
 
             # Fetch and return the updated user object
             user = await firestore_service.get_user(user_id)
@@ -352,7 +353,7 @@ async def create_my_competence(request: web.Request) -> web.Response:
         else:
             return web.json_response({"error": "Failed to add competence"}, status=500)
     except ValidationError as e:
-        logger.warning(f"Validation error in create_my_competence: {e}")
+        logger.warning("Validation error in create_my_competence: %s", e)
         return web.json_response({
             "error": "Validation failed",
             "details": e.errors()
@@ -360,7 +361,7 @@ async def create_my_competence(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in create_my_competence: {e}")
+        logger.error("Error in create_my_competence: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
@@ -370,12 +371,12 @@ async def update_my_competence(request: web.Request) -> web.Response:
         user_id = await get_current_user_id(request)
         competence_id = request.match_info['competence_id']
         body = await request.json()
-        
+
         # Check if competence exists
         competence_data = await firestore_service.get_competence(user_id, competence_id)
         if not competence_data:
             return web.json_response({"error": "Competence not found"}, status=404)
-        
+
         updated_competence = await firestore_service.update_competence(user_id, competence_id, body)
         if updated_competence:
             # Sync to Weaviate: remove old entry then re-create with the full
@@ -396,13 +397,13 @@ async def update_my_competence(request: web.Request) -> web.Response:
                             user_uuid=user_uuid,
                         )
             except Exception as e:
-                logger.error(f"Failed to sync competence {competence_id} update to Weaviate: {e}")
-            
+                logger.error("Failed to sync competence %s update to Weaviate: %s", competence_id, e)
+
             return web.json_response(serialize_datetime(updated_competence))
         else:
             return web.json_response({"error": "Failed to update competence"}, status=500)
     except ValidationError as e:
-        logger.warning(f"Validation error in update_my_competence: {e}")
+        logger.warning("Validation error in update_my_competence: %s", e)
         return web.json_response({
             "error": "Validation failed",
             "details": e.errors()
@@ -410,14 +411,14 @@ async def update_my_competence(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in update_my_competence: {e}")
+        logger.error("Error in update_my_competence: %s", e)
         return web.json_response({"error": str(e)}, status=500)
 
 
 # ── App settings ─────────────────────────────────────────────────────────────
 
 _ALLOWED_SETTINGS_KEYS: frozenset[str] = frozenset({'language', 'notifications_enabled'})
-_DEFAULT_SETTINGS: dict = {'language': 'en', 'notifications_enabled': True}
+_DEFAULT_SETTINGS: dict[str, Any] = {'language': 'en', 'notifications_enabled': True}
 
 
 async def get_settings(request: web.Request) -> web.Response:
@@ -446,7 +447,7 @@ async def get_settings(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Error in get_settings: {e}')
+        logger.error('Error in get_settings: %s', e)
         return web.json_response({'error': str(e)}, status=500)
 
 
@@ -488,7 +489,7 @@ async def update_settings(request: web.Request) -> web.Response:
             existing_settings = {}
 
         # Merge only the allowed keys into the existing settings dict.
-        merged: dict = dict(existing_settings)
+        merged: dict[str, Any] = dict(existing_settings)
         updated = False
         for key in _ALLOWED_SETTINGS_KEYS:
             if key in body:
@@ -518,7 +519,7 @@ async def update_settings(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f'Error in update_settings: {e}')
+        logger.error('Error in update_settings: %s', e)
         return web.json_response({'error': str(e)}, status=500)
 
 
@@ -527,14 +528,14 @@ async def remove_my_competence(request: web.Request) -> web.Response:
     try:
         user_id = await get_current_user_id(request)
         competence_id = request.match_info['competence_id']
-        
+
         success = await firestore_service.remove_competence(user_id, competence_id)
         if success:
             # Sync to Weaviate
             try:
                 HubSpokeIngestion.remove_competence_by_firestore_id(competence_id)
             except Exception as e:
-                logger.error(f"Failed to remove competence {competence_id} from Weaviate: {e}")
+                logger.error("Failed to remove competence %s from Weaviate: %s", competence_id, e)
 
             # Fetch and return the updated user object
             user = await firestore_service.get_user(user_id)
@@ -547,5 +548,5 @@ async def remove_my_competence(request: web.Request) -> web.Response:
     except web.HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error in remove_my_competence: {e}")
+        logger.error("Error in remove_my_competence: %s", e)
         return web.json_response({"error": str(e)}, status=500)

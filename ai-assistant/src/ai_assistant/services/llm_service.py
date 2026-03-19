@@ -2,11 +2,13 @@
 LLM Service
 Handles all language model interactions.
 """
+import inspect
 import json
 import logging
-from typing import AsyncIterator, Optional, Dict, Any, List
+from typing import Any
+from collections.abc import AsyncIterator
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
@@ -21,7 +23,7 @@ from ..prompts_templates import get_fallback_error_message  # noqa: E402 (after 
 # signal_transition — Gemini function-calling schema
 # ─────────────────────────────────────────────────────────────────────────────
 
-SIGNAL_TRANSITION_SCHEMA: Dict[str, Any] = {
+SIGNAL_TRANSITION_SCHEMA: dict[str, Any] = {
     "name": "signal_transition",
     "description": (
         "Advance the conversation to the specified stage when you have gathered "
@@ -48,13 +50,13 @@ SIGNAL_TRANSITION_SCHEMA: Dict[str, Any] = {
 
 class LLMService:
     """Service for language model interactions using LangChain and Gemini."""
-    
+
     def __init__(self, api_key: str, model: str = "gemini-2.5-flash",
                  temperature: float = 0.2, max_output_tokens: int = 2048,
-                 language: str = "de"):
+                 language: str = "de") -> None:
         """
         Initialize LLM service.
-        
+
         Args:
             api_key: Gemini API key
             model: Model name to use
@@ -77,12 +79,12 @@ class LLMService:
             thinking_budget=0,
             streaming=True,
         )
-        
-        self.session_store: Dict[str, BaseChatMessageHistory] = {}
+
+        self.session_store: dict[str, BaseChatMessageHistory] = {}
         # Per-session Gemini function schemas (empty = no function calling).
-        self._session_functions: Dict[str, List[Dict[str, Any]]] = {}
+        self._session_functions: dict[str, list[dict[str, Any]]] = {}
         self.language: str = language
-        logger.info(f"LLM service initialized with model: {model}")
+        logger.info("LLM service initialized with model: %s", model)
 
     async def aclose(self) -> None:
         """Close the underlying google-genai async HTTP client (connection pool).
@@ -105,7 +107,9 @@ class LLMService:
             )
             return
         try:
-            await aclose_fn()
+            result = aclose_fn()
+            if inspect.isawaitable(result):
+                await result
         except Exception as exc:
             logger.warning(
                 "LLMService.aclose: error closing async client %s: %s",
@@ -113,35 +117,35 @@ class LLMService:
                 exc,
                 exc_info=True,
             )
-    
+
     def get_session_history(self, session_id: str) -> BaseChatMessageHistory:
         """
         Get or create chat message history for a session.
-        
+
         Args:
             session_id: Session identifier
-        
+
         Returns:
             Chat message history for the session
         """
         if session_id not in self.session_store:
             self.session_store[session_id] = ChatMessageHistory()
-            logger.debug(f"Created new chat history for session: {session_id}")
+            logger.debug("Created new chat history for session: %s", session_id)
         return self.session_store[session_id]
-    
-    def add_message_to_history(self, session_id: str, message):
+
+    def add_message_to_history(self, session_id: str, message: BaseMessage) -> None:
         """
         Add a message to session history.
-        
+
         Args:
             session_id: Session identifier
             message: Message to add (AIMessage or HumanMessage)
         """
         history = self.get_session_history(session_id)
         history.add_message(message)
-        logger.debug(f"Added message to session {session_id}: {type(message).__name__}")
+        logger.debug("Added message to session %s: %s", session_id, type(message).__name__)
 
-    def pop_trailing_human_message(self, session_id: str) -> Optional[str]:
+    def pop_trailing_human_message(self, session_id: str) -> str | None:
         """Remove and return the last message's text if it is a trailing HumanMessage.
 
         Called when an LLM response task is cancelled mid-stream to undo the
@@ -166,7 +170,7 @@ class LLMService:
             return text
         return None
 
-    def register_functions(self, session_id: str, tool_schemas: List[Dict[str, Any]]) -> None:
+    def register_functions(self, session_id: str, tool_schemas: list[dict[str, Any]]) -> None:
         """
         Register (or replace) Gemini function-calling schemas for a session.
 
@@ -184,7 +188,7 @@ class LLMService:
         )
 
     @staticmethod
-    def _content_to_text(content: Any) -> str:
+    def _content_to_text(content: object) -> str:
         """Normalize chunk content to plain text for models that return structured parts."""
         if isinstance(content, str):
             return content
@@ -206,37 +210,37 @@ class LLMService:
             return "".join(parts)
 
         return str(content)
-    
+
     def create_chain_with_history(
         self,
         prompt_template: ChatPromptTemplate,
         session_id: str,
-        tool_schemas: Optional[List[Dict[str, Any]]] = None,
-    ):
+        tool_schemas: list[dict[str, Any]] | None = None,
+    ) -> RunnableWithMessageHistory:
         """
         Create a runnable chain with message history.
-        
+
         Args:
             prompt_template: Prompt template to use
             session_id: Session identifier
             tool_schemas: Optional list of function-calling schemas to bind.
-        
+
         Returns:
             RunnableWithMessageHistory instance
         """
         llm = self.llm.bind_tools(tool_schemas) if tool_schemas else self.llm
         chain = prompt_template | llm
-        
+
         chain_with_history = RunnableWithMessageHistory(
             chain,
             lambda sid: self.get_session_history(sid),
             input_messages_key="input",
             history_messages_key="history",
         )
-        
-        logger.debug(f"Created chain with history for session: {session_id}")
+
+        logger.debug("Created chain with history for session: %s", session_id)
         return chain_with_history
-    
+
     async def generate_stream(
         self,
         prompt: str,
@@ -260,11 +264,11 @@ class LLMService:
             chain_with_history = self.create_chain_with_history(
                 prompt_template, session_id, session_tools or None
             )
-            
-            logger.debug(f"Generating LLM response for: '{prompt[:50]}...'")
+
+            logger.debug("Generating LLM response for: '%s...'", prompt[:50])
 
             # Buffer for assembling multi-chunk tool calls (keyed by index)
-            tcc_buffer: Dict[int, Dict[str, str]] = {}
+            tcc_buffer: dict[int, dict[str, str]] = {}
             full_text_buffer: list[str] = []
 
             async for chunk in chain_with_history.astream(
@@ -329,16 +333,16 @@ class LLMService:
                 logger.debug("LLM complete message (%d chars)", len("".join(full_text_buffer)))
 
         except Exception as e:
-            logger.error(f"LLM generation error: {e}", exc_info=True)
+            logger.error("LLM generation error: %s", e, exc_info=True)
             yield get_fallback_error_message(self.language)
-    
+
     async def generate(self, messages: list) -> str:
         """
         Generate a single response from LLM without streaming.
-        
+
         Args:
             messages: List of messages to send to LLM
-        
+
         Returns:
             Complete response as string
         """
@@ -347,12 +351,12 @@ class LLMService:
             async for chunk in self.llm.astream(messages):
                 if chunk.content:
                     full_response += self._content_to_text(chunk.content)
-            
-            logger.debug(f"Generated response: '{full_response[:100]}...'")
+
+            logger.debug("Generated response: '%s...'", full_response[:100])
             return full_response.strip()
-            
+
         except Exception as e:
-            logger.error(f"LLM generation error: {e}", exc_info=True)
+            logger.error("LLM generation error: %s", e, exc_info=True)
             return get_fallback_error_message(self.language)
 
     async def prewarm(self) -> None:

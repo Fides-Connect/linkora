@@ -57,4 +57,5 @@ __all__ = [
     'check_capability',
     'build_default_registry',
     'AIConversationService',
+    'CrossEncoderService',
 ]

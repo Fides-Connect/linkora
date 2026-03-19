@@ -24,11 +24,19 @@ Design rules:
 import json
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from collections.abc import AsyncIterator
+from typing import Any, Protocol
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 logger = logging.getLogger(__name__)
+
+
+class SupportsStreamingChatModel(Protocol):
+    """Minimal async streaming contract used by CompetenceEnricher."""
+
+    def astream(self, messages: list[BaseMessage]) -> AsyncIterator[BaseMessage]:
+        ...
 
 
 _ENRICHMENT_SYSTEM_PROMPT = """\
@@ -80,10 +88,10 @@ class CompetenceEnricher:
              so the enricher can be mocked independently in unit tests.
     """
 
-    def __init__(self, llm: Any) -> None:
+    def __init__(self, llm: SupportsStreamingChatModel) -> None:
         self._llm = llm
 
-    async def enrich(self, raw: Dict[str, Any]) -> Dict[str, Any]:
+    async def enrich(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Return *raw* merged with enriched fields.
 
         On any error (LLM failure, JSON parse, etc.) logs a warning and returns
@@ -147,7 +155,7 @@ class CompetenceEnricher:
     # ─────────────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _availability_time_to_text(availability_time: Dict[str, Any]) -> str:
+    def _availability_time_to_text(availability_time: dict[str, Any]) -> str:
         """Derive a short human-readable availability string from a structured dict.
 
         Only used as context input to the LLM — not stored in Firestore.
@@ -186,7 +194,7 @@ class CompetenceEnricher:
         return "; ".join(parts) if parts else ""
 
     @staticmethod
-    def _build_user_message(raw: Dict[str, Any]) -> str:
+    def _build_user_message(raw: dict[str, Any]) -> str:
         # Derive availability text for context: prefer structured availability_time;
         # fall back to plain 'availability' or 'availability_text' string.
         avail_time = raw.get("availability_time")
@@ -205,21 +213,21 @@ class CompetenceEnricher:
         return "\n".join(lines)
 
     @staticmethod
-    def _parse_response(text: str) -> Dict[str, Any]:
+    def _parse_response(text: str) -> dict[str, Any]:
         """Extract and validate the JSON payload from the LLM response."""
         # Strip markdown code fences if the model forgets the instruction.
         cleaned = re.sub(r"```(?:json)?|```", "", text).strip()
         data = json.loads(cleaned)
 
-        skills_list: List[str] = [
+        skills_list: list[str] = [
             s.strip().lower() for s in data.get("skills_list", []) if isinstance(s, str) and s.strip()
         ]
         summary: str = str(data.get("search_optimized_summary", "")).strip()
         category: str = str(data.get("category", "")).strip()
         price_raw = data.get("price_per_hour")
-        price_per_hour: Optional[float] = float(price_raw) if price_raw is not None else None
+        price_per_hour: float | None = float(price_raw) if price_raw is not None else None
 
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "skills_list": skills_list,
             "search_optimized_summary": summary,
             "price_per_hour": price_per_hour,

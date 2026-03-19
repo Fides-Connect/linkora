@@ -10,7 +10,7 @@ Handles:
 import re
 import logging
 from datetime import datetime, UTC
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 from ai_assistant.hub_spoke_schema import (
     get_user_collection,
@@ -42,10 +42,10 @@ def sanitize_input(text: str, max_unique_words: int = 20, max_chars: int = 200) 
     """
     if not text or not text.strip():
         return ""
-    
+
     # Split into words and normalize
     words = re.findall(r'\b\w+\b', text.lower())
-    
+
     # Get unique words while preserving order
     seen = set()
     unique_words = []
@@ -53,10 +53,10 @@ def sanitize_input(text: str, max_unique_words: int = 20, max_chars: int = 200) 
         if word not in seen:
             seen.add(word)
             unique_words.append(word)
-    
+
     # If too many unique words, it's likely spam - truncate
     if len(unique_words) > max_unique_words:
-        logger.warning(f"Keyword stuffing detected: {len(unique_words)} unique words. Truncating.")
+        logger.warning("Keyword stuffing detected: %s unique words. Truncating.", len(unique_words))
         # Reconstruct from original text to maintain case and punctuation
         result = ' '.join(unique_words[:max_unique_words])
     else:
@@ -79,22 +79,22 @@ def sanitize_input(text: str, max_unique_words: int = 20, max_chars: int = 200) 
 def enrich_text(text: str, category: str) -> str:
     """
     Granularity Enrichment: Expand specific skill text with parent categories.
-    
+
     Strategy:
     1. Map categories to parent terms
     2. Append parent terms to original text
     3. Improves recall for broad searches
-    
+
     Example:
         Input: text="Installing Pot Lights", category="Electrical"
         Output: "Installing Pot Lights Electrician Electrical Lighting Wiring"
-        
+
     This ensures a search for "Electrician" matches specific skills like "Pot Lights"
-    
+
     Args:
         text: Original skill description
         category: Skill category
-        
+
     Returns:
         Enriched text with parent category terms
     """
@@ -112,42 +112,42 @@ def enrich_text(text: str, category: str) -> str:
         "App Development": _IT_TERMS + ["Mobile", "App", "Development", "Flutter", "React", "Android", "iOS"],
         "Mobile Development": _IT_TERMS + ["Mobile", "App", "Development", "Flutter", "Android", "iOS"],
     }
-    
+
     # Get parent terms for category
     parent_terms = enrichment_map.get(category, [category])
-    
+
     # Append parent terms to original text
     enriched = f"{text} {' '.join(parent_terms)}"
-    
-    logger.debug(f"Enriched '{text}' → '{enriched}'")
+
+    logger.debug("Enriched '%s' → '%s'", text, enriched)
     return enriched
 
 
 class HubSpokeIngestion:
     """
     Ingestion manager for Hub and Spoke architecture.
-    
+
     Handles:
     1. Creating User (Hub)
     2. Creating Competence (Spoke)
     3. Establishing bidirectional links
     """
-    
+
     @staticmethod
-    def create_user(user_data: Dict[str, Any]) -> Optional[str]:
+    def create_user(user_data: dict[str, Any]) -> str | None:
         """
         Creates a User (Hub).
-        
+
         Args:
-            user_data: Dict with keys: name, email, fcm_token, 
+            user_data: Dict with keys: name, email, fcm_token,
                          has_open_request, last_sign_in
-                         
+
         Returns:
             UUID of added user
         """
         try:
             collection = get_user_collection()
-            
+
             # Handle last_sign_in: can be datetime or days offset
             last_active = user_data.get("last_sign_in")
             if isinstance(last_active, int):
@@ -156,7 +156,7 @@ class HubSpokeIngestion:
                 last_active = datetime.now(UTC) - timedelta(days=last_active)
             elif not isinstance(last_active, datetime):
                 last_active = datetime.now(UTC)
-            
+
             uuid = collection.data.insert(
                 properties={
                     "name": user_data.get("name"),
@@ -175,16 +175,16 @@ class HubSpokeIngestion:
                     "last_sign_in": last_active,
                 }
             )
-            
-            logger.info(f"Created User: {user_data.get('name')} (UUID: {uuid})")
+
+            logger.info("Created User: %s (UUID: %s)", user_data.get('name'), uuid)
             return str(uuid)
-            
+
         except Exception as e:
-            logger.error(f"Error creating user: {e}")
+            logger.error("Error creating user: %s", e)
             return None
 
     @staticmethod
-    def update_user_hub_properties(user_id: str, update_data: Dict[str, Any]) -> bool:
+    def update_user_hub_properties(user_id: str, update_data: dict[str, Any]) -> bool:
         """Update specific properties of a User hub node in Weaviate.
 
         Uses the hub-spoke schema User collection (not the legacy
@@ -228,33 +228,33 @@ class HubSpokeIngestion:
 
     @staticmethod
     def create_competence(
-        competence_data: Dict[str, Any],
+        competence_data: dict[str, Any],
         user_uuid: str,
         apply_sanitization: bool = True,
         apply_enrichment: bool = True
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Create a Competence (Spoke) with bidirectional link to User.
-        
+
         Critical Logic:
         1. Sanitize description to prevent keyword stuffing
         2. Enrich description with parent category terms
         3. Create competence with owned_by reference to User
         4. Add competence reference to User's has_competencies
-        
+
         Args:
             competence_data: Dict with keys: title, description, category, price_range
             user_uuid: UUID of the owning User
             apply_sanitization: Whether to sanitize description
             apply_enrichment: Whether to enrich description
-            
+
         Returns:
             UUID of created competence
         """
         try:
             user_collection = get_user_collection()
             competence_collection = get_competence_collection()
-            
+
             # Process description
             description = competence_data.get("description", "")
             category = competence_data.get("category", "")
@@ -303,9 +303,9 @@ class HubSpokeIngestion:
                     "owned_by": user_uuid  # Link to User (Spoke → Hub)
                 }
             )
-            
-            logger.info(f"Created Competence: {competence_data.get('title')} (UUID: {competence_uuid})")
-            
+
+            logger.info("Created Competence: %s (UUID: %s)", competence_data.get('title'), competence_uuid)
+
             # Step 4: Add reverse reference (Hub → Spoke)
             # Add competence to User's has_competencies list
             user_collection.data.reference_add(
@@ -313,32 +313,32 @@ class HubSpokeIngestion:
                 from_property="has_competencies",
                 to=competence_uuid
             )
-            
-            logger.info(f"Linked User {user_uuid} ↔ Competence {competence_uuid}")
+
+            logger.info("Linked User %s ↔ Competence %s", user_uuid, competence_uuid)
             return str(competence_uuid)
-            
+
         except Exception as e:
-            logger.error(f"Error creating competence: {e}")
+            logger.error("Error creating competence: %s", e)
             return None
-    
+
     @staticmethod
     def create_user_with_competencies(
-        user_data: Dict[str, Any],
-        competencies_data: List[Dict[str, Any]],
+        user_data: dict[str, Any],
+        competencies_data: list[dict[str, Any]],
         apply_sanitization: bool = True,
         apply_enrichment: bool = True
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Create a complete User with multiple Competencies.
-        
+
         Convenience method for bulk ingestion.
-        
+
         Args:
             user_data: User properties
             competencies_data: List of competence properties
             apply_sanitization: Whether to sanitize descriptions
             apply_enrichment: Whether to enrich descriptions
-            
+
         Returns:
             Dict with user_uuid and list of competence_uuids
         """
@@ -347,7 +347,7 @@ class HubSpokeIngestion:
             user_uuid = HubSpokeIngestion.create_user(user_data)
             if not user_uuid:
                 return None
-            
+
             # Create competencies
             competence_uuids = []
             for comp_data in competencies_data:
@@ -359,63 +359,63 @@ class HubSpokeIngestion:
                 )
                 if comp_uuid:
                     competence_uuids.append(comp_uuid)
-            
+
             result = {
                 "user_uuid": user_uuid,
                 "competence_uuids": competence_uuids
             }
-            
-            logger.info(f"Created user with {len(competence_uuids)} competencies")
+
+            logger.info("Created user with %s competencies", len(competence_uuids))
             return result
-            
+
         except Exception as e:
-            logger.error(f"Error creating user with competencies: {e}")
+            logger.error("Error creating user with competencies: %s", e)
             return None
-    
+
     @staticmethod
     def create_competencies_by_user_id(
         user_id: str,
-        competencies: str | List[str],
+        competencies: str | list[str],
         category: str = "",
         apply_sanitization: bool = True,
         apply_enrichment: bool = True
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create new competencies for an existing user by user_id.
-        
+
         Args:
             user_id: The user_id to create competencies for
             competencies: Single string or list of strings describing competencies
             category: Category for the competencies (optional)
             apply_sanitization: Whether to sanitize descriptions
             apply_enrichment: Whether to enrich descriptions
-            
+
         Returns:
             Dict with success status and list of added competence UUIDs
         """
         try:
             user_collection = get_user_collection()
-            
+
             # Find user by user_id
             from weaviate.classes.query import Filter
             result = user_collection.query.fetch_objects(
                 filters=Filter.by_property("user_id").equal(user_id),
                 limit=1
             )
-            
+
             if not result.objects:
-                logger.error(f"No user found with user_id: {user_id}")
+                logger.error("No user found with user_id: %s", user_id)
                 return {"success": False, "error": "User not found", "added_uuids": []}
-            
+
             user_uuid = str(result.objects[0].uuid)
-            logger.info(f"Found user {user_uuid} for user_id {user_id}")
-            
+            logger.info("Found user %s for user_id %s", user_uuid, user_id)
+
             # Normalize input to list
             if isinstance(competencies, str):
                 competencies_list = [competencies]
             else:
                 competencies_list = competencies
-            
+
             # Add each competence
             added_uuids = []
             for comp_text in competencies_list:
@@ -425,34 +425,34 @@ class HubSpokeIngestion:
                     "category": category,
                     "price_range": ""
                 }
-                
+
                 comp_uuid = HubSpokeIngestion.create_competence(
                     competence_data=comp_data,
                     user_uuid=user_uuid,
                     apply_sanitization=apply_sanitization,
                     apply_enrichment=apply_enrichment
                 )
-                
+
                 if comp_uuid:
                     added_uuids.append(comp_uuid)
-                    logger.info(f"Created competence: {comp_uuid}")
-            
-            logger.info(f"Created {len(added_uuids)} competencies for user {user_id}")
+                    logger.info("Created competence: %s", comp_uuid)
+
+            logger.info("Created %s competencies for user %s", len(added_uuids), user_id)
             return {
                 "success": True,
                 "added_uuids": added_uuids,
                 "count": len(added_uuids)
             }
-            
+
         except Exception as e:
-            logger.error(f"Error creating competencies: {e}")
+            logger.error("Error creating competencies: %s", e)
             return {"success": False, "error": str(e), "added_uuids": []}
-    
+
     @staticmethod
     def update_competencies_by_user_id(
         user_id: str,
-        competencies: "str | List[str] | List[Dict[str, Any]]",
-    ) -> Dict[str, Any]:
+        competencies: str | list[str] | list[dict[str, Any]],
+    ) -> dict[str, Any]:
         """Replace all Weaviate competencies for a user with fresh enriched data.
 
         Deletes every existing Competence spoke for *user_id* and re-inserts them
@@ -474,24 +474,24 @@ class HubSpokeIngestion:
         try:
             user_collection = get_user_collection()
             competence_collection = get_competence_collection()
-            
+
             # Find user by user_id
             from weaviate.classes.query import Filter
             result = user_collection.query.fetch_objects(
                 filters=Filter.by_property("user_id").equal(user_id),
                 limit=1
             )
-            
+
             if not result.objects:
-                logger.error(f"No user found with user_id: {user_id}")
+                logger.error("No user found with user_id: %s", user_id)
                 return {"success": False, "error": "User not found", "updated_uuids": []}
-            
+
             user_uuid = str(result.objects[0].uuid)
-            logger.info(f"Found user {user_uuid} for user_id {user_id}")
+            logger.info("Found user %s for user_id %s", user_uuid, user_id)
 
             # Normalise input to List[Dict] so the loop below is uniform.
             if isinstance(competencies, str):
-                competencies_to_insert: List[Dict[str, Any]] = [
+                competencies_to_insert: list[dict[str, Any]] = [
                     {"title": competencies, "description": competencies}
                 ]
             elif isinstance(competencies, list):
@@ -513,14 +513,14 @@ class HubSpokeIngestion:
                     "update_competencies_by_user_id: unexpected competencies type %r", type(competencies)
                 )
                 competencies_to_insert = []
-            
+
             # Delete all existing competencies
             from weaviate.classes.query import QueryReference
             user_with_refs = user_collection.query.fetch_object_by_id(
                 uuid=user_uuid,
                 return_references=QueryReference(link_on="has_competencies")
             )
-            
+
             if user_with_refs.references and 'has_competencies' in user_with_refs.references:
                 for comp_obj in user_with_refs.references['has_competencies'].objects:
                     comp_uuid = str(comp_obj.uuid)
@@ -532,12 +532,12 @@ class HubSpokeIngestion:
                         from_property="has_competencies",
                         to=comp_uuid
                     )
-                    logger.info(f"Deleted old competence: {comp_uuid}")
-            
+                    logger.info("Deleted old competence: %s", comp_uuid)
+
             # Add new competencies — expects a list of dicts only
             updated_uuids = []
             for comp_dict in competencies_to_insert:
-                comp_uuid = HubSpokeIngestion.create_competence(
+                comp_uuid = HubSpokeIngestion.create_competence(  # type: ignore[assignment]
                     competence_data=comp_dict,
                     user_uuid=user_uuid,
                     apply_sanitization=True,
@@ -545,53 +545,53 @@ class HubSpokeIngestion:
                 )
                 if comp_uuid:
                     updated_uuids.append(comp_uuid)
-                    logger.info(f"Created new competence: {comp_uuid}")
-            
-            logger.info(f"Updated competencies for user {user_id}: {len(updated_uuids)} new competencies")
+                    logger.info("Created new competence: %s", comp_uuid)
+
+            logger.info("Updated competencies for user %s: %s new competencies", user_id, len(updated_uuids))
             return {
                 "success": True,
                 "updated_uuids": updated_uuids,
                 "count": len(updated_uuids)
             }
-            
+
         except Exception as e:
-            logger.error(f"Error updating competencies: {e}")
+            logger.error("Error updating competencies: %s", e)
             return {"success": False, "error": str(e), "updated_uuids": []}
-    
+
     @staticmethod
     def delete_competencies_by_user_id(
         user_id: str,
-        competencies: str | List[str]
-    ) -> Dict[str, Any]:
+        competencies: str | list[str]
+    ) -> dict[str, Any]:
         """
         Delete specific competencies for a user by user_id.
         Matches competencies by title or description pattern.
-        
+
         Args:
             user_id: The user_id to delete competencies from
             competencies: Single string or list of strings to match against competence titles/descriptions
-            
+
         Returns:
             Dict with success status and list of deleted competence UUIDs
         """
         try:
             user_collection = get_user_collection()
             competence_collection = get_competence_collection()
-            
+
             # Find user by user_id
             from weaviate.classes.query import Filter, QueryReference
             result = user_collection.query.fetch_objects(
                 filters=Filter.by_property("user_id").equal(user_id),
                 limit=1
             )
-            
+
             if not result.objects:
-                logger.error(f"No user found with user_id: {user_id}")
+                logger.error("No user found with user_id: %s", user_id)
                 return {"success": False, "error": "User not found", "deleted_uuids": []}
-            
+
             user_uuid = str(result.objects[0].uuid)
-            logger.info(f"Found user {user_uuid} for user_id {user_id}")
-            
+            logger.info("Found user %s for user_id %s", user_uuid, user_id)
+
             # Get all competencies for this user
             user_with_refs = user_collection.query.fetch_object_by_id(
                 uuid=user_uuid,
@@ -600,26 +600,26 @@ class HubSpokeIngestion:
                     return_properties=["title", "description", "category"]
                 )
             )
-            
+
             if not user_with_refs.references or 'has_competencies' not in user_with_refs.references:
-                logger.info(f"No competencies found for user {user_id}")
+                logger.info("No competencies found for user %s", user_id)
                 return {"success": True, "deleted_uuids": [], "count": 0}
-            
+
             # Normalize input to list
             if isinstance(competencies, str):
                 patterns = [competencies.lower()]
             else:
                 patterns = [c.lower() for c in competencies]
-            
+
             # Find and delete matching competencies
             deleted_uuids = []
             for comp_obj in user_with_refs.references['has_competencies'].objects:
                 comp_uuid = str(comp_obj.uuid)
                 comp_props = comp_obj.properties
-                comp_title = (comp_props.get('title') or '').lower()
-                comp_desc = (comp_props.get('description') or '').lower()
-                comp_category = (comp_props.get('category') or '').lower()
-                
+                comp_title = str(comp_props.get('title') or '').lower()
+                comp_desc = str(comp_props.get('description') or '').lower()
+                comp_category = str(comp_props.get('category') or '').lower()
+
                 # Check if any pattern matches
                 for pattern in patterns:
                     if pattern in comp_title or pattern in comp_desc or pattern in comp_category:
@@ -632,28 +632,28 @@ class HubSpokeIngestion:
                             to=comp_uuid
                         )
                         deleted_uuids.append(comp_uuid)
-                        logger.info(f"Deleted competence: {comp_uuid} (matched pattern: '{pattern}')")
+                        logger.info("Deleted competence: %s (matched pattern: '%s')", comp_uuid, pattern)
                         break  # Only delete once per competence
-            
-            logger.info(f"Deleted {len(deleted_uuids)} competencies for user {user_id}")
+
+            logger.info("Deleted %s competencies for user %s", len(deleted_uuids), user_id)
             return {
                 "success": True,
                 "deleted_uuids": deleted_uuids,
                 "count": len(deleted_uuids)
             }
-            
+
         except Exception as e:
-            logger.error(f"Error deleting competencies: {e}")
+            logger.error("Error deleting competencies: %s", e)
             return {"success": False, "error": str(e), "deleted_uuids": []}
 
     @staticmethod
     def remove_competence_by_firestore_id(firestore_id: str) -> bool:
         """
         Remove a competence by its Firestore ID.
-        
+
         Args:
             firestore_id: The Firestore competence_id (e.g., 'competence_12345')
-            
+
         Returns:
             bool: True if deletion was successful (or if not found, as it's idempotent-ish)
         """
@@ -664,16 +664,16 @@ class HubSpokeIngestion:
                 filters=Filter.by_property("competence_id").equal(firestore_id),
                 limit=1
             )
-            
+
             if not response.objects:
-                logger.info(f"Competence not found for deletion (already deleted?): {firestore_id}")
+                logger.info("Competence not found for deletion (already deleted?): %s", firestore_id)
                 return True
-                
+
             uuid = response.objects[0].uuid
             collection.data.delete_by_id(uuid)
-            logger.info(f"Deleted competence {firestore_id} (UUID: {uuid})")
+            logger.info("Deleted competence %s (UUID: %s)", firestore_id, uuid)
             return True
         except Exception as e:
-            logger.error(f"Error removing competence {firestore_id}: {e}")
+            logger.error("Error removing competence %s: %s", firestore_id, e)
             # Log error but don't crash main loop if used in bulk
             return False

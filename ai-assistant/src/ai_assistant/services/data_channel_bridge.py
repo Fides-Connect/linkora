@@ -1,7 +1,8 @@
 """DataChannelBridge — typed DataChannel send helper."""
 import json
 import logging
-from typing import Optional
+
+from aiortc import RTCDataChannel
 
 from .agent_runtime_fsm import AgentRuntimeState
 
@@ -20,11 +21,11 @@ class DataChannelBridge:
     """
 
     def __init__(self) -> None:
-        self._channel = None
+        self._channel: RTCDataChannel | None = None
 
     # ── Channel lifecycle ─────────────────────────────────────────────────────
 
-    def attach(self, channel) -> None:
+    def attach(self, channel: RTCDataChannel) -> None:
         """Attach or replace the DataChannel reference."""
         self._channel = channel
 
@@ -47,8 +48,11 @@ class DataChannelBridge:
         """
         if not self.is_open:
             return
+        channel = self._channel
+        if channel is None:
+            return
         try:
-            self._channel.send(
+            channel.send(
                 json.dumps(
                     {
                         "type": "chat",
@@ -68,8 +72,11 @@ class DataChannelBridge:
         """
         if not self.is_open:
             return
+        channel = self._channel
+        if channel is None:
+            return
         try:
-            self._channel.send(
+            channel.send(
                 json.dumps(
                     {
                         "type": "runtime-state",

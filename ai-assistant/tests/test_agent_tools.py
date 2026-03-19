@@ -195,7 +195,7 @@ class TestToolExecuteContracts:
     @pytest.fixture
     def mock_firestore(self):
         fs = Mock()
-        fs.get_user_favorites = AsyncMock(return_value=[{"id": "fav1"}])
+        fs.get_favorites = AsyncMock(return_value=[{"id": "fav1"}])
         fs.get_service_requests = AsyncMock(return_value=[{"id": "sr1"}])
         fs.create_service_request = AsyncMock(return_value={"id": "sr-new"})
         return fs
@@ -229,7 +229,7 @@ class TestToolExecuteContracts:
     ):
         ctx = self._ctx(mock_data_provider, mock_firestore)
         await registry.execute("get_favorites", {}, ctx)
-        mock_firestore.get_user_favorites.assert_called_once_with("user-abc")
+        mock_firestore.get_favorites.assert_called_once_with("user-abc")
 
     async def test_get_open_requests_calls_firestore(
         self, registry, mock_data_provider, mock_firestore

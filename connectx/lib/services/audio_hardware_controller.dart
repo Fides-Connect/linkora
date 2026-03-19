@@ -17,7 +17,7 @@ abstract class AudioHardwareController {
   Future<void> selectAudioInput(String deviceId);
   
   /// Set callback for device changes
-  set onDeviceChange(Function(dynamic)? callback);
+  set onDeviceChange(void Function(dynamic)? callback);
 
   /// Configure Android audio mode for voice communication (AEC, hardware routing).
   /// No-op on non-Android platforms.
@@ -84,7 +84,7 @@ class FlutterWebRTCAudioController implements AudioHardwareController {
   }
   
   @override
-  set onDeviceChange(Function(dynamic)? callback) {
+  set onDeviceChange(void Function(dynamic)? callback) {
     try {
       navigator.mediaDevices.ondevicechange = callback;
     } catch (e) {
