@@ -4,6 +4,7 @@ Authentication and user session management endpoints.
 """
 import logging
 from datetime import datetime, timedelta, UTC
+from typing import Any, cast
 from aiohttp import web
 from pydantic import ValidationError
 from firebase_admin import auth as firebase_auth
@@ -160,7 +161,10 @@ async def user_sync(request: web.Request) -> web.Response:
                     user_data_for_weaviate = {**existing_firestore_user, "user_id": user_id}
                     HubSpokeIngestion.create_user(user_data_for_weaviate)
                     # Re-sync all competencies so provider-search cross-references exist.
-                    all_competencies = await firestore_service.get_competencies(user_id)
+                    all_competencies: list[dict[str, Any]] = cast(
+                        list[dict[str, Any]],
+                        await firestore_service.get_competencies(user_id),
+                    )
                     if all_competencies:
                         from ai_assistant.firestore_schemas import derive_availability_tags
                         for comp in all_competencies:

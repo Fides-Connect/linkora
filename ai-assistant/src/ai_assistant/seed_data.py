@@ -5,6 +5,7 @@ Contains User Templates for seeding and static Test Personas.
 
 # Data template for new users
 from datetime import UTC
+from typing import Any
 USER_TEMPLATE = {
     # id matches firebase uid
     # name comes from auth provider
@@ -431,7 +432,7 @@ USER_C_COMPETENCIES = [
     }
 ]
 
-USER_C_AVAILABILITY_TIMES = [
+USER_C_AVAILABILITY_TIMES: list[dict[str, Any]] = [
     {
         "monday_time_ranges": [],
         "tuesday_time_ranges": [],

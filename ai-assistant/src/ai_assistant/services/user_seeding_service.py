@@ -1,6 +1,7 @@
 import logging
 import copy
 from datetime import datetime, UTC
+from typing import Any, cast
 
 from ..firestore_service import FirestoreService
 from ..seed_data import (
@@ -24,10 +25,10 @@ logger = logging.getLogger(__name__)
 class UserSeedingService:
     """Service to auto-seed data for new users."""
 
-    def __init__(self, firestore_service: FirestoreService):
+    def __init__(self, firestore_service: FirestoreService) -> None:
         self.firestore_service = firestore_service
 
-    async def seed_new_user(self, user_id: str, name: str, email: str, photo_url: str = "", enricher=None):
+    async def seed_new_user(self, user_id: str, name: str, email: str, photo_url: str = "", enricher: Any | None = None) -> None:
         """Seed initial data for a new user if not already present."""
         if not self.firestore_service.db:
             logger.warning("Firestore not initialized, skipping seeding.")
@@ -78,6 +79,8 @@ class UserSeedingService:
             if not comp_result:
                 continue
             competence_id = comp_result.get('competence_id')
+            if competence_id is None:
+                continue
 
             # Enrich competency with LLM if enricher is available
             enriched_doc = dict(comp_doc)
@@ -112,7 +115,7 @@ class UserSeedingService:
             # 1d. Add Competence Availability Times if available
             comp_key = f"competence_{{uid}}_{USER_TEMPLATE_COMPETENCIES.index(comp) + 1}"
             if comp_key in COMPETENCE_AVAILABILITY_TIMES:
-                for comp_avail_time in COMPETENCE_AVAILABILITY_TIMES[comp_key]:
+                for comp_avail_time in cast(list, COMPETENCE_AVAILABILITY_TIMES[comp_key]):
                     comp_avail_doc = {
                         'monday_time_ranges': comp_avail_time.get('monday_time_ranges', []),
                         'tuesday_time_ranges': comp_avail_time.get('tuesday_time_ranges', []),
@@ -149,8 +152,8 @@ class UserSeedingService:
         # 2. Create Sample Requests
         service_requests = USER_TEMPLATE_SERVICE_REQUESTS
         # Track which requests belong to which users for updating their open request arrays
-        user_outgoing_requests = {}  # seeker_user_id -> [request_ids]
-        user_incoming_requests = {}  # provider_user_id -> [request_ids]
+        user_outgoing_requests: dict[str, Any] = {}  # seeker_user_id -> [request_ids]
+        user_incoming_requests: dict[str, Any] = {}  # provider_user_id -> [request_ids]
         # Track created service request IDs and provider candidate IDs for chat creation
         created_request_ids = []  # List of created service request IDs
         created_provider_candidate_ids = []  # List of lists: [[req0_cand_ids], [req1_cand_ids], ...]
@@ -160,14 +163,14 @@ class UserSeedingService:
             req_data = copy.deepcopy(req)
 
             # Replace {uid} in seeker_user_id and selected_provider_user_id
-            if "seeker_user_id" in req_data and "{uid}" in req_data["seeker_user_id"]:
-                req_data["seeker_user_id"] = req_data["seeker_user_id"].format(uid=user_id)
-            if "selected_provider_user_id" in req_data and "{uid}" in req_data["selected_provider_user_id"]:
-                req_data["selected_provider_user_id"] = req_data["selected_provider_user_id"].format(uid=user_id)
+            if "seeker_user_id" in req_data and "{uid}" in cast(str, req_data["seeker_user_id"]):
+                req_data["seeker_user_id"] = cast(str, req_data["seeker_user_id"]).format(uid=user_id)
+            if "selected_provider_user_id" in req_data and "{uid}" in cast(str, req_data["selected_provider_user_id"]):
+                req_data["selected_provider_user_id"] = cast(str, req_data["selected_provider_user_id"]).format(uid=user_id)
 
             # Track the request for updating user open request arrays
-            seeker_id = req_data.get("seeker_user_id")
-            provider_id = req_data.get("selected_provider_user_id")
+            seeker_id = cast(str, req_data.get("seeker_user_id"))
+            provider_id = cast(str, req_data.get("selected_provider_user_id"))
 
             try:
                 # Create service request using service layer
@@ -206,8 +209,9 @@ class UserSeedingService:
                         candidate_data = copy.deepcopy(candidate)
                         candidate_data["service_request_id"] = req_id
 
-                        if "{uid}" in candidate_data.get("provider_candidate_user_id", ""):
-                            candidate_data["provider_candidate_user_id"] = candidate_data["provider_candidate_user_id"].format(uid=user_id)
+                        _candidate_uid = cast(str, candidate_data.get("provider_candidate_user_id", ""))
+                        if "{uid}" in _candidate_uid:
+                            candidate_data["provider_candidate_user_id"] = _candidate_uid.format(uid=user_id)
 
                         # Create provider candidate using service layer
                         candidate_result = await self.firestore_service.create_provider_candidate(
@@ -255,7 +259,7 @@ class UserSeedingService:
             try:
                 # Get the request index from the template
                 req_idx = chat_template.get("request_index")
-                if req_idx is None or req_idx >= len(created_request_ids):
+                if req_idx is None or not isinstance(req_idx, int) or req_idx >= len(created_request_ids):
                     logger.warning("Skipping chat %s: invalid request index %s", chat_idx, req_idx)
                     continue
 
@@ -270,11 +274,13 @@ class UserSeedingService:
                     continue
 
                 # Prepare chat data
+                _seeker = cast(str, chat_template["seeker_user_id"])
+                _provider_user = cast(str, chat_template["provider_user_id"])
                 chat_data = {
                     "service_request_id": service_request_id,
                     "provider_candidate_id": provider_candidate_id,
-                    "seeker_user_id": chat_template["seeker_user_id"].format(uid=user_id) if "{uid}" in chat_template["seeker_user_id"] else chat_template["seeker_user_id"],
-                    "provider_user_id": chat_template["provider_user_id"].format(uid=user_id) if "{uid}" in chat_template["provider_user_id"] else chat_template["provider_user_id"],
+                    "seeker_user_id": _seeker.format(uid=user_id) if "{uid}" in _seeker else _seeker,
+                    "provider_user_id": _provider_user.format(uid=user_id) if "{uid}" in _provider_user else _provider_user,
                     "title": chat_template["title"],
                 }
 
@@ -285,6 +291,9 @@ class UserSeedingService:
                     continue
 
                 chat_id = chat_result.get('chat_id')
+                if not chat_id:
+                    logger.error("Chat created but missing chat_id for request %s", service_request_id)
+                    continue
                 logger.info("Created seed chat: %s", chat_id)
 
                 # 3b. Add Chat Messages as Subcollection
@@ -295,10 +304,10 @@ class UserSeedingService:
                         msg_data["chat_id"] = chat_id
 
                         # Replace {uid} placeholders in sender and receiver
-                        if "{uid}" in msg_data["sender_user_id"]:
-                            msg_data["sender_user_id"] = msg_data["sender_user_id"].format(uid=user_id)
-                        if "{uid}" in msg_data["receiver_user_id"]:
-                            msg_data["receiver_user_id"] = msg_data["receiver_user_id"].format(uid=user_id)
+                        if "{uid}" in cast(str, msg_data["sender_user_id"]):
+                            msg_data["sender_user_id"] = cast(str, msg_data["sender_user_id"]).format(uid=user_id)
+                        if "{uid}" in cast(str, msg_data["receiver_user_id"]):
+                            msg_data["receiver_user_id"] = cast(str, msg_data["receiver_user_id"]).format(uid=user_id)
 
                         # Create chat message using service layer
                         msg_result = await self.firestore_service.create_chat_message(chat_id, msg_data)
@@ -317,14 +326,14 @@ class UserSeedingService:
                 review_data = copy.deepcopy(review_template)
 
                 # Get the service request ID from the request_index
-                request_index = review_data.pop("request_index")
+                request_index = cast(int, review_data.pop("request_index"))
                 if request_index < len(created_request_ids):
                     service_request_id = created_request_ids[request_index]
                     review_data["service_request_id"] = service_request_id
 
                     # Replace {uid} placeholders
-                    if "{uid}" in review_data["user_id"]:
-                        review_data["user_id"] = review_data["user_id"].format(uid=user_id)
+                    if "{uid}" in cast(str, review_data["user_id"]):
+                        review_data["user_id"] = cast(str, review_data["user_id"]).format(uid=user_id)
 
                     # Create review using service layer
                     review_result = await self.firestore_service.create_review(review_data)
@@ -341,7 +350,7 @@ class UserSeedingService:
 
         # 5. Add Default Friend (Alice)
         # Ensure Alice exists first
-        user_a_id = USER_A.get("id", "user_alice_001")
+        user_a_id = cast(str, USER_A.get("id", "user_alice_001"))
         try:
             # No need to filter out 'id' - update_user handles it internally
             await self.firestore_service.update_user(user_a_id, USER_A)

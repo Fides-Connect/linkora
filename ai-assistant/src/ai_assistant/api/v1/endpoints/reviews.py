@@ -151,6 +151,8 @@ async def get_review(request: web.Request) -> web.Response:
     try:
         await get_current_user_id(request)
         review_id = request.match_info.get('review_id')
+        if review_id is None:
+            return web.json_response({"error": "Missing review_id"}, status=400)
 
         review = await firestore_service.get_review(review_id)
 
@@ -178,6 +180,8 @@ async def update_review(request: web.Request) -> web.Response:
     try:
         await get_current_user_id(request)
         review_id = request.match_info.get('review_id')
+        if review_id is None:
+            return web.json_response({"error": "Missing review_id"}, status=400)
         body = await request.json()
 
         # Check if review exists
@@ -211,6 +215,8 @@ async def delete_review(request: web.Request) -> web.Response:
     try:
         await get_current_user_id(request)
         review_id = request.match_info.get('review_id')
+        if review_id is None:
+            return web.json_response({"error": "Missing review_id"}, status=400)
 
         success = await firestore_service.delete_review(review_id)
 

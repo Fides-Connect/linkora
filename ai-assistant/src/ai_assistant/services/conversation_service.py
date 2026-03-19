@@ -361,7 +361,7 @@ class ConversationService:
         """
         ai_responses = self.context.get("ai_responses", [])
         if ai_responses:
-            return ai_responses[-1]
+            return str(ai_responses[-1])
         return " ".join(self.context["user_problem"])
 
     def _clean_json_response(self, json_str: str) -> str:

@@ -736,6 +736,9 @@ class AudioProcessor:
                         first_chunk = True
                         continue
 
+                    if not isinstance(chunk, str):
+                        continue
+
                     if chunk:
                         # First chunk of each turn → is_chunk=False → new bubble.
                         # Remaining chunks → is_chunk=True → append.

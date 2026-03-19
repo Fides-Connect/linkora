@@ -172,7 +172,7 @@ class CrossEncoderService:
         try:
             model = self._load_model()
             scores: list[float] = await loop.run_in_executor(
-                None, lambda: model.predict(pairs).tolist()
+                None, lambda: model.predict(pairs).tolist()  # type: ignore[attr-defined]
             )
         except Exception as exc:
             logger.error("Cross-encoder reranking failed: %s — returning original order", exc, exc_info=True)

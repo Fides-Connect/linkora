@@ -166,7 +166,7 @@ async def update_service_request_status(request: web.Request) -> web.Response:
 
         seeker_id = service_request.get('seeker_user_id')
         provider_id = service_request.get('selected_provider_user_id')
-        current_status = service_request.get('status')
+        current_status: str = service_request.get('status', '')
 
         is_seeker = user_id == seeker_id
         is_provider = provider_id and user_id == provider_id

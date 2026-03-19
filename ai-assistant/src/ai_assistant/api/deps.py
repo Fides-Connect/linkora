@@ -27,7 +27,7 @@ async def get_current_user_id(request: web.Request) -> str:
     token = auth_header.split(' ')[1]
     try:
         decoded_token = auth.verify_id_token(token)
-        return decoded_token['uid']
+        return str(decoded_token['uid'])
     except Exception as e:
         logger.warning("Auth failed: %s", e)
         raise web.HTTPUnauthorized(reason="Invalid authentication token")

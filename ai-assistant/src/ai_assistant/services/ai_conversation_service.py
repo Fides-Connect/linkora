@@ -60,7 +60,11 @@ class AIConversationService:
         stage: ConversationStage,
     ) -> None:
         """Persist a message to the conversation's messages subcollection."""
-        if self._conversation_id is None:
+        conversation_id = self._conversation_id
+        if conversation_id is None:
+            return
+        user_id = self._user_id
+        if user_id is None:
             return
         if self._firestore is None:
             return
@@ -68,7 +72,7 @@ class AIConversationService:
             sequence = self._sequence
             self._sequence += 1
             await self._firestore.create_ai_conversation_message(
-                self._user_id, self._conversation_id, role, text, stage, sequence
+                user_id, conversation_id, role, text, stage, sequence
             )
         except Exception as exc:
             logger.error("AIConversationService.save_message error: %s", exc, exc_info=True)
@@ -79,7 +83,11 @@ class AIConversationService:
         A5: Truncated gracefully at the nearest word boundary before 300 characters
         so no multi-byte character or word is split.
         """
-        if self._conversation_id is None:
+        conversation_id = self._conversation_id
+        if conversation_id is None:
+            return
+        user_id = self._user_id
+        if user_id is None:
             return
         if self._firestore is None:
             return
@@ -94,21 +102,25 @@ class AIConversationService:
             else:
                 truncated = title
             await self._firestore.update_ai_conversation(
-                self._user_id, self._conversation_id, {"topic_title": truncated}
+                user_id, conversation_id, {"topic_title": truncated}
             )
         except Exception as exc:
             logger.error("AIConversationService.set_topic_title error: %s", exc, exc_info=True)
 
     async def set_request_id(self, request_id: str) -> None:
         """Link a service request ID to this conversation."""
-        if self._conversation_id is None:
+        conversation_id = self._conversation_id
+        if conversation_id is None:
+            return
+        user_id = self._user_id
+        if user_id is None:
             return
         self._request_id = request_id  # cache in memory for get_request_id()
         if self._firestore is None:
             return
         try:
             await self._firestore.update_ai_conversation(
-                self._user_id, self._conversation_id, {"request_id": request_id}
+                user_id, conversation_id, {"request_id": request_id}
             )
         except Exception as exc:
             logger.error("AIConversationService.set_request_id error: %s", exc, exc_info=True)
@@ -119,7 +131,11 @@ class AIConversationService:
 
     async def close_session(self, final_stage: ConversationStage, request_summary: str = "") -> None:
         """Mark the conversation as closed with the final stage and optional request summary."""
-        if self._conversation_id is None:
+        conversation_id = self._conversation_id
+        if conversation_id is None:
+            return
+        user_id = self._user_id
+        if user_id is None:
             return
         if self._firestore is None:
             return
@@ -128,8 +144,8 @@ class AIConversationService:
             if request_summary:
                 update["request_summary"] = request_summary
             await self._firestore.update_ai_conversation(
-                self._user_id,
-                self._conversation_id,
+                user_id,
+                conversation_id,
                 update,
             )
         except Exception as exc:

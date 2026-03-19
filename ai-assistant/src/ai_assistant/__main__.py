@@ -14,7 +14,7 @@ import warnings
 # inspect.iscoroutinefunction() that emits a DeprecationWarning on every
 # invocation.  Replacing it process-wide with the non-deprecated equivalent
 # eliminates the per-call warning overhead for all LLMService instances.
-asyncio.iscoroutinefunction = inspect.iscoroutinefunction  # type: ignore[attr-defined]
+asyncio.iscoroutinefunction = inspect.iscoroutinefunction  # type: ignore[assignment, attr-defined]
 
 # google-genai re-defines AiohttpClientSession (an aiohttp.ClientSession
 # subclass) inside a factory function, so aiohttp emits its "Inheritance …
@@ -125,7 +125,7 @@ async def main() -> None:
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             max_output_tokens=2048,
         )
-        app["competence_enricher"] = _CompetenceEnricher(llm=_rest_llm.llm)
+        app["competence_enricher"] = _CompetenceEnricher(llm=_rest_llm.llm)  # type: ignore[arg-type]
         logger.info("CompetenceEnricher wired to REST app for /me/competencies endpoints")
     else:
         logger.warning("GEMINI_API_KEY not set — competence enrichment disabled for REST endpoints")

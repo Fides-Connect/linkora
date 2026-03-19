@@ -4,7 +4,7 @@ Data models using Hub and Spoke architecture.
 """
 import logging
 from datetime import datetime, UTC
-from typing import Any
+from typing import Any, cast
 from weaviate.classes.query import Filter
 from .weaviate_config import get_users_collection
 
@@ -64,7 +64,7 @@ class UserModelWeaviate:
 
             if response.objects:
                 obj = response.objects[0]
-                user = obj.properties.copy()
+                user = cast(dict[str, Any], obj.properties.copy())
                 return user
 
             return None
@@ -205,7 +205,7 @@ class ProviderModelWeaviate:
 
             if response.objects:
                 obj = response.objects[0]
-                provider = obj.properties.copy()
+                provider = cast(dict[str, Any], obj.properties.copy())
                 provider['provider_id'] = provider.get('user_id')
                 return provider
 

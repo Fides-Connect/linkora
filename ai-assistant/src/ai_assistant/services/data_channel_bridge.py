@@ -21,7 +21,7 @@ class DataChannelBridge:
     """
 
     def __init__(self) -> None:
-        self._channel = None
+        self._channel: RTCDataChannel | None = None
 
     # ── Channel lifecycle ─────────────────────────────────────────────────────
 
@@ -48,8 +48,11 @@ class DataChannelBridge:
         """
         if not self.is_open:
             return
+        channel = self._channel
+        if channel is None:
+            return
         try:
-            self._channel.send(
+            channel.send(
                 json.dumps(
                     {
                         "type": "chat",
@@ -69,8 +72,11 @@ class DataChannelBridge:
         """
         if not self.is_open:
             return
+        channel = self._channel
+        if channel is None:
+            return
         try:
-            self._channel.send(
+            channel.send(
                 json.dumps(
                     {
                         "type": "runtime-state",

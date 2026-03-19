@@ -537,7 +537,7 @@ class HubSpokeIngestion:
             # Add new competencies — expects a list of dicts only
             updated_uuids = []
             for comp_dict in competencies_to_insert:
-                comp_uuid = HubSpokeIngestion.create_competence(
+                comp_uuid = HubSpokeIngestion.create_competence(  # type: ignore[assignment]
                     competence_data=comp_dict,
                     user_uuid=user_uuid,
                     apply_sanitization=True,
@@ -616,9 +616,9 @@ class HubSpokeIngestion:
             for comp_obj in user_with_refs.references['has_competencies'].objects:
                 comp_uuid = str(comp_obj.uuid)
                 comp_props = comp_obj.properties
-                comp_title = (comp_props.get('title') or '').lower()
-                comp_desc = (comp_props.get('description') or '').lower()
-                comp_category = (comp_props.get('category') or '').lower()
+                comp_title = str(comp_props.get('title') or '').lower()
+                comp_desc = str(comp_props.get('description') or '').lower()
+                comp_category = str(comp_props.get('category') or '').lower()
 
                 # Check if any pattern matches
                 for pattern in patterns:

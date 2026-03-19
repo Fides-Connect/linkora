@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 from datetime import datetime, timedelta, UTC
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_collection import BaseCollectionReference
@@ -129,7 +129,7 @@ class FirestoreService:
         result: dict[str, str] = {}
         for err in error.errors():
             # Build a human-readable field path, e.g. "monday_time_ranges[0].end_time"
-            parts = []
+            parts: list[str] = []
             for loc_part in err.get("loc", ()):
                 if isinstance(loc_part, int):
                     if parts:
@@ -498,7 +498,7 @@ class FirestoreService:
             if doc.exists:
                 data = doc.to_dict()
                 data['candidate_id'] = doc.id
-                return data
+                return cast(dict[str, Any], data)
             return None
         except Exception as e:
             logger.error("Error fetching provider candidate %s: %s", provider_candidate_id, e)
@@ -1073,7 +1073,7 @@ class FirestoreService:
             competence_ref = self._get_collection('users').document(user_id).collection('competencies').document(competence_id)
             doc = competence_ref.get()
             if doc.exists:
-                return doc.to_dict()
+                return cast(dict[str, Any], doc.to_dict())
             return None
         except Exception as e:
             logger.error("Error getting competence %s for %s: %s", competence_id, user_id, e)
@@ -1218,7 +1218,7 @@ class FirestoreService:
             if doc.exists:
                 data = doc.to_dict()
                 data['availability_time_id'] = doc.id
-                return data
+                return cast(dict[str, Any], data)
             return None
         except Exception as e:
             logger.error("Error fetching availability time %s: %s", availability_time_id, e)
@@ -1750,7 +1750,7 @@ class FirestoreService:
                   .document(message_id)
                   .get())
             if doc.exists:
-                return doc.to_dict()
+                return cast(dict[str, Any], doc.to_dict())
             return None
         except Exception as e:
             logger.error("Error getting message %s from chat %s: %s", message_id, chat_id, e)
@@ -1864,7 +1864,7 @@ class FirestoreService:
                 .document()
             )
             doc_ref.set(validated)
-            return doc_ref.id
+            return cast(str, doc_ref.id)
         except Exception as exc:
             logger.error("Error creating ai_conversation: %s", exc)
             return None
@@ -1924,7 +1924,7 @@ class FirestoreService:
             if sequence == 0:
                 parent_update["first_message_at"] = now
             conv_ref.update(parent_update)
-            return msg_ref.id
+            return cast(str, msg_ref.id)
         except Exception as exc:
             logger.error("Error saving ai_conversation message: %s", exc)
             return None
@@ -2054,7 +2054,7 @@ class FirestoreService:
                 return None
             data = doc.to_dict()
             data['conversation_id'] = doc.id
-            return data
+            return cast(dict[str, Any], data)
         except Exception as exc:
             logger.error(
                 "Error fetching ai_conversation %s: %s", conversation_id, exc,

@@ -13,7 +13,7 @@ import secrets
 from collections.abc import Awaitable
 from datetime import datetime, UTC
 from functools import wraps
-from typing import Any
+from typing import Any, cast
 from collections.abc import Callable
 
 from aiohttp import web
@@ -85,7 +85,7 @@ class AdminAuth:
         @wraps(handler)
         async def wrapper(*args: object, **kwargs: object) -> web.Response:
             # Handle both bound methods (self, request) and functions (request)
-            request = args[1] if len(args) > 1 else args[0]
+            request: web.Request = cast(web.Request, args[1] if len(args) > 1 else args[0])
 
             if not AdminAuth.verify_token(request):
                 logger.warning("Unauthorized admin access attempt from %s", request.remote)
@@ -303,8 +303,8 @@ class AdminService:
                     "email": user.get('email'),
                     "has_fcm_token": bool(user.get('fcm_token')),
                     "has_open_request": user.get('has_open_request', False),
-                    "last_sign_in": last_sign_in.isoformat() if hasattr(last_sign_in, 'isoformat') else str(last_sign_in) if last_sign_in else None,
-                    "created_at": created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at) if created_at else None,
+                    "last_sign_in": last_sign_in.isoformat() if isinstance(last_sign_in, datetime) else str(last_sign_in) if last_sign_in else None,
+                    "created_at": created_at.isoformat() if isinstance(created_at, datetime) else str(created_at) if created_at else None,
                 })
 
             return web.json_response({
@@ -354,8 +354,8 @@ class AdminService:
                 "has_fcm_token": bool(user.get('fcm_token')),
                 "fcm_token_preview": user.get('fcm_token', '')[:20] + '...' if user.get('fcm_token') else None,
                 "has_open_request": user.get('has_open_request', False),
-                "last_sign_in": last_sign_in.isoformat() if hasattr(last_sign_in, 'isoformat') else str(last_sign_in) if last_sign_in else None,
-                "created_at": created_at.isoformat() if hasattr(created_at, 'isoformat') else str(created_at) if created_at else None,
+                "last_sign_in": last_sign_in.isoformat() if isinstance(last_sign_in, datetime) else str(last_sign_in) if last_sign_in else None,
+                "created_at": created_at.isoformat() if isinstance(created_at, datetime) else str(created_at) if created_at else None,
             }
 
             return web.json_response(user_display)
@@ -399,7 +399,7 @@ class AdminService:
                         owner_id = str(owner.uuid)
                         # Ensure we handle missing name property safely
                         if owner.properties and 'name' in owner.properties:
-                            owner_name = owner.properties['name']
+                            owner_name = str(owner.properties['name'])
 
                 competencies_display.append({
                     "competence_id": str(obj.uuid),

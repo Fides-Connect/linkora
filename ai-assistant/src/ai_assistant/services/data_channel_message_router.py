@@ -36,7 +36,10 @@ class DataChannelMessageRouter:
         (callers should not depend on error handling behaviour of individual
         handlers).
         """
-        msg_type = data.get("type")
+        msg_type: str | None = data.get("type")
+        if not isinstance(msg_type, str):
+            logger.warning("DataChannelMessageRouter: missing or non-string message type %r", msg_type)
+            return
         handler = self._handlers.get(msg_type)
         if handler is None:
             logger.warning("DataChannelMessageRouter: unknown message type %r", msg_type)

@@ -93,7 +93,7 @@ async def delete_user(request: web.Request) -> web.Response:
         if success:
             # Delete from Weaviate
             try:
-                UserModelWeaviate.delete_user(user_id)
+                UserModelWeaviate.delete_user(user_id)  # type: ignore[attr-defined]
             except Exception as e:
                 logger.error("Failed to delete user %s from Weaviate: %s", user_id, e)
 

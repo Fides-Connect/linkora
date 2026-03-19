@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class DebugRecorder:
     """Records audio frames for debugging."""
 
-    def __init__(self, connection_id: str, sample_rate: int = 48000, enabled: bool = None) -> None:
+    def __init__(self, connection_id: str, sample_rate: int = 48000, enabled: bool | None = None) -> None:
         """
         Initialize debug recorder.
 
@@ -31,7 +31,7 @@ class DebugRecorder:
             enabled = os.getenv('DEBUG_RECORD_AUDIO', 'false').lower() == 'true'
 
         self.enabled = enabled
-        self.wav_path = None
+        self.wav_path: str | None = None
 
         if self.enabled:
             self._setup_recording()
@@ -100,6 +100,8 @@ class DebugRecorder:
 
     def _write_wav_file(self, audio: np.ndarray) -> None:
         """Write audio data to WAV file."""
+        if self.wav_path is None:
+            return
         with wave.open(self.wav_path, 'wb') as wav_file:
             wav_file.setnchannels(1)  # Mono
             wav_file.setsampwidth(2)  # 16-bit

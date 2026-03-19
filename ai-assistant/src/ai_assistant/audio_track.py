@@ -21,13 +21,13 @@ class AudioOutputTrack(MediaStreamTrack):
 
     def __init__(self) -> None:
         super().__init__()
-        self.audio_queue = asyncio.Queue()
+        self.audio_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self.sample_rate = 24000  # 24kHz: half the TTS payload vs 48kHz; aiortc resamples to 48kHz for RTP
         self.channels = 1
         self.samples_per_frame = 480  # 20ms at 24kHz
         self._timestamp = 0
-        self._start = None
-        self._next_frame_time = None
+        self._start: float | None = None
+        self._next_frame_time: float | None = None
         # Ring-buffer implemented as a deque of raw int16 bytes chunks.
         # Avoids O(N) np.concatenate allocations at 50 Hz.
         self._buffer: collections.deque[bytes] = collections.deque()
@@ -117,7 +117,7 @@ class AudioOutputTrack(MediaStreamTrack):
         # Normalize and scale to desired amplitude
         pink_noise = pink_noise / np.max(np.abs(pink_noise)) * self._comfort_noise_amplitude
 
-        return pink_noise.astype(np.int16)
+        return pink_noise.astype(np.int16)  # type: ignore[return-value, no-any-return]
 
     async def recv(self) -> AudioFrame:
         """Receive audio frame.

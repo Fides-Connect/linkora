@@ -100,7 +100,7 @@ class HubSpokeSearch:
                 )
 
                 # Client-side grouping: Keep only the best competence per user
-                seen_users = {}
+                seen_users: dict[str, Any] = {}
                 for obj in response.objects:
                     competence = obj.properties.copy()
                     competence['uuid'] = str(obj.uuid)
@@ -204,7 +204,7 @@ class HubSpokeSearch:
             competencies = []
             if response.references and 'has_competencies' in response.references:
                 for comp_obj in response.references['has_competencies'].objects:
-                    comp = comp_obj.properties.copy()
+                    comp = dict(comp_obj.properties)
                     comp['uuid'] = str(comp_obj.uuid)
                     competencies.append(comp)
 
@@ -219,7 +219,7 @@ class HubSpokeSearch:
     def _build_filters_and_query(
         search_request: dict[str, Any],
         max_inactive_days: int
-    ) -> tuple[Filter, str, str, bool]:
+    ) -> tuple[Any, str, str, bool]:
         """
         Build search filters and query text from search request.
 
@@ -305,9 +305,9 @@ class HubSpokeSearch:
         Returns:
             List of provider results sorted by relevance
         """
-        seen_users = {}
+        seen_users: dict[str, Any] = {}
 
-        for obj in response.objects:
+        for obj in response.objects:  # type: ignore[attr-defined]
             competence = obj.properties.copy()
             competence['uuid'] = str(obj.uuid)
             competence['score'] = obj.metadata.score if obj.metadata else 0

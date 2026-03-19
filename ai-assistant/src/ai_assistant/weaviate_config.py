@@ -18,7 +18,7 @@ try:
         cleanup_hub_spoke_schema  # noqa: F401
     )
 except ImportError:
-    from hub_spoke_schema import (  # pyright: ignore[reportMissingImports]
+    from hub_spoke_schema import (  # type: ignore[no-redef]
         init_hub_spoke_schema,
         get_user_collection,
         get_competence_collection,

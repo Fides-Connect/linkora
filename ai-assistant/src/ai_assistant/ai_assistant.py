@@ -6,6 +6,7 @@ import inspect
 import logging
 import os
 from collections.abc import AsyncIterator
+from typing import Any
 
 from .services import (
     SpeechToTextService,
@@ -109,7 +110,7 @@ class AIAssistant:
 
         # Competence enricher: LLM-powered enrichment of provider competence data.
         # Uses the same underlying LLM instance (no extra API key needed).
-        self.competence_enricher = CompetenceEnricher(llm=self.llm_service.llm)
+        self.competence_enricher = CompetenceEnricher(llm=self.llm_service.llm)  # type: ignore[arg-type]
 
         # Initialize orchestration services
         self.response_orchestrator = ResponseOrchestrator(
@@ -151,7 +152,7 @@ class AIAssistant:
 
     async def generate_llm_response_stream(
         self, prompt: str, user_id: str | None = None
-    ) -> AsyncIterator[str]:
+    ) -> AsyncIterator[str | dict[str, Any]]:
         """
         Generate streaming response using LLM.
         Delegates to ResponseOrchestrator for stage-aware conversation flow.

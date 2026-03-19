@@ -287,7 +287,7 @@ class ResponseOrchestrator:
         now = datetime.now(UTC)
         if last_asked.tzinfo is None:
             last_asked = last_asked.replace(tzinfo=UTC)
-        return (now - last_asked) >= timedelta(days=30)
+        return bool((now - last_asked) >= timedelta(days=30))
 
     async def _should_pitch_provider_async(self, context: dict[str, Any] | None) -> bool:
         """Async variant of _should_pitch_provider that adds a real-time Firestore
