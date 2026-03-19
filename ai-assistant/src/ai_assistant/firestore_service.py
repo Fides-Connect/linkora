@@ -1,6 +1,8 @@
 import logging
 import os
-from typing import Any, cast
+import inspect
+from typing import Any, cast, TypeVar
+from collections.abc import Awaitable
 from datetime import datetime, timedelta, UTC
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_collection import BaseCollectionReference
@@ -33,6 +35,9 @@ from .firestore_schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Generic type for helper that resolves awaitables at runtime
+T = TypeVar("T")
 
 class FirestoreService:
     """Service to interact with Firestore database."""
@@ -141,6 +146,17 @@ class FirestoreService:
             field_path = ".".join(parts) if parts else "(unknown)"
             result[field_path] = err.get("msg", "invalid value")
         return result
+
+    async def _resolve_awaitable(self, maybe: T | Awaitable[T]) -> T:
+        """Await the value if it's awaitable, otherwise return it as-is.
+
+        This protects us from differences in Firestore sync/async client
+        type-stubs across environments by resolving either a direct
+        `DocumentSnapshot` or an `Awaitable[DocumentSnapshot]` uniformly.
+        """
+        if inspect.isawaitable(maybe):
+            return await cast(Awaitable[T], maybe)
+        return cast(T, maybe)
 
     # --- Service Request Operations ---
 
@@ -253,7 +269,8 @@ class FirestoreService:
         if not self.db:
             return None
         try:
-            doc = self._get_collection('service_requests').document(request_id).get()
+            doc_maybe = self._get_collection('service_requests').document(request_id).get()
+            doc = await self._resolve_awaitable(doc_maybe)
             if doc.exists:
                 data = doc.to_dict()
                 if data is None:
@@ -305,7 +322,8 @@ class FirestoreService:
         try:
             # Check if service request exists and get current data
             ref = self._get_collection('service_requests').document(request_id)
-            doc = ref.get()
+            doc_maybe = ref.get()
+            doc = await self._resolve_awaitable(doc_maybe)
             if not doc.exists:
                 logger.warning("Cannot update service request %s: service request does not exist", request_id)
                 return None
@@ -354,7 +372,8 @@ class FirestoreService:
             service_request_ref = self._get_collection('service_requests').document(request_id)
 
             # Get the service request data to know which users to update
-            doc = service_request_ref.get()
+            doc_maybe = service_request_ref.get()
+            doc = await self._resolve_awaitable(doc_maybe)
             if doc.exists:
                 request_data = doc.to_dict() or {}
                 seeker_user_id = request_data.get('seeker_user_id')
@@ -490,11 +509,12 @@ class FirestoreService:
         if not self.db:
             return None
         try:
-            doc = (self._get_collection('service_requests')
-                  .document(service_request_id)
-                  .collection('provider_candidates')
-                  .document(provider_candidate_id)
-                  .get())
+            doc_maybe = (self._get_collection('service_requests')
+                .document(service_request_id)
+                .collection('provider_candidates')
+                .document(provider_candidate_id)
+                .get())
+            doc = await self._resolve_awaitable(doc_maybe)
             if doc.exists:
                 data = doc.to_dict()
                 data['candidate_id'] = doc.id
@@ -529,7 +549,8 @@ class FirestoreService:
                   .collection('provider_candidates')
                   .document(provider_candidate_id))
 
-            doc = ref.get()
+            doc_maybe = ref.get()
+            doc = await self._resolve_awaitable(doc_maybe)
             if not doc.exists:
                 logger.warning("Cannot update provider candidate %s: does not exist", provider_candidate_id)
                 return None
@@ -590,7 +611,8 @@ class FirestoreService:
                             .document(provider_candidate_id))
 
             # Get the provider candidate data to know which user to update
-            doc = candidate_ref.get()
+            doc_maybe = candidate_ref.get()
+            doc = await self._resolve_awaitable(doc_maybe)
             if doc.exists:
                 candidate_data = doc.to_dict()
                 provider_user_id = candidate_data.get('provider_candidate_user_id')
@@ -818,7 +840,8 @@ class FirestoreService:
         if not self.db:
             return None
         try:
-            doc = self._get_collection('users').document(user_id).get()
+            doc_maybe = self._get_collection('users').document(user_id).get()
+            doc = await self._resolve_awaitable(doc_maybe)
             if doc.exists:
                 data = doc.to_dict()
                 if data is None:
@@ -851,7 +874,9 @@ class FirestoreService:
         try:
             # Check if user exists
             user_ref = self._get_collection('users').document(user_id)
-            if not user_ref.get().exists:
+            user_doc_maybe = user_ref.get()
+            user_doc = await self._resolve_awaitable(user_doc_maybe)
+            if not user_doc.exists:
                 logger.warning("Cannot update user %s: user does not exist", user_id)
                 return None
 
@@ -1040,7 +1065,9 @@ class FirestoreService:
         try:
             # Check if competence exists
             competence_ref = self._get_collection('users').document(user_id).collection('competencies').document(competence_id)
-            if not competence_ref.get().exists:
+            comp_doc_maybe = competence_ref.get()
+            comp_doc = await self._resolve_awaitable(comp_doc_maybe)
+            if not comp_doc.exists:
                 logger.warning("Cannot update competence %s for user %s: competence does not exist", competence_id, user_id)
                 return None
 
@@ -1071,7 +1098,8 @@ class FirestoreService:
             return None
         try:
             competence_ref = self._get_collection('users').document(user_id).collection('competencies').document(competence_id)
-            doc = competence_ref.get()
+            doc_maybe = competence_ref.get()
+            doc = await self._resolve_awaitable(doc_maybe)
             if doc.exists:
                 return cast(dict[str, Any], doc.to_dict())
             return None
@@ -1200,20 +1228,22 @@ class FirestoreService:
             # Determine the collection reference
             if competence_id:
                 # Subcollection under competence
-                doc = (self._get_collection('users')
+                doc_maybe = (self._get_collection('users')
                       .document(user_id)
                       .collection('competencies')
                       .document(competence_id)
                       .collection('availability_time')
                       .document(availability_time_id)
                       .get())
+                doc = await self._resolve_awaitable(doc_maybe)
             else:
                 # Subcollection under user
-                doc = (self._get_collection('users')
-                      .document(user_id)
-                      .collection('availability_time')
-                      .document(availability_time_id)
-                      .get())
+                doc_maybe = (self._get_collection('users')
+                    .document(user_id)
+                    .collection('availability_time')
+                    .document(availability_time_id)
+                    .get())
+                doc = await self._resolve_awaitable(doc_maybe)
 
             if doc.exists:
                 data = doc.to_dict()
@@ -1261,7 +1291,9 @@ class FirestoreService:
                       .collection('availability_time')
                       .document(availability_time_id))
 
-            if not ref.get().exists:
+            ref_doc_maybe = ref.get()
+            ref_doc = await self._resolve_awaitable(ref_doc_maybe)
+            if not ref_doc.exists:
                 logger.warning("Cannot update availability time %s: does not exist", availability_time_id)
                 return None
 
@@ -1375,7 +1407,8 @@ class FirestoreService:
         if not self.db:
             return None
         try:
-            doc = self._get_collection('reviews').document(review_id).get()
+            doc_maybe = self._get_collection('reviews').document(review_id).get()
+            doc = await self._resolve_awaitable(doc_maybe)
             if doc.exists:
                 return doc.to_dict()
             return None
@@ -1513,7 +1546,8 @@ class FirestoreService:
         if not self.db:
             return None
         try:
-            doc = self._get_collection('chats').document(chat_id).get()
+            doc_maybe = self._get_collection('chats').document(chat_id).get()
+            doc = await self._resolve_awaitable(doc_maybe)
             if doc.exists:
                 data = doc.to_dict()
                 if data is None:
@@ -1602,7 +1636,9 @@ class FirestoreService:
         try:
             ref = self._get_collection('chats').document(chat_id)
 
-            if not ref.get().exists:
+            ref_doc_maybe = ref.get()
+            ref_doc = await self._resolve_awaitable(ref_doc_maybe)
+            if not ref_doc.exists:
                 logger.warning("Cannot update chat %s: does not exist", chat_id)
                 return None
 
@@ -1744,11 +1780,12 @@ class FirestoreService:
         if not self.db:
             return None
         try:
-            doc = (self._get_collection('chats')
-                  .document(chat_id)
-                  .collection('messages')
-                  .document(message_id)
-                  .get())
+            doc_maybe = (self._get_collection('chats')
+                .document(chat_id)
+                .collection('messages')
+                .document(message_id)
+                .get())
+            doc = await self._resolve_awaitable(doc_maybe)
             if doc.exists:
                 return cast(dict[str, Any], doc.to_dict())
             return None
@@ -1983,7 +2020,8 @@ class FirestoreService:
                 .limit(limit)
             )
             if start_after_id:
-                cursor_doc = user_conv_ref.document(start_after_id).get()
+                cursor_doc_maybe = user_conv_ref.document(start_after_id).get()
+                cursor_doc = await self._resolve_awaitable(cursor_doc_maybe)
                 if cursor_doc.exists:
                     query = query.start_after(cursor_doc)
             results = []
@@ -2043,13 +2081,14 @@ class FirestoreService:
         if not self.db:
             return None
         try:
-            doc = (
+            doc_maybe = (
                 self._get_collection('users')
                 .document(user_id)
                 .collection('ai_conversations')
                 .document(conversation_id)
                 .get()
             )
+            doc = await self._resolve_awaitable(doc_maybe)
             if not doc.exists:
                 return None
             data = doc.to_dict()
