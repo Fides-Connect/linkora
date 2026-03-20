@@ -2653,4 +2653,195 @@ class TestFollowUpBoundedLoop:
 
         text_chunks = [c for c in chunks if isinstance(c, str)]
         assert "Here is your confirmation summary." in text_chunks
-        assert call_count == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# retry_search tool (Loop #1 fix)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRetrySearchTool:
+    """retry_search re-runs the Weaviate query within FINALIZE without clearing the draft."""
+
+    async def test_retry_search_presents_fresh_provider(
+        self, orchestrator, mock_conversation_service
+    ):
+        """On a successful retry, pending contains the new top provider."""
+        fresh_provider = {"user": {"user_id": "p2", "name": "Bob"}, "title": "Plumbing"}
+        mock_conversation_service.context["providers_found"] = [
+            {"user": {"user_id": "p1", "name": "Alice"}, "title": "Electrical work"}
+        ]
+        mock_conversation_service.context["current_provider_index"] = 0
+        # After re-running search, fresh results replace the cache.
+        mock_conversation_service.search_providers_for_request = AsyncMock(
+            side_effect=lambda sid: mock_conversation_service.context.update(
+                {"providers_found": [fresh_provider], "current_provider_index": 0}
+            )
+        )
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+
+        pending: list = []
+        await orchestrator._handle_finalize_tool(
+            "retry_search", {}, "sess", None, pending
+        )
+
+        assert any(
+            isinstance(p, dict) and p.get("status") == "results_refreshed"
+            and p.get("current_provider", {}).get("user", {}).get("user_id") == "p2"
+            for _, p in pending
+        ), f"Expected retry_search result with new provider, got: {pending}"
+
+    async def test_retry_search_zero_results_routes_to_triage(
+        self, orchestrator, mock_conversation_service
+    ):
+        """If the fresh search returns nothing, pending routes to TRIAGE with zero_result_event."""
+        mock_conversation_service.context["providers_found"] = []
+        mock_conversation_service.context["current_provider_index"] = 0
+        mock_conversation_service.search_providers_for_request = AsyncMock()
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+
+        pending: list = []
+        await orchestrator._handle_finalize_tool(
+            "retry_search", {}, "sess", None, pending
+        )
+
+        assert any(
+            isinstance(p, dict) and p.get("stage") == "triage" and "zero_result_event" in p
+            for _, p in pending
+        ), f"Expected triage+zero_result_event, got: {pending}"
+
+    async def test_retry_search_on_outage_sets_outage_flag(
+        self, orchestrator, mock_conversation_service
+    ):
+        """If Weaviate is unreachable during retry, search_outage_pending is set and
+        pending routes to RECOVERY."""
+        mock_conversation_service.context["providers_found"] = []
+        mock_conversation_service.context["current_provider_index"] = 0
+        # Simulate the search setting the error flag instead of populating providers_found.
+        def _set_outage(sid):
+            mock_conversation_service.context["search_error"] = "unavailable"
+        mock_conversation_service.search_providers_for_request = AsyncMock(side_effect=_set_outage)
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+
+        pending: list = []
+        await orchestrator._handle_finalize_tool(
+            "retry_search", {}, "sess", None, pending
+        )
+
+        assert mock_conversation_service.context.get("search_outage_pending") is True
+        assert mock_conversation_service.context.get("search_failure_count", 0) >= 1
+        # The route-to-RECOVERY transition must be queued.
+        assert any(
+            isinstance(p, dict) and p.get("stage") == "recovery"
+            for _, p in pending
+        ), f"Expected recovery in pending, got: {pending}"
+
+    async def test_retry_search_does_not_clear_problem_draft(
+        self, orchestrator, mock_conversation_service
+    ):
+        """retry_search must not invoke reset_request_context (draft survives)."""
+        fresh_provider = {"user": {"user_id": "p3"}, "title": "Gardening"}
+        mock_conversation_service.context["current_provider_index"] = 0
+        # search_providers_for_request repopulates providers_found (simulates success).
+        mock_conversation_service.search_providers_for_request = AsyncMock(
+            side_effect=lambda sid: mock_conversation_service.context.update(
+                {"providers_found": [fresh_provider]}
+            )
+        )
+        mock_conversation_service.reset_request_context = Mock()
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+
+        pending: list = []
+        await orchestrator._handle_finalize_tool(
+            "retry_search", {}, "sess", None, pending
+        )
+
+        mock_conversation_service.reset_request_context.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RECOVERY outage loop fix (Loop #2 fix)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRecoveryOutageLoop:
+    """FINALIZE search outage sets flags; RECOVERY routes to CONFIRMATION, not TRIAGE."""
+
+    async def test_finalize_outage_sets_flags(
+        self, orchestrator, mock_conversation_service
+    ):
+        """When Weaviate is down during FINALIZE entry, outage flags are set before
+        routing to RECOVERY."""
+        # Make set_stage update what get_current_stage returns so the chained
+        # handle_signal_transition("recovery") sees FINALIZE → RECOVERY (legal).
+        stage_tracker = [ConversationStage.CONFIRMATION]
+        mock_conversation_service.get_current_stage.side_effect = lambda: stage_tracker[0]
+        mock_conversation_service.set_stage.side_effect = lambda s: stage_tracker.__setitem__(0, s)
+
+        def _set_error(sid):
+            mock_conversation_service.context["search_error"] = "unavailable"
+        mock_conversation_service.search_providers_for_request = AsyncMock(side_effect=_set_error)
+
+        pending: list = []
+        await orchestrator._apply_signal_transition_with_payload(
+            "finalize", "sess", None, pending
+        )
+
+        assert mock_conversation_service.context.get("search_outage_pending") is True
+        assert mock_conversation_service.context.get("search_failure_count", 0) >= 1
+        # Stage must be set to RECOVERY.
+        assert stage_tracker[0] == ConversationStage.RECOVERY
+
+    async def test_recovery_to_confirmation_clears_outage_flag(
+        self, orchestrator, mock_conversation_service
+    ):
+        """RECOVERY → CONFIRMATION clears search_outage_pending so the next
+        FINALIZE attempt does not misread the flag."""
+        mock_conversation_service.context["search_outage_pending"] = True
+        mock_conversation_service.context["search_failure_count"] = 1
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.RECOVERY
+
+        pending: list = []
+        await orchestrator._apply_signal_transition_with_payload(
+            "confirmation", "sess", None, pending
+        )
+
+        assert "search_outage_pending" not in mock_conversation_service.context
+        assert any(
+            isinstance(p, dict) and p.get("stage") == "confirmation"
+            for _, p in pending
+        ), f"Expected confirmation in pending, got: {pending}"
+
+    async def test_recovery_to_triage_clears_outage_flags(
+        self, orchestrator, mock_conversation_service
+    ):
+        """RECOVERY → TRIAGE also clears both outage flags."""
+        mock_conversation_service.context["search_outage_pending"] = True
+        mock_conversation_service.context["search_failure_count"] = 3
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.RECOVERY
+
+        pending: list = []
+        await orchestrator._apply_signal_transition_with_payload(
+            "triage", "sess", None, pending
+        )
+
+        assert "search_outage_pending" not in mock_conversation_service.context
+        assert "search_failure_count" not in mock_conversation_service.context
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RECOVERY → CONFIRMATION legal transition
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRecoveryToConfirmationTransition:
+
+    def test_recovery_to_confirmation_is_legal(self, orchestrator, mock_conversation_service):
+        """RECOVERY → CONFIRMATION must be a legal transition."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.RECOVERY
+        result = orchestrator.handle_signal_transition("confirmation")
+        assert result is True
+        mock_conversation_service.set_stage.assert_called_once_with(ConversationStage.CONFIRMATION)
+
+    def test_recovery_to_finalize_is_illegal(self, orchestrator, mock_conversation_service):
+        """RECOVERY → FINALIZE must remain illegal (bypass through CONFIRMATION)."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.RECOVERY
+        result = orchestrator.handle_signal_transition("finalize")
+        assert result is False

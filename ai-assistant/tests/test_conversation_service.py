@@ -657,3 +657,46 @@ class TestProviderOnboardingPromptIsServiceProvider:
         )
         rendered = str(template.messages[0])
         assert "False" in rendered
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RECOVERY prompt context injection (outage-aware RECOVERY)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRecoveryPromptContextInjection:
+
+    def test_no_outage_flag_injects_empty_recovery_context(self, conversation_service):
+        """With no outage flag, recovery_context is empty (standard RECOVERY path)."""
+        conversation_service.context.pop("search_outage_pending", None)
+        template = conversation_service.create_prompt_for_stage(ConversationStage.RECOVERY)
+        rendered = str(template.messages[0])
+        assert "SEARCH TEMPORARILY UNAVAILABLE" not in rendered
+        assert "PERSISTENT SEARCH OUTAGE" not in rendered
+
+    def test_first_outage_injects_retry_instructions(self, conversation_service):
+        """On the first failure (count=1), the RECOVERY prompt must instruct the
+        LLM to route to CONFIRMATION (not TRIAGE) on retry."""
+        conversation_service.context["search_outage_pending"] = True
+        conversation_service.context["search_failure_count"] = 1
+        template = conversation_service.create_prompt_for_stage(ConversationStage.RECOVERY)
+        rendered = str(template.messages[0])
+        assert "SEARCH TEMPORARILY UNAVAILABLE" in rendered
+        assert "confirmation" in rendered
+
+    def test_second_outage_injects_persistent_failure_instructions(self, conversation_service):
+        """After 2+ failures, the RECOVERY prompt must tell user to try again later
+        and route to TRIAGE — no retry offered."""
+        conversation_service.context["search_outage_pending"] = True
+        conversation_service.context["search_failure_count"] = 2
+        template = conversation_service.create_prompt_for_stage(ConversationStage.RECOVERY)
+        rendered = str(template.messages[0])
+        assert "PERSISTENT SEARCH OUTAGE" in rendered
+        assert "triage" in rendered
+
+    def test_recovery_to_confirmation_legal(self, conversation_service):
+        """RECOVERY → CONFIRMATION must be a legal transition."""
+        assert is_legal_transition(ConversationStage.RECOVERY, ConversationStage.CONFIRMATION)
+
+    def test_recovery_to_finalize_illegal(self, conversation_service):
+        """RECOVERY → FINALIZE must remain illegal."""
+        assert not is_legal_transition(ConversationStage.RECOVERY, ConversationStage.FINALIZE)

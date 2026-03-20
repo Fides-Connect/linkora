@@ -62,7 +62,7 @@ _LEGAL_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
                                        ConversationStage.FINALIZE],
     ConversationStage.CONFIRMATION:   [ConversationStage.FINALIZE, ConversationStage.TRIAGE],
     ConversationStage.FINALIZE:       [ConversationStage.COMPLETED, ConversationStage.RECOVERY, ConversationStage.TRIAGE],
-    ConversationStage.RECOVERY:       [ConversationStage.TRIAGE],
+    ConversationStage.RECOVERY:       [ConversationStage.TRIAGE, ConversationStage.CONFIRMATION],
     ConversationStage.COMPLETED:      [ConversationStage.PROVIDER_PITCH, ConversationStage.TRIAGE],
     ConversationStage.PROVIDER_PITCH: [ConversationStage.PROVIDER_ONBOARDING, ConversationStage.COMPLETED,
                                        ConversationStage.TRIAGE],
@@ -246,6 +246,31 @@ class ConversationService:
             fmt_kwargs: dict = {"agent_name": self.agent_name}
             if template is TRIAGE_CONVERSATION_PROMPT:
                 fmt_kwargs["user_name"] = self.context.get("user_name", "")
+            if stage == ConversationStage.RECOVERY:
+                outage_pending = self.context.get("search_outage_pending", False)
+                failure_count = self.context.get("search_failure_count", 0)
+                if outage_pending and failure_count >= 2:
+                    fmt_kwargs["recovery_context"] = (
+                        "\n**SPECIAL CONTEXT — PERSISTENT SEARCH OUTAGE:**\n"
+                        "The provider search has failed multiple consecutive times. "
+                        "Tell the user warmly that the search service is experiencing "
+                        "persistent issues and they should try again in a few minutes. "
+                        "Call `signal_transition(target_stage=\"triage\")` after delivering "
+                        "this message. Do NOT offer to retry the search right now.\n"
+                    )
+                elif outage_pending:
+                    fmt_kwargs["recovery_context"] = (
+                        "\n**SPECIAL CONTEXT — SEARCH TEMPORARILY UNAVAILABLE:**\n"
+                        "The provider search was temporarily unreachable. Inform the user "
+                        "there was a brief technical issue with the search. Ask if they "
+                        "would like to try again. "
+                        "If the user says yes or indicates they want to retry, call "
+                        "`signal_transition(target_stage=\"confirmation\")` — NOT \"triage\". "
+                        "If the user wants to change their request or abandon the search, "
+                        "call `signal_transition(target_stage=\"triage\")`.\n"
+                    )
+                else:
+                    fmt_kwargs["recovery_context"] = ""
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(template).format(
                     **fmt_kwargs

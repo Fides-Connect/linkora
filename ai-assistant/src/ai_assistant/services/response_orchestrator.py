@@ -33,7 +33,7 @@ _KNOWN_TOOL_NAMES_RE = re.compile(
     r'\b(?:signal_transition|search_providers|get_favorites|get_open_requests'
     r'|create_service_request|cancel_service_request|record_provider_interest|get_my_competencies'
     r'|save_competence_batch|delete_competences'
-    r'|accept_provider|reject_and_fetch_next|cancel_search)\s*\([^)]*\)'
+    r'|accept_provider|reject_and_fetch_next|cancel_search|retry_search)\s*\([^)]*\)'
 )
 
 def _strip_tool_call_text(text: str) -> str:
@@ -157,6 +157,10 @@ class ResponseOrchestrator:
                     logger.warning(
                         "Weaviate unavailable during FINALIZE provider search — diverting to RECOVERY."
                     )
+                    self.conversation_service.context["search_outage_pending"] = True
+                    self.conversation_service.context["search_failure_count"] = (
+                        self.conversation_service.context.get("search_failure_count", 0) + 1
+                    )
                     self.handle_signal_transition("recovery")
                     return True
                 # Read providers stored by search_providers_for_request; avoids
@@ -249,7 +253,19 @@ class ResponseOrchestrator:
                         "Preserved triggering utterance '%s...' for new TRIAGE session",
                         triggering_utterance[:50],
                     )
+            # Clear outage flags whenever we settle into TRIAGE
+            self.conversation_service.context.pop("search_outage_pending", None)
+            self.conversation_service.context.pop("search_failure_count", None)
             pending.append(("signal_transition", {"stage": "triage"}))
+
+        elif target_stage == ConversationStage.CONFIRMATION:
+            if previous_stage == ConversationStage.RECOVERY:
+                # RECOVERY → CONFIRMATION: outage-retry path.
+                # The draft is already intact; just clear the outage flag so the
+                # next FINALIZE attempt starts cleanly.
+                self.conversation_service.context.pop("search_outage_pending", None)
+                logger.info("RECOVERY → CONFIRMATION: outage retry path, draft preserved.")
+            pending.append(("signal_transition", {"stage": "confirmation"}))
 
         else:
             pending.append(("signal_transition", {"stage": target}))
@@ -460,7 +476,7 @@ class ResponseOrchestrator:
                     )
                 else:
                     # FINALIZE-stage tools are intercepted here.
-                    if fu_name in ("accept_provider", "reject_and_fetch_next", "cancel_search"):
+                    if fu_name in ("accept_provider", "reject_and_fetch_next", "cancel_search", "retry_search"):
                         await self._handle_finalize_tool(
                             fu_name, fu_args, session_id, context, new_pending
                         )
@@ -625,6 +641,46 @@ class ResponseOrchestrator:
                     "then offer further help."
                 ),
             }))
+
+        elif fn_name == "retry_search":
+            logger.info("retry_search called — clearing provider cache and re-running search.")
+            # Clear the cached result set so the orchestrator performs a fresh query.
+            self.conversation_service.context["providers_found"] = []
+            self.conversation_service.context["current_provider_index"] = 0
+            await self.conversation_service.search_providers_for_request(session_id)
+            if self.conversation_service.context.pop("search_error", None) == "unavailable":
+                logger.warning("retry_search: Weaviate unavailable — diverting to RECOVERY.")
+                self.conversation_service.context["search_outage_pending"] = True
+                self.conversation_service.context["search_failure_count"] = (
+                    self.conversation_service.context.get("search_failure_count", 0) + 1
+                )
+                self.handle_signal_transition("recovery")
+                pending.append(("signal_transition", {"stage": "recovery"}))
+                return
+            fresh_providers = self.conversation_service.context.get("providers_found", [])
+            if not fresh_providers:
+                logger.info("retry_search: zero results — returning to TRIAGE.")
+                await self._apply_signal_transition_with_payload(
+                    "triage", session_id, context, pending, user_input=""
+                )
+                for _, ppayload in pending:
+                    if (
+                        isinstance(ppayload, dict)
+                        and ppayload.get("stage") == "triage"
+                        and "zero_result_event" not in ppayload
+                    ):
+                        ppayload["zero_result_event"] = (
+                            "The search found no matching providers this time either. "
+                            "Apologise briefly and invite the user to adjust their criteria."
+                        )
+                        break
+            else:
+                # Reset cursor and present the first result from the fresh list.
+                self.conversation_service.context["current_provider_index"] = 0
+                pending.append(("retry_search", {
+                    "status": "results_refreshed",
+                    "current_provider": fresh_providers[0],
+                }))
 
     async def generate_response_stream(
         self,
@@ -802,7 +858,7 @@ class ResponseOrchestrator:
                         # FINALIZE-stage tools are intercepted here and never
                         # dispatched through the registry.
                         tool_result = None
-                        if fn_name in ("accept_provider", "reject_and_fetch_next", "cancel_search"):
+                        if fn_name in ("accept_provider", "reject_and_fetch_next", "cancel_search", "retry_search"):
                             self.runtime_fsm.transition("tool_call")
                             tool_calls_seen = True
                             await self._handle_finalize_tool(

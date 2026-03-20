@@ -101,7 +101,7 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 | `TOOL_EXECUTION`      | `TRIAGE`, `CONFIRMATION`, `FINALIZE`                                                        |
 | `CONFIRMATION`        | `FINALIZE`, `TRIAGE`                                                                        |
 | `FINALIZE`            | `COMPLETED`, `RECOVERY`, `TRIAGE`                                                           |
-| `RECOVERY`            | `TRIAGE`                                                                                    |
+| `RECOVERY`            | `TRIAGE`, `CONFIRMATION`                                                                    |
 | `COMPLETED`           | `PROVIDER_PITCH`, `TRIAGE`                                                                  |
 | `PROVIDER_PITCH`      | `PROVIDER_ONBOARDING`, `COMPLETED`, `TRIAGE`                                                |
 | `PROVIDER_ONBOARDING` | `COMPLETED`, `TRIAGE`                                                                       |
@@ -113,6 +113,10 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - `CONFIRMATION → FINALIZE`: the system automatically performs a provider search. The routing is handled by the backend orchestrator based on the search results (see §6.11).
 - `FINALIZE → COMPLETED`: The LLM inside `FINALIZE` **does not use the `signal_transition` tool.** This transition is automatically forced by the backend orchestrator when the LLM successfully executes the `accept_provider` tool. The `COMPLETED` follow-up response generated after this automated transition must be triggered without replaying the user's prior utterance (e.g. a location or date answer) — the orchestrator must inject a neutral input for the `COMPLETED` stage prompt so that the LLM does not misinterpret the prior answer as a new service request and generate a duplicate confirmation message.
 - `FINALIZE → TRIAGE`: Triggered automatically by the backend orchestrator when the LLM executes the `cancel_search` tool, or if the user exhausts the cached provider list. It is also triggered pre-emptively by the orchestrator (bypassing the FINALIZE LLM) if the initial search returns exactly 0 results.
+- `RECOVERY → CONFIRMATION`: Used exclusively when `RECOVERY` was entered because the provider search backend was temporarily unreachable. The user's scoped request draft is preserved intact. The RECOVERY message informs the user of the temporary failure and offers to retry; if the user accepts, the system transitions to `CONFIRMATION` (not `TRIAGE`) to re-enter the FINALIZE search pipeline without requiring the user to re-scope.
+- **RECOVERY Search-Outage Circuit Breaker**: If the provider search backend is unreachable on two or more consecutive attempts within the same conversation sequence, the system must stop offering a retry. Instead, it informs the user that the search service is experiencing persistent issues and transitions to `TRIAGE` (draft preserved) so the user may try again later. The failure counter is cleared whenever the conversation settles into `TRIAGE` normally.
+- `RECOVERY → CONFIRMATION`: Used exclusively when `RECOVERY` was entered because the provider search backend was temporarily unreachable (outage-recovery path). The user's scoped request draft is preserved intact. The RECOVERY message informs the user of the temporary failure and offers to retry; if the user accepts, the system transitions to `CONFIRMATION` to re-enter the FINALIZE search pipeline without requiring the user to re-scope. This path is distinct from the standard `RECOVERY → TRIAGE` path used for non-search-related errors.
+- **RECOVERY Search-Outage Circuit Breaker**: If the provider search backend is unreachable on two or more consecutive attempts within the same conversation turn sequence (tracked by an internal failure counter), the system must stop offering a retry and instead inform the user that the search service is experiencing persistent issues. The conversation transitions to `TRIAGE` (draft preserved) so the user may attempt again later. The failure counter is cleared whenever the conversation settles into `TRIAGE` normally.
 - **FINALIZE Safety Fallback Limitation**: Because `FINALIZE` relies on the user to make a choice (and intentionally omits a generic state transition signal), the standard orchestrator safety fallback (forcing `RECOVERY` when a stage does not emit a transition) **must be disabled for the `FINALIZE` stage.** The stage naturally waits for user input.
 - `COMPLETED → PROVIDER_PITCH`: fires automatically (without an explicit LLM call) when the user is pitch-eligible (see §4). The LLM never needs to call this transition itself.
 - `COMPLETED → TRIAGE`: triggered when the user indicates they have another need after the current flow concludes.
@@ -478,7 +482,7 @@ When the provider search completes, the Backend Orchestrator intercepts the payl
   The Backend caches the full result list, sets the FSM to `FINALIZE`, and passes *only* the top result (`results[0]`) into the LLM prompt with instructions to present this provider and wait for the user's decision.
 
 #### Phase 2: Tool-Driven Interaction (The Loop)
-The `FINALIZE` LLM is equipped with exactly three functional tools: `accept_provider(provider_id)`, `reject_and_fetch_next()`, and `cancel_search()`.
+The `FINALIZE` LLM is equipped with exactly four functional tools: `accept_provider(provider_id)`, `reject_and_fetch_next()`, `cancel_search()`, and `retry_search()`.
 
 - **User Response A: Decline current, ask for another**:
   - The user rejects the suggestion ("No, someone else", "Too expensive").
@@ -496,7 +500,7 @@ The `FINALIZE` LLM is equipped with exactly three functional tools: `accept_prov
   - *Orchestrator Action*: The backend executes the tool, creates the service request document (see §6.10), records the accepted provider as a `provider_candidate` sub-document with their normalised ranking score, and **automatically forces the state transition** to `COMPLETED`. No service request or candidate document is written for any provider the user did not accept.
 
 - **User Response D: Cancel the request**:
-  - The user aborts the flow entirely ("Nevermind", "Cancel the search").
+  - The user abandons the flow entirely and wants to start a different request ("Nevermind", "Cancel the search", "I changed my mind", "I want to start over").
   - The LLM evaluates the intent and calls `cancel_search()`.
   - *Orchestrator Action*: The backend forces the state transition to `TRIAGE` to clear the scoping draft.
 
@@ -504,7 +508,12 @@ The `FINALIZE` LLM is equipped with exactly three functional tools: `accept_prov
   - If the user decides to select a provider presented earlier in the loop ("Let's go back to the first guy"), the LLM (using the chat history context) calls `accept_provider(provider_id)` with the older ID.
   - *Orchestrator Action*: Proceeds as **Response C**.
 
-- **User Response F: Disconnection**:
+- **User Response F: Retry the search with the same criteria**:
+  - The user wants to search again for the same type of service without abandoning the current request ("Try again", "Search again", "Show me different results", "Restart the search").
+  - The LLM calls `retry_search()`.
+  - *Orchestrator Action*: The backend clears the cached provider list and re-runs the Weaviate query from scratch. The scoped request **draft is not cleared** and the stage remains `FINALIZE`. If the fresh search returns results, the new top candidate is presented. If zero results are found, the orchestrator transitions to `TRIAGE`. If the backend is unreachable, the orchestrator transitions to `RECOVERY` and the search-outage circuit-breaker rules apply (see §2.7). `retry_search` is semantically distinct from `cancel_search`: it retries the same request rather than abandoning it.
+
+- **User Response G: Disconnection**:
   - If the user drops connection while in `FINALIZE`, background search tasks are aborted. 
   - Session resumption rules (§9.2) apply on reconnect.
 
