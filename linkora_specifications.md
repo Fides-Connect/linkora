@@ -15,7 +15,7 @@
 - Every user interaction either ends with a matched provider list, a submitted service request, or an onboarding of the user as a new provider.
 - The system supports two interaction modes:
   - **Voice mode**: the user speaks; the AI responds with synthesised speech and text.
-  - **Text mode**: the user types; the AI responds with text only. No audio greeting is synthesized or played on connection, but a text greeting is still dispatched.
+  - **Text mode**: the user types; the AI responds with text only. No audio greeting is synthesized or played on connection, but an initial text response is still dispatched.
 - All AI responses and prompts are language-aware. The language is set per session by the client and must be respected throughout the entire conversation. It must never be hardcoded.
 - **Demo / Seeding Mode**: In development and demo environments, the system may pre-populate the search index with synthetic provider profiles to enable end-to-end testing of the provider-search flow. This is a demo-only behavior; production environments must never seed synthetic data.
 
@@ -68,9 +68,10 @@
 ### 3.1 Session Start & Dynamic Initialization
 
 - **Voice mode**: the AI greets the user by his name immediately upon connection.
-- **Text mode (LLM-Driven Initialization)**: The AI starts in the `GREETING` stage. Instead of dispatching a hardcoded text greeting immediately on page load, the system uses an LLM-driven initialization to provide a natural, dynamic greeting. 
-  - If the session is initiated with a buffered user message (e.g., from a dormant UI waking up), the system wraps the message in a silent system tag (e.g., `[System Event: User reconnected and sent the following message]`) and passes it directly to the LLM. The LLM processes the greeting and the user's intent simultaneously, skipping autonomous text emission, and transitioning to `TRIAGE`.
-  - If no message is buffered (a completely fresh start), the system prompts the LLM to generate a fresh, context-aware greeting to initiate the chat before autonomously transitioning to `TRIAGE`.
+- **Text mode (LLM-Driven Initialization)**: The AI starts directly in the `TRIAGE` stage. The system uses an LLM-driven initialization to provide a natural, dynamic greeting while simultaneously scoping the request. 
+  - **Conversation State Context:** The system always injects a context flag into the `TRIAGE` prompt explicitly stating whether this is the very first message of the session or if the communication is already ongoing.
+  - If the session is initiated with a buffered user message (e.g., from a dormant UI waking up), the system wraps the message in a silent system tag (e.g., `[System Event: User reconnected and sent the following message]`) and passes it directly to the LLM in `TRIAGE`. The LLM processes the greeting and the user's intent simultaneously. When accumulating the problem description from a system-event-tagged input, the system must strip the tag and accumulate only the quoted user message content extracted from within it — the full tag is forwarded to the LLM for context only.
+  - If no message is buffered (a completely fresh start), the system prompts the LLM in `TRIAGE` to generate a fresh, context-aware greeting to initiate the chat and invite the user to share their need.
 - **Language Enforcement**: If the WebSocket connection lacks a `language` parameter or provides an invalid one, the system defaults to the user's REST-stored settings language, or `"en"` if none exists. The language parameter provided by the client strictly overrides the REST-stored user setting for the duration of that session. The conversation language cannot be changed mid-session.
 - **Unsupported Client Language**: If the client requests a language via WebSocket that the LLM is not localized or tested for (e.g., passing a rare dialect code), the system must fallback to English (`"en"`) and inform the user of the fallback in the first turn.
 - **Cross-Lingual Handling**: The AI prompt must strictly enforce that all responses remain in the session-defined language. If the user speaks in a different language, the AI must explicitly translate or acknowledge the input in the configured system language (e.g., "I see you're speaking German, but I am configured for English right now. How can I help?").
@@ -81,8 +82,7 @@ The conversation progresses through a finite set of named stages. Each stage rep
 
 | Stage                 | Purpose                                                                                                                                                       |
 |-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `GREETING`            | **Welcome.** The AI greets the user by name (dynamically derived) and checks whether they have an open service request, then invites them to share their need.|
-| `TRIAGE`              | **Scoping.** The AI acts as a service coordinator. It must collect a strict minimum set of requirements (defined in Section 3.4) before it is permitted to transition to CONFIRMATION. It also detects provider-management intent and routes accordingly. |
+| `TRIAGE`              | **Welcome & Scoping.** If flagged as the first message, the AI greets the user by name, checks for open service requests, and invites them to share their need. Otherwise, it acts strictly as a service coordinator. It must collect a strict minimum set of requirements (defined in Section 3.4) before it is permitted to transition to CONFIRMATION. It also detects provider-management intent and routes accordingly. |
 | `CLARIFY`             | **Disambiguation.** Used when the request is too ambiguous to scope. The AI asks exactly one targeted question and immediately returns to `TRIAGE`.            |
 | `TOOL_EXECUTION`      | **Data retrieval.** An intermediate stage while a data operation runs (e.g. fetching open requests or favorites). Control returns to `TRIAGE`, `CONFIRMATION`, or `FINALIZE` once the tool completes. |
 | `CONFIRMATION`        | **Pre-commit check.** The AI summarises the scoped request in 2–3 sentences and asks the user to confirm before proceeding to provider matching.               |
@@ -96,7 +96,6 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 
 | Current Stage         | Allowed Next Stages                                                                         |
 |-----------------------|---------------------------------------------------------------------------------------------|
-| `GREETING`            | `TRIAGE`                                                                                    |
 | `TRIAGE`              | `CONFIRMATION`, `CLARIFY`, `TOOL_EXECUTION`, `RECOVERY`, `PROVIDER_ONBOARDING`              |
 | `CLARIFY`             | `TRIAGE`                                                                                    |
 | `TOOL_EXECUTION`      | `TRIAGE`, `CONFIRMATION`, `FINALIZE`                                                        |
@@ -547,7 +546,7 @@ The `FINALIZE` LLM is equipped with exactly three functional tools: `accept_prov
 
 ### 7.5 Optimistic Message Display
 
-- When a user submits a text message, the client adds it to the chat view immediately, before the server confirms receipt. If the server subsequently echoes the same message, the client must detect and discard the duplicate by maintaining a FIFO queue of pending optimistic message texts. The first queue entry whose text matches the incoming echo is dequeued and the echo is suppressed; if no queue entry matches, the message is displayed normally. This FIFO approach correctly handles rapid-succession sends where the same text could be sent twice, ensuring genuine repetitions (e.g., 'Hello?') are not falsely deduplicated. Additionally, the server FSM must ensure that if the user's first message contains a standard greeting, the LLM does not double-greet if an autonomous system greeting was already dispatched (or vice versa, as greetings are now dynamically driven by the LLM).
+- When a user submits a text message, the client adds it to the chat view immediately, before the server confirms receipt. If the server subsequently echoes the same message, the client must detect and discard the duplicate by maintaining a FIFO queue of pending optimistic message texts. The first queue entry whose text matches the incoming echo is dequeued and the echo is suppressed; if no queue entry matches, the message is displayed normally. This FIFO approach correctly handles rapid-succession sends where the same text could be sent twice, ensuring genuine repetitions (e.g., 'Hello?') are not falsely deduplicated. Additionally, the server FSM must ensure that if the user's first message contains a standard greeting, the LLM does not double-greet if an autonomous system greeting was already dispatched (or vice versa, as greetings are now dynamically driven by the LLM in the `TRIAGE` stage).
 
 ### 7.6 Microphone Mute Lifecycle
 
@@ -636,9 +635,9 @@ The `FINALIZE` LLM is equipped with exactly three functional tools: `accept_prov
 
 - When a new session is established, the server-side agent runtime FSM is initialised in the `BOOTSTRAP` state.
 - The FSM advances to `DATA_CHANNEL_WAIT` as soon as the WebRTC peer connection is negotiated and the data channel attachment is confirmed.
-- Once the data channel is confirmed open, the FSM invokes the **Session Resumption (State-Aware Hydration)** check (see §9.2) to determine whether to restore previous context or start fresh, and then transitions to the appropriate state (e.g., `LISTENING`, `GREETING`, or `TRIAGE`).
+- Once the data channel is confirmed open, the FSM invokes the **Session Resumption (State-Aware Hydration)** check (see §9.2) to determine whether to restore previous context or start fresh, and then transitions to the appropriate state (e.g., `LISTENING` or `TRIAGE`).
 - The current FSM state is emitted as a `runtime-state` message on both the initial data-channel attachment and again when the channel open event fires, ensuring the client always receives the correct state even if it connects after the FSM has already advanced past `BOOTSTRAP`.
-- **Text-mode initialization race guard**: After the FSM advances to `LISTENING`, a text-mode session applies a brief wait (up to 300 ms) before committing to an autonomous greeting. If the client delivers a text message within this window (e.g., a buffered message sent immediately after the DataChannel opens), the system skips the standalone greeting and transitions directly to `TRIAGE`, allowing the LLM to process greeting and user intent in a single combined turn. If no message arrives within 300 ms, the autonomous greeting is generated and dispatched normally.
+- **Text-mode initialization race guard**: After the FSM advances to `LISTENING`, a text-mode session applies a brief wait (up to 300 ms) before committing to an autonomous text response. If the client delivers a text message within this window (e.g., a buffered message sent immediately after the DataChannel opens), the system skips the standalone response and transitions directly to `TRIAGE`, allowing the LLM to process the dynamic greeting and user intent in a single combined turn. If no message arrives within 300 ms, the autonomous initial response is generated and dispatched normally by `TRIAGE`.
 - **FSM stuck-state prevention**: The `stream_complete_text` event must be emitted unconditionally at the end of every LLM response pipeline turn — whether the stream yielded text, yielded only tool-calls (no text), or raised an exception. The FSM must accept `stream_complete_text` from both `THINKING` and `TOOL_EXECUTING` states (in addition to `LLM_STREAMING`) and transition to `LISTENING`. This ensures the FSM is never permanently stuck when the LLM produces a pure function-call response with no accompanying text fragments.
 
 ### 9.2 Session Resumption (State-Aware Hydration)
@@ -649,7 +648,7 @@ When a new connection is established, the server must check Firestore for the us
 
 1. **Context Injection:** Regardless of how the last session ended, the system silently injects a lightweight summary of the previous session's final state (including the scoped request draft and final stage) into the LLM's initial system prompt (e.g., `[System Context: The user's previous session ended 15 minutes ago. Last discussed request: "Fixing a leaking pipe in the kitchen".]`).
 2. **Explicit Continuation:** If the user initiates the new session by explicitly asking to continue their last request (e.g., "Let's continue with the plumber search" or "Where were we?"), the AI uses the injected context to summarize the last known state to the user in 1-2 sentences and restores the previous request data into the active session memory. The FSM is then transitioned to the appropriate active stage (e.g., `TRIAGE` or `CONFIRMATION`) to resume the flow.
-3. **Fresh Start (Clean Break):** If the previous session ended in a terminal state (`COMPLETED`, `FINALIZE`, `PROVIDER_PITCH`, `PROVIDER_ONBOARDING`) and the user's new message introduces a *new* intent (or they simply say "Hello"), the AI ignores the previous context, leaves the FSM in the new session state, and boots into the standard `GREETING` or `TRIAGE` flow. 
+3. **Fresh Start (Clean Break):** If the previous session ended in a terminal state (`COMPLETED`, `FINALIZE`, `PROVIDER_PITCH`, `PROVIDER_ONBOARDING`) and the user's new message introduces a *new* intent (or they simply say "Hello"), the AI ignores the previous context, leaves the FSM in the new session state, and boots into the standard `TRIAGE` flow. 
 4. **Unfinished Business (Auto-Resume):** If the last session abruptly dropped mid-flow (e.g., during `TRIAGE`, `CLARIFY`, or `CONFIRMATION`), the system automatically restores the in-memory request draft and resumes the FSM at that exact stage, prompting the AI to naturally welcome the user back and acknowledge the interrupted task.
 
 ### 9.3 Client-Side Connection Resilience

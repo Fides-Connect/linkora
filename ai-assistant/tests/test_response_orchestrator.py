@@ -102,7 +102,7 @@ class TestHandleSignalTransition:
         mock_conversation_service.set_stage.assert_not_called()
 
     def test_illegal_jump_returns_false(self, orchestrator, mock_conversation_service):
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.GREETING
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.CLARIFY
         assert orchestrator.handle_signal_transition("completed") is False
 
     async def test_finalize_target_is_thin_wrapper_no_side_effects(
@@ -311,13 +311,18 @@ class TestProviderSearchTiming:
             "some input"
         )
 
-    async def test_no_accumulate_in_greeting(
+    async def test_accumulate_strips_system_event_tag(
         self, orchestrator, mock_conversation_service
     ):
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.GREETING
-        async for _ in orchestrator.generate_response_stream("Hallo", "test-session"):
+        """System-event wrapped inputs must have the tag stripped before
+        accumulation so the Weaviate search query gets the clean user text."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.TRIAGE
+        tagged = '[System Event: User reconnected and sent the following message: "I need a plumber"]'
+        async for _ in orchestrator.generate_response_stream(tagged, "test-session"):
             pass
-        mock_conversation_service.accumulate_problem_description.assert_not_called()
+        mock_conversation_service.accumulate_problem_description.assert_called_once_with(
+            "I need a plumber"
+        )
 
     async def test_no_accumulate_in_finalize(
         self, orchestrator, mock_conversation_service

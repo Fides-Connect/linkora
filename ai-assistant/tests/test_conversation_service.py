@@ -14,9 +14,9 @@ from ai_assistant.services.conversation_service import ConversationService, Conv
 
 class TestConversationStageEnum:
 
-    def test_all_10_members_exist(self):
+    def test_all_9_members_exist(self):
         expected = {
-            "GREETING", "TRIAGE", "CLARIFY", "TOOL_EXECUTION",
+            "TRIAGE", "CLARIFY", "TOOL_EXECUTION",
             "CONFIRMATION", "FINALIZE", "RECOVERY", "COMPLETED",
             "PROVIDER_PITCH", "PROVIDER_ONBOARDING",
         }
@@ -41,7 +41,6 @@ class TestConversationStageEnum:
 class TestIsLegalTransition:
 
     @pytest.mark.parametrize("from_s,to_s", [
-        (ConversationStage.GREETING,  ConversationStage.TRIAGE),
         (ConversationStage.TRIAGE,    ConversationStage.CONFIRMATION),
         (ConversationStage.TRIAGE,    ConversationStage.CLARIFY),
         (ConversationStage.TRIAGE,    ConversationStage.TOOL_EXECUTION),
@@ -66,10 +65,10 @@ class TestIsLegalTransition:
         assert is_legal_transition(from_s, to_s) is True
 
     @pytest.mark.parametrize("from_s,to_s", [
-        (ConversationStage.GREETING,       ConversationStage.COMPLETED),
-        (ConversationStage.TRIAGE,         ConversationStage.GREETING),
+        (ConversationStage.TRIAGE,         ConversationStage.COMPLETED),
+        (ConversationStage.CLARIFY,        ConversationStage.COMPLETED),
         (ConversationStage.TRIAGE,         ConversationStage.FINALIZE),
-        (ConversationStage.COMPLETED,      ConversationStage.GREETING),
+        (ConversationStage.RECOVERY,       ConversationStage.COMPLETED),
     ])
     def test_illegal_pairs_return_false(self, from_s, to_s):
         assert is_legal_transition(from_s, to_s) is False
@@ -462,9 +461,9 @@ class TestGetProblemSummary:
 class TestStageManagement:
     """Test conversation stage management."""
 
-    def test_initial_stage_is_greeting(self, conversation_service):
-        """Initial stage must be GREETING."""
-        assert conversation_service.get_current_stage() == ConversationStage.GREETING
+    def test_initial_stage_is_triage(self, conversation_service):
+        """Initial stage must be TRIAGE."""
+        assert conversation_service.get_current_stage() == ConversationStage.TRIAGE
 
     def test_set_stage_to_triage(self, conversation_service):
         conversation_service.set_stage(ConversationStage.TRIAGE)
@@ -557,8 +556,8 @@ class TestConversationFlow:
         assert greeting is not None
         assert len(greeting) > 0
 
-        # Stage is NOT advanced by generate_greeting_text — still GREETING
-        assert conversation_service.get_current_stage() == ConversationStage.GREETING
+        # Stage is NOT advanced by generate_greeting_text — still TRIAGE
+        assert conversation_service.get_current_stage() == ConversationStage.TRIAGE
 
 
 # ─────────────────────────────────────────────────────────────────────────────

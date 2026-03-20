@@ -85,8 +85,9 @@ class TestTriagePromptOnboardingEntry:
         )
 
     def test_triage_no_re_greet_rule_mentions_hello(self):
-        """The no-re-greet rule must explicitly name greeting words so the LLM obeys."""
-        assert "Hello" in TRIAGE_CONVERSATION_PROMPT or "hello" in TRIAGE_CONVERSATION_PROMPT.lower()
+        """The greeting/no-re-greet instruction is now injected dynamically via
+        the {greeting_instruction} placeholder \u2014 the static template must contain it."""
+        assert "{greeting_instruction}" in TRIAGE_CONVERSATION_PROMPT
 
 
 class TestProviderOnboardingSaveResultConfirmation:

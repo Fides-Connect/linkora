@@ -41,7 +41,6 @@ def json_serializer(obj: object) -> str:
 
 class ConversationStage(StrEnum):
     """External conversation stage — owned exclusively by ResponseOrchestrator."""
-    GREETING      = "greeting"
     TRIAGE        = "triage"
     CLARIFY       = "clarify"
     TOOL_EXECUTION = "tool_execution"
@@ -55,7 +54,6 @@ class ConversationStage(StrEnum):
 
 # Legal stage transitions: { from_stage: { allowed_to_stages } }
 _LEGAL_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
-    ConversationStage.GREETING:       [ConversationStage.TRIAGE],
     ConversationStage.TRIAGE:         [ConversationStage.CONFIRMATION, ConversationStage.CLARIFY,
                                        ConversationStage.TOOL_EXECUTION, ConversationStage.RECOVERY,
                                        ConversationStage.PROVIDER_ONBOARDING],
@@ -109,7 +107,7 @@ class ConversationService:
         self.language = language
         self.cross_encoder_service = cross_encoder_service
 
-        self.current_stage: ConversationStage = ConversationStage.GREETING
+        self.current_stage: ConversationStage = ConversationStage.TRIAGE
         self.context: dict[str, Any] = {
             "user_problem": [],
             "ai_responses": [],
@@ -128,6 +126,11 @@ class ConversationService:
             # Mirrored from user_context by ResponseOrchestrator on every
             # PROVIDER_ONBOARDING turn so the prompt can render STEP 0 correctly.
             "is_service_provider": False,
+            # Set True on session creation; cleared by ResponseOrchestrator after
+            # the first successful LLM response in TRIAGE.  When True the TRIAGE
+            # prompt greets the user instead of scoping immediately.  .get() must
+            # be used (not .pop()) so LLM retries preserve the greeting intent.
+            "is_first_message": True,
         }
 
         logger.info("Conversation service initialized: agent=%s, company=%s", agent_name, company_name)
@@ -156,33 +159,50 @@ class ConversationService:
         Returns:
             ChatPromptTemplate for the stage
         """
-        if stage == ConversationStage.GREETING:
+        if stage == ConversationStage.TRIAGE:
             # B2: Pass any unsupported-language fallback note on the first turn only,
             # then clear it so subsequent prompts don't repeat it.
             fallback_from = self.context.pop("language_fallback_from", "")
             language_instruction = get_language_instruction(self.language, fallback_from=fallback_from)
             user_name = self.context.get("user_name", "")
-            has_open_request = "Yes" if self.context.get("has_open_request", False) else "No"
-            return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT).format(
-                    agent_name=self.agent_name,
-                    company_name=self.company_name,
-                    user_name=user_name,
-                    has_open_request=has_open_request,
-                    language_instruction=language_instruction
-                ),
-                MessagesPlaceholder(variable_name="history"),
-                ("human", "{input}")
-            ])
-
-        elif stage == ConversationStage.TRIAGE:
-            user_name = self.context.get("user_name", "")
-            language_instruction = get_language_instruction(self.language)
+            # Use .get() (not .pop()) so the flag survives LLM retries on the same
+            # turn.  ResponseOrchestrator clears it after the first successful chunk.
+            is_first_message = self.context.get("is_first_message", False)
+            if is_first_message:
+                name_clause = (
+                    f"Greet **{user_name}** warmly by name."
+                    if user_name
+                    else "Use a warm, generic greeting (e.g., 'Hello, welcome back!')."
+                )
+                has_open_request = "Yes" if self.context.get("has_open_request", False) else "No"
+                if has_open_request == "Yes":
+                    request_clause = (
+                        "Then acknowledge their active request: 'I see you have an open request with us.' "
+                        "Ask whether they'd like to check on it or if they have something new to discuss."
+                    )
+                else:
+                    request_clause = "Then ask an open, friendly question: 'How can I help you today?'"
+                greeting_instruction = (
+                    "**This is the very first message of the session — greet the user AND begin triage simultaneously:**\n"
+                    f"1. {name_clause}\n"
+                    f"2. {request_clause}\n"
+                    "Keep the greeting and opening question to 2–3 sentences total, then proceed directly to scoping as needed."
+                )
+            else:
+                greeting_instruction = (
+                    "**Never re-greet or re-echo:** The user has already been welcomed. "
+                    "Do NOT start your response with \"Hello\", \"Hi\", \"Welcome\", \"Good day\", "
+                    "or any greeting phrase. Do NOT paraphrase the user's request back to them as a "
+                    "preamble (e.g., \"No problem at all, I can help you find an electrician!\") before "
+                    "asking a scoping question. Jump directly to the first question or, if the request "
+                    "is already complete, to `signal_transition`."
+                )
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(TRIAGE_CONVERSATION_PROMPT).format(
                     agent_name=self.agent_name,
                     user_name=user_name,
                     language_instruction=language_instruction,
+                    greeting_instruction=greeting_instruction,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")

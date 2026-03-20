@@ -667,9 +667,17 @@ class ResponseOrchestrator:
                     )
                 )
 
-            # Accumulate problem description only during triage
+            # Accumulate problem description only during triage.
+            # Strip any system-event wrapper (e.g. '[System Event: ... "msg"]')
+            # before accumulating so buffered-message prefixes don't pollute the
+            # Weaviate search query used in FINALIZE.
             if current_stage == ConversationStage.TRIAGE:
-                await self.conversation_service.accumulate_problem_description(user_input)
+                _sys_match = re.match(
+                    r'^\[System Event:[^\]]*"(.+)"\]', user_input, re.DOTALL
+                )
+                clean_input = (_sys_match.group(1) if _sys_match else user_input).strip()
+                if clean_input:
+                    await self.conversation_service.accumulate_problem_description(clean_input)
 
             # Pre-fetch competencies for ongoing PROVIDER_ONBOARDING turns so the
             # stage prompt always has the up-to-date list without the LLM calling
@@ -737,6 +745,11 @@ class ResponseOrchestrator:
                 if first_chunk:
                     self.runtime_fsm.transition("llm_stream_started")
                     first_chunk = False
+                    # Clear first-message flag on the first successful LLM chunk so
+                    # retries see the same greeting intent but the next distinct turn
+                    # doesn't re-greet.  Only relevant for TRIAGE.
+                    if current_stage == ConversationStage.TRIAGE:
+                        self.conversation_service.context.pop("is_first_message", None)
 
                 if isinstance(chunk, dict) and chunk.get("type") == "function_call":
                     fn_name = chunk.get("name", "")
