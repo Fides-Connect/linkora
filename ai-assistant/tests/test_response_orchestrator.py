@@ -334,6 +334,126 @@ class TestProviderSearchTiming:
 
 
 # ───────────────────────────────────────────────────────────────────────────────
+# Accumulation during CONFIRMATION → TRIAGE bounce-back
+# ───────────────────────────────────────────────────────────────────────────────
+
+class TestConfirmationTriageBounceAccumulation:
+    """When the LLM emits signal_transition('triage') from CONFIRMATION (Path B),
+    the user's correction utterance must still be accumulated into user_problem
+    so the subsequent Weaviate query reflects the change."""
+
+    def _stateful_stage_mock(self, mock_conversation_service, initial_stage):
+        """Wire set_stage → get_current_stage so stage transitions are reflected."""
+        holder = [initial_stage]
+
+        def get_stage():
+            return holder[0]
+
+        def do_set_stage(stage):
+            holder[0] = stage
+            mock_conversation_service.context.pop("confirmation_turns", None)
+
+        mock_conversation_service.get_current_stage.side_effect = get_stage
+        mock_conversation_service.set_stage.side_effect = do_set_stage
+
+    async def test_bounce_back_accumulates_user_correction(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """CONFIRMATION → TRIAGE bounce: correction is accumulated in follow-up stream."""
+        self._stateful_stage_mock(mock_conversation_service, ConversationStage.CONFIRMATION)
+
+        stream_call = 0
+
+        async def stream(*args, **kwargs):
+            nonlocal stream_call
+            if stream_call == 0:
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "triage"}}
+            else:
+                yield "Got it, let me update that."
+            stream_call += 1
+
+        mock_llm_service.generate_stream = stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+
+        async for _ in orch.generate_response_stream(
+            "change location to Munich", "sess"
+        ):
+            pass
+
+        mock_conversation_service.accumulate_problem_description.assert_called_with(
+            "change location to Munich"
+        )
+
+    async def test_bounce_back_strips_system_event_before_accumulating(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """A system-event-wrapped correction is stripped before accumulation."""
+        self._stateful_stage_mock(mock_conversation_service, ConversationStage.CONFIRMATION)
+
+        stream_call = 0
+
+        async def stream(*args, **kwargs):
+            nonlocal stream_call
+            if stream_call == 0:
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "triage"}}
+            else:
+                yield "Understood."
+            stream_call += 1
+
+        mock_llm_service.generate_stream = stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+
+        tagged = '[System Event: User reconnected] change location to Munich'
+        async for _ in orch.generate_response_stream(tagged, "sess"):
+            pass
+
+        # Only the clean text after the system-event tag should be accumulated
+        calls = mock_conversation_service.accumulate_problem_description.call_args_list
+        accumulated = [c.args[0] for c in calls]
+        assert any("change location to Munich" in a for a in accumulated)
+        assert not any("[System Event" in a for a in accumulated)
+
+    async def test_neutral_placeholder_not_accumulated(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """The neutral ' ' placeholder used in depth>=1 follow-ups is not accumulated."""
+        self._stateful_stage_mock(mock_conversation_service, ConversationStage.CONFIRMATION)
+
+        stream_call = 0
+
+        async def stream(*args, **kwargs):
+            nonlocal stream_call
+            if stream_call == 0:
+                yield {"type": "function_call", "name": "signal_transition",
+                       "args": {"target_stage": "triage"}}
+            else:
+                yield "How can I help?"
+            stream_call += 1
+
+        mock_llm_service.generate_stream = stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+
+        # " " is the neutral placeholder that depth>=1 follow-ups receive
+        async for _ in orch.generate_response_stream(" ", "sess"):
+            pass
+
+        # accumulate_problem_description must NOT be called with blank/whitespace
+        calls = mock_conversation_service.accumulate_problem_description.call_args_list
+        assert not any(c.args[0].strip() == "" for c in calls)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # record_ai_response called after every stream
 # ───────────────────────────────────────────────────────────────────────────────
 

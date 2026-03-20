@@ -4,14 +4,44 @@ Unit tests for prompt templates — provider pitch and onboarding.
 import pytest
 
 from ai_assistant.prompts_templates import (
+    CONFIRMATION_PROMPT,
     PROVIDER_PITCH_PROMPT,
     PROVIDER_ONBOARDING_PROMPT,
     TRIAGE_CONVERSATION_PROMPT,
 )
 
 
-class TestProviderPitchPrompt:
+class TestConfirmationPrompt:
+    """Enforce structural invariants of CONFIRMATION_PROMPT so the Decision Gate
+    cannot be accidentally removed during future prompt optimisations."""
 
+    def test_confirmation_has_decision_gate(self):
+        """A DECISION GATE block must exist at the top of the prompt so the LLM
+        routes (Path A/B) before it ever reads the summary-generation tasks."""
+        assert "DECISION GATE" in CONFIRMATION_PROMPT
+
+    def test_confirmation_path_a_no_text(self):
+        """Path A (user confirms) must explicitly forbid generating text —
+        the LLM must only call signal_transition with no preceding words."""
+        prompt_lower = CONFIRMATION_PROMPT.lower()
+        assert "no text" in prompt_lower or "generate no text" in prompt_lower or "no text whatsoever" in prompt_lower
+
+    def test_confirmation_has_finalize_transition(self):
+        """signal_transition to finalize must be explicitly documented."""
+        assert 'signal_transition(target_stage="finalize")' in CONFIRMATION_PROMPT
+
+    def test_confirmation_has_triage_transition(self):
+        """signal_transition to triage must be explicitly documented."""
+        assert 'signal_transition(target_stage="triage")' in CONFIRMATION_PROMPT
+
+    def test_confirmation_single_acknowledgement_rule(self):
+        """A CRITICAL RULE must forbid combining text and a tool call in the
+        same response, mirroring TRIAGE's single-acknowledgement rule."""
+        prompt_lower = CONFIRMATION_PROMPT.lower()
+        assert "never both" in prompt_lower or "critical rule" in prompt_lower
+
+
+class TestProviderPitchPrompt:
     def test_record_provider_interest_tool_referenced(self):
         assert "record_provider_interest" in PROVIDER_PITCH_PROMPT
 

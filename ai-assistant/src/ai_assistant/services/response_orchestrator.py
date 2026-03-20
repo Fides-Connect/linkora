@@ -413,6 +413,18 @@ class ResponseOrchestrator:
         if follow_up_stage == ConversationStage.FINALIZE:
             self.llm_service.register_functions(session_id, list(FINALIZE_TOOL_SCHEMAS))
 
+        # ── Accumulate problem description on CONFIRMATION → TRIAGE bounce-back ──
+        # When the user sends a correction from CONFIRMATION (e.g. "change the
+        # location to Munich"), the main-stream body skips accumulation because
+        # current_stage was CONFIRMATION.  Accumulate here so the Weaviate search
+        # query used in the subsequent FINALIZE stage reflects the correction.
+        # System-event wrappers (reconnection/dormant-UI buffered messages) are
+        # stripped first so only the user's actual words are stored.
+        if follow_up_stage == ConversationStage.TRIAGE and actual_input.strip():
+            _clean_acc = re.sub(r'^\[System Event:[^\]]+\]\s*', '', actual_input).strip()
+            if _clean_acc and _clean_acc != " ":
+                await self.conversation_service.accumulate_problem_description(_clean_acc)
+
         # Extract zero_result_event hint from any triage payload (set by reject_and_fetch_next
         # when the provider list is exhausted) so we can inject it into the human turn.
         _zero_event: str | None = None
@@ -658,6 +670,15 @@ class ResponseOrchestrator:
                 "Generating response for '%s...' [Stage: %s]",
                 user_input[:50], current_stage,
             )
+
+            # ── CONFIRMATION stuck-stage diagnostic counter ─────────────────────
+            # Track how many consecutive turns the conversation has been in
+            # CONFIRMATION without calling a transition tool.  A count > 1 with no
+            # tool call means the LLM re-generated the summary instead of routing.
+            if current_stage == ConversationStage.CONFIRMATION:
+                self.conversation_service.context["confirmation_turns"] = (
+                    self.conversation_service.context.get("confirmation_turns", 0) + 1
+                )
 
             # Persist the user turn (fire-and-forget — don't block LLM start)
             if self.ai_conversation_service:
@@ -944,6 +965,24 @@ class ResponseOrchestrator:
                     "Follow-up chain still had %d pending item(s) after %d iterations — "
                     "discarding to prevent unbounded recursion.",
                     len(current_pending), MAX_FOLLOW_UP_DEPTH,
+                )
+
+            # ── Stuck-stage diagnostic: CONFIRMATION loop guard ──────────────────
+            # If CONFIRMATION generated text on the second (or later) user turn
+            # without calling any transition tool, the LLM ignored the Decision Gate
+            # and re-summarised.  Log a warning so it surfaces in the backend logs.
+            _conf_turns = self.conversation_service.context.get("confirmation_turns", 0)
+            if (
+                current_stage == ConversationStage.CONFIRMATION
+                and _conf_turns > 1
+                and not tool_calls_seen
+            ):
+                logger.warning(
+                    "CONFIRMATION stuck-stage: turn %d produced text without a "
+                    "signal_transition — LLM likely ignored the Decision Gate "
+                    "(user_input=%r).",
+                    _conf_turns,
+                    user_input[:80],
                 )
 
             # ── Safety fallback: stuck-in-FINALIZE guard ─────────────────────────

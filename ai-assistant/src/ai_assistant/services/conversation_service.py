@@ -148,6 +148,9 @@ class ConversationService:
         """
         logger.info("Stage transition: %s -> %s", self.current_stage, stage)
         self.current_stage = stage
+        # Reset the per-stage turn counter used for stuck-stage diagnostics.
+        # Cleared on every transition so the counter starts fresh in each stage.
+        self.context.pop("confirmation_turns", None)
 
     def create_prompt_for_stage(self, stage: ConversationStage) -> ChatPromptTemplate:
         """
