@@ -95,7 +95,9 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["user_id", "name", "email", "is_service_provider", "last_sign_in"]
+                        return_properties=["user_id", "name", "email", "is_service_provider",
+                                           "last_sign_in", "source", "phone", "website", "address",
+                                           "average_rating"]
                     )
                 )
 
@@ -120,7 +122,14 @@ class HubSpokeSearch:
                                 'email': user.get('email'),
                                 'is_service_provider': user.get('is_service_provider', False),
                                 'last_sign_in': user.get('last_sign_in'),
+                                'source': user.get('source', ''),
                             }
+                            # Surface GP-specific contact fields at top level
+                            for _f in ('phone', 'website', 'address'):
+                                if user.get(_f):
+                                    competence[_f] = user[_f]
+                            if user.get('average_rating'):
+                                competence['rating'] = user['average_rating']
 
                     # Keep only the best-scoring competence per user
                     if user_uuid:
@@ -142,7 +151,9 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["user_id", "name", "email", "is_service_provider", "last_sign_in"]
+                        return_properties=["user_id", "name", "email", "is_service_provider",
+                                           "last_sign_in", "source", "phone", "website",
+                                           "address", "average_rating"]
                     )
                 )
 
@@ -163,7 +174,13 @@ class HubSpokeSearch:
                                 'name': user.get('name'),
                                 'email': user.get('email'),
                                 'last_sign_in': user.get('last_sign_in'),
+                                'source': user.get('source', ''),
                             }
+                            for _f in ('phone', 'website', 'address'):
+                                if user.get(_f):
+                                    competence[_f] = user[_f]
+                            if user.get('average_rating'):
+                                competence['rating'] = user['average_rating']
 
                     results.append(competence)
 
@@ -326,7 +343,14 @@ class HubSpokeSearch:
                         'email': user.get('email'),
                         'is_service_provider': user.get('is_service_provider', False),
                         'last_sign_in': user.get('last_sign_in'),
+                        'source': user.get('source', ''),
                     }
+                    # Surface GP-specific contact fields at top level
+                    for _f in ('phone', 'website', 'address'):
+                        if user.get(_f):
+                            competence[_f] = user[_f]
+                    if user.get('average_rating'):
+                        competence['rating'] = user['average_rating']
 
             # Keep only the best-scoring competence per user
             if user_uuid:
@@ -460,7 +484,9 @@ class HubSpokeSearch:
                 return_metadata=MetadataQuery(score=True),
                 return_references=QueryReference(
                     link_on="owned_by",
-                    return_properties=["user_id", "name", "email", "is_service_provider", "last_sign_in"]
+                    return_properties=["user_id", "name", "email", "is_service_provider",
+                                       "last_sign_in", "source", "phone", "website", "address",
+                                       "average_rating"]
                 )
             )
 

@@ -33,7 +33,7 @@ _KNOWN_TOOL_NAMES_RE = re.compile(
     r'\b(?:signal_transition|search_providers|get_favorites|get_open_requests'
     r'|create_service_request|cancel_service_request|record_provider_interest|get_my_competencies'
     r'|save_competence_batch|delete_competences'
-    r'|accept_provider|reject_and_fetch_next|cancel_search)\s*\([^)]*\)'
+    r'|accept_provider|reject_and_fetch_next|cancel_search|generate_contact_template)\s*\([^)]*\)'
 )
 
 def _strip_tool_call_text(text: str) -> str:
@@ -183,9 +183,12 @@ class ResponseOrchestrator:
                 }))
                 return True
             current_provider = providers[0]
+            gp_context = self.conversation_service.context
             pending.append(("signal_transition", {
                 "stage": "finalize",
                 "current_provider": current_provider,
+                "google_places_used": gp_context.get("google_places_used", False),
+                "google_places_error": gp_context.get("google_places_error", False),
             }))
 
         elif target_stage == ConversationStage.PROVIDER_ONBOARDING:
@@ -448,7 +451,7 @@ class ResponseOrchestrator:
                     )
                 else:
                     # FINALIZE-stage tools are intercepted here.
-                    if fu_name in ("accept_provider", "reject_and_fetch_next", "cancel_search"):
+                    if fu_name in ("accept_provider", "reject_and_fetch_next", "cancel_search", "generate_contact_template"):
                         await self._handle_finalize_tool(
                             fu_name, fu_args, session_id, context, new_pending
                         )
@@ -518,6 +521,28 @@ class ResponseOrchestrator:
                 logger.warning("accept_provider called with no location — asking user before creating request.")
                 pending.append(("accept_provider", {"error": "location_required", "message": "Please provide the city or address where the service is needed."}))
                 return
+
+            # GP guard: providers sourced from Google Maps do not have a
+            # Linkora account — a service request cannot be created for them.
+            # Instead, surface their contact details so the user can reach out
+            # directly.
+            accepted_provider_for_gp = next(
+                (p for p in providers if p.get("user", {}).get("user_id") == provider_id),
+                None,
+            )
+            if accepted_provider_for_gp is not None and accepted_provider_for_gp.get("source") == "google_places":
+                contact_info: dict[str, str] = {}
+                for _field in ("phone", "website", "address"):
+                    _val = accepted_provider_for_gp.get(_field, "")
+                    if _val:
+                        contact_info[_field] = _val
+                pending.append(("accept_provider", {
+                    "error": "google_places_provider",
+                    "message": "This provider is listed on Google Maps but is not registered on Linkora. They cannot be booked directly here, but you can contact them using the details below.",
+                    "contact_info": contact_info,
+                }))
+                return
+
             csr_args: dict = {"selected_provider_user_id": provider_id}
             for field in (
                 "title", "description", "location", "category",
@@ -613,6 +638,29 @@ class ResponseOrchestrator:
                     "then offer further help."
                 ),
             }))
+
+        elif fn_name == "generate_contact_template":
+            provider_name = fn_args.get("provider_name", "")
+            request_summary = fn_args.get("request_summary", "")
+            phone = fn_args.get("phone", "")
+            website = fn_args.get("website", "")
+            address = fn_args.get("address", "")
+            logger.info(
+                "generate_contact_template called for '%s' — injecting context for follow-up LLM.",
+                provider_name,
+            )
+            template_context: dict[str, Any] = {
+                "status": "contact_template_requested",
+                "provider_name": provider_name,
+                "request_summary": request_summary,
+            }
+            if phone:
+                template_context["phone"] = phone
+            if website:
+                template_context["website"] = website
+            if address:
+                template_context["address"] = address
+            pending.append(("generate_contact_template", template_context))
 
     async def generate_response_stream(
         self,

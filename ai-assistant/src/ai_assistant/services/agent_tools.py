@@ -1000,9 +1000,45 @@ FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA: dict[str, Any] = {
     },
 }
 
+FINALIZE_TOOL_GENERATE_CONTACT_TEMPLATE_SCHEMA: dict[str, Any] = {
+    "name": "generate_contact_template",
+    "description": (
+        "Generate a contact message or email template for the currently presented provider. "
+        "Call this only when the user explicitly asks you to write a contact message or "
+        "email template. Never call this unprompted."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "provider_name": {
+                "type": "string",
+                "description": "Full name or business name of the provider.",
+            },
+            "request_summary": {
+                "type": "string",
+                "description": "Brief description of the user's service request.",
+            },
+            "phone": {
+                "type": "string",
+                "description": "Provider phone number, if available.",
+            },
+            "website": {
+                "type": "string",
+                "description": "Provider website URL, if available.",
+            },
+            "address": {
+                "type": "string",
+                "description": "Provider address, if available.",
+            },
+        },
+        "required": ["provider_name", "request_summary"],
+    },
+}
+
 # Convenience list for LLM tool registration in the FINALIZE stage.
 FINALIZE_TOOL_SCHEMAS: list[dict[str, Any]] = [
     FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA,
     FINALIZE_TOOL_REJECT_AND_FETCH_NEXT_SCHEMA,
     FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA,
+    FINALIZE_TOOL_GENERATE_CONTACT_TEMPLATE_SCHEMA,
 ]

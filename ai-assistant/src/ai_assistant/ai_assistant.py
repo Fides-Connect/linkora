@@ -19,6 +19,7 @@ from .services import (
 from .services.response_orchestrator import ResponseOrchestrator
 from .services.competence_enricher import CompetenceEnricher
 from .services.cross_encoder_service import CrossEncoderService
+from .services.google_places_service import GooglePlacesService
 from .data_provider import get_data_provider
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,13 @@ class AIAssistant:
         # Initialized before ConversationService so it can be injected.
         self.cross_encoder_service = CrossEncoderService()
 
+        # Google Places enrichment — optional; only active when GOOGLE_PLACES_API_KEY is set.
+        self.google_places_service = (
+            GooglePlacesService(llm_service=self.llm_service)
+            if GooglePlacesService.is_enabled()
+            else None
+        )
+
         self.conversation_service = ConversationService(
             llm_service=self.llm_service,
             data_provider=self.data_provider,
@@ -101,6 +109,7 @@ class AIAssistant:
             max_providers=5,
             language=self.language,
             cross_encoder_service=self.cross_encoder_service,
+            google_places_service=self.google_places_service,
         )
 
         # Build agentic runtime FSM and tool registry

@@ -18,6 +18,7 @@
   - **Text mode**: the user types; the AI responds with text only. No audio greeting is synthesized or played on connection, but a text greeting is still dispatched.
 - All AI responses and prompts are language-aware. The language is set per session by the client and must be respected throughout the entire conversation. It must never be hardcoded.
 - **Demo / Seeding Mode**: In development and demo environments, the system may pre-populate the search index with synthetic provider profiles to enable end-to-end testing of the provider-search flow. This is a demo-only behavior; production environments must never seed synthetic data.
+- **External Provider Search (Google Places)**: The platform supports an optional external provider search mode backed by the Google Places API. When enabled, the system queries Google Places in addition to the internal search index (Weaviate) to discover providers. This mode is controlled by a server-side configuration flag and may be toggled independently of any other feature. When disabled, only the internal search index is used.
 
 ---
 
@@ -60,6 +61,7 @@
 
 - If Weaviate is entirely unreachable during login or search, the system must not fail the entire user session. It must degrade gracefully: login succeeds with a logged warning, and searches return a standardized "Search temporarily unavailable" error to the AI to handle via `RECOVERY`.
 - When the provider search backend is unreachable specifically during the `FINALIZE` stage, the system must immediately transition to `RECOVERY` rather than presenting zero results as a genuine empty-match outcome. The `RECOVERY` message must indicate that the search was temporarily unavailable, not that no matching provider was found.
+- When Google Places external search is enabled and the Google Places API is unreachable or returns an error, the system must not fail the `FINALIZE` stage. It must inform the user that the external search is temporarily unavailable, then proceed using only the internal search index results. The degradation must be transparent to the user (e.g. "I was unable to reach Google Maps right now, so I am searching our registered providers instead.").
 
 ---
 
@@ -150,7 +152,7 @@ Sufficient detail is strictly defined as successfully collecting ALL of the foll
 
 **Extended Context (soft-ask — collected after MRI is satisfied):**
 Once the three MRI elements are gathered, the AI opportunistically collects the following extras with at most one natural question each. None of these block the flow; the AI must not re-ask if the user dismisses or skips them.
-- **Location**: For in-person services (plumbing, cleaning, electrical work, etc.), the AI asks once: "Where is the work needed — which city or area?" Skipped entirely for remote/digital work.
+- **Location**: When the Google Places external search is **disabled**, location is a soft-ask for in-person services (plumbing, cleaning, electrical work, etc.): the AI asks once: "Where is the work needed — which city or area?" and skips it entirely for remote/digital work. When the Google Places external search is **enabled**, location is a **hard MRI requirement** for all requests — the AI must collect a city or region before it is permitted to proceed to `CONFIRMATION`, because Google Places requires a geographic anchor to execute the search. The AI must ask for location before all other extended-context fields when it is required.
 - **Budget**: The AI asks once if clearly relevant: "Do you have a rough budget in mind?" Any answer — including "no idea" or silence — is accepted without follow-up.
 - **Exact dates**: If the user stated a relative timeframe (e.g. "next Tuesday"), the AI resolves it to a concrete calendar date internally. The user is not asked to re-state it as an ISO date.
 
@@ -368,6 +370,7 @@ For `delete_competences`: each deleted competency is removed from Firestore and 
 - A structured query with `available_time`, `location`, and `criterions` triggers a hybrid search.
 - If provider search results are already cached for the current `FINALIZE` stage, the system must return the cached results and not repeat the search.
 - Exception: if the first search returned zero results (e.g. due to stale index data), the next search attempt must perform a real search rather than returning the cached empty list.
+- When Google Places external search is enabled, the provider search consists of two concurrent phases (see §6.12): an external Google Places fetch and an internal Weaviate search. Results from both phases are merged into a single unified ranked list before being presented to the user. The user is not shown which source each result came from, but each result carries a source label internally for diagnostics.
 - The provider search pipeline in `FINALIZE` consists of four steps:
   1. Structured query extraction: the LLM converts the problem summary into a structured object (`available_time`, `category`, `criterions`).
   2. Hypothetical provider profile generation (HyDE): the LLM writes a description of the ideal provider as a vector query. Steps 1 and 2 run concurrently.
@@ -464,6 +467,63 @@ Step 4 of the provider search pipeline re-scores the wide-net candidates using a
 - Because the service request is only created on acceptance, a `FINALIZE → TRIAGE` back-transition (zero results or user cancellation) requires no cancellation step — no document exists at that point.
 - The `CONFIRMATION` stage summary must include location, timeframe, and budget **only when the user provided them**; it must not invent or approximate values that were not stated.
 
+### 6.12 Google Places External Provider Search
+
+This section defines the behaviour of the optional external provider search mode backed by the Google Places API. All behaviours in this section apply only when the Google Places integration is enabled via server-side configuration.
+
+#### 6.12.1 Configuration
+
+- Whether Google Places external search is active is controlled by a server-side configuration flag. The flag may be toggled without code changes (e.g. via an environment variable). When the flag is off, the system behaves exactly as documented in §6.2 without any modification.
+- The Google Places API key is provided via a server-side secret and must never be exposed to the client.
+
+#### 6.12.2 Query Construction
+
+- Immediately after the user confirms the scoped request in `CONFIRMATION`, the system constructs a single Google Places search query derived from the confirmed MRI fields.
+- The LLM automatically derives this query: it analyses the confirmed service requirements and generates one natural-language search phrase that captures the core intent and the user's location (e.g. `"DJ for wedding Munich"`, `"wedding photographer Munich"`).
+- The user's confirmed location (which is a hard MRI requirement when Google Places is enabled) is appended to the query as a geographic anchor.
+- The user is not asked to review or confirm the generated query. The LLM derives it autonomously from the MRI context.
+- Multi-category requests (e.g. a wedding requiring DJ, photographer, and venue) are expressed as a single broad query in the current version. Support for multiple sub-queries per service category is deferred to a future iteration.
+
+#### 6.12.3 Transparency
+
+- When the Google Places search is initiated, the system must inform the user transparently that an external Google Maps search is being performed in addition to the internal search (e.g. "I am also searching Google Maps for providers near you — this may take a moment.").
+- This announcement is made once per `FINALIZE` entry, before the first results are presented. It must not be repeated for subsequent turns within the same `FINALIZE` session.
+
+#### 6.12.4 Fetching and Storage
+
+- Google Places queries are executed concurrently. The system does not cache Google Places results between sessions: every `FINALIZE` entry triggers a fresh fetch from the Google Places API.
+- Each result returned from Google Places is normalised into the platform's canonical provider record format. The normalised record must include at minimum: name, address, phone number (if available), website (if available), Google rating (if available), geographic coordinates, and a source tag identifying the record as originating from Google Places.
+- Immediately after fetching and normalisation, all Google Places results are written to the internal search index (Weaviate) using the same schema as registered platform providers, so they participate in the unified vector and hybrid ranking pipeline.
+- Because Google Places providers are not registered platform users, they must be written to the search index with a distinct source flag (e.g. `source: "google_places"`) and must never be assigned a platform user ID or trigger any user-account-related operations (e.g. provider pitch eligibility checks).
+
+#### 6.12.5 Unified Ranking
+
+- Once both the Google Places results and the internal Weaviate results have been fetched (or one source has failed gracefully), all candidates are merged into a single pool.
+- The existing ranking pipeline (HyDE + hybrid retrieval + cross-encoder reranking, §6.7–§6.9) is applied to the unified pool. The final ranked list is a single unified list ordered by relevance score; results are not grouped or separated by source.
+- The maximum number of providers presented to the user (`max_providers`) applies to the unified list.
+
+#### 6.12.6 Failure and Degradation
+
+- If the Google Places API is unreachable, returns an HTTP error, or times out, the system must log the error and proceed using only the internal search index results.
+- In this case, the system must inform the user once that the external search was unavailable and that results are sourced from the internal index only.
+- A Google Places API failure must never trigger a transition to `RECOVERY`; it is a recoverable partial failure, not a total search failure.
+- If both the Google Places API and the internal search index return zero results, the standard zero-result handling applies (§6.11 Phase 1: `FINALIZE` is bypassed and the FSM transitions back to `TRIAGE`).
+
+#### 6.12.7 Contact Template Generation
+
+- For each provider presented in `FINALIZE` (whether sourced from Google Places or the internal index), the system must be capable of generating a ready-to-send contact email or message template on explicit user request (e.g. "Can you write me a message to send to them?").
+- The template must be personalised to the user's confirmed scoped request and addressed to the specific provider by name.
+- Template generation is never triggered automatically; it only fires when the user explicitly requests it. The LLM calls the `generate_contact_template()` tool to signal this intent; the orchestrator injects the provider's contact details and request summary so the LLM generates the template in the follow-up turn.
+- The template is delivered as a text message in the conversation, formatted for easy copy-paste.
+- The LLM must not announce or narrate the tool call before generating the template — the follow-up response is the template itself.
+
+#### 6.12.8 Provider Pitch Eligibility
+
+- The standard `PROVIDER_PITCH` / `PROVIDER_ONBOARDING` flow (§4) applies unchanged in sessions that use Google Places. The presence of externally sourced results does not suppress or modify the pitch eligibility check.
+- Google Places provider records written to the search index must not be counted as registered platform providers for the purposes of any pitch-eligibility or provider-count logic.
+
+---
+
 ### 6.11 FINALIZE Stage Multi-Turn Interaction (Smart Backend & Tool-Driven FSM)
 
 To prevent the LLM from drifting or failing to emit generic stage transitions, the `FINALIZE` loop relies on **Backend Pre-Routing** and **State-Mutating Tools**. The LLM inside `FINALIZE` does not possess the `signal_transition` tool; the stage transitions are side-effects of concrete tool execution managed by the orchestrator.
@@ -477,7 +537,7 @@ When the provider search completes, the Backend Orchestrator intercepts the payl
   The Backend caches the full result list, sets the FSM to `FINALIZE`, and passes *only* the top result (`results[0]`) into the LLM prompt with instructions to present this provider and wait for the user's decision.
 
 #### Phase 2: Tool-Driven Interaction (The Loop)
-The `FINALIZE` LLM is equipped with exactly three functional tools: `accept_provider(provider_id)`, `reject_and_fetch_next()`, and `cancel_search()`.
+The `FINALIZE` LLM is equipped with exactly four functional tools: `accept_provider(provider_id)`, `reject_and_fetch_next()`, `cancel_search()`, and `generate_contact_template()`.
 
 - **User Response A: Decline current, ask for another**:
   - The user rejects the suggestion ("No, someone else", "Too expensive").
@@ -492,7 +552,8 @@ The `FINALIZE` LLM is equipped with exactly three functional tools: `accept_prov
 - **User Response C: Accept current result**:
   - The user explicitly accepts the current provider ("Yes, let's go with him").
   - The LLM evaluates the intent and calls `accept_provider(provider_id)`.
-  - *Orchestrator Action*: The backend executes the tool, creates the service request document (see §6.10), records the accepted provider as a `provider_candidate` sub-document with their normalised ranking score, and **automatically forces the state transition** to `COMPLETED`. No service request or candidate document is written for any provider the user did not accept.
+  - *Orchestrator Action*: If the selected provider is sourced from Google Places (i.e. not a registered platform user), the backend must not create a service request. Instead, it returns an error payload with the provider's contact details (phone, website, address) and the LLM must explain that the provider cannot be booked directly on Linkora but provides their contact information for the user to reach out independently.
+  - If the provider is a registered platform user, the backend executes the tool, creates the service request document (see §6.10), records the accepted provider as a `provider_candidate` sub-document with their normalised ranking score, and **automatically forces the state transition** to `COMPLETED`. No service request or candidate document is written for any provider the user did not accept.
 
 - **User Response D: Cancel the request**:
   - The user aborts the flow entirely ("Nevermind", "Cancel the search").

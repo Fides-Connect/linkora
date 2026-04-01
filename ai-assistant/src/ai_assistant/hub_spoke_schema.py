@@ -175,6 +175,11 @@ def init_hub_spoke_schema() -> bool | None:
                         Property(name="feedback_negative", data_type=DataType.TEXT_ARRAY),
                         Property(name="average_rating", data_type=DataType.NUMBER),
                         Property(name="review_count", data_type=DataType.INT),
+                        # External-source metadata (Google Places integration)
+                        Property(name="source", data_type=DataType.TEXT, skip_vectorization=True),
+                        Property(name="phone", data_type=DataType.TEXT, skip_vectorization=True),
+                        Property(name="website", data_type=DataType.TEXT, skip_vectorization=True),
+                        Property(name="address", data_type=DataType.TEXT, skip_vectorization=True),
                     ],
                     references=[
                         ReferenceProperty(
@@ -210,6 +215,26 @@ def init_hub_spoke_schema() -> bool | None:
                 logger.warning("'owned_by' reference in %s already exists — skipping", COMPETENCE_COLLECTION)
         else:
             logger.info("'owned_by' reference already exists in %s", COMPETENCE_COLLECTION)
+
+        # Step 4: Add new User properties if they don't exist yet (migration guard)
+        _new_user_properties = [
+            ("source", DataType.TEXT, True),
+            ("phone", DataType.TEXT, True),
+            ("website", DataType.TEXT, True),
+            ("address", DataType.TEXT, True),
+        ]
+        user_collection = client.collections.get(USER_COLLECTION)
+        user_config = user_collection.config.get()
+        existing_prop_names = {p.name for p in (user_config.properties or [])}
+        for prop_name, prop_dtype, skip_vec in _new_user_properties:
+            if prop_name not in existing_prop_names:
+                try:
+                    user_collection.config.add_property(
+                        Property(name=prop_name, data_type=prop_dtype, skip_vectorization=skip_vec)
+                    )
+                    logger.info("Added '%s' property to %s", prop_name, USER_COLLECTION)
+                except weaviate.exceptions.ObjectAlreadyExistsError:
+                    logger.warning("'%s' property in %s already exists — skipping", prop_name, USER_COLLECTION)
 
         logger.info("Hub and Spoke schema initialization complete")
         return True

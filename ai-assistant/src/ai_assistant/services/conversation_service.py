@@ -5,11 +5,15 @@ Handles conversation flow, stage management, and orchestration.
 import logging
 import json
 import asyncio
+from dataclasses import dataclass, field
 from enum import StrEnum
 from datetime import datetime
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.messages import HumanMessage
+
+if TYPE_CHECKING:
+    from .google_places_service import GooglePlacesService
 
 from ..data_provider import DataProvider, SearchUnavailableError
 from ..prompts_templates import (
@@ -30,6 +34,16 @@ from .llm_service import LLMService
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GpResult:
+    """Outcome of a single GP pipeline run inside search_providers_for_request."""
+    providers_written: int = 0   # number of GP nodes written to Weaviate
+    error: bool = False          # True when GP tried but failed
+    query: str = ""              # Places query string used (empty on LLM skip)
+    duration_ms: int = 0         # wall-clock time for fetch_and_ingest()
+    error_code: str = ""         # e.g. "rate_limited", "timeout", "llm_skip"
 
 
 def json_serializer(obj: object) -> str:
@@ -86,7 +100,8 @@ class ConversationService:
     def __init__(self, llm_service: LLMService, data_provider: DataProvider,
                  agent_name: str = "Elin", company_name: str = "Linkora",
                  max_providers: int = 5, language: str = 'de',
-                 cross_encoder_service: CrossEncoderService | None = None) -> None:
+                 cross_encoder_service: CrossEncoderService | None = None,
+                 google_places_service: "GooglePlacesService | None" = None) -> None:
         """
         Initialize Conversation service.
 
@@ -100,6 +115,9 @@ class ConversationService:
             cross_encoder_service: Optional cross-encoder reranker.  When
                 provided, providers returned by Weaviate are reranked before
                 being stored in ``context["providers_found"]``.
+            google_places_service: Optional Google Places service.  When
+                provided and ``GooglePlacesService.is_enabled()`` is True,
+                GP results are fetched and upserted before the Weaviate search.
         """
         self.llm_service = llm_service
         self.data_provider = data_provider
@@ -108,6 +126,7 @@ class ConversationService:
         self.max_providers = max_providers
         self.language = language
         self.cross_encoder_service = cross_encoder_service
+        self.google_places_service = google_places_service
 
         self.current_stage: ConversationStage = ConversationStage.GREETING
         self.context: dict[str, Any] = {
@@ -128,6 +147,10 @@ class ConversationService:
             # Mirrored from user_context by ResponseOrchestrator on every
             # PROVIDER_ONBOARDING turn so the prompt can render STEP 0 correctly.
             "is_service_provider": False,
+            # Google Places integration flags (reset per FINALIZE session)
+            "google_places_used": False,
+            "google_places_error": False,
+            "google_places_announced": False,
         }
 
         logger.info("Conversation service initialized: agent=%s, company=%s", agent_name, company_name)
@@ -178,11 +201,26 @@ class ConversationService:
         elif stage == ConversationStage.TRIAGE:
             user_name = self.context.get("user_name", "")
             language_instruction = get_language_instruction(self.language)
+            # GP enabled: location becomes mandatory — inject the MRI instruction.
+            from .google_places_service import GooglePlacesService
+            gp_active = (
+                self.google_places_service is not None
+                and GooglePlacesService.is_enabled()
+            )
+            location_mri_instruction = (
+                "IMPORTANT: Location is a MANDATORY requirement before you may proceed to "
+                "CONFIRMATION. You MUST ask for a city or region before any other "
+                "extended-context field. Do not call "
+                'signal_transition(target_stage=\"confirmation\") until the user has '
+                "provided a location."
+                if gp_active else ""
+            )
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(TRIAGE_CONVERSATION_PROMPT).format(
                     agent_name=self.agent_name,
                     user_name=user_name,
                     language_instruction=language_instruction,
+                    location_mri_instruction=location_mri_instruction,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
@@ -194,11 +232,60 @@ class ConversationService:
             current_provider = providers[idx] if providers and idx < len(providers) else {}
             provider_json = json.dumps(current_provider, ensure_ascii=False, default=json_serializer)
             language_instruction = get_language_instruction(self.language)
+            language_name = "German" if self.language == "de" else "English"
+
+            # GP announcement — controls first-entry vs. already-announced behaviour
+            from .google_places_service import GooglePlacesService
+            gp_active = (
+                self.google_places_service is not None
+                and GooglePlacesService.is_enabled()
+            )
+            gp_used = self.context.get("google_places_used", False)
+            gp_error = self.context.get("google_places_error", False)
+            gp_announced = self.context.get("google_places_announced", False)
+
+            if not gp_active:
+                google_places_announcement = ""
+            elif gp_error:
+                google_places_announcement = (
+                    "The Google Maps search was temporarily unavailable. "
+                    "Briefly inform the user (once only) that results are sourced from "
+                    "registered providers only."
+                )
+            elif gp_used and not gp_announced:
+                google_places_announcement = (
+                    "Begin your response with a single natural sentence informing the user "
+                    "that you are also searching Google Maps for nearby providers — "
+                    "exactly once."
+                )
+                self.context["google_places_announced"] = True
+            elif gp_used and gp_announced:
+                google_places_announcement = (
+                    "NOTE: You already informed the user at the start of this FINALIZE "
+                    "session that you also searched Google Maps. "
+                    "Do NOT repeat this announcement."
+                )
+            else:
+                google_places_announcement = ""
+
+            contact_template_instruction = (
+                f"CONTACT TEMPLATE:\n"
+                f"If the user explicitly asks you to write a contact message or email "
+                f"template for the currently presented provider, call "
+                f"generate_contact_template() immediately.\n"
+                f"Never generate a contact template unprompted.\n"
+                f"Do NOT narrate the tool call or announce that you are generating a "
+                f"template — the tool execution is silent. Your next response after the "
+                f"tool result IS the template itself, written directly in {language_name}."
+            )
+
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(FINALIZE_SERVICE_REQUEST_PROMPT).format(
                     agent_name=self.agent_name,
                     provider_json=provider_json,
-                    language_instruction=language_instruction
+                    language_instruction=language_instruction,
+                    google_places_announcement=google_places_announcement,
+                    contact_template_instruction=contact_template_instruction,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
@@ -219,10 +306,26 @@ class ConversationService:
                 ConversationStage.TOOL_EXECUTION: TRIAGE_CONVERSATION_PROMPT,
             }
             template = stage_prompt_map.get(stage, TRIAGE_CONVERSATION_PROMPT)
-            # TRIAGE_CONVERSATION_PROMPT requires user_name; others only need agent_name
+            # TRIAGE_CONVERSATION_PROMPT requires user_name and location_mri_instruction;
+            # others only need agent_name
             fmt_kwargs: dict = {"agent_name": self.agent_name}
             if template is TRIAGE_CONVERSATION_PROMPT:
                 fmt_kwargs["user_name"] = self.context.get("user_name", "")
+                fmt_kwargs["language_instruction"] = get_language_instruction(self.language)
+                # GP flag: pass empty instruction so no KeyError on format()
+                from .google_places_service import GooglePlacesService
+                gp_active = (
+                    self.google_places_service is not None
+                    and GooglePlacesService.is_enabled()
+                )
+                fmt_kwargs["location_mri_instruction"] = (
+                    "IMPORTANT: Location is a MANDATORY requirement before you may proceed to "
+                    "CONFIRMATION. You MUST ask for a city or region before any other "
+                    "extended-context field. Do not call "
+                    'signal_transition(target_stage=\"confirmation\") until the user has '
+                    "provided a location."
+                    if gp_active else ""
+                )
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(template).format(
                     **fmt_kwargs
@@ -305,6 +408,9 @@ class ConversationService:
         self.context["request_summary"] = ""
         self.context["providers_found"] = []
         self.context["current_provider_index"] = 0
+        self.context["google_places_used"] = False
+        self.context["google_places_error"] = False
+        self.context["google_places_announced"] = False
         # onboarding_draft and current_competencies are preserved across request
         # resets so a PROVIDER_ONBOARDING session isn't interrupted mid-flow.
         logger.info("Request context reset for new TRIAGE scoping session")
@@ -480,7 +586,7 @@ class ConversationService:
             problem_summary[:100],
         )
 
-        # Stages 1 + 2 run independently — fire both LLM calls concurrently.
+        # Stage 1+2: structured query extraction and HyDE run concurrently.
         structured_query_task = asyncio.create_task(
             self._generate_structured_query(problem_summary, session_id)
         )
@@ -491,9 +597,32 @@ class ConversationService:
 
         self.context["request_summary"] = query_text
 
-        # Stage 3: wide-net retrieval. Pass max_providers directly;
-        # HubSpokeSearch.hybrid_search_providers applies its own min(limit * 5, 30)
-        # expansion internally, so pre-multiplying here causes double expansion.
+        # Stage 2 (GP): fetch & ingest Google Places providers while the
+        # Weaviate hot path is reading the index.  GP writes happen before
+        # the Weaviate read so new nodes are visible in Stage 3.
+        from .google_places_service import GooglePlacesService
+        gp_active = (
+            self.google_places_service is not None
+            and GooglePlacesService.is_enabled()
+        )
+        if gp_active:
+            gp_result = await self._run_gp_pipeline(
+                self.google_places_service,  # type: ignore[arg-type]
+                query_text=query_text,
+                hyde_text=hyde_text,
+            )
+            self.context["google_places_used"] = gp_result.providers_written > 0
+            self.context["google_places_error"] = gp_result.error is not None
+            if gp_result.error:
+                logger.warning(
+                    "GP pipeline error (%s): %s",
+                    gp_result.error_code,
+                    gp_result.error,
+                )
+
+        # Stage 3: wide-net retrieval — now includes any freshly upserted GP
+        # nodes.  Pass max_providers directly; HubSpokeSearch applies its own
+        # expansion internally.
         try:
             providers = await self.data_provider.search_providers(
                 query_text=query_text,
@@ -524,6 +653,63 @@ class ConversationService:
 
         self.context["providers_found"] = providers
         logger.info("Provider search complete — %d results", len(providers))
+
+    # ------------------------------------------------------------------
+    # GP pipeline helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_location(query_text: str) -> str:
+        """Return the ``location`` field from a structured-query JSON string.
+
+        ``query_text`` is either the raw JSON produced by
+        ``_generate_structured_query`` or a plain-text fallback.  Returns an
+        empty string when missing or when parsing fails.
+        """
+        import json as _json
+        try:
+            data = _json.loads(query_text)
+            return str(data.get("location", "") or "")
+        except Exception:
+            return ""
+
+    async def _run_gp_pipeline(
+        self,
+        gp_service: "GooglePlacesService",
+        query_text: str,
+        hyde_text: str,
+    ) -> "GpResult":
+        """Drive the Google Places enrichment phase (Stage 2).
+
+        1. Generates a Places search phrase via the LLM.
+        2. Fetches up to 5 places from the Places API.
+        3. Upserts each place as a User+Competence node in Weaviate.
+
+        Returns a :class:`GpResult` describing what happened.
+        """
+        location = self._extract_location(query_text)
+        try:
+            query = await gp_service.generate_query(
+                structured_query=query_text,
+                hyde_text=hyde_text,
+                location=location,
+            )
+            if not query:
+                logger.info("GP pipeline skipped: generate_query returned None.")
+                return GpResult(providers_written=0, error=False, error_code="llm_skip")
+            gp_result = await gp_service.fetch_and_ingest(query)
+            # fetch_and_ingest returns a GpResult from google_places_service;
+            # re-wrap into the local GpResult to keep types consistent.
+            return GpResult(
+                providers_written=gp_result.providers_written,
+                error=bool(gp_result.error),
+                query=gp_result.query,
+                duration_ms=gp_result.duration_ms,
+                error_code=gp_result.error_code,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.error("Unexpected GP pipeline error: %s", exc, exc_info=True)
+            return GpResult(providers_written=0, error=True, error_code="unexpected")
 
     async def generate_greeting_text(
         self,
