@@ -503,11 +503,14 @@ class ConversationService:
         """
         from ..prompts_templates import STRUCTURED_QUERY_EXTRACTION_PROMPT
 
-        # Build conversation excerpt — last 3 messages from LLM history.
+        # Build conversation excerpt — last 6 messages from LLM history.
+        # Using 6 instead of 3 ensures early-conversation context (e.g. a
+        # location mentioned by the user several turns ago) is not lost when
+        # extraction fires late in the flow at FINALIZE.
         history_excerpt = ""
         if session_id:
             messages = self.llm_service.get_session_history(session_id).messages
-            recent = messages[-3:] if len(messages) >= 3 else messages
+            recent = messages[-6:] if len(messages) >= 6 else messages
             if recent:
                 lines = []
                 for msg in recent:
@@ -619,7 +622,7 @@ class ConversationService:
                 hyde_text=hyde_text,
             )
             self.context["google_places_used"] = gp_result.providers_written > 0
-            self.context["google_places_error"] = gp_result.error is not None
+            self.context["google_places_error"] = gp_result.error
             if gp_result.error:
                 logger.warning(
                     "GP pipeline error (%s): %s",
@@ -651,12 +654,25 @@ class ConversationService:
                 self.max_providers,
             )
             providers = await self.cross_encoder_service.rerank(
-                query=problem_summary,
+                query=hyde_text,
                 candidates=providers,
                 top_k=self.max_providers,
             )
         else:
             providers = providers[: self.max_providers]
+
+        # Stage 5 (lite mode only): restrict the final result set to Google
+        # Places-sourced providers.  Skipped when GP encountered an error so
+        # the degradation path (§2.7) can still return internal-index results.
+        if self._profile.google_places_always_active and not self.context.get("google_places_error"):
+            providers = [
+                p for p in providers
+                if p.get("user", {}).get("source") == "google_places"
+            ]
+            logger.info(
+                "Lite mode: GP-source filter applied — %d Google Places results remain",
+                len(providers),
+            )
 
         self.context["providers_found"] = providers
         logger.info("Provider search complete — %d results", len(providers))
@@ -740,8 +756,9 @@ class ConversationService:
             language_instruction = get_language_instruction(self.language)
             resume_ctx = self.context.get("session_resume_context", "")
             system_prefix = f"{resume_ctx}\n\n" if resume_ctx else ""
+            greeting_prompt = get_prompt(self._profile.prompt_key, "greeting")
             prompt_template = ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_prefix + GREETING_AND_TRIAGE_PROMPT),
+                SystemMessagePromptTemplate.from_template(system_prefix + greeting_prompt),
                 HumanMessage(content=" ")
             ])
 

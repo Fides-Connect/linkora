@@ -784,9 +784,9 @@ The table below provides a complete at-a-glance overview of which features are a
 | Open service request retrieval | Yes | No |
 | Provider pitch (30-day cycle) | Yes | No |
 | Provider onboarding | Yes | No |
-| MRI: contextual details (min. 3) | Required | Not required |
+| MRI: contextual details (min. 3) | Required | Required |
 | MRI: location | Required when GP enabled; soft-ask otherwise | Always required |
-| Soft-asks (budget, etc.) | Yes | No |
+| Soft-asks (budget, etc.) | Yes | Yes |
 | Chat message persistence | Yes (30-day TTL) | Yes (30-day TTL) |
 
 ### 14.3 Full Mode
@@ -815,25 +815,27 @@ The GREETING, TRIAGE, CLARIFY, CONFIRMATION, FINALIZE, COMPLETED, and RECOVERY s
 
 #### Minimum Required Information (MRI)
 
-In lite mode, the AI must collect exactly three items before it is permitted to advance to CONFIRMATION:
+In lite mode, the AI must collect the same MRI as in full mode before it is permitted to advance to CONFIRMATION:
 
-1. **Service type / core intent** — what the user needs.
-2. **Location** — a city or region (always a hard requirement in lite mode, not a soft-ask).
-3. **Availability or urgency** — a preferred time slot or degree of urgency.
+- **Core intent** — the primary service required.
+- **Contextual details (minimum 3)** — at least three specific details defining the scope.
+- **Availability or urgency** — preferred time slot or urgency level.
 
-No additional contextual details are required. The User Override Exception from §3.4 still applies: if the user explicitly refuses further detail, the AI proceeds immediately.
+In addition, **location is always a hard MRI requirement** in lite mode (not a soft-ask), because the Google Places pipeline requires a geographic anchor for every search.
+
+Soft-asks (budget, exact date resolution) apply exactly as in full mode. The User Override Exception from §3.4 still applies: if the user explicitly refuses further detail, the AI proceeds immediately.
 
 The table below compares MRI requirements across modes:
 
 | MRI Element | Full Mode | Lite Mode |
 |---|---|---|
 | Core intent (service type) | Required | Required |
-| Contextual details (minimum 3) | Required | Not required |
+| Contextual details (minimum 3) | Required | Required |
 | Availability or urgency | Required | Required |
 | Location | Required when GP enabled; soft-ask for in-person services otherwise | Always required |
-| Budget (soft-ask) | Asked once if clearly relevant | Not asked |
+| Budget (soft-ask) | Asked once if clearly relevant | Asked once if clearly relevant |
 | Exact dates | Resolved internally; user not asked to re-state as ISO date | Same |
-| Soft-asks in general | Yes | No |
+| Soft-asks in general | Yes | Yes |
 
 #### FINALIZE Behaviour
 
@@ -866,14 +868,18 @@ The table below describes how each active stage behaves differently in lite mode
 
 | Stage | Full Mode | Lite Mode |
 |---|---|---|
-| `TRIAGE` | Collects core intent + minimum 3 contextual details + availability + location (when GP enabled) + optional soft-asks | Collects core intent + location + availability or urgency only; no contextual details required; no soft-asks |
-| `CONFIRMATION` | 2–3 sentence summary of the fully scoped request including all MRI fields | 1–2 sentence summary covering service type, location, and timing only |
+| `TRIAGE` | Collects core intent + minimum 3 contextual details + availability + location (when GP enabled) + optional soft-asks | Identical to full mode, with location always a hard MRI requirement (not a soft-ask). |
+| `CONFIRMATION` | 2–3 sentence summary of the fully scoped request including all MRI fields | Identical to full mode. |
 | `FINALIZE` | Multi-turn: presents providers, waits for user to accept or reject; user can cancel search; service request written to Firestore on acceptance | Single-turn: presents GP results as a numbered list, then immediately and automatically transitions to COMPLETED; no user acceptance step; no Firestore write |
 | `COMPLETED` | Triggers provider pitch when user is eligible; asks if user needs anything else | No provider pitch; simply asks if the user needs anything else |
 
 #### Google Places
 
 Google Places external search is always active in lite mode, regardless of any GP-specific flag. If the Google Places API key is absent or the service is unreachable, lite mode degrades gracefully: the user is informed, and the search falls back to the internal Weaviate index only.
+
+In lite mode, the final provider result set that is presented to the user must contain **only** providers sourced from the Google Places API (identified by their `source` attribute). Providers registered on the platform (internal Weaviate users) must not appear in the results. This source restriction is applied after the unified Weaviate retrieval and reranking pass, immediately before the results are presented to the LLM and user.
+
+The one exception to this source restriction is the degradation path: when the Google Places pipeline fails (the API is unreachable, times out, or returns an error), the source filter is bypassed and the full internal Weaviate result set is used instead. In this case the user must be informed that the external search was temporarily unavailable and that results come from registered providers only.
 
 #### Text-Only Constraint
 

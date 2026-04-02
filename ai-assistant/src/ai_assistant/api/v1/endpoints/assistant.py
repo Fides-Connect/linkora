@@ -32,6 +32,10 @@ async def greet_warmup(request: web.Request) -> web.Response:
     The user's language is read from Firestore (``user_app_settings.language``)
     so no request body is needed.
 
+    Not available in lite mode (``AGENT_MODE=lite``) because lite mode is
+    text-only and produces no TTS audio.  In lite mode the route is not
+    registered at all — this handler is only reachable in full mode.
+
     Response:
         {"ready": true, "greeting_text": "..."}
     """
