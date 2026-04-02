@@ -317,10 +317,14 @@ class ConversationService:
             # We detect this by checking whether the template string references
             # {location_mri_instruction} which only triage-style templates use.
             _is_triage_template = "{location_mri_instruction}" in template_str
-            fmt_kwargs: dict = {"agent_name": self.agent_name}
+            fmt_kwargs: dict = {
+                "agent_name": self.agent_name,
+                # Always inject language so every stage (CLARIFY, CONFIRMATION,
+                # RECOVERY, …) responds in the session language, not just TRIAGE.
+                "language_instruction": get_language_instruction(self.language),
+            }
             if _is_triage_template:
                 fmt_kwargs["user_name"] = self.context.get("user_name", "")
-                fmt_kwargs["language_instruction"] = get_language_instruction(self.language)
                 # GP flag: pass empty or active MRI instruction
                 gp_active = (
                     self._profile.google_places_always_active

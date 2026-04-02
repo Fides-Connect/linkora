@@ -269,6 +269,10 @@ class AssistantTabViewModel extends ChangeNotifier {
     if (pendingText == null || pendingText.trim().isEmpty) {
       _pendingTextMessage = null;
     }
+    // Clear history from any prior session so each new session begins with a
+    // clean slate and previous greetings / messages are not shown again.
+    // _chatMessages.clear();
+    // _pendingEchoTexts.clear();
     // _pendingTextMessage set above in the optimistic block when pendingText is non-null
     _dataChannelReady = false;
 

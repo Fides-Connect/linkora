@@ -34,12 +34,15 @@ from .llm_service import LLMService
 logger = logging.getLogger(__name__)
 
 _PLACES_TEXT_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
-# Fields requested from Places API (New).  Only request what we actually use to
-# minimise billing SKU tier (id/displayName/formattedAddress/types/editorialSummary
-# land in the Pro SKU; rating/nationalPhoneNumber/websiteUri in Enterprise).
+# Fields requested from Places API (New).
+# Billing tiers for Text Search (New):
+#   Basic:    id, displayName, formattedAddress, types, primaryTypeDisplayName
+#   Advanced: rating, userRatingCount, nationalPhoneNumber, websiteUri
+#   Preferred: editorialSummary, reviews  (same tier — one call, one charge)
 _FIELD_MASK = (
     "places.id,places.displayName,places.formattedAddress,"
-    "places.rating,places.types,places.editorialSummary,"
+    "places.primaryTypeDisplayName,places.rating,places.userRatingCount,"
+    "places.types,places.editorialSummary,places.reviews,"
     "places.nationalPhoneNumber,places.websiteUri"
 )
 _CIRCUIT_THRESHOLD = 3      # consecutive failures before opening
@@ -266,13 +269,14 @@ class GooglePlacesService:
 
         Returns the number of nodes successfully written.
         """
-        # Gather synthetic descriptions for results that lack editorial_summary
+        # Gather synthetic descriptions for results that lack editorialSummary
         desc_tasks = []
         desc_indices: list[int] = []
         for idx, place in enumerate(raw_results):
-            if not (place.get("editorial_summary") or {}).get("overview", "").strip():
+            if not (place.get("editorialSummary") or {}).get("text", "").strip():
                 desc_indices.append(idx)
-                desc_tasks.append(self._synthesise_description(place, query))
+                reviews = place.get("reviews") or []
+                desc_tasks.append(self._synthesise_description(place, query, reviews=reviews))
 
         synthetic_descs: list[str | None] = []
         if desc_tasks:
@@ -305,6 +309,19 @@ class GooglePlacesService:
                     display_name = (place.get("displayName") or {}).get("text", "")
                     description = f"{display_name} — {', '.join(types[:3])}"
 
+                # Enrich search_optimized_summary with customer review snippets so the
+                # cross-encoder and vector index can match on real service keywords.
+                review_snippets = _extract_review_snippets(
+                    place.get("reviews") or [], max_count=3, max_chars=100
+                )
+                if review_snippets:
+                    search_optimized_summary = (
+                        f"{description} Customer experiences: "
+                        + " \u00b7 ".join(review_snippets)
+                    )
+                else:
+                    search_optimized_summary = description
+
                 # Phone / address — stored in Weaviate, masked in logs
                 phone: str = place.get("nationalPhoneNumber") or ""
                 address: str = place.get("formattedAddress") or ""
@@ -327,7 +344,7 @@ class GooglePlacesService:
                     "competence_id": f"gp:{place_id}",
                     "title": name,
                     "description": description,
-                    "search_optimized_summary": description,
+                    "search_optimized_summary": search_optimized_summary,
                     "category": _extract_category(place.get("types", [])),
                 }
 
@@ -350,22 +367,36 @@ class GooglePlacesService:
         return count
 
     async def _synthesise_description(
-        self, place: dict[str, Any], query: str
+        self, place: dict[str, Any], query: str,
+        reviews: list[dict[str, Any]] | None = None,
     ) -> str | None:
         """
         Generate a single-sentence service description for a Place that has no
         editorial_summary.  Uses a lightweight single-shot LLM call.
+
+        When ``reviews`` are provided, representative snippets are included in
+        the prompt so the LLM can name real specialties instead of generic types.
         """
         from langchain_core.messages import HumanMessage
 
         name = (place.get("displayName") or {}).get("text", "")
-        types_phrase = ", ".join(
+        # Prefer the human-readable primaryTypeDisplayName over raw type codes
+        primary_type = (place.get("primaryTypeDisplayName") or {}).get("text", "")
+        types_phrase = primary_type or ", ".join(
             t.replace("_", " ") for t in (place.get("types") or [])[:4]
         )
         location = place.get("formattedAddress", "").split(",")[-1].strip()
+
+        review_context = ""
+        if reviews:
+            snippets = _extract_review_snippets(reviews, max_count=3, max_chars=80)
+            if snippets:
+                review_context = f" Customers have mentioned: {'; '.join(snippets)}."
+
         prompt = (
             f"Write ONE short sentence describing the services offered by '{name}' "
-            f"which provides {types_phrase} in {location}. "
+            f"which provides {types_phrase} in {location}.{review_context} "
+            "Focus on their specialties and unique offerings. "
             "Return only the sentence, no preamble."
         )
         try:
@@ -464,3 +495,26 @@ def _extract_category(types: list[str]) -> str:
         if mapped:
             return mapped
     return "other"
+
+
+def _extract_review_snippets(
+    reviews: list[dict[str, Any]], max_count: int = 3, max_chars: int = 100
+) -> list[str]:
+    """
+    Extract clean text snippets from Google Places review objects.
+
+    Each review object from the Places API (New) has the shape
+    ``{"text": {"text": "...", "languageCode": "..."}}``.  We extract the
+    inner text, truncate at the nearest word boundary, and return up to
+    ``max_count`` non-empty snippets.
+    """
+    snippets: list[str] = []
+    for rv in reviews[:max_count]:
+        text = (rv.get("text") or {}).get("text", "").strip()
+        if not text:
+            continue
+        if len(text) > max_chars:
+            text = text[:max_chars].rsplit(" ", 1)[0]
+        if text:
+            snippets.append(text)
+    return snippets

@@ -74,9 +74,11 @@
 - **Text mode (LLM-Driven Initialization)**: The AI starts in the `GREETING` stage. Instead of dispatching a hardcoded text greeting immediately on page load, the system uses an LLM-driven initialization to provide a natural, dynamic greeting. 
   - If the session is initiated with a buffered user message (e.g., from a dormant UI waking up), the system wraps the message in a silent system tag (e.g., `[System Event: User reconnected and sent the following message]`) and passes it directly to the LLM. The LLM processes the greeting and the user's intent simultaneously, skipping autonomous text emission, and transitioning to `TRIAGE`.
   - If no message is buffered (a completely fresh start), the system prompts the LLM to generate a fresh, context-aware greeting to initiate the chat before autonomously transitioning to `TRIAGE`.
+  - The server waits up to 1 second from the start of session initialization for a DataChannel message to arrive before committing to a standalone greeting. This window is measured from initialization start (not from after user-data fetches complete) so that slow Firestore or Weaviate lookups cannot exhaust the window before the DataChannel opens.
 - **Language Enforcement**: If the WebSocket connection lacks a `language` parameter or provides an invalid one, the system defaults to the user's REST-stored settings language, or `"en"` if none exists. The language parameter provided by the client strictly overrides the REST-stored user setting for the duration of that session. The conversation language cannot be changed mid-session.
 - **Unsupported Client Language**: If the client requests a language via WebSocket that the LLM is not localized or tested for (e.g., passing a rare dialect code), the system must fallback to English (`"en"`) and inform the user of the fallback in the first turn.
 - **Cross-Lingual Handling**: The AI prompt must strictly enforce that all responses remain in the session-defined language. If the user speaks in a different language, the AI must explicitly translate or acknowledge the input in the configured system language (e.g., "I see you're speaking German, but I am configured for English right now. How can I help?").
+- **Language Instruction Scope**: Every stage prompt (GREETING, TRIAGE, CLARIFY, CONFIRMATION, RECOVERY, FINALIZE, PROVIDER_PITCH, PROVIDER_ONBOARDING, and their lite-mode equivalents) must carry a `language_instruction` placeholder. The service layer must inject the language instruction into every prompt regardless of the stage, so no stage can silently revert to a default language mid-conversation. The single exception is the Google Places Query prompt, which always generates English search phrases to maximise API recall; this English query is internal and is never shown to users.
 
 ### 3.2 Conversation Stages
 
@@ -187,8 +189,8 @@ For ambiguity resolution, the AI may enter CLARIFY to ask one targeted question 
 
 - **Single Acknowledgement Rule**: The AI must acknowledge the user's request or intent at most once per conversational turn, across all stage sub-streams. Redundant re-phrasings of the same intent within the same turn are strictly forbidden.
 - **Direct Action**: The AI must not use repetitive conversational filler (e.g., "No problem at all, I can help! Alright, I can certainly help..."). After a single, brief acknowledgement (if any), the AI must proceed immediately to the required stage action — summarising, asking a clarifying question, or executing a tool.
-- **Pre-Commit Summary Consolidation**: During the `CONFIRMATION` stage, if the stage was reached via a fast-path transition from `TRIAGE`, the AI must combine any acknowledgement and the confirmation summary into a single cohesive statement. It must not open with a fresh greeting-like preamble before the summary.
-- **Silent Fast-Path Transitions**: When `TRIAGE` determines that the user's request is already complete and transitions immediately to `CONFIRMATION`, the `TRIAGE` LLM call must emit the `signal_transition` signal only and produce no natural-language output. The `CONFIRMATION` stage owns all user-visible text for that turn.
+- **Pre-Commit Summary Consolidation**: The `CONFIRMATION` stage is the single owner of the request summary and confirmation ask. Regardless of how many TRIAGE turns preceded it, `CONFIRMATION` must generate a cohesive summary and ask the user to confirm. It must not open with a fresh greeting-like preamble before the summary.
+- **Silent TRIAGE→CONFIRMATION Transitions**: Regardless of whether `TRIAGE` reached the MRI gate on the very first message or after multiple turns, once all MRI criteria are satisfied the `TRIAGE` LLM call must emit the `signal_transition` signal only and produce no natural-language output — no summary, no "does that look right?" question. The `CONFIRMATION` stage owns all confirmation text.
 
 ### 3.10 Empty LLM Response Recovery
 
@@ -495,6 +497,8 @@ This section defines the behaviour of the external provider search mode backed b
 
 - Google Places queries are executed concurrently. The system does not cache Google Places results between sessions: every `FINALIZE` entry triggers a fresh fetch from the Google Places API.
 - Each result returned from Google Places is normalised into the platform's canonical provider record format. The normalised record must include at minimum: name, address, phone number (if available), website (if available), Google rating (if available), geographic coordinates, and a source tag identifying the record as originating from Google Places.
+- When a Google Places result includes an editorial summary, it is stored as the provider's description. When no editorial summary is present, the system must synthesise a single descriptive sentence using the LLM, incorporating the business name, primary type, location, and any available customer review snippets so the generated description reflects real specialties rather than generic category labels.
+- The `search_optimized_summary` field stored in the vector index must be enriched with up to three customer review snippets (where reviews are available from the Places API). This enrichment is separate from the human-readable description: `description` remains clean prose, while `search_optimized_summary` appends review excerpts to give the cross-encoder and vector index real specialty keywords to match against user requests.
 - Immediately after fetching and normalisation, all Google Places results are written to the internal search index (Weaviate) using the same schema as registered platform providers, so they participate in the unified vector and hybrid ranking pipeline.
 - Because Google Places providers are not registered platform users, they must be written to the search index with a distinct source flag (e.g. `source: "google_places"`) and must never be assigned a platform user ID or trigger any user-account-related operations (e.g. provider pitch eligibility checks).
 
@@ -607,6 +611,7 @@ The `FINALIZE` LLM is equipped with exactly four functional tools: `accept_provi
 - The client automatically terminates an active WebRTC/WebSocket connection after 10 consecutive minutes of inactivity (no incoming messages of any type) to save device resources and server connections. 
 - On timeout, the network session is torn down, **and the visual chat history is cleared.** The UI returns to its default idle/start state.
 - If the user interacts again, it initiates a completely new session connection.
+- When the user manually starts a new session (e.g. by tapping the start button after an explicit stop), the client must clear any existing chat history before establishing the new connection. This prevents messages from a prior session from appearing alongside the new session's greeting.
 
 ### 7.5 Optimistic Message Display
 

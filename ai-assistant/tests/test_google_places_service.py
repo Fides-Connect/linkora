@@ -23,6 +23,7 @@ from ai_assistant.services.google_places_service import (
     _CIRCUIT_THRESHOLD,
     _CIRCUIT_RESET_SECONDS,
     _extract_category,
+    _extract_review_snippets,
     _RateLimitError,
     _HttpError,
 )
@@ -41,6 +42,11 @@ def _make_service(api_key: str = "test-key") -> GooglePlacesService:
     return svc
 
 
+def _make_review(text: str) -> dict:
+    """Return a fake Places API (New) review object."""
+    return {"text": {"text": text, "languageCode": "de"}, "rating": 5}
+
+
 def _fake_place(
     place_id: str = "ChIJ_id1",
     name: str = "Test Plumber GmbH",
@@ -50,6 +56,7 @@ def _fake_place(
     address: str = "Teststraße 1, Munich",
     website: str = "https://example.com",
     editorial_summary: str | None = "Professional plumbing in Munich.",
+    reviews: list[dict] | None = None,
 ) -> dict:
     """Return a fake Place object in Places API (New) response format."""
     place: dict = {
@@ -63,6 +70,8 @@ def _fake_place(
     }
     if editorial_summary:
         place["editorialSummary"] = {"text": editorial_summary, "languageCode": "de"}
+    if reviews is not None:
+        place["reviews"] = reviews
     return place
 
 
@@ -423,3 +432,125 @@ class TestRunGpPipeline:
 
         assert result.error is True
         assert result.error_code == "timeout"
+
+
+# ---------------------------------------------------------------------------
+# _extract_review_snippets()
+# ---------------------------------------------------------------------------
+
+
+class TestExtractReviewSnippets:
+    def test_returns_empty_for_no_reviews(self) -> None:
+        assert _extract_review_snippets([]) == []
+
+    def test_extracts_text_from_review_objects(self) -> None:
+        reviews = [_make_review("Great custom cakes!"), _make_review("Perfect wedding cake.")]
+        result = _extract_review_snippets(reviews)
+        assert result == ["Great custom cakes!", "Perfect wedding cake."]
+
+    def test_truncates_at_word_boundary(self) -> None:
+        long_text = "word " * 30  # 150 chars
+        result = _extract_review_snippets([_make_review(long_text)], max_chars=50)
+        assert len(result) == 1
+        assert len(result[0]) <= 50
+        assert not result[0].endswith(" ")
+
+    def test_respects_max_count(self) -> None:
+        reviews = [_make_review(f"Review {i}") for i in range(5)]
+        result = _extract_review_snippets(reviews, max_count=2)
+        assert len(result) == 2
+
+    def test_skips_reviews_with_no_text(self) -> None:
+        reviews = [{"text": {}, "rating": 5}, _make_review("Good service")]
+        result = _extract_review_snippets(reviews)
+        assert result == ["Good service"]
+
+
+# ---------------------------------------------------------------------------
+# Review enrichment in search_optimized_summary
+# ---------------------------------------------------------------------------
+
+
+class TestReviewEnrichment:
+    async def test_search_optimized_summary_includes_review_snippets(self) -> None:
+        """When reviews are present, search_optimized_summary must include them."""
+        svc = _make_service()
+        place = _fake_place(
+            editorial_summary="Professional wedding cake bakery in Berlin.",
+            reviews=[
+                _make_review("They crafted an amazing Harry Potter themed wedding cake!"),
+                _make_review("Specialty: fantasy and fairy tale custom designs for large events."),
+            ],
+        )
+
+        captured_competence: list[dict] = []
+
+        def _capture(user_data: dict, competence_data: dict | None = None) -> str | None:
+            if competence_data:
+                captured_competence.append(competence_data)
+            return user_data["uuid"]
+
+        with (
+            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=[place])),
+            patch("ai_assistant.hub_spoke_ingestion.HubSpokeIngestion.upsert_user",
+                  side_effect=_capture),
+        ):
+            await svc.fetch_and_ingest("wedding cake bakery Berlin")
+
+        assert len(captured_competence) == 1
+        summary = captured_competence[0]["search_optimized_summary"]
+        assert "Harry Potter" in summary
+        assert "Customer experiences:" in summary
+        # description remains clean (no review text)
+        description = captured_competence[0]["description"]
+        assert description == "Professional wedding cake bakery in Berlin."
+
+    async def test_search_optimized_summary_equals_description_when_no_reviews(self) -> None:
+        """When no reviews, search_optimized_summary falls back to description."""
+        svc = _make_service()
+        place = _fake_place(
+            editorial_summary="Expert plumber in Munich.",
+            reviews=[],
+        )
+        captured_competence: list[dict] = []
+
+        def _capture(user_data: dict, competence_data: dict | None = None) -> str | None:
+            if competence_data:
+                captured_competence.append(competence_data)
+            return user_data["uuid"]
+
+        with (
+            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=[place])),
+            patch("ai_assistant.hub_spoke_ingestion.HubSpokeIngestion.upsert_user",
+                  side_effect=_capture),
+        ):
+            await svc.fetch_and_ingest("plumber Munich")
+
+        assert len(captured_competence) == 1
+        assert captured_competence[0]["search_optimized_summary"] == "Expert plumber in Munich."
+
+    async def test_synthesis_uses_review_context(self) -> None:
+        """_synthesise_description must pass review snippets to the LLM prompt."""
+        svc = _make_service()
+        captured_prompts: list[str] = []
+
+        async def _capture_generate(messages: list) -> str:
+            captured_prompts.append(messages[0].content)
+            return "Custom wedding cake specialist in Berlin."
+
+        svc._llm.generate = _capture_generate
+
+        place = _fake_place(
+            editorial_summary=None,  # forces synthesis
+            reviews=[_make_review("Amazing Harry Potter cake for our wedding!")],
+        )
+
+        with (
+            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=[place])),
+            patch("ai_assistant.hub_spoke_ingestion.HubSpokeIngestion.upsert_user",
+                  return_value="uuid-ok"),
+        ):
+            await svc.fetch_and_ingest("wedding cake")
+
+        assert len(captured_prompts) == 1
+        assert "Harry Potter" in captured_prompts[0]

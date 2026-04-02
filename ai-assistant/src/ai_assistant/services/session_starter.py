@@ -320,6 +320,10 @@ class TextSessionStarter(SessionStarter):
 
     async def initialize(self) -> None:
         try:
+            # Record start time so the DataChannel-race guard budget is measured
+            # from session creation, not from after user-data I/O completes.
+            _t0 = asyncio.get_event_loop().time()
+
             user_name, has_open_request = await _fetch_user_data(
                 self._data_provider,
                 self._user_id,
@@ -370,25 +374,33 @@ class TextSessionStarter(SessionStarter):
                 )
                 return
 
-            # Wait up to 300 ms for a DataChannel message that arrives after the
-            # WebRTC handshake but before initialize() has committed to sending a
-            # standalone greeting.  This closes the race between the LLM call and
-            # a buffered client message delivered when the DataChannel first opens.
+            # Wait for a DataChannel message that may arrive after the WebRTC
+            # handshake.  The budget is measured from session creation (_t0), not
+            # from after user-data I/O completes, so slow Firestore/Weaviate
+            # fetches cannot exhaust the window before the DataChannel opens.
+            # Total window: 1.0 s from initialize() start; remaining budget after
+            # I/O = max(0, 1.0 - elapsed).  This adds at most ~400 ms to greeting
+            # latency for sessions with no pending message (vs the old fixed 300 ms).
             if self._first_message_event is not None:
-                try:
-                    await asyncio.wait_for(
-                        self._first_message_event.wait(), timeout=0.3
-                    )
-                    # A real message arrived in the window — skip the autonomous
-                    # greeting; process_text_input will handle the full response.
-                    self._orchestrator.handle_signal_transition("triage")
-                    logger.info(
-                        "TextSessionStarter: skipped greeting (late DC message) for %s",
-                        self._connection_id,
-                    )
-                    return
-                except TimeoutError:
-                    pass  # No early message — proceed with autonomous greeting.
+                _elapsed = asyncio.get_event_loop().time() - _t0
+                _remaining = max(0.0, 1.0 - _elapsed)
+                # Also catch the event if it was set *during* the I/O phase.
+                if self._first_message_event.is_set() or _remaining > 0.0:
+                    try:
+                        await asyncio.wait_for(
+                            self._first_message_event.wait(),
+                            timeout=max(_remaining, 0.001),
+                        )
+                        # A real message arrived in the window — skip the autonomous
+                        # greeting; process_text_input will handle the full response.
+                        self._orchestrator.handle_signal_transition("triage")
+                        logger.info(
+                            "TextSessionStarter: skipped greeting (late DC message) for %s",
+                            self._connection_id,
+                        )
+                        return
+                    except TimeoutError:
+                        pass  # No early message — proceed with autonomous greeting.
 
             greeting_text = await self._conv.generate_greeting_text(
                 user_name=user_name,
