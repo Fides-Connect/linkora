@@ -26,6 +26,17 @@ from ..data_provider import SearchUnavailableError  # noqa: F401 (used below)
 
 logger = logging.getLogger(__name__)
 
+
+def _extract_user_text_from_system_event(raw_text: str) -> str:
+    """Extract user text from a buffered system-event wrapper when present."""
+    clean = raw_text.strip()
+    # Preferred format: [System Event: ... message: "<user text>"]
+    msg_match = re.search(r'message:\s*"([^\"]*)"', clean)
+    if msg_match:
+        return msg_match.group(1).strip()
+    # Fallback: remove only the leading wrapper and keep trailing user text.
+    return re.sub(r'^\[System Event:[^\]]+\]\s*', '', clean).strip()
+
 # Matches known tool-call names leaked as plain text — e.g. signal_transition(target_stage="finalize").
 # Intentionally restricted to tool names registered in build_default_registry so that
 # normal prose containing parentheses ("call me (555) 123-4567") is never stripped.
@@ -162,7 +173,12 @@ class ResponseOrchestrator:
                         self.conversation_service.context.get("search_failure_count", 0) + 1
                     )
                     self.handle_signal_transition("recovery")
+                    pending.append(("signal_transition", {"stage": "recovery"}))
                     return True
+                # Successful search: clear outage flags/counters so only
+                # consecutive failures trigger the circuit-breaker behavior.
+                self.conversation_service.context.pop("search_outage_pending", None)
+                self.conversation_service.context.pop("search_failure_count", None)
                 # Read providers stored by search_providers_for_request; avoids
                 # the previous `await … or []` pattern that overwrote context.
                 providers = self.conversation_service.context.get("providers_found", [])
@@ -437,7 +453,7 @@ class ResponseOrchestrator:
         # System-event wrappers (reconnection/dormant-UI buffered messages) are
         # stripped first so only the user's actual words are stored.
         if follow_up_stage == ConversationStage.TRIAGE and actual_input.strip():
-            _clean_acc = re.sub(r'^\[System Event:[^\]]+\]\s*', '', actual_input).strip()
+            _clean_acc = _extract_user_text_from_system_event(actual_input)
             if _clean_acc and _clean_acc != " ":
                 await self.conversation_service.accumulate_problem_description(_clean_acc)
 
@@ -657,6 +673,9 @@ class ResponseOrchestrator:
                 self.handle_signal_transition("recovery")
                 pending.append(("signal_transition", {"stage": "recovery"}))
                 return
+            # Successful retry search: clear outage flags/counters.
+            self.conversation_service.context.pop("search_outage_pending", None)
+            self.conversation_service.context.pop("search_failure_count", None)
             fresh_providers = self.conversation_service.context.get("providers_found", [])
             if not fresh_providers:
                 logger.info("retry_search: zero results — returning to TRIAGE.")
@@ -749,10 +768,7 @@ class ResponseOrchestrator:
             # before accumulating so buffered-message prefixes don't pollute the
             # Weaviate search query used in FINALIZE.
             if current_stage == ConversationStage.TRIAGE:
-                _sys_match = re.match(
-                    r'^\[System Event:[^\]]*"(.+)"\]', user_input, re.DOTALL
-                )
-                clean_input = (_sys_match.group(1) if _sys_match else user_input).strip()
+                clean_input = _extract_user_text_from_system_event(user_input)
                 if clean_input:
                     await self.conversation_service.accumulate_problem_description(clean_input)
 

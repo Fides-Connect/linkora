@@ -555,7 +555,7 @@ The user abandons the flow entirely ("Forget it", "Never mind", "I'll handle it 
 
 **Response G — User wants to retry the search with the same criteria:**
 The user wants to search again for the same type of service ("Try again", "Search again", "Show me different results", "Restart the search").
-1. Acknowledge briefly: "Of course! Let me search again for you."
+1. Acknowledge briefly without mentioning internal actions, e.g. "Of course." or "Absolutely."
 2. Call `retry_search()` immediately.
 3. After the tool result arrives — if a new provider is ready, present them as in Response A.
 
