@@ -20,6 +20,7 @@ from .agent_tools import (
     AgentTool, AgentToolRegistry, ToolCapability, ToolPermissionError,
     check_capability, build_default_registry,
 )
+from .agent_profile import AgentProfile, FULL_PROFILE, LITE_PROFILE, get_profile
 from .ai_conversation_service import AIConversationService
 from .cross_encoder_service import CrossEncoderService
 
@@ -58,4 +59,8 @@ __all__ = [
     'build_default_registry',
     'AIConversationService',
     'CrossEncoderService',
+    'AgentProfile',
+    'FULL_PROFILE',
+    'LITE_PROFILE',
+    'get_profile',
 ]

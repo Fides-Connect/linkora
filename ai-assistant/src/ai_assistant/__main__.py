@@ -33,6 +33,7 @@ import firebase_admin  # noqa: E402
 from .signaling_server import SignalingServer  # noqa: E402
 from .common_endpoints import setup_cors  # noqa: E402
 from .services.admin_service import AdminService  # noqa: E402
+from .services.agent_profile import get_profile  # noqa: E402
 from .api.v1.router import register_v1_routes  # noqa: E402
 from .weaviate_sync import run_startup_sync  # noqa: E402
 from .services.llm_service import LLMService  # noqa: E402
@@ -100,7 +101,9 @@ async def main() -> None:
 
     # Initialize signaling server
     logger.info("Initializing signaling server...")
-    signaling_server = SignalingServer()
+    _agent_mode = os.getenv("AGENT_MODE", "full").lower().strip()
+    logger.info("  Agent mode: %s", _agent_mode)
+    signaling_server = SignalingServer(profile=get_profile(_agent_mode))
 
     # Initialize admin service
     logger.info("Initializing admin service...")

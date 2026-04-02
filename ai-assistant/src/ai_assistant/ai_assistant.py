@@ -16,6 +16,7 @@ from .services import (
     AgentRuntimeFSM,
     build_default_registry,
 )
+from .services.agent_profile import get_profile
 from .services.response_orchestrator import ResponseOrchestrator
 from .services.competence_enricher import CompetenceEnricher
 from .services.cross_encoder_service import CrossEncoderService
@@ -64,6 +65,11 @@ class AIAssistant:
         self.language = language
         self.session_id = session_id or "default"
 
+        # Resolve agent profile from AGENT_MODE env var (default: full)
+        mode = os.getenv("AGENT_MODE", "full").lower().strip()
+        profile = get_profile(mode)
+        self._profile = profile
+
         # Get language-specific configuration
         self.language_code, self.voice_name = get_language_config(language)
 
@@ -94,10 +100,11 @@ class AIAssistant:
         # Initialized before ConversationService so it can be injected.
         self.cross_encoder_service = CrossEncoderService()
 
-        # Google Places enrichment — optional; only active when GOOGLE_PLACES_API_KEY is set.
+        # Google Places enrichment — active only in lite mode (profile.google_places_always_active=True).
+        # In full mode this is always None; Google Places is never queried.
         self.google_places_service = (
             GooglePlacesService(llm_service=self.llm_service)
-            if GooglePlacesService.is_enabled()
+            if profile.google_places_always_active and GooglePlacesService.is_enabled()
             else None
         )
 
@@ -110,12 +117,13 @@ class AIAssistant:
             language=self.language,
             cross_encoder_service=self.cross_encoder_service,
             google_places_service=self.google_places_service,
+            profile=profile,
         )
 
         # Build agentic runtime FSM and tool registry
         self.runtime_fsm = AgentRuntimeFSM()
         self.firestore_service = None  # injected by PeerConnectionHandler after construction
-        self.tool_registry = build_default_registry()
+        self.tool_registry = build_default_registry(allowed_tools=profile.available_tool_names)
 
         # Competence enricher: LLM-powered enrichment of provider competence data.
         # Uses the same underlying LLM instance (no extra API key needed).
@@ -127,6 +135,7 @@ class AIAssistant:
             conversation_service=self.conversation_service,
             runtime_fsm=self.runtime_fsm,
             tool_registry=self.tool_registry,
+            profile=profile,
         )
 
         logger.info("AI Assistant initialized with service-oriented architecture")

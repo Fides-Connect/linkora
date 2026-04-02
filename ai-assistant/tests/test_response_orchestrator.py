@@ -825,7 +825,11 @@ class TestProviderPitchAfterCompleted:
     async def test_pitch_fires_when_eligible(
         self, mock_llm_service, mock_conversation_service, mock_tool_registry
     ):
-        mock_conversation_service.get_current_stage.return_value = ConversationStage.FINALIZE
+        # Make get_current_stage track whatever set_stage records, so the
+        # legal-transition check uses the live stage rather than a stale mock.
+        stage_tracker = [ConversationStage.FINALIZE]
+        mock_conversation_service.get_current_stage.side_effect = lambda: stage_tracker[-1]
+        mock_conversation_service.set_stage.side_effect = lambda s: stage_tracker.append(s)
 
         async def stream_with_completed(*args, **kwargs):
             yield {"type": "function_call", "name": "signal_transition",
@@ -833,18 +837,15 @@ class TestProviderPitchAfterCompleted:
 
         mock_llm_service.generate_stream = stream_with_completed
 
-        from unittest.mock import patch
-        with patch("ai_assistant.services.response_orchestrator.is_legal_transition", return_value=True):
-            orch = ResponseOrchestrator(
-                llm_service=mock_llm_service,
-                conversation_service=mock_conversation_service,
-                tool_registry=mock_tool_registry,
-            )
-            async for _ in orch.generate_response_stream("done", "sess", context=self._eligible_ctx()):
-                pass
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        async for _ in orch.generate_response_stream("done", "sess", context=self._eligible_ctx()):
+            pass
 
-        set_stage_calls = [call[0][0] for call in mock_conversation_service.set_stage.call_args_list]
-        assert ConversationStage.PROVIDER_PITCH in set_stage_calls
+        assert ConversationStage.PROVIDER_PITCH in stage_tracker
 
     async def test_pitch_skipped_when_already_provider(
         self, mock_llm_service, mock_conversation_service, mock_tool_registry

@@ -116,8 +116,12 @@ class AgentTool:
 class AgentToolRegistry:
     """Registry of AgentTool instances; dispatches execute() with permission checks."""
 
-    def __init__(self) -> None:
+    def __init__(self, allowed_tools: frozenset[str] | None = None) -> None:
         self._tools: dict[str, AgentTool] = {}
+        # Optional profile-level allowlist.  When set, any tool not in this set
+        # is rejected before the per-tool ToolCapability check.  ``None`` means
+        # unrestricted (full-mode default).
+        self._allowed = allowed_tools
 
     def register(self, tool: AgentTool) -> None:
         self._tools[tool.name] = tool
@@ -132,12 +136,17 @@ class AgentToolRegistry:
         context: ToolContext,
     ) -> ToolResult:
         """
-        Execute the named tool after permission check.
+        Execute the named tool after permission checks.
 
         Raises:
             KeyError            — unknown tool name
-            ToolPermissionError — user lacks required_capability
+            ToolPermissionError — tool not in profile allowlist, or user lacks
+                                  required_capability
         """
+        # Profile-level allowlist check (outer gate)
+        if self._allowed is not None and name not in self._allowed:
+            raise ToolPermissionError(name, ToolCapability("profile", "allowed"))
+
         tool = self._tools[name]   # KeyError if not found
 
         user_caps = context.get("user_capabilities", [])
@@ -609,12 +618,21 @@ async def _delete_competences(params: ToolParams, context: ToolContext) -> ToolR
 # Factory
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_default_registry() -> AgentToolRegistry:
+def build_default_registry(
+    allowed_tools: frozenset[str] | None = None,
+) -> AgentToolRegistry:
     """
     Build the default registry wiring all 8 built-in tools.
+
+    Args:
+        allowed_tools: Optional profile-level allowlist.  When provided, the
+            registry will raise ``ToolPermissionError`` for any tool not in
+            the set before the per-tool capability check runs.  Pass
+            ``None`` (default) for the unrestricted full-mode behaviour.
+
     Dependencies are injected per-call via the `context` dict passed to execute().
     """
-    registry = AgentToolRegistry()
+    registry = AgentToolRegistry(allowed_tools=allowed_tools)
 
     registry.register(AgentTool(
         name="search_providers",

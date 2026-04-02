@@ -14,6 +14,7 @@ from collections.abc import AsyncIterator
 
 if TYPE_CHECKING:
     from .ai_conversation_service import AIConversationService
+    from .agent_profile import AgentProfile
 
 from langchain_core.messages import AIMessage
 
@@ -59,19 +60,26 @@ class ResponseOrchestrator:
         conversation_service: ConversationService,
         runtime_fsm: AgentRuntimeFSM | None = None,
         tool_registry: AgentToolRegistry | None = None,
-        ai_conversation_service: AIConversationService | None = None,
+        ai_conversation_service: "AIConversationService | None" = None,
+        profile: "AgentProfile | None" = None,
     ) -> None:
+        from .agent_profile import FULL_PROFILE
+
         self.llm_service = llm_service
         self.conversation_service = conversation_service
         self.runtime_fsm: AgentRuntimeFSM = runtime_fsm or AgentRuntimeFSM()
         self.tool_registry = tool_registry
         self.ai_conversation_service = ai_conversation_service
+        self._profile = profile if profile is not None else FULL_PROFILE
 
     # ── Stage helpers ──────────────────────────────────────────────────────────
 
     def handle_signal_transition(self, target_str: str) -> bool:
         """
         Validate and apply a stage transition requested by the LLM (sync).
+
+        Uses the profile's ``legal_transitions`` table for validation so lite-mode
+        restrictions are enforced even if the LLM requests a forbidden stage.
 
         Returns True if the transition was legal and applied, False otherwise.
         Illegal or unknown targets are logged and silently ignored — the FSM
@@ -84,7 +92,8 @@ class ResponseOrchestrator:
             return False
 
         current = self.conversation_service.get_current_stage()
-        if not is_legal_transition(current, target):
+        allowed = self._profile.legal_transitions.get(current, [])
+        if target not in allowed:
             logger.warning(
                 "handle_signal_transition: illegal %s → %s — ignored", current, target
             )
@@ -224,7 +233,10 @@ class ResponseOrchestrator:
             if previous_stage == ConversationStage.PROVIDER_ONBOARDING:
                 self.conversation_service.reset_request_context()
                 logger.info("Request context cleared after PROVIDER_ONBOARDING → COMPLETED")
-            pitch_eligible = await self._should_pitch_provider_async(context)
+            pitch_eligible = (
+                self._profile.provider_pitch_enabled
+                and await self._should_pitch_provider_async(context)
+            )
             if pitch_eligible:
                 pitch_applied = self.handle_signal_transition("provider_pitch")
                 if not pitch_applied:
@@ -987,6 +999,26 @@ class ResponseOrchestrator:
             # provider presentation mid-flow.  The fallback is therefore disabled:
             # the stage will persist until the next user utterance triggers one of
             # the three FINALIZE tools.  (§3.2)
+            #
+            # Exception: lite mode (finalize_auto_complete=True).  After presenting
+            # the provider list the orchestrator auto-advances to COMPLETED without
+            # waiting for user input.  (§14.3)
+            if (
+                self._profile.finalize_auto_complete
+                and self.conversation_service.get_current_stage() == ConversationStage.FINALIZE
+            ):
+                logger.info(
+                    "finalize_auto_complete: auto-advancing FINALIZE → COMPLETED"
+                )
+                auto_pending: list[tuple[str, Any]] = []
+                await self._apply_signal_transition_with_payload(
+                    "completed", session_id, context, auto_pending, user_input=""
+                )
+                if auto_pending:
+                    async for chunk in self._run_follow_up_stream(
+                        auto_pending, " ", session_id, context, ai_response_parts, []
+                    ):
+                        yield chunk
 
             # ── Stream complete ──────────────────────────────────────────────────
             ai_text = "".join(ai_response_parts)

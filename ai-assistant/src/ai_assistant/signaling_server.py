@@ -15,6 +15,7 @@ from firebase_admin import auth as firebase_auth
 
 from .peer_connection_handler import PeerConnectionHandler
 from .firestore_service import FirestoreService
+from .services.agent_profile import FULL_PROFILE, AgentProfile
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +82,10 @@ SUPPORTED_LANGUAGES = {"en", "de"}
 class SignalingServer:
     """Manages WebSocket connections and WebRTC signaling."""
 
-    def __init__(self) -> None:
+    def __init__(self, profile: AgentProfile | None = None) -> None:
         self.active_connections: dict[str, PeerConnectionHandler] = {}
         self._firestore = FirestoreService()
+        self._profile: AgentProfile = profile if profile is not None else FULL_PROFILE
 
     async def close_all_connections(self) -> None:
         """Close all active WebRTC/WebSocket connections for graceful shutdown.
@@ -177,6 +179,15 @@ class SignalingServer:
         else:
             session_mode = raw_mode
 
+        # Lite mode: voice sessions are not supported — reject before creating any handler.
+        if not self._profile.voice_enabled and session_mode == 'voice':
+            logger.warning(
+                "AGENT_MODE=%r does not support voice — rejecting voice session from %s",
+                self._profile.name, client_ip,
+            )
+            await ws.close(code=4403, message=b"Voice not supported in this deployment")
+            return ws
+
         # hold_start=true: complete ICE/DC handshake but defer AudioProcessor start
         # until a real voice offer (with audio track) arrives.  Used by the Flutter
         # client's hollow pre-warm so the server doesn't spin up STT/LLM until
@@ -240,6 +251,7 @@ class SignalingServer:
             ice_servers=ice_servers,
             hold_start=hold_start,
             language_fallback_from=language_fallback_from,
+            profile=self._profile,
         )
         self.active_connections[str(connection_id)] = handler
         logger.debug("Active connections: %s", len(self.active_connections))

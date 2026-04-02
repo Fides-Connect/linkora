@@ -18,7 +18,8 @@
   - **Text mode**: the user types; the AI responds with text only. No audio greeting is synthesized or played on connection, but a text greeting is still dispatched.
 - All AI responses and prompts are language-aware. The language is set per session by the client and must be respected throughout the entire conversation. It must never be hardcoded.
 - **Demo / Seeding Mode**: In development and demo environments, the system may pre-populate the search index with synthetic provider profiles to enable end-to-end testing of the provider-search flow. This is a demo-only behavior; production environments must never seed synthetic data.
-- **External Provider Search (Google Places)**: The platform supports an optional external provider search mode backed by the Google Places API. When enabled, the system queries Google Places in addition to the internal search index (Weaviate) to discover providers. This mode is controlled by a server-side configuration flag and may be toggled independently of any other feature. When disabled, only the internal search index is used.
+- **External Provider Search (Google Places)**: The platform supports an external provider search mode backed by the Google Places API. This integration is exclusive to lite mode (`AGENT_MODE=lite`) and is always active when that mode is in use. In full mode, provider discovery uses only the internal search index (Weaviate); Google Places is never queried.
+- **Configurable Agent Mode**: The platform supports two named agent modes that control the active conversation stage machine, the prompts used in each stage, and the tools available during a session. The mode is selected by a server-side configuration parameter; it applies to the entire server process and cannot be changed per-session or mid-session. The low-level transport and audio state machine is shared and unchanged across all modes. If an unknown mode is configured, the system must log a warning and fall back to the default mode.
 
 ---
 
@@ -61,7 +62,7 @@
 
 - If Weaviate is entirely unreachable during login or search, the system must not fail the entire user session. It must degrade gracefully: login succeeds with a logged warning, and searches return a standardized "Search temporarily unavailable" error to the AI to handle via `RECOVERY`.
 - When the provider search backend is unreachable specifically during the `FINALIZE` stage, the system must immediately transition to `RECOVERY` rather than presenting zero results as a genuine empty-match outcome. The `RECOVERY` message must indicate that the search was temporarily unavailable, not that no matching provider was found.
-- When Google Places external search is enabled and the Google Places API is unreachable or returns an error, the system must not fail the `FINALIZE` stage. It must inform the user that the external search is temporarily unavailable, then proceed using only the internal search index results. The degradation must be transparent to the user (e.g. "I was unable to reach Google Maps right now, so I am searching our registered providers instead.").
+- *(Lite mode only — see §14.4)* When the Google Places API is unreachable or returns an error during a lite-mode `FINALIZE` stage, the system must not fail. It must inform the user that the external search is temporarily unavailable, then proceed using only the internal search index results. The degradation must be transparent to the user (e.g. "I was unable to reach Google Maps right now, so I am searching our registered providers instead.").
 
 ---
 
@@ -137,7 +138,7 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 
 ### 3.4 Clarification & Minimum Required Information (MRI)
 
-The AI must not transition from TRIAGE (or CLARIFY) to CONFIRMATION until the user's request contains sufficient detail.
+The AI must not transition from TRIAGE (or CLARIFY) to CONFIRMATION until the user's request contains sufficient detail. **MRI requirements differ by agent mode** — see §14.3 for the lite-mode definition. The rules below apply to `full` mode.
 
 Sufficient detail is strictly defined as successfully collecting ALL of the following:
 
@@ -152,7 +153,7 @@ Sufficient detail is strictly defined as successfully collecting ALL of the foll
 
 **Extended Context (soft-ask — collected after MRI is satisfied):**
 Once the three MRI elements are gathered, the AI opportunistically collects the following extras with at most one natural question each. None of these block the flow; the AI must not re-ask if the user dismisses or skips them.
-- **Location**: When the Google Places external search is **disabled**, location is a soft-ask for in-person services (plumbing, cleaning, electrical work, etc.): the AI asks once: "Where is the work needed — which city or area?" and skips it entirely for remote/digital work. When the Google Places external search is **enabled**, location is a **hard MRI requirement** for all requests — the AI must collect a city or region before it is permitted to proceed to `CONFIRMATION`, because Google Places requires a geographic anchor to execute the search. The AI must ask for location before all other extended-context fields when it is required.
+- **Location** *(full mode)*: Location is a soft-ask for in-person services (plumbing, cleaning, electrical work, etc.): the AI asks once "Where is the work needed — which city or area?" and skips it entirely for remote/digital work. In full mode, location is never a hard MRI gate. For the lite-mode location rule (hard MRI requirement), see §14.4.
 - **Budget**: The AI asks once if clearly relevant: "Do you have a rough budget in mind?" Any answer — including "no idea" or silence — is accepted without follow-up.
 - **Exact dates**: If the user stated a relative timeframe (e.g. "next Tuesday"), the AI resolves it to a concrete calendar date internally. The user is not asked to re-state it as an ISO date.
 
@@ -370,7 +371,6 @@ For `delete_competences`: each deleted competency is removed from Firestore and 
 - A structured query with `available_time`, `location`, and `criterions` triggers a hybrid search.
 - If provider search results are already cached for the current `FINALIZE` stage, the system must return the cached results and not repeat the search.
 - Exception: if the first search returned zero results (e.g. due to stale index data), the next search attempt must perform a real search rather than returning the cached empty list.
-- When Google Places external search is enabled, the provider search consists of two concurrent phases (see §6.12): an external Google Places fetch and an internal Weaviate search. Results from both phases are merged into a single unified ranked list before being presented to the user. The user is not shown which source each result came from, but each result carries a source label internally for diagnostics.
 - The provider search pipeline in `FINALIZE` consists of four steps:
   1. Structured query extraction: the LLM converts the problem summary into a structured object (`available_time`, `category`, `criterions`).
   2. Hypothetical provider profile generation (HyDE): the LLM writes a description of the ideal provider as a vector query. Steps 1 and 2 run concurrently.
@@ -469,11 +469,13 @@ Step 4 of the provider search pipeline re-scores the wide-net candidates using a
 
 ### 6.12 Google Places External Provider Search
 
-This section defines the behaviour of the optional external provider search mode backed by the Google Places API. All behaviours in this section apply only when the Google Places integration is enabled via server-side configuration.
+> **This section applies exclusively to lite mode (`AGENT_MODE=lite`).** In full mode, Google Places is never queried and none of the behaviours below are active.
+
+This section defines the behaviour of the external provider search mode backed by the Google Places API. In lite mode, this integration is always active.
 
 #### 6.12.1 Configuration
 
-- Whether Google Places external search is active is controlled by a server-side configuration flag. The flag may be toggled without code changes (e.g. via an environment variable). When the flag is off, the system behaves exactly as documented in §6.2 without any modification.
+- In lite mode, Google Places external search is always active. There is no per-instance flag to toggle it; enabling or disabling it is done by switching the agent mode.
 - The Google Places API key is provided via a server-side secret and must never be exposed to the client.
 
 #### 6.12.2 Query Construction
@@ -754,3 +756,147 @@ When a new connection is established, the server must check Firestore for the us
 - **Android Echo Cancellation (AEC)**: On Android, hardware echo cancellation requires the audio subsystem to be in communication mode. This mode must be set every time audio is routed to a speaker or Bluetooth device — both at session start and on every routing change. It must be active regardless of build configuration (development, staging, production) and must not be conditionally skipped for any reason such as debug mode.
 - **Speaking-flag lifetime**: The AI speaking state must remain active until the buffered audio output has finished playing — not merely until audio data has been queued. If the speaking state is cleared while audio is still buffered, subsequent voice input will be misclassified as user speech.
 - **Post-interrupt echo suppression**: When voice input arrives while the AI is speaking and triggers an interruption, the final transcript of that triggering utterance must be discarded and must not be forwarded to the AI as user input. Only voice input that arrives after the interruption has completed may be treated as a new user turn.
+
+---
+
+## 14. Agent Mode Configuration
+
+### 14.1 Mode Selection
+
+- The active agent mode is set by the server-side configuration parameter `AGENT_MODE`.
+- Valid values: `full` (default) and `lite`.
+- The mode applies for the lifetime of the server process and cannot be changed per-session.
+- If `AGENT_MODE` is set to an unrecognised value, the system must log a warning and operate in `full` mode.
+- At startup, the server must log the active agent mode before accepting any connections (e.g. `AGENT_MODE=lite active`).
+
+### 14.2 Feature Comparison
+
+The table below provides a complete at-a-glance overview of which features are active in each mode. Detailed rules follow in the per-mode sections.
+
+| Feature | `full` | `lite` |
+|---|---|---|
+| Active conversation stages | GREETING, TRIAGE, CLARIFY, CONFIRMATION, TOOL_EXECUTION, FINALIZE, RECOVERY, COMPLETED, PROVIDER_PITCH, PROVIDER_ONBOARDING | GREETING, TRIAGE, CLARIFY, CONFIRMATION, FINALIZE, RECOVERY, COMPLETED |
+| Voice (STT / TTS / WebRTC audio) | Yes | No — text only |
+| Google Places external search | Not used — internal search index only | Always active |
+| FINALIZE: user selects a provider | Yes — multi-turn, user accepts or rejects | No — results presented as list, auto-advance to COMPLETED |
+| Service request creation | Yes | No |
+| Favorites retrieval | Yes | No |
+| Open service request retrieval | Yes | No |
+| Provider pitch (30-day cycle) | Yes | No |
+| Provider onboarding | Yes | No |
+| MRI: contextual details (min. 3) | Required | Not required |
+| MRI: location | Required when GP enabled; soft-ask otherwise | Always required |
+| Soft-asks (budget, etc.) | Yes | No |
+| Chat message persistence | Yes (30-day TTL) | Yes (30-day TTL) |
+
+### 14.3 Full Mode
+
+- `full` is the default mode. It corresponds to the complete conversation behaviour described in all other sections of this specification.
+- No behaviour from any section is skipped or modified in `full` mode.
+- Google Places is never instantiated, queried, or referenced in full mode, regardless of whether a `GOOGLE_PLACES_API_KEY` is present in the environment. Provider discovery uses only the internal search index.
+
+### 14.4 Lite Mode
+
+Lite mode provides a simplified conversation experience optimised for fast, Google Places-backed provider discovery with minimal friction.
+
+#### Stages and Transitions
+
+The GREETING, TRIAGE, CLARIFY, CONFIRMATION, FINALIZE, COMPLETED, and RECOVERY stages are active. The TOOL_EXECUTION, PROVIDER_PITCH, and PROVIDER_ONBOARDING stages are not accessible in lite mode; any transition targeting them is treated as an illegal transition and silently ignored.
+
+| Current Stage | Allowed Next Stages |
+|---|---|
+| `GREETING` | `TRIAGE` |
+| `TRIAGE` | `CONFIRMATION`, `CLARIFY`, `RECOVERY` |
+| `CLARIFY` | `TRIAGE` |
+| `CONFIRMATION` | `FINALIZE`, `TRIAGE` |
+| `FINALIZE` | `COMPLETED`, `RECOVERY`, `TRIAGE` |
+| `COMPLETED` | `TRIAGE` |
+| `RECOVERY` | `TRIAGE` |
+
+#### Minimum Required Information (MRI)
+
+In lite mode, the AI must collect exactly three items before it is permitted to advance to CONFIRMATION:
+
+1. **Service type / core intent** — what the user needs.
+2. **Location** — a city or region (always a hard requirement in lite mode, not a soft-ask).
+3. **Availability or urgency** — a preferred time slot or degree of urgency.
+
+No additional contextual details are required. The User Override Exception from §3.4 still applies: if the user explicitly refuses further detail, the AI proceeds immediately.
+
+The table below compares MRI requirements across modes:
+
+| MRI Element | Full Mode | Lite Mode |
+|---|---|---|
+| Core intent (service type) | Required | Required |
+| Contextual details (minimum 3) | Required | Not required |
+| Availability or urgency | Required | Required |
+| Location | Required when GP enabled; soft-ask for in-person services otherwise | Always required |
+| Budget (soft-ask) | Asked once if clearly relevant | Not asked |
+| Exact dates | Resolved internally; user not asked to re-state as ISO date | Same |
+| Soft-asks in general | Yes | No |
+
+#### FINALIZE Behaviour
+
+- The GP-backed provider search runs on entry to FINALIZE (identical pipeline to full mode: GP query generation → GP fetch → Weaviate upsert → Weaviate hybrid search).
+- After presenting the results to the user as a list, the system automatically advances to COMPLETED. The user is not asked to accept or reject a specific provider. No service request is created in Firestore.
+- If the search returns zero results, the system transitions to TRIAGE (not COMPLETED), informing the user that no match was found and inviting them to refine their request.
+
+#### Provider Pitch
+
+The provider pitch eligibility check that normally fires when COMPLETED is reached does not apply in lite mode. COMPLETED always transitions to TRIAGE if the user indicates a new need, and to session end otherwise.
+
+#### Available Tools
+
+The table below lists all registered tools and their availability per mode. Tools marked as unavailable in lite mode must not be dispatched; any LLM attempt to call them must be rejected with a permission error, identical to an insufficient `ToolCapability` error.
+
+| Tool | Full Mode | Lite Mode | Notes |
+|---|---|---|---|
+| `search_providers` | ✓ | ✓ | GP-backed in lite (always active) |
+| `get_favorites` | ✓ | ✗ | Not applicable in lite |
+| `get_open_requests` | ✓ | ✗ | Not applicable in lite |
+| `create_service_request` | ✓ | ✗ | No service requests in lite |
+| `record_provider_interest` | ✓ | ✗ | No provider pitch/onboarding in lite |
+| `get_my_competencies` | ✓ | ✗ | No provider onboarding in lite |
+| `save_competence_batch` | ✓ | ✗ | No provider onboarding in lite |
+| `delete_competences` | ✓ | ✗ | No provider onboarding in lite |
+
+#### Stage Behaviour Summary
+
+The table below describes how each active stage behaves differently in lite mode compared to full mode. Stages not listed behave identically in both modes.
+
+| Stage | Full Mode | Lite Mode |
+|---|---|---|
+| `TRIAGE` | Collects core intent + minimum 3 contextual details + availability + location (when GP enabled) + optional soft-asks | Collects core intent + location + availability or urgency only; no contextual details required; no soft-asks |
+| `CONFIRMATION` | 2–3 sentence summary of the fully scoped request including all MRI fields | 1–2 sentence summary covering service type, location, and timing only |
+| `FINALIZE` | Multi-turn: presents providers, waits for user to accept or reject; user can cancel search; service request written to Firestore on acceptance | Single-turn: presents GP results as a numbered list, then immediately and automatically transitions to COMPLETED; no user acceptance step; no Firestore write |
+| `COMPLETED` | Triggers provider pitch when user is eligible; asks if user needs anything else | No provider pitch; simply asks if the user needs anything else |
+
+#### Google Places
+
+Google Places external search is always active in lite mode, regardless of any GP-specific flag. If the Google Places API key is absent or the service is unreachable, lite mode degrades gracefully: the user is informed, and the search falls back to the internal Weaviate index only.
+
+#### Text-Only Constraint
+
+Lite mode is strictly text-based. The following are prohibited in lite mode:
+
+- Accepting microphone audio or WebRTC voice tracks from clients.
+- Running the speech-to-text pipeline (STT / gRPC audio stream).
+- Synthesising or streaming text-to-speech audio output (TTS).
+- Playing or queuing any audio in the output pipeline.
+
+If a client attempts to establish a lite-mode session with `?mode=voice`, the server must reject the combination, log a warning, and either refuse the connection or silently downgrade to text mode. A lite-mode server must not accept voice sessions under any circumstance.
+
+Because audio is absent, the lite-mode session always behaves as a text session: `skip_greeting` audio is implicit, no spoken greeting is synthesised, and the initial text greeting is dispatched over the DataChannel exactly as described in §3.1 for text mode.
+
+#### Chat Message Persistence
+
+AI conversation messages are persisted to Firestore in lite mode, using the same 30-day TTL rules as full mode.
+
+### 14.5 Invariants Shared Across Both Modes
+
+- The low-level transport and audio state machine (BOOTSTRAP → DATA_CHANNEL_WAIT → LISTENING → THINKING → LLM_STREAMING → TOOL_EXECUTING → SPEAKING → INTERRUPTING → MODE_SWITCH → ERROR_RETRYABLE → TERMINATED) operates identically in both modes. In lite mode, the states SPEAKING and INTERRUPTING are not reachable in practice because no audio output is produced.
+- Lite mode supports text session sub-mode only. Full mode supports both voice and text sub-modes.
+- Streaming delivery and the DataChannel protocol behave identically in both modes.
+- Interrupt handling for text input (arriving while the LLM is streaming) applies in both modes. Voice interrupt handling is not applicable in lite mode.
+- Language enforcement (§3.1) applies in both modes without exception.
+- The single-acknowledgement rule and silent fast-path transition rules (§3.7, §3.8) apply in both modes.

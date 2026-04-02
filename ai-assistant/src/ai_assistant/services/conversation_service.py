@@ -14,6 +14,7 @@ from langchain_core.messages import HumanMessage
 
 if TYPE_CHECKING:
     from .google_places_service import GooglePlacesService
+    from .agent_profile import AgentProfile
 
 from ..data_provider import DataProvider, SearchUnavailableError
 from ..prompts_templates import (
@@ -28,6 +29,7 @@ from ..prompts_templates import (
     PROVIDER_ONBOARDING_PROMPT,
     get_language_instruction,
     get_greeting_fallback,
+    get_prompt,
 )
 from .cross_encoder_service import CrossEncoderService
 from .llm_service import LLMService
@@ -101,7 +103,8 @@ class ConversationService:
                  agent_name: str = "Elin", company_name: str = "Linkora",
                  max_providers: int = 5, language: str = 'de',
                  cross_encoder_service: CrossEncoderService | None = None,
-                 google_places_service: "GooglePlacesService | None" = None) -> None:
+                 google_places_service: "GooglePlacesService | None" = None,
+                 profile: "AgentProfile | None" = None) -> None:
         """
         Initialize Conversation service.
 
@@ -116,9 +119,13 @@ class ConversationService:
                 provided, providers returned by Weaviate are reranked before
                 being stored in ``context["providers_found"]``.
             google_places_service: Optional Google Places service.  When
-                provided and ``GooglePlacesService.is_enabled()`` is True,
+                provided and the profile has ``google_places_always_active=True``,
                 GP results are fetched and upserted before the Weaviate search.
+            profile: Agent capability profile.  Defaults to ``FULL_PROFILE`` when
+                ``None``.
         """
+        from .agent_profile import FULL_PROFILE
+
         self.llm_service = llm_service
         self.data_provider = data_provider
         self.agent_name = agent_name
@@ -127,6 +134,7 @@ class ConversationService:
         self.language = language
         self.cross_encoder_service = cross_encoder_service
         self.google_places_service = google_places_service
+        self._profile = profile if profile is not None else FULL_PROFILE
 
         self.current_stage: ConversationStage = ConversationStage.GREETING
         self.context: dict[str, Any] = {
@@ -186,8 +194,9 @@ class ConversationService:
             language_instruction = get_language_instruction(self.language, fallback_from=fallback_from)
             user_name = self.context.get("user_name", "")
             has_open_request = "Yes" if self.context.get("has_open_request", False) else "No"
+            prompt_str = get_prompt(self._profile.prompt_key, stage)
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(GREETING_AND_TRIAGE_PROMPT).format(
+                SystemMessagePromptTemplate.from_template(prompt_str).format(
                     agent_name=self.agent_name,
                     company_name=self.company_name,
                     user_name=user_name,
@@ -202,10 +211,9 @@ class ConversationService:
             user_name = self.context.get("user_name", "")
             language_instruction = get_language_instruction(self.language)
             # GP enabled: location becomes mandatory — inject the MRI instruction.
-            from .google_places_service import GooglePlacesService
             gp_active = (
-                self.google_places_service is not None
-                and GooglePlacesService.is_enabled()
+                self._profile.google_places_always_active
+                and self.google_places_service is not None
             )
             location_mri_instruction = (
                 "IMPORTANT: Location is a MANDATORY requirement before you may proceed to "
@@ -216,7 +224,7 @@ class ConversationService:
                 if gp_active else ""
             )
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(TRIAGE_CONVERSATION_PROMPT).format(
+                SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
                     user_name=user_name,
                     language_instruction=language_instruction,
@@ -235,10 +243,9 @@ class ConversationService:
             language_name = "German" if self.language == "de" else "English"
 
             # GP announcement — controls first-entry vs. already-announced behaviour
-            from .google_places_service import GooglePlacesService
             gp_active = (
-                self.google_places_service is not None
-                and GooglePlacesService.is_enabled()
+                self._profile.google_places_always_active
+                and self.google_places_service is not None
             )
             gp_used = self.context.get("google_places_used", False)
             gp_error = self.context.get("google_places_error", False)
@@ -280,7 +287,7 @@ class ConversationService:
             )
 
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(FINALIZE_SERVICE_REQUEST_PROMPT).format(
+                SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
                     provider_json=provider_json,
                     language_instruction=language_instruction,
@@ -297,26 +304,27 @@ class ConversationService:
             ConversationStage.CONFIRMATION,
             ConversationStage.RECOVERY,
         ):
-            # Map each stage to its dedicated prompt template
-            stage_prompt_map = {
-                ConversationStage.CLARIFY: CLARIFY_PROMPT,
-                ConversationStage.CONFIRMATION: CONFIRMATION_PROMPT,
-                ConversationStage.RECOVERY: RECOVERY_PROMPT,
-                # TOOL_EXECUTION: reuse triage until a dedicated template is needed
-                ConversationStage.TOOL_EXECUTION: TRIAGE_CONVERSATION_PROMPT,
-            }
-            template = stage_prompt_map.get(stage, TRIAGE_CONVERSATION_PROMPT)
-            # TRIAGE_CONVERSATION_PROMPT requires user_name and location_mri_instruction;
-            # others only need agent_name
+            # Resolve prompt template string via profile key.
+            # TOOL_EXECUTION falls back to "triage" when not in the profile's prompt set.
+            _stage_key = str(stage)
+            try:
+                template_str = get_prompt(self._profile.prompt_key, _stage_key)
+            except KeyError:
+                # Lite profile has no tool_execution entry — fall back to triage
+                template_str = get_prompt(self._profile.prompt_key, "triage")
+
+            # Determine whether this template needs TRIAGE-level format args.
+            # We detect this by checking whether the template string references
+            # {location_mri_instruction} which only triage-style templates use.
+            _is_triage_template = "{location_mri_instruction}" in template_str
             fmt_kwargs: dict = {"agent_name": self.agent_name}
-            if template is TRIAGE_CONVERSATION_PROMPT:
+            if _is_triage_template:
                 fmt_kwargs["user_name"] = self.context.get("user_name", "")
                 fmt_kwargs["language_instruction"] = get_language_instruction(self.language)
-                # GP flag: pass empty instruction so no KeyError on format()
-                from .google_places_service import GooglePlacesService
+                # GP flag: pass empty or active MRI instruction
                 gp_active = (
-                    self.google_places_service is not None
-                    and GooglePlacesService.is_enabled()
+                    self._profile.google_places_always_active
+                    and self.google_places_service is not None
                 )
                 fmt_kwargs["location_mri_instruction"] = (
                     "IMPORTANT: Location is a MANDATORY requirement before you may proceed to "
@@ -327,7 +335,7 @@ class ConversationService:
                     if gp_active else ""
                 )
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(template).format(
+                SystemMessagePromptTemplate.from_template(template_str).format(
                     **fmt_kwargs
                 ),
                 MessagesPlaceholder(variable_name="history"),
@@ -337,7 +345,7 @@ class ConversationService:
         elif stage == ConversationStage.PROVIDER_PITCH:
             language_instruction = get_language_instruction(self.language)
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(PROVIDER_PITCH_PROMPT).format(
+                SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
                     language_instruction=language_instruction,
                 ),
@@ -362,7 +370,7 @@ class ConversationService:
                 else ""
             )
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(PROVIDER_ONBOARDING_PROMPT).format(
+                SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
                     language_instruction=language_instruction,
                     current_competencies_json=current_competencies_json,
@@ -376,7 +384,7 @@ class ConversationService:
         elif stage == ConversationStage.COMPLETED:
             language_instruction = get_language_instruction(self.language)
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(LOOP_BACK_PROMPT).format(
+                SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
                     language_instruction=language_instruction,
                 ),
@@ -600,10 +608,9 @@ class ConversationService:
         # Stage 2 (GP): fetch & ingest Google Places providers while the
         # Weaviate hot path is reading the index.  GP writes happen before
         # the Weaviate read so new nodes are visible in Stage 3.
-        from .google_places_service import GooglePlacesService
         gp_active = (
-            self.google_places_service is not None
-            and GooglePlacesService.is_enabled()
+            self._profile.google_places_always_active
+            and self.google_places_service is not None
         )
         if gp_active:
             gp_result = await self._run_gp_pipeline(
