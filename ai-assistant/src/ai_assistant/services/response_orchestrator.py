@@ -26,6 +26,17 @@ from ..data_provider import SearchUnavailableError  # noqa: F401 (used below)
 
 logger = logging.getLogger(__name__)
 
+
+def _extract_user_text_from_system_event(raw_text: str) -> str:
+    """Extract user text from a buffered system-event wrapper when present."""
+    clean = raw_text.strip()
+    # Preferred format: [System Event: ... message: "<user text>"]
+    msg_match = re.search(r'message:\s*"([^\"]*)"', clean)
+    if msg_match:
+        return msg_match.group(1).strip()
+    # Fallback: remove only the leading wrapper and keep trailing user text.
+    return re.sub(r'^\[System Event:[^\]]+\]\s*', '', clean).strip()
+
 # Matches known tool-call names leaked as plain text — e.g. signal_transition(target_stage="finalize").
 # Intentionally restricted to tool names registered in build_default_registry so that
 # normal prose containing parentheses ("call me (555) 123-4567") is never stripped.
@@ -33,7 +44,7 @@ _KNOWN_TOOL_NAMES_RE = re.compile(
     r'\b(?:signal_transition|search_providers|get_favorites|get_open_requests'
     r'|create_service_request|cancel_service_request|record_provider_interest|get_my_competencies'
     r'|save_competence_batch|delete_competences'
-    r'|accept_provider|reject_and_fetch_next|cancel_search)\s*\([^)]*\)'
+    r'|accept_provider|reject_and_fetch_next|cancel_search|retry_search)\s*\([^)]*\)'
 )
 
 def _strip_tool_call_text(text: str) -> str:
@@ -157,8 +168,17 @@ class ResponseOrchestrator:
                     logger.warning(
                         "Weaviate unavailable during FINALIZE provider search — diverting to RECOVERY."
                     )
+                    self.conversation_service.context["search_outage_pending"] = True
+                    self.conversation_service.context["search_failure_count"] = (
+                        self.conversation_service.context.get("search_failure_count", 0) + 1
+                    )
                     self.handle_signal_transition("recovery")
+                    pending.append(("signal_transition", {"stage": "recovery"}))
                     return True
+                # Successful search: clear outage flags/counters so only
+                # consecutive failures trigger the circuit-breaker behavior.
+                self.conversation_service.context.pop("search_outage_pending", None)
+                self.conversation_service.context.pop("search_failure_count", None)
                 # Read providers stored by search_providers_for_request; avoids
                 # the previous `await … or []` pattern that overwrote context.
                 providers = self.conversation_service.context.get("providers_found", [])
@@ -249,7 +269,19 @@ class ResponseOrchestrator:
                         "Preserved triggering utterance '%s...' for new TRIAGE session",
                         triggering_utterance[:50],
                     )
+            # Clear outage flags whenever we settle into TRIAGE
+            self.conversation_service.context.pop("search_outage_pending", None)
+            self.conversation_service.context.pop("search_failure_count", None)
             pending.append(("signal_transition", {"stage": "triage"}))
+
+        elif target_stage == ConversationStage.CONFIRMATION:
+            if previous_stage == ConversationStage.RECOVERY:
+                # RECOVERY → CONFIRMATION: outage-retry path.
+                # The draft is already intact; just clear the outage flag so the
+                # next FINALIZE attempt starts cleanly.
+                self.conversation_service.context.pop("search_outage_pending", None)
+                logger.info("RECOVERY → CONFIRMATION: outage retry path, draft preserved.")
+            pending.append(("signal_transition", {"stage": "confirmation"}))
 
         else:
             pending.append(("signal_transition", {"stage": target}))
@@ -413,6 +445,18 @@ class ResponseOrchestrator:
         if follow_up_stage == ConversationStage.FINALIZE:
             self.llm_service.register_functions(session_id, list(FINALIZE_TOOL_SCHEMAS))
 
+        # ── Accumulate problem description on CONFIRMATION → TRIAGE bounce-back ──
+        # When the user sends a correction from CONFIRMATION (e.g. "change the
+        # location to Munich"), the main-stream body skips accumulation because
+        # current_stage was CONFIRMATION.  Accumulate here so the Weaviate search
+        # query used in the subsequent FINALIZE stage reflects the correction.
+        # System-event wrappers (reconnection/dormant-UI buffered messages) are
+        # stripped first so only the user's actual words are stored.
+        if follow_up_stage == ConversationStage.TRIAGE and actual_input.strip():
+            _clean_acc = _extract_user_text_from_system_event(actual_input)
+            if _clean_acc and _clean_acc != " ":
+                await self.conversation_service.accumulate_problem_description(_clean_acc)
+
         # Extract zero_result_event hint from any triage payload (set by reject_and_fetch_next
         # when the provider list is exhausted) so we can inject it into the human turn.
         _zero_event: str | None = None
@@ -448,7 +492,7 @@ class ResponseOrchestrator:
                     )
                 else:
                     # FINALIZE-stage tools are intercepted here.
-                    if fu_name in ("accept_provider", "reject_and_fetch_next", "cancel_search"):
+                    if fu_name in ("accept_provider", "reject_and_fetch_next", "cancel_search", "retry_search"):
                         await self._handle_finalize_tool(
                             fu_name, fu_args, session_id, context, new_pending
                         )
@@ -614,6 +658,49 @@ class ResponseOrchestrator:
                 ),
             }))
 
+        elif fn_name == "retry_search":
+            logger.info("retry_search called — clearing provider cache and re-running search.")
+            # Clear the cached result set so the orchestrator performs a fresh query.
+            self.conversation_service.context["providers_found"] = []
+            self.conversation_service.context["current_provider_index"] = 0
+            await self.conversation_service.search_providers_for_request(session_id)
+            if self.conversation_service.context.pop("search_error", None) == "unavailable":
+                logger.warning("retry_search: Weaviate unavailable — diverting to RECOVERY.")
+                self.conversation_service.context["search_outage_pending"] = True
+                self.conversation_service.context["search_failure_count"] = (
+                    self.conversation_service.context.get("search_failure_count", 0) + 1
+                )
+                self.handle_signal_transition("recovery")
+                pending.append(("signal_transition", {"stage": "recovery"}))
+                return
+            # Successful retry search: clear outage flags/counters.
+            self.conversation_service.context.pop("search_outage_pending", None)
+            self.conversation_service.context.pop("search_failure_count", None)
+            fresh_providers = self.conversation_service.context.get("providers_found", [])
+            if not fresh_providers:
+                logger.info("retry_search: zero results — returning to TRIAGE.")
+                await self._apply_signal_transition_with_payload(
+                    "triage", session_id, context, pending, user_input=""
+                )
+                for _, ppayload in pending:
+                    if (
+                        isinstance(ppayload, dict)
+                        and ppayload.get("stage") == "triage"
+                        and "zero_result_event" not in ppayload
+                    ):
+                        ppayload["zero_result_event"] = (
+                            "The search found no matching providers this time either. "
+                            "Apologise briefly and invite the user to adjust their criteria."
+                        )
+                        break
+            else:
+                # Reset cursor and present the first result from the fresh list.
+                self.conversation_service.context["current_provider_index"] = 0
+                pending.append(("retry_search", {
+                    "status": "results_refreshed",
+                    "current_provider": fresh_providers[0],
+                }))
+
     async def generate_response_stream(
         self,
         user_input: str,
@@ -659,6 +746,15 @@ class ResponseOrchestrator:
                 user_input[:50], current_stage,
             )
 
+            # ── CONFIRMATION stuck-stage diagnostic counter ─────────────────────
+            # Track how many consecutive turns the conversation has been in
+            # CONFIRMATION without calling a transition tool.  A count > 1 with no
+            # tool call means the LLM re-generated the summary instead of routing.
+            if current_stage == ConversationStage.CONFIRMATION:
+                self.conversation_service.context["confirmation_turns"] = (
+                    self.conversation_service.context.get("confirmation_turns", 0) + 1
+                )
+
             # Persist the user turn (fire-and-forget — don't block LLM start)
             if self.ai_conversation_service:
                 asyncio.create_task(
@@ -667,9 +763,14 @@ class ResponseOrchestrator:
                     )
                 )
 
-            # Accumulate problem description only during triage
+            # Accumulate problem description only during triage.
+            # Strip any system-event wrapper (e.g. '[System Event: ... "msg"]')
+            # before accumulating so buffered-message prefixes don't pollute the
+            # Weaviate search query used in FINALIZE.
             if current_stage == ConversationStage.TRIAGE:
-                await self.conversation_service.accumulate_problem_description(user_input)
+                clean_input = _extract_user_text_from_system_event(user_input)
+                if clean_input:
+                    await self.conversation_service.accumulate_problem_description(clean_input)
 
             # Pre-fetch competencies for ongoing PROVIDER_ONBOARDING turns so the
             # stage prompt always has the up-to-date list without the LLM calling
@@ -737,6 +838,11 @@ class ResponseOrchestrator:
                 if first_chunk:
                     self.runtime_fsm.transition("llm_stream_started")
                     first_chunk = False
+                    # Clear first-message flag on the first successful LLM chunk so
+                    # retries see the same greeting intent but the next distinct turn
+                    # doesn't re-greet.  Only relevant for TRIAGE.
+                    if current_stage == ConversationStage.TRIAGE:
+                        self.conversation_service.context.pop("is_first_message", None)
 
                 if isinstance(chunk, dict) and chunk.get("type") == "function_call":
                     fn_name = chunk.get("name", "")
@@ -768,7 +874,7 @@ class ResponseOrchestrator:
                         # FINALIZE-stage tools are intercepted here and never
                         # dispatched through the registry.
                         tool_result = None
-                        if fn_name in ("accept_provider", "reject_and_fetch_next", "cancel_search"):
+                        if fn_name in ("accept_provider", "reject_and_fetch_next", "cancel_search", "retry_search"):
                             self.runtime_fsm.transition("tool_call")
                             tool_calls_seen = True
                             await self._handle_finalize_tool(
@@ -931,6 +1037,24 @@ class ResponseOrchestrator:
                     "Follow-up chain still had %d pending item(s) after %d iterations — "
                     "discarding to prevent unbounded recursion.",
                     len(current_pending), MAX_FOLLOW_UP_DEPTH,
+                )
+
+            # ── Stuck-stage diagnostic: CONFIRMATION loop guard ──────────────────
+            # If CONFIRMATION generated text on the second (or later) user turn
+            # without calling any transition tool, the LLM ignored the Decision Gate
+            # and re-summarised.  Log a warning so it surfaces in the backend logs.
+            _conf_turns = self.conversation_service.context.get("confirmation_turns", 0)
+            if (
+                current_stage == ConversationStage.CONFIRMATION
+                and _conf_turns > 1
+                and not tool_calls_seen
+            ):
+                logger.warning(
+                    "CONFIRMATION stuck-stage: turn %d produced text without a "
+                    "signal_transition — LLM likely ignored the Decision Gate "
+                    "(user_input=%r).",
+                    _conf_turns,
+                    user_input[:80],
                 )
 
             # ── Safety fallback: stuck-in-FINALIZE guard ─────────────────────────

@@ -100,7 +100,7 @@ def init_hub_spoke_schema() -> bool | None:
             try:
                 client.collections.create(
                     name=COMPETENCE_COLLECTION,
-                    vector_config=Configure.Vectors.text2vec_model2vec(),
+                    vector_config=Configure.Vectors.text2vec_model2vec(),  # type: ignore[attr-defined]
                     properties=[
                         Property(name="competence_id", data_type=DataType.TEXT,
                                  skip_vectorization=True),  # Link to Firestore ID
