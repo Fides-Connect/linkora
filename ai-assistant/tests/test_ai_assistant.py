@@ -54,12 +54,14 @@ def ai_assistant(mock_data_provider):
         mock_conv.return_value = mock_conv_instance
         
         # Setup conversation service properties
-        mock_conv_instance.get_current_stage = Mock(return_value=ConversationStage.GREETING)
+        mock_conv_instance.get_current_stage = Mock(return_value=ConversationStage.TRIAGE)
         mock_conv_instance.context = {
             "user_problem": [],
             "providers_found": [],
             "current_provider_index": 0,
+            "is_first_message": False,
         }
+        mock_conv_instance.accumulate_problem_description = AsyncMock()
         
         assistant = AIAssistant(
             gemini_api_key='test-api-key',

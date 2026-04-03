@@ -54,7 +54,6 @@ ConnectX (Flutter) ──WS signaling──► SignalingServer
 
 | From | To (allowed) |
 |---|---|
-| `GREETING` | `TRIAGE` |
 | `TRIAGE` | `CONFIRMATION`, `CLARIFY`, `TOOL_EXECUTION`, `RECOVERY`, `PROVIDER_ONBOARDING` |
 | `CLARIFY` | `TRIAGE` |
 | `TOOL_EXECUTION` | `TRIAGE`, `CONFIRMATION`, `FINALIZE` |
