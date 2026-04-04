@@ -1009,7 +1009,23 @@ FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA: dict[str, Any] = {
     "name": "cancel_search",
     "description": (
         "Cancel the entire provider search and return to the start. "
-        "Call this when the user abandons the search entirely (e.g. 'Forget it', 'Never mind')."
+        "Call this when the user abandons the search entirely (e.g. 'Forget it', 'Never mind', "
+        "'I changed my mind', 'I want to start over with a different request')."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    },
+}
+
+FINALIZE_TOOL_RETRY_SEARCH_SCHEMA: dict[str, Any] = {
+    "name": "retry_search",
+    "description": (
+        "Re-run the provider search with the same criteria, returning fresh results. "
+        "Call this when the user wants to search again without abandoning the current request "
+        "(e.g. 'Try again', 'Search again', 'Show me different results', 'Restart the search'). "
+        "Unlike cancel_search, this does NOT clear the request draft or leave FINALIZE."
     ),
     "parameters": {
         "type": "object",
@@ -1058,5 +1074,6 @@ FINALIZE_TOOL_SCHEMAS: list[dict[str, Any]] = [
     FINALIZE_TOOL_ACCEPT_PROVIDER_SCHEMA,
     FINALIZE_TOOL_REJECT_AND_FETCH_NEXT_SCHEMA,
     FINALIZE_TOOL_CANCEL_SEARCH_SCHEMA,
+    FINALIZE_TOOL_RETRY_SEARCH_SCHEMA,
     FINALIZE_TOOL_GENERATE_CONTACT_TEMPLATE_SCHEMA,
 ]

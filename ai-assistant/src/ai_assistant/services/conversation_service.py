@@ -57,7 +57,6 @@ def json_serializer(obj: object) -> str:
 
 class ConversationStage(StrEnum):
     """External conversation stage — owned exclusively by ResponseOrchestrator."""
-    GREETING      = "greeting"
     TRIAGE        = "triage"
     CLARIFY       = "clarify"
     TOOL_EXECUTION = "tool_execution"
@@ -71,7 +70,6 @@ class ConversationStage(StrEnum):
 
 # Legal stage transitions: { from_stage: { allowed_to_stages } }
 _LEGAL_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
-    ConversationStage.GREETING:       [ConversationStage.TRIAGE],
     ConversationStage.TRIAGE:         [ConversationStage.CONFIRMATION, ConversationStage.CLARIFY,
                                        ConversationStage.TOOL_EXECUTION, ConversationStage.RECOVERY,
                                        ConversationStage.PROVIDER_ONBOARDING],
@@ -80,7 +78,7 @@ _LEGAL_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
                                        ConversationStage.FINALIZE],
     ConversationStage.CONFIRMATION:   [ConversationStage.FINALIZE, ConversationStage.TRIAGE],
     ConversationStage.FINALIZE:       [ConversationStage.COMPLETED, ConversationStage.RECOVERY, ConversationStage.TRIAGE],
-    ConversationStage.RECOVERY:       [ConversationStage.TRIAGE],
+    ConversationStage.RECOVERY:       [ConversationStage.TRIAGE, ConversationStage.CONFIRMATION],
     ConversationStage.COMPLETED:      [ConversationStage.PROVIDER_PITCH, ConversationStage.TRIAGE],
     ConversationStage.PROVIDER_PITCH: [ConversationStage.PROVIDER_ONBOARDING, ConversationStage.COMPLETED,
                                        ConversationStage.TRIAGE],
@@ -136,7 +134,7 @@ class ConversationService:
         self.google_places_service = google_places_service
         self._profile = profile if profile is not None else FULL_PROFILE
 
-        self.current_stage: ConversationStage = ConversationStage.GREETING
+        self.current_stage: ConversationStage = ConversationStage.TRIAGE
         self.context: dict[str, Any] = {
             "user_problem": [],
             "ai_responses": [],
@@ -159,6 +157,11 @@ class ConversationService:
             "google_places_used": False,
             "google_places_error": False,
             "google_places_announced": False,
+            # Set True on session creation; cleared by ResponseOrchestrator after
+            # the first successful LLM response in TRIAGE.  When True the TRIAGE
+            # prompt greets the user instead of scoping immediately.  .get() must
+            # be used (not .pop()) so LLM retries preserve the greeting intent.
+            "is_first_message": True,
         }
 
         logger.info("Conversation service initialized: agent=%s, company=%s", agent_name, company_name)
@@ -176,6 +179,9 @@ class ConversationService:
         """
         logger.info("Stage transition: %s -> %s", self.current_stage, stage)
         self.current_stage = stage
+        # Reset the per-stage turn counter used for stuck-stage diagnostics.
+        # Cleared on every transition so the counter starts fresh in each stage.
+        self.context.pop("confirmation_turns", None)
 
     def create_prompt_for_stage(self, stage: ConversationStage) -> ChatPromptTemplate:
         """
@@ -187,29 +193,44 @@ class ConversationService:
         Returns:
             ChatPromptTemplate for the stage
         """
-        if stage == ConversationStage.GREETING:
+        if stage == ConversationStage.TRIAGE:
             # B2: Pass any unsupported-language fallback note on the first turn only,
             # then clear it so subsequent prompts don't repeat it.
             fallback_from = self.context.pop("language_fallback_from", "")
             language_instruction = get_language_instruction(self.language, fallback_from=fallback_from)
             user_name = self.context.get("user_name", "")
-            has_open_request = "Yes" if self.context.get("has_open_request", False) else "No"
-            prompt_str = get_prompt(self._profile.prompt_key, stage)
-            return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(prompt_str).format(
-                    agent_name=self.agent_name,
-                    company_name=self.company_name,
-                    user_name=user_name,
-                    has_open_request=has_open_request,
-                    language_instruction=language_instruction
-                ),
-                MessagesPlaceholder(variable_name="history"),
-                ("human", "{input}")
-            ])
-
-        elif stage == ConversationStage.TRIAGE:
-            user_name = self.context.get("user_name", "")
-            language_instruction = get_language_instruction(self.language)
+            # Use .get() (not .pop()) so the flag survives LLM retries on the same
+            # turn.  ResponseOrchestrator clears it after the first successful chunk.
+            is_first_message = self.context.get("is_first_message", False)
+            if is_first_message:
+                name_clause = (
+                    f"Greet **{user_name}** warmly by name."
+                    if user_name
+                    else "Use a warm, generic greeting (e.g., 'Hello, welcome back!')."
+                )
+                has_open_request = "Yes" if self.context.get("has_open_request", False) else "No"
+                if has_open_request == "Yes":
+                    request_clause = (
+                        "Then acknowledge their active request: 'I see you have an open request with us.' "
+                        "Ask whether they'd like to check on it or if they have something new to discuss."
+                    )
+                else:
+                    request_clause = "Then ask an open, friendly question: 'How can I help you today?'"
+                greeting_instruction = (
+                    "**This is the very first message of the session — greet the user AND begin triage simultaneously:**\n"
+                    f"1. {name_clause}\n"
+                    f"2. {request_clause}\n"
+                    "Keep the greeting and opening question to 2–3 sentences total, then proceed directly to scoping as needed."
+                )
+            else:
+                greeting_instruction = (
+                    "**Never re-greet or re-echo:** The user has already been welcomed. "
+                    "Do NOT start your response with \"Hello\", \"Hi\", \"Welcome\", \"Good day\", "
+                    "or any greeting phrase. Do NOT paraphrase the user's request back to them as a "
+                    "preamble (e.g., \"No problem at all, I can help you find an electrician!\") before "
+                    "asking a scoping question. Jump directly to the first question or, if the request "
+                    "is already complete, to `signal_transition`."
+                )
             # GP enabled: location becomes mandatory — inject the MRI instruction.
             gp_active = (
                 self._profile.google_places_always_active
@@ -219,7 +240,7 @@ class ConversationService:
                 "IMPORTANT: Location is a MANDATORY requirement before you may proceed to "
                 "CONFIRMATION. You MUST ask for a city or region before any other "
                 "extended-context field. Do not call "
-                'signal_transition(target_stage=\"confirmation\") until the user has '
+                'signal_transition(target_stage="confirmation") until the user has '
                 "provided a location."
                 if gp_active else ""
             )
@@ -228,6 +249,7 @@ class ConversationService:
                     agent_name=self.agent_name,
                     user_name=user_name,
                     language_instruction=language_instruction,
+                    greeting_instruction=greeting_instruction,
                     location_mri_instruction=location_mri_instruction,
                 ),
                 MessagesPlaceholder(variable_name="history"),
@@ -325,6 +347,12 @@ class ConversationService:
             }
             if _is_triage_template:
                 fmt_kwargs["user_name"] = self.context.get("user_name", "")
+                # Non-first-message greeting instruction for TOOL_EXECUTION (reuses TRIAGE template).
+                fmt_kwargs["greeting_instruction"] = (
+                    "**Never re-greet or re-echo:** The user has already been welcomed. "
+                    "Do NOT start your response with \"Hello\", \"Hi\", \"Welcome\", \"Good day\", "
+                    "or any greeting phrase. Jump directly to the required response."
+                )
                 # GP flag: pass empty or active MRI instruction
                 gp_active = (
                     self._profile.google_places_always_active
@@ -334,10 +362,35 @@ class ConversationService:
                     "IMPORTANT: Location is a MANDATORY requirement before you may proceed to "
                     "CONFIRMATION. You MUST ask for a city or region before any other "
                     "extended-context field. Do not call "
-                    'signal_transition(target_stage=\"confirmation\") until the user has '
+                    'signal_transition(target_stage="confirmation") until the user has '
                     "provided a location."
                     if gp_active else ""
                 )
+            if stage == ConversationStage.RECOVERY:
+                outage_pending = self.context.get("search_outage_pending", False)
+                failure_count = self.context.get("search_failure_count", 0)
+                if outage_pending and failure_count >= 2:
+                    fmt_kwargs["recovery_context"] = (
+                        "\n**SPECIAL CONTEXT — PERSISTENT SEARCH OUTAGE:**\n"
+                        "The provider search has failed multiple consecutive times. "
+                        "Tell the user warmly that the search service is experiencing "
+                        "persistent issues and they should try again in a few minutes. "
+                        "Call `signal_transition(target_stage=\"triage\")` after delivering "
+                        "this message. Do NOT offer to retry the search right now.\n"
+                    )
+                elif outage_pending:
+                    fmt_kwargs["recovery_context"] = (
+                        "\n**SPECIAL CONTEXT — SEARCH TEMPORARILY UNAVAILABLE:**\n"
+                        "The provider search was temporarily unreachable. Inform the user "
+                        "there was a brief technical issue with the search. Ask if they "
+                        "would like to try again. "
+                        "If the user says yes or indicates they want to retry, call "
+                        "`signal_transition(target_stage=\"confirmation\")` — NOT \"triage\". "
+                        "If the user wants to change their request or abandon the search, "
+                        "call `signal_transition(target_stage=\"triage\")`.\n"
+                    )
+                else:
+                    fmt_kwargs["recovery_context"] = ""
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(template_str).format(
                     **fmt_kwargs

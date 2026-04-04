@@ -82,7 +82,6 @@ class AgentProfile:
 #: Full mode — identical to the historical ``_LEGAL_TRANSITIONS`` constant in
 #: ``conversation_service.py``.  Kept in sync manually.
 _FULL_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
-    ConversationStage.GREETING:       [ConversationStage.TRIAGE],
     ConversationStage.TRIAGE:         [
         ConversationStage.CONFIRMATION,
         ConversationStage.CLARIFY,
@@ -102,7 +101,7 @@ _FULL_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
         ConversationStage.RECOVERY,
         ConversationStage.TRIAGE,
     ],
-    ConversationStage.RECOVERY:       [ConversationStage.TRIAGE],
+    ConversationStage.RECOVERY:       [ConversationStage.TRIAGE, ConversationStage.CONFIRMATION],
     ConversationStage.COMPLETED:      [
         ConversationStage.PROVIDER_PITCH,
         ConversationStage.TRIAGE,
@@ -120,7 +119,6 @@ _FULL_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
 
 #: Lite mode — simplified stage set; no pitch, no onboarding, no TOOL_EXECUTION.
 _LITE_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
-    ConversationStage.GREETING:     [ConversationStage.TRIAGE],
     ConversationStage.TRIAGE:       [
         ConversationStage.CONFIRMATION,
         ConversationStage.CLARIFY,
@@ -134,7 +132,7 @@ _LITE_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
         ConversationStage.TRIAGE,
     ],
     ConversationStage.COMPLETED:    [ConversationStage.TRIAGE],
-    ConversationStage.RECOVERY:     [ConversationStage.TRIAGE],
+    ConversationStage.RECOVERY:     [ConversationStage.TRIAGE, ConversationStage.CONFIRMATION],
 }
 
 

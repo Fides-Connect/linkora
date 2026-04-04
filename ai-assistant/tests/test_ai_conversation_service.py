@@ -109,11 +109,11 @@ class TestSaveMessage:
         fs = _make_fs("conv_1")
         svc = AIConversationService(firestore_service=fs)
         await svc.open_session(user_id="u1", session_id="s1")
-        await svc.save_message(role="assistant", text="Hallo!", stage=ConversationStage.GREETING)
+        await svc.save_message(role="assistant", text="Hallo!", stage=ConversationStage.TRIAGE)
         call_args = fs.create_ai_conversation_message.call_args[0]
         assert call_args[2] == "assistant"
         assert call_args[3] == "Hallo!"
-        assert call_args[4] == ConversationStage.GREETING
+        assert call_args[4] == ConversationStage.TRIAGE
 
 
 # ─────────────────────────────────────────────────────────────────────────────

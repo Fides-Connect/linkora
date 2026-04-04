@@ -154,12 +154,22 @@ def test_available_tool_names_is_frozenset():
 
 # ── Transition table consistency ───────────────────────────────────────────────
 
-def test_full_profile_greeting_leads_to_triage():
-    assert ConversationStage.TRIAGE in FULL_PROFILE.legal_transitions[ConversationStage.GREETING]
+def test_full_profile_triage_is_initial_stage():
+    """TRIAGE is the entry point (GREETING stage was merged into TRIAGE)."""
+    assert ConversationStage.TRIAGE in FULL_PROFILE.legal_transitions
 
 
-def test_lite_profile_greeting_leads_to_triage():
-    assert ConversationStage.TRIAGE in LITE_PROFILE.legal_transitions[ConversationStage.GREETING]
+def test_lite_profile_triage_is_initial_stage():
+    """TRIAGE is the entry point (GREETING stage was merged into TRIAGE)."""
+    assert ConversationStage.TRIAGE in LITE_PROFILE.legal_transitions
+
+
+def test_full_profile_recovery_can_reach_confirmation():
+    assert ConversationStage.CONFIRMATION in FULL_PROFILE.legal_transitions[ConversationStage.RECOVERY]
+
+
+def test_lite_profile_recovery_can_reach_confirmation():
+    assert ConversationStage.CONFIRMATION in LITE_PROFILE.legal_transitions[ConversationStage.RECOVERY]
 
 
 def test_full_profile_finalize_can_reach_completed():
