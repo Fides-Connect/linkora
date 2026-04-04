@@ -241,6 +241,9 @@ class HubSpokeIngestion:
             "phone": user_data.get("phone") or "",
             "website": user_data.get("website") or "",
             "address": user_data.get("address") or "",
+            "photo_url": user_data.get("photo_url") or "",
+            "opening_hours": user_data.get("opening_hours") or "",
+            "maps_url": user_data.get("maps_url") or "",
         }
 
         try:
@@ -249,13 +252,13 @@ class HubSpokeIngestion:
                 user_collection.data.insert(properties=user_props, uuid=user_uuid)
                 logger.info("upsert_user: inserted GP User '%s' (UUID: %s)", user_data.get("name"), user_uuid)
             except UnexpectedStatusCodeError:
-                # Object already exists — replace in-place.
-                user_collection.data.replace(uuid=user_uuid, properties=user_props)
+                # Object already exists — patch in-place (PATCH preserves cross-references).
+                user_collection.data.update(uuid=user_uuid, properties=user_props)
                 logger.info("upsert_user: updated GP User '%s' (UUID: %s)", user_data.get("name"), user_uuid)
             except Exception as insert_exc:
                 err_str = str(insert_exc).lower()
                 if "already exist" in err_str or "conflict" in err_str or "422" in err_str:
-                    user_collection.data.replace(uuid=user_uuid, properties=user_props)
+                    user_collection.data.update(uuid=user_uuid, properties=user_props)
                     logger.info("upsert_user: replaced GP User '%s' (UUID: %s)", user_data.get("name"), user_uuid)
                 else:
                     raise
@@ -277,6 +280,7 @@ class HubSpokeIngestion:
                     "year_of_experience": 0,
                     "availability_tags": [],
                     "availability_text": "",
+                    "review_snippets": competence_data.get("review_snippets") or [],
                 }
                 competence_collection = get_competence_collection()
                 try:
@@ -293,7 +297,8 @@ class HubSpokeIngestion:
                         to=comp_uuid,
                     )
                 except UnexpectedStatusCodeError:
-                    competence_collection.data.replace(
+                    # PATCH preserves the owned_by cross-reference — replace() (PUT) would wipe it.
+                    competence_collection.data.update(
                         uuid=comp_uuid,
                         properties=comp_props,
                     )
@@ -301,7 +306,7 @@ class HubSpokeIngestion:
                 except Exception as comp_exc:
                     err_str = str(comp_exc).lower()
                     if "already exist" in err_str or "conflict" in err_str or "422" in err_str:
-                        competence_collection.data.replace(uuid=comp_uuid, properties=comp_props)
+                        competence_collection.data.update(uuid=comp_uuid, properties=comp_props)
                         logger.info("upsert_user: replaced GP Competence (UUID: %s)", comp_uuid)
                     else:
                         raise

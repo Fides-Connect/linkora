@@ -1,5 +1,4 @@
-"""
-Unit tests for competence management functions
+"""Unit tests for competence management functions
 Tests the add, update, and delete competence functions
 """
 import unittest
@@ -9,7 +8,6 @@ from typing import List, Dict, Any
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
 from src.ai_assistant.hub_spoke_ingestion import HubSpokeIngestion
 
 
@@ -227,6 +225,108 @@ class TestCompetenceManagement(unittest.TestCase):
         self.assertEqual(len(result['deleted_uuids']), 2)
         self.assertIn('comp-1', result['deleted_uuids'])
         self.assertIn('comp-2', result['deleted_uuids'])
+
+
+class TestUpsertUserUpdatePath(unittest.TestCase):
+    """Verify that upsert_user uses data.update() (PATCH) for existing GP objects.
+
+    data.replace() (PUT) wipes cross-references (owned_by, has_competencies)
+    which breaks the is_service_provider filter in hybrid search.  data.update()
+    (PATCH) preserves references while refreshing the vectorized properties.
+    """
+
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
+    def test_existing_competence_uses_update_not_replace(
+        self, mock_comp_collection, mock_user_collection
+    ):
+        """When Competence already exists, update() must be called (not replace()).
+
+        replace() strips the owned_by reference, making the Competence invisible
+        to the is_service_provider filter in hybrid search.
+        """
+        from weaviate.exceptions import UnexpectedStatusCodeError
+
+        user_coll = mock_user_collection.return_value
+        comp_coll = mock_comp_collection.return_value
+
+        # User insert succeeds on first try.
+        user_coll.data.insert = Mock(return_value=None)
+        user_coll.data.reference_add = Mock()
+
+        # Competence insert raises an error indicating the object already exists.
+        # The fallback handler checks for 'already exist'/'422' in the message
+        # and must call data.update() (PATCH), not data.replace() (PUT).
+        comp_coll.data.insert = Mock(
+            side_effect=Exception("422 already exists")
+        )
+        comp_coll.data.update = Mock(return_value=None)
+        comp_coll.data.replace = Mock()  # must NOT be called
+
+        HubSpokeIngestion.upsert_user(
+            user_data={
+                "uuid": "da1839e1-912e-5d8e-9582-6c3b4a3aa517",
+                "name": "CakesBerlin",
+                "is_service_provider": True,
+                "source": "google_places",
+            },
+            competence_data={
+                "uuid": "023ef526-7040-59bf-a3b2-69dc4c76f6a7",
+                "competence_id": "gp:ChIJAQCweNBPqEcRsUWIG5LVwQg",
+                "title": "CakesBerlin",
+                "description": "Custom wedding cakes in Berlin.",
+                "search_optimized_summary": "Berlin bakery specialising in custom wedding cakes.",
+                "category": "bakery",
+            },
+        )
+
+        comp_coll.data.update.assert_called_once()
+        comp_coll.data.replace.assert_not_called()
+
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_user_collection')
+    @patch('src.ai_assistant.hub_spoke_ingestion.get_competence_collection')
+    def test_existing_user_uses_update_not_replace(
+        self, mock_comp_collection, mock_user_collection
+    ):
+        """When User already exists, update() must be called (not replace()).
+
+        replace() strips the has_competencies reference.
+        """
+        from weaviate.exceptions import UnexpectedStatusCodeError
+
+        user_coll = mock_user_collection.return_value
+        comp_coll = mock_comp_collection.return_value
+
+        # User insert raises an error indicating the object already exists.
+        user_coll.data.insert = Mock(
+            side_effect=Exception("422 already exists")
+        )
+        user_coll.data.update = Mock(return_value=None)
+        user_coll.data.replace = Mock()  # must NOT be called
+
+        # Competence insert succeeds.
+        comp_coll.data.insert = Mock(return_value=None)
+        user_coll.data.reference_add = Mock()
+
+        HubSpokeIngestion.upsert_user(
+            user_data={
+                "uuid": "da1839e1-912e-5d8e-9582-6c3b4a3aa517",
+                "name": "CakesBerlin",
+                "is_service_provider": True,
+                "source": "google_places",
+            },
+            competence_data={
+                "uuid": "023ef526-7040-59bf-a3b2-69dc4c76f6a7",
+                "competence_id": "gp:ChIJAQCweNBPqEcRsUWIG5LVwQg",
+                "title": "CakesBerlin",
+                "description": "Custom wedding cakes in Berlin.",
+                "search_optimized_summary": "Berlin bakery specialising in custom wedding cakes.",
+                "category": "bakery",
+            },
+        )
+
+        user_coll.data.update.assert_called_once()
+        user_coll.data.replace.assert_not_called()
 
 
 if __name__ == '__main__':

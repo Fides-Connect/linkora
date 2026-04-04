@@ -2846,3 +2846,224 @@ class TestRecoveryToConfirmationTransition:
         mock_conversation_service.get_current_stage.return_value = ConversationStage.RECOVERY
         result = orchestrator.handle_signal_transition("finalize")
         assert result is False
+
+
+class TestLocaliseCardDescriptions:
+    """_build_provider_cards must return localised descriptions for non-English sessions."""
+
+    def _make_orchestrator(self, language: str):
+        llm = Mock()
+        llm.register_functions = Mock()
+        llm.add_message_to_history = Mock()
+
+        conv = Mock()
+        conv.language = language
+        conv.context = {"request_summary": "Hochzeitstorte für 50 Gäste", "user_name": "Thomas"}
+
+        registry = Mock()
+        registry.all_schemas.return_value = []
+
+        orch = ResponseOrchestrator(
+            llm_service=llm,
+            conversation_service=conv,
+            tool_registry=registry,
+        )
+        return orch
+
+    async def test_german_session_localises_descriptions(self):
+        """For a German session, _build_provider_cards calls _localise_card_descriptions."""
+        orch = self._make_orchestrator("de")
+        gp_results = [
+            {
+                "description": "This German cake shop specializes in custom wedding cakes.",
+                "search_optimized_summary": "This German cake shop specializes in custom wedding cakes.",
+                "user": {"name": "Cakery Berlin", "source": "google_places"},
+            }
+        ]
+        german_desc = "Berliner Konditorei für individuelle Hochzeitstorten."
+        orch._generate_card_reasoning = AsyncMock(return_value=["Great for weddings."])
+        orch._localise_card_descriptions = AsyncMock(return_value=[german_desc])
+        orch._build_email_template = AsyncMock(return_value=("Subj", "Body"))
+
+        cards = await orch._build_provider_cards(gp_results, "Hochzeitstorte")
+
+        orch._localise_card_descriptions.assert_called_once()
+        assert cards[0]["description"] == german_desc
+
+    async def test_english_session_skips_localisation(self):
+        """For an English session, _localise_card_descriptions is never called."""
+        orch = self._make_orchestrator("en")
+        stored_desc = "Custom wedding cakes for large events."
+        gp_results = [
+            {
+                "description": stored_desc,
+                "search_optimized_summary": stored_desc,
+                "user": {"name": "Cake Berlin", "source": "google_places"},
+            }
+        ]
+        orch._generate_card_reasoning = AsyncMock(return_value=["Good match."])
+        orch._localise_card_descriptions = AsyncMock(return_value=[])
+        orch._build_email_template = AsyncMock(return_value=("Subj", "Body"))
+
+        cards = await orch._build_provider_cards(gp_results, "wedding cake")
+
+        orch._localise_card_descriptions.assert_not_called()
+        assert cards[0]["description"] == stored_desc
+
+    async def test_localise_card_descriptions_returns_list(self):
+        """_localise_card_descriptions returns one localised string per provider."""
+        orch = self._make_orchestrator("de")
+        gp_results = [
+            {
+                "description": "English description A.",
+                "search_optimized_summary": "English description A.",
+                "user": {"name": "Provider A"},
+            },
+            {
+                "description": "English description B.",
+                "search_optimized_summary": "English description B.",
+                "user": {"name": "Provider B"},
+            },
+        ]
+        german_list = ["Deutscher Text A.", "Deutscher Text B."]
+        orch.llm_service.generate = AsyncMock(
+            return_value=f'["Deutscher Text A.", "Deutscher Text B."]'
+        )
+
+        result = await orch._localise_card_descriptions(gp_results, "Query", "de")
+
+        assert result == german_list
+
+    async def test_localise_card_descriptions_fallback_on_llm_error(self):
+        """When the LLM call fails, stored descriptions are returned as fallback."""
+        orch = self._make_orchestrator("de")
+        gp_results = [
+            {
+                "description": "Fallback description.",
+                "search_optimized_summary": "Fallback description.",
+                "user": {"name": "Provider"},
+            }
+        ]
+        orch.llm_service.generate = AsyncMock(side_effect=Exception("LLM error"))
+
+        result = await orch._localise_card_descriptions(gp_results, "Query", "de")
+
+        assert result == ["Fallback description."]
+
+
+class TestGenerateCardReasoning:
+    """_generate_card_reasoning must include review snippets and language in the LLM prompt."""
+
+    def _make_orchestrator(self, language: str = "en"):
+        llm = Mock()
+        llm.register_functions = Mock()
+        llm.add_message_to_history = Mock()
+
+        conv = Mock()
+        conv.language = language
+        conv.context = {}
+
+        registry = Mock()
+        registry.all_schemas.return_value = []
+
+        return ResponseOrchestrator(
+            llm_service=llm,
+            conversation_service=conv,
+            tool_registry=registry,
+        )
+
+    async def test_review_snippets_appear_in_prompt(self):
+        """When a provider has review_snippets, they must appear in the LLM prompt."""
+        orch = self._make_orchestrator("en")
+        gp_results = [
+            {
+                "title": "Cakery Berlin",
+                "description": "Custom wedding cakes.",
+                "review_snippets": ["Beautiful designs", "Very punctual delivery"],
+                "user": {"name": "Cakery Berlin"},
+            }
+        ]
+        captured_prompt: list[str] = []
+
+        async def capture_generate(messages):
+            captured_prompt.append(messages[0].content)
+            return '["Specialises in wedding cakes, praised for punctual delivery."]'
+
+        orch.llm_service.generate = capture_generate
+
+        result = await orch._generate_card_reasoning(gp_results, "custom wedding cake", "en")
+
+        assert len(result) == 1
+        assert "Beautiful designs" in captured_prompt[0]
+        assert "Very punctual delivery" in captured_prompt[0]
+        assert "Customer reviews" in captured_prompt[0]
+
+    async def test_language_name_in_prompt_german(self):
+        """For a German session, the prompt must instruct the LLM to use German."""
+        orch = self._make_orchestrator("de")
+        gp_results = [
+            {
+                "title": "Bäcker Müller",
+                "description": "Traditional German bakery.",
+                "review_snippets": [],
+                "user": {"name": "Bäcker Müller"},
+            }
+        ]
+        captured_prompt: list[str] = []
+
+        async def capture_generate(messages):
+            captured_prompt.append(messages[0].content)
+            return '["Traditionelle Bäckerei, ideal für individuelle Torten."]'
+
+        orch.llm_service.generate = capture_generate
+
+        await orch._generate_card_reasoning(gp_results, "Hochzeitstorte", "de")
+
+        assert "German" in captured_prompt[0]
+
+    async def test_no_review_snippet_section_when_empty(self):
+        """When review_snippets is empty, no 'Customer reviews:' line should appear in the prompt."""
+        orch = self._make_orchestrator("en")
+        gp_results = [
+            {
+                "title": "Provider X",
+                "description": "Some description.",
+                "review_snippets": [],
+                "user": {"name": "Provider X"},
+            }
+        ]
+        captured_prompt: list[str] = []
+
+        async def capture_generate(messages):
+            captured_prompt.append(messages[0].content)
+            return '["Good match for the request."]'
+
+        orch.llm_service.generate = capture_generate
+
+        result = await orch._generate_card_reasoning(gp_results, "plumber", "en")
+
+        assert result == ["Good match for the request."]
+        assert "Customer reviews" not in captured_prompt[0]
+
+    async def test_fallback_empty_strings_on_llm_error(self):
+        """When the LLM call raises, an empty-string list is returned without crashing."""
+        orch = self._make_orchestrator("en")
+        gp_results = [
+            {
+                "title": "Provider A",
+                "description": "Desc.",
+                "review_snippets": ["Good service"],
+                "user": {"name": "Provider A"},
+            },
+            {
+                "title": "Provider B",
+                "description": "Desc2.",
+                "review_snippets": [],
+                "user": {"name": "Provider B"},
+            },
+        ]
+        orch.llm_service.generate = AsyncMock(side_effect=Exception("LLM unavailable"))
+
+        result = await orch._generate_card_reasoning(gp_results, "plumber", "en")
+
+        assert result == ["", ""]

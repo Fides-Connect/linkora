@@ -1,4 +1,5 @@
 import 'package:uuid/uuid.dart';
+import 'provider_card_data.dart';
 
 /// Generates a new UUID v4.
 final _uuid = Uuid();
@@ -9,12 +10,16 @@ class ChatMessage {
   final String text;
   final bool isUser;
   final DateTime? timestamp;
+  /// Provider cards attached to this message. When non-null, the message is
+  /// a cards-only bubble rendered by ChatDisplay instead of a text bubble.
+  final List<ProviderCardData>? cards;
 
   ChatMessage({
     String? id,
     required this.text,
     required this.isUser,
     DateTime? timestamp,
+    this.cards,
   })  : id = id ?? _uuid.v4(),
         timestamp = timestamp ?? DateTime.now();
 

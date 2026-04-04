@@ -86,3 +86,25 @@ class DataChannelBridge:
             )
         except Exception as exc:
             logger.error("DataChannelBridge.send_runtime_state error: %s", exc)
+
+    def send_provider_cards(self, cards: list[dict]) -> None:
+        """Send a ``{"type": "provider-cards", "cards": […]}`` message.
+
+        No-op when the channel is not open or the cards list is empty.
+        """
+        if not self.is_open or not cards:
+            return
+        channel = self._channel
+        if channel is None:
+            return
+        try:
+            channel.send(
+                json.dumps(
+                    {
+                        "type": "provider-cards",
+                        "cards": cards,
+                    }
+                )
+            )
+        except Exception as exc:
+            logger.error("DataChannelBridge.send_provider_cards error: %s", exc)

@@ -22,6 +22,7 @@ import asyncio
 import logging
 import os
 import time
+import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -43,7 +44,8 @@ _FIELD_MASK = (
     "places.id,places.displayName,places.formattedAddress,"
     "places.primaryTypeDisplayName,places.rating,places.userRatingCount,"
     "places.types,places.editorialSummary,places.reviews,"
-    "places.nationalPhoneNumber,places.websiteUri"
+    "places.nationalPhoneNumber,places.websiteUri,"
+    "places.regularOpeningHours,places.photos"
 )
 _CIRCUIT_THRESHOLD = 3      # consecutive failures before opening
 _CIRCUIT_RESET_SECONDS = 60  # cooldown before auto-reset
@@ -268,19 +270,34 @@ class GooglePlacesService:
         Normalise Places API results and upsert User+Competence pairs.
 
         Returns the number of nodes successfully written.
-        """
-        # Gather synthetic descriptions for results that lack editorialSummary
-        desc_tasks = []
-        desc_indices: list[int] = []
-        for idx, place in enumerate(raw_results):
-            if not (place.get("editorialSummary") or {}).get("text", "").strip():
-                desc_indices.append(idx)
-                reviews = place.get("reviews") or []
-                desc_tasks.append(self._synthesise_description(place, query, reviews=reviews))
 
-        synthetic_descs: list[str | None] = []
-        if desc_tasks:
-            synthetic_descs = list(await asyncio.gather(*desc_tasks, return_exceptions=True))
+        The ``search_optimized_summary`` field is always generated in English
+        (via an LLM synthesis call) regardless of the language returned by the
+        Places API.  This is required because the cross-encoder model
+        (ms-marco-MiniLM-L-6-v2) is English-only and produces unreliable scores
+        against non-English candidate text.
+
+        The user-facing ``description`` field continues to use the raw
+        editorialSummary (in whatever language GP returns it) so that the
+        provider card shows the authentic GP text.
+        """
+        # Build English search_optimized_summaries for all places concurrently.
+        # The synthesiser receives the raw editorial summary (if any) as context
+        # so it can name real specialties rather than relying on generic type tags.
+        summary_tasks = [
+            self._synthesise_description(
+                place,
+                query,
+                reviews=place.get("reviews") or [],
+                editorial_summary=(
+                    (place.get("editorialSummary") or {}).get("text", "").strip() or None
+                ),
+            )
+            for place in raw_results
+        ]
+        english_summaries: list[str | None] = list(
+            await asyncio.gather(*summary_tasks, return_exceptions=True)
+        )
 
         count = 0
         for idx, place in enumerate(raw_results):
@@ -293,32 +310,26 @@ class GooglePlacesService:
                 user_uuid = str(generate_uuid5(place_id))
                 comp_uuid = str(generate_uuid5(f"{place_id}:competence"))
 
-                # Description: editorialSummary first, then synthetic LLM result
+                # User-facing description: editorialSummary first (in original
+                # language), synthetic fallback, then name+types as last resort.
                 description: str = (
                     (place.get("editorialSummary") or {}).get("text", "").strip()
                 )
                 if not description:
-                    pos = desc_indices.index(idx) if idx in desc_indices else -1
-                    if pos >= 0 and pos < len(synthetic_descs):
-                        synth = synthetic_descs[pos]
-                        if isinstance(synth, str) and synth:
-                            description = synth
+                    synth = english_summaries[idx]
+                    if isinstance(synth, str) and synth:
+                        description = synth
                 if not description:
-                    # Final fallback: build from place type list
                     types = place.get("types", [])
                     display_name = (place.get("displayName") or {}).get("text", "")
                     description = f"{display_name} — {', '.join(types[:3])}"
 
-                # Enrich search_optimized_summary with customer review snippets so the
-                # cross-encoder and vector index can match on real service keywords.
-                review_snippets = _extract_review_snippets(
-                    place.get("reviews") or [], max_count=3, max_chars=100
-                )
-                if review_snippets:
-                    search_optimized_summary = (
-                        f"{description} Customer experiences: "
-                        + " \u00b7 ".join(review_snippets)
-                    )
+                # search_optimized_summary: always English (for cross-encoder +
+                # vector index compatibility). Fall back to the (possibly non-English)
+                # description only if synthesis failed entirely.
+                synth_summary = english_summaries[idx]
+                if isinstance(synth_summary, str) and synth_summary:
+                    search_optimized_summary = synth_summary
                 else:
                     search_optimized_summary = description
 
@@ -326,6 +337,25 @@ class GooglePlacesService:
                 phone: str = place.get("nationalPhoneNumber") or ""
                 address: str = place.get("formattedAddress") or ""
                 name: str = (place.get("displayName") or {}).get("text", "")
+
+                # Photo URL — first photo from Places API
+                photo: str = ""
+                raw_photos = place.get("photos") or []
+                if raw_photos and self._api_key:
+                    photo_name = raw_photos[0].get("name", "")
+                    if photo_name:
+                        photo = (
+                            f"https://places.googleapis.com/v1/{photo_name}"
+                            f"/media?maxWidthPx=400&key={self._api_key}"
+                        )
+
+                # Opening hours — human-readable weekday strings
+                opening_hours: str = ""
+                raw_hours = (place.get("regularOpeningHours") or {}).get(
+                    "weekdayDescriptions", []
+                )
+                if raw_hours:
+                    opening_hours = "\n".join(raw_hours)
 
                 user_data: dict[str, Any] = {
                     "uuid": user_uuid,
@@ -338,6 +368,17 @@ class GooglePlacesService:
                     "website": place.get("websiteUri") or "",
                     "address": address,
                     "average_rating": float(place.get("rating") or 0.0),
+                    "rating_count": int(place.get("userRatingCount") or 0),
+                    "photo_url": photo,
+                    "opening_hours": opening_hours,
+                    # Deep link that opens the Google Maps place card directly.
+                    # The Maps URL API requires both `query` (place name) AND
+                    # `query_place_id` — the place_id alone is silently ignored.
+                    "maps_url": (
+                        "https://www.google.com/maps/search/?api=1"
+                        f"&query={urllib.parse.quote(name)}"
+                        f"&query_place_id={place_id}"
+                    ),
                 }
                 competence_data: dict[str, Any] = {
                     "uuid": comp_uuid,
@@ -346,6 +387,13 @@ class GooglePlacesService:
                     "description": description,
                     "search_optimized_summary": search_optimized_summary,
                     "category": _extract_category(place.get("types", [])),
+                    # Store raw review snippets for card reasoning display.
+                    # These are the original customer-written sentence fragments,
+                    # kept separate from search_optimized_summary so the reasoning
+                    # LLM can quote them directly in the user's session language.
+                    "review_snippets": _extract_review_snippets(
+                        place.get("reviews") or [], max_count=5, max_chars=120
+                    ),
                 }
 
                 result_uuid = HubSpokeIngestion.upsert_user(user_data, competence_data)
@@ -367,36 +415,46 @@ class GooglePlacesService:
         return count
 
     async def _synthesise_description(
-        self, place: dict[str, Any], query: str,
+        self,
+        place: dict[str, Any],
+        query: str,
         reviews: list[dict[str, Any]] | None = None,
+        editorial_summary: str | None = None,
     ) -> str | None:
         """
-        Generate a single-sentence service description for a Place that has no
-        editorial_summary.  Uses a lightweight single-shot LLM call.
+        Generate a short English-language service summary for a Place.
 
-        When ``reviews`` are provided, representative snippets are included in
-        the prompt so the LLM can name real specialties instead of generic types.
+        This is used exclusively as the ``search_optimized_summary`` fed to the
+        Weaviate vector index and the ms-marco cross-encoder — both of which are
+        English-only.  Always outputs English regardless of the session language
+        or the language of the editorial_summary / reviews provided.
+
+        ``editorial_summary`` — when provided (e.g. from editorialSummary in the
+        GP API, which may be in the local language), its content is passed as
+        context so the LLM can capture real specialties rather than generic types.
         """
         from langchain_core.messages import HumanMessage
 
         name = (place.get("displayName") or {}).get("text", "")
-        # Prefer the human-readable primaryTypeDisplayName over raw type codes
         primary_type = (place.get("primaryTypeDisplayName") or {}).get("text", "")
         types_phrase = primary_type or ", ".join(
             t.replace("_", " ") for t in (place.get("types") or [])[:4]
         )
         location = place.get("formattedAddress", "").split(",")[-1].strip()
 
-        review_context = ""
+        extra_context = ""
+        if editorial_summary:
+            extra_context += f" Official description: {editorial_summary}."
         if reviews:
             snippets = _extract_review_snippets(reviews, max_count=3, max_chars=80)
             if snippets:
-                review_context = f" Customers have mentioned: {'; '.join(snippets)}."
+                extra_context += f" Customers have mentioned: {'; '.join(snippets)}."
 
         prompt = (
-            f"Write ONE short sentence describing the services offered by '{name}' "
-            f"which provides {types_phrase} in {location}.{review_context} "
+            f"Write ONE short English sentence describing the services offered by '{name}' "
+            f"which provides {types_phrase} in {location}.{extra_context} "
             "Focus on their specialties and unique offerings. "
+            "The sentence MUST be in English regardless of any non-English text above. "
             "Return only the sentence, no preamble."
         )
         try:

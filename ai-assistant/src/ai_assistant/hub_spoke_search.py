@@ -97,7 +97,7 @@ class HubSpokeSearch:
                         link_on="owned_by",
                         return_properties=["user_id", "name", "email", "is_service_provider",
                                            "last_sign_in", "source", "phone", "website", "address",
-                                           "average_rating"]
+                                           "average_rating", "rating_count"]
                     )
                 )
 
@@ -130,6 +130,8 @@ class HubSpokeSearch:
                                     competence[_f] = user[_f]
                             if user.get('average_rating'):
                                 competence['rating'] = user['average_rating']
+                            if user.get('rating_count'):
+                                competence['rating_count'] = user['rating_count']
 
                     # Keep only the best-scoring competence per user
                     if user_uuid:
@@ -153,7 +155,7 @@ class HubSpokeSearch:
                         link_on="owned_by",
                         return_properties=["user_id", "name", "email", "is_service_provider",
                                            "last_sign_in", "source", "phone", "website",
-                                           "address", "average_rating"]
+                                           "address", "average_rating", "rating_count"]
                     )
                 )
 
@@ -181,6 +183,8 @@ class HubSpokeSearch:
                                     competence[_f] = user[_f]
                             if user.get('average_rating'):
                                 competence['rating'] = user['average_rating']
+                            if user.get('rating_count'):
+                                competence['rating_count'] = user['rating_count']
 
                     results.append(competence)
 
@@ -271,12 +275,18 @@ class HubSpokeSearch:
         # The LLM may produce a free-form string (e.g. "nächste Woche", "Monday morning"),
         # so we intersect with the known token vocabulary before filtering. This prevents
         # the raw string from never matching stored tags and silently returning zero results.
+        # NOTE: Google Places providers never have availability_tags (they are real businesses
+        # with dynamic opening hours, not registered-user availability schedules).  We always
+        # let them pass the filter so GP results are never silently eliminated.
         availability_filter_applied = False
         if available_time and available_time.lower() not in ("flexibel", "flexible", "any", "anytime", ""):
             raw_words = set(re.findall(r'[a-z]+', available_time.lower()))
             matched_tokens = sorted(raw_words & _AVAILABILITY_TOKENS)
             if matched_tokens:
-                filter_clause = filter_clause & Filter.by_property("availability_tags").contains_any(matched_tokens)
+                filter_clause = filter_clause & (
+                    Filter.by_property("availability_tags").contains_any(matched_tokens)
+                    | Filter.by_ref("owned_by").by_property("source").equal("google_places")
+                )
                 availability_filter_applied = True
                 logger.info("Added availability filter: %r → tokens: %s", available_time, matched_tokens)
             else:
@@ -351,7 +361,14 @@ class HubSpokeSearch:
                             competence[_f] = user[_f]
                     if user.get('average_rating'):
                         competence['rating'] = user['average_rating']
-
+                    if user.get('rating_count'):
+                        competence['rating_count'] = user['rating_count']
+                    if user.get('photo_url'):
+                        competence['photo_url'] = user['photo_url']
+                    if user.get('opening_hours'):
+                        competence['opening_hours'] = user['opening_hours']
+                    if user.get('maps_url'):
+                        competence['maps_url'] = user['maps_url']
             # Keep only the best-scoring competence per user
             if user_uuid:
                 if user_uuid not in seen_users or competence['score'] > seen_users[user_uuid]['score']:
@@ -486,7 +503,7 @@ class HubSpokeSearch:
                     link_on="owned_by",
                     return_properties=["user_id", "name", "email", "is_service_provider",
                                        "last_sign_in", "source", "phone", "website", "address",
-                                       "average_rating"]
+                                       "average_rating", "rating_count", "photo_url", "opening_hours", "maps_url"]
                 )
             )
 

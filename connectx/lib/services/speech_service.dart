@@ -37,6 +37,7 @@ class SpeechService {
   OnChatMessageCallback? onChatMessage;
   OnRuntimeStateCallback? onRuntimeState;
   Function()? onDataChannelOpen;
+  OnProviderCardsCallback? onProviderCards;
   /// Called when the voice upgrade (renegotiation) timed out without receiving
   /// a remote audio track. The UI should revert to text mode.
   Function()? onVoiceUpgradeTimeout;
@@ -212,6 +213,10 @@ class SpeechService {
 
     _webrtcService!.onRuntimeState = (AgentRuntimeState state) {
       onRuntimeState?.call(state);
+    };
+
+    _webrtcService!.onProviderCards = (List<Map<String, dynamic>> cards) {
+      onProviderCards?.call(cards);
     };
 
     _webrtcService!.onRemoteStream = (MediaStream stream) {

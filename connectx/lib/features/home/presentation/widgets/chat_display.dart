@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../models/chat_message.dart';
+import 'provider_card.dart';
 
 class ChatDisplay extends StatelessWidget {
   final List<ChatMessage> messages;
@@ -63,7 +64,6 @@ class ChatDisplay extends StatelessWidget {
             // Reverse index to show latest messages first (at bottom)
             final reversedIndex = messages.length - 1 - index;
             final message = messages[reversedIndex];
-            final text = message.text;
             final isUser = message.isUser;
 
             // Check if we need extra spacing (30+ seconds gap from previous message)
@@ -80,6 +80,23 @@ class ChatDisplay extends StatelessWidget {
                 needsExtraSpacing = timeDiff.inSeconds > 30;
               }
             }
+
+            // Provider cards message — render a column of cards, no text bubble
+            if (message.cards != null && message.cards!.isNotEmpty) {
+              return Padding(
+                padding: EdgeInsets.only(
+                  bottom: 12.0,
+                  top: needsExtraSpacing ? 24.0 : 0.0,
+                ),
+                child: Column(
+                  children: message.cards!
+                      .map((card) => ProviderCard(card: card))
+                      .toList(),
+                ),
+              );
+            }
+
+            final text = message.text;
 
             return Padding(
               padding: EdgeInsets.only(

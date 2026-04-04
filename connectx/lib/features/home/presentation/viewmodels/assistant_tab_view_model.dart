@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:connectx/services/speech_service.dart';
 import 'package:connectx/models/chat_message.dart';
 import 'package:connectx/models/app_types.dart';
+import 'package:connectx/models/provider_card_data.dart';
 
 
 class AssistantTabViewModel extends ChangeNotifier {
@@ -182,6 +183,19 @@ class AssistantTabViewModel extends ChangeNotifier {
       _resetIdleTimer();
       _conversationState = _runtimeStateToConversationState(state);
       notifyListeners();
+    };
+
+    _speechService.onProviderCards = (List<Map<String, dynamic>> rawCards) {
+      _resetIdleTimer();
+      final cards = rawCards
+          .map((m) => ProviderCardData.fromJson(m))
+          .toList();
+      if (cards.isNotEmpty) {
+        _chatMessages.add(
+          ChatMessage(text: '', isUser: false, cards: cards),
+        );
+        notifyListeners();
+      }
     };
 
     _speechService.onVoiceUpgradeTimeout = () {
@@ -422,6 +436,7 @@ class AssistantTabViewModel extends ChangeNotifier {
     _speechService.onSpeechEnd = null;
     _speechService.onDisconnected = null;
     _speechService.onChatMessage = null;
+    _speechService.onProviderCards = null;
     super.dispose();
   }
 }

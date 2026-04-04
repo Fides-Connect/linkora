@@ -253,26 +253,13 @@ class ConversationService:
             gp_error = self.context.get("google_places_error", False)
             gp_announced = self.context.get("google_places_announced", False)
 
-            if not gp_active:
-                google_places_announcement = ""
-            elif gp_error:
+            # Provider cards make the GP search self-evident — suppress the
+            # announcement in all success cases. Only surface a note on error.
+            if gp_error:
                 google_places_announcement = (
                     f"The Google Maps search was temporarily unavailable. "
                     f"Briefly inform the user (once only) in {language_name} that results "
                     f"are sourced from registered providers only."
-                )
-            elif gp_used and not gp_announced:
-                google_places_announcement = (
-                    f"Begin your response with a single natural sentence in {language_name} "
-                    f"informing the user that you are also searching Google Maps for nearby "
-                    f"providers — exactly once."
-                )
-                self.context["google_places_announced"] = True
-            elif gp_used and gp_announced:
-                google_places_announcement = (
-                    f"NOTE: You already informed the user at the start of this FINALIZE "
-                    f"session in {language_name} that you also searched Google Maps. "
-                    f"Do NOT repeat this announcement."
                 )
             else:
                 google_places_announcement = ""
@@ -288,6 +275,20 @@ class ConversationService:
                 f"tool result IS the template itself, written directly in {language_name}."
             )
 
+            if gp_used:
+                provider_cards_note = (
+                    "IMPORTANT — CARDS ALREADY SHOWN: Rich provider cards with full details "
+                    "(name, photo, rating, phone, website, address, and opening hours) have "
+                    "already been sent to the user as interactive tap-to-call/tap-to-visit "
+                    "cards displayed above this message. "
+                    "Do NOT list, mention, or repeat any provider names, addresses, phone "
+                    "numbers, websites, ratings, or hours in your text response. "
+                    "Write only the short warm intro sentence from step 1, then immediately "
+                    "call signal_transition(target_stage=\"completed\")."
+                )
+            else:
+                provider_cards_note = ""
+
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
@@ -295,6 +296,7 @@ class ConversationService:
                     language_instruction=language_instruction,
                     google_places_announcement=google_places_announcement,
                     contact_template_instruction=contact_template_instruction,
+                    provider_cards_note=provider_cards_note,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")

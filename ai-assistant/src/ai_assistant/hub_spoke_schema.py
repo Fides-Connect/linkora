@@ -142,6 +142,10 @@ def init_hub_spoke_schema() -> bool | None:
                         # NOT vectorized individually — the summary already captures them.
                         Property(name="skills_list", data_type=DataType.TEXT_ARRAY,
                                  skip_vectorization=True),
+                        # review_snippets: positive review sentences from Google Places.
+                        # Stored for card reasoning display — NOT vectorized.
+                        Property(name="review_snippets", data_type=DataType.TEXT_ARRAY,
+                                 skip_vectorization=True),
                     ],
                 )
                 logger.info("Created collection with vectorization: %s", COMPETENCE_COLLECTION)
@@ -222,6 +226,8 @@ def init_hub_spoke_schema() -> bool | None:
             ("phone", DataType.TEXT, True),
             ("website", DataType.TEXT, True),
             ("address", DataType.TEXT, True),
+            ("opening_hours", DataType.TEXT, True),
+            ("maps_url", DataType.TEXT, True),
         ]
         user_collection = client.collections.get(USER_COLLECTION)
         user_config = user_collection.config.get()
@@ -235,6 +241,24 @@ def init_hub_spoke_schema() -> bool | None:
                     logger.info("Added '%s' property to %s", prop_name, USER_COLLECTION)
                 except weaviate.exceptions.ObjectAlreadyExistsError:
                     logger.warning("'%s' property in %s already exists — skipping", prop_name, USER_COLLECTION)
+
+        # Step 5: Add new Competence properties if they don't exist yet (migration guard)
+        # review_snippets: positive review sentences stored for card reasoning display.
+        # NOT vectorized — the search_optimized_summary already captures review context.
+        _new_competence_properties = [
+            ("review_snippets", DataType.TEXT_ARRAY, True),
+        ]
+        competence_config = competence_collection.config.get()
+        existing_comp_prop_names = {p.name for p in (competence_config.properties or [])}
+        for prop_name, prop_dtype, skip_vec in _new_competence_properties:
+            if prop_name not in existing_comp_prop_names:
+                try:
+                    competence_collection.config.add_property(
+                        Property(name=prop_name, data_type=prop_dtype, skip_vectorization=skip_vec)
+                    )
+                    logger.info("Added '%s' property to %s", prop_name, COMPETENCE_COLLECTION)
+                except weaviate.exceptions.ObjectAlreadyExistsError:
+                    logger.warning("'%s' property in %s already exists — skipping", prop_name, COMPETENCE_COLLECTION)
 
         logger.info("Hub and Spoke schema initialization complete")
         return True

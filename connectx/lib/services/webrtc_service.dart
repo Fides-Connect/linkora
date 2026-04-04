@@ -56,6 +56,7 @@ class WebRTCService {
   Function(String, bool, bool)? onChatMessage; // text, isUser, isChunk
   Function()? onDataChannelOpen;
   OnRuntimeStateCallback? onRuntimeState;
+  OnProviderCardsCallback? onProviderCards;
   /// Called when the voice upgrade (renegotiation) does not produce a remote
   /// audio track within 5 seconds — the client should revert to text mode.
   Function()? onVoiceUpgradeTimeout;
@@ -729,6 +730,14 @@ class WebRTCService {
             if (raw != null) {
               final state = AgentRuntimeState.tryParse(raw);
               if (state != null) onRuntimeState?.call(state);
+            }
+          } else if (data['type'] == 'provider-cards') {
+            final rawCards = data['cards'];
+            if (rawCards is List) {
+              final cards = rawCards
+                  .whereType<Map<String, dynamic>>()
+                  .toList();
+              if (cards.isNotEmpty) onProviderCards?.call(cards);
             }
           }
         } catch (e) {

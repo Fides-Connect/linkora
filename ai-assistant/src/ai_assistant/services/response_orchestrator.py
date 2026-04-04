@@ -303,6 +303,245 @@ class ResponseOrchestrator:
 
         return True
 
+    # ── Provider card helpers ─────────────────────────────────────────────────
+
+    async def _localise_card_descriptions(
+        self,
+        gp_results: list[dict[str, Any]],
+        user_query: str,
+        language: str,
+    ) -> list[str]:
+        """Generate localised one-sentence descriptions for each GP card.
+
+        Uses a single batched LLM call for efficiency.  Falls back to the stored
+        description on any error so card display is never blocked.
+
+        Only called for non-English sessions — English sessions display the
+        stored description as-is.
+        """
+        from langchain_core.messages import HumanMessage
+        from ..prompts_templates import PROVIDER_CARD_DESCRIPTION_LOCALISE_PROMPT
+
+        language_name = "German" if language == "de" else language.capitalize()
+
+        def _name(p: dict) -> str:
+            return (p.get("user") or {}).get("name") or p.get("title", "")
+
+        provider_items = "\n".join(
+            f"{i + 1}. {_name(p)}: {p.get('search_optimized_summary') or p.get('description', '')[:200]}"
+            for i, p in enumerate(gp_results)
+        )
+        prompt = PROVIDER_CARD_DESCRIPTION_LOCALISE_PROMPT.format(
+            language_name=language_name,
+            user_request=user_query or "service request",
+            providers=provider_items,
+            count=len(gp_results),
+        )
+        try:
+            raw = await self.llm_service.generate([HumanMessage(content=prompt)])
+            match = re.search(r"\[.*?\]", raw, re.DOTALL)
+            if match:
+                parsed = json.loads(match.group())
+                if isinstance(parsed, list) and len(parsed) == len(gp_results):
+                    return [str(r) for r in parsed]
+        except Exception as exc:
+            logger.warning("Provider card description localisation failed: %s", exc)
+        return [p.get("description", "") for p in gp_results]
+
+    async def _generate_card_reasoning(
+        self,
+        gp_results: list[dict[str, Any]],
+        user_query: str = "",
+        language: str = "en",
+    ) -> list[str]:
+        """Generate a 1-sentence match justification for each GP result.
+
+        Single LLM call returning a JSON array.  Falls back to empty strings on
+        any error so card display is never blocked.
+        """
+        from langchain_core.messages import HumanMessage
+        from ..prompts_templates import PROVIDER_CARD_REASONING_PROMPT
+
+        def _name(p: dict) -> str:
+            return (p.get("user") or {}).get("name") or p.get("title", "")
+
+        def _review_suffix(p: dict) -> str:
+            snippets = (p.get("review_snippets") or [])[:3]
+            if not snippets:
+                return ""
+            return " | Customer reviews: " + "; ".join(snippets)
+
+        provider_items = "\n".join(
+            f"{i + 1}. {_name(p)}: {p.get('description', '')[:200]}{_review_suffix(p)}"
+            for i, p in enumerate(gp_results)
+        )
+        language_name = "German" if language == "de" else language.capitalize()
+        prompt = PROVIDER_CARD_REASONING_PROMPT.format(
+            query=user_query or "service request",
+            providers=provider_items,
+            count=len(gp_results),
+            language_name=language_name,
+        )
+        try:
+            raw = await self.llm_service.generate([HumanMessage(content=prompt)])
+            match = re.search(r"\[.*?\]", raw, re.DOTALL)
+            if match:
+                parsed = json.loads(match.group())
+                if isinstance(parsed, list) and len(parsed) == len(gp_results):
+                    return [str(r) for r in parsed]
+        except Exception as exc:
+            logger.warning("Provider card reasoning failed: %s", exc)
+        return [""] * len(gp_results)
+
+    async def _build_provider_cards(
+        self,
+        gp_results: list[dict[str, Any]],
+        user_query: str = "",
+    ) -> list[dict[str, Any]]:
+        """Build card payloads for GP results with LLM-generated reasoning."""
+        language = self.conversation_service.language
+        reasoning = await self._generate_card_reasoning(gp_results, user_query, language)
+        request_summary = self.conversation_service.context.get("request_summary", "") or user_query
+        user_name = self.conversation_service.context.get("user_name", "")
+
+        # Pre-compute per-card params for email generation
+        card_params = []
+        for p in gp_results:
+            user = p.get("user") or {}
+            provider_name = user.get("name") or p.get("title", "")
+            provider_address = p.get("address") or user.get("address") or ""
+            card_params.append((provider_name, provider_address))
+
+        # Generate all email subjects/bodies concurrently.
+        # For non-English sessions also localise card descriptions concurrently.
+        if language != "en":
+            email_results, localised_descs = await asyncio.gather(
+                asyncio.gather(
+                    *(
+                        self._build_email_template(
+                            name, request_summary, language, user_name, addr
+                        )
+                        for name, addr in card_params
+                    )
+                ),
+                self._localise_card_descriptions(gp_results, user_query, language),
+            )
+        else:
+            email_results = await asyncio.gather(
+                *(
+                    self._build_email_template(
+                        name, request_summary, language, user_name, addr
+                    )
+                    for name, addr in card_params
+                )
+            )
+            localised_descs = [p.get("description", "") for p in gp_results]
+
+        cards: list[dict[str, Any]] = []
+        for i, p in enumerate(gp_results):
+            user = p.get("user") or {}
+            provider_name, provider_address = card_params[i]
+            email_subject, email_body = email_results[i]
+            card: dict[str, Any] = {
+                "name": provider_name,
+                "description": localised_descs[i] if i < len(localised_descs) else p.get("description", ""),
+                "reasoning": reasoning[i] if i < len(reasoning) else "",
+                "rating": p.get("rating"),
+                "rating_count": p.get("rating_count"),
+                "website": p.get("website") or user.get("website") or None,
+                "phone": p.get("phone") or user.get("phone") or None,
+                "address": provider_address or None,
+                "email": p.get("email") or user.get("email") or None,
+                "photo_url": p.get("photo_url") or None,
+                "opening_hours": p.get("opening_hours") or None,
+                "maps_url": p.get("maps_url") or None,
+                "email_subject": email_subject,
+                "email_body": email_body,
+                "language": language,
+                "source": user.get("source", "google_places"),
+            }
+            # Normalise empty strings to None for optional fields
+            for field in ("website", "phone", "address", "email", "photo_url", "opening_hours", "maps_url"):
+                if card[field] == "":
+                    card[field] = None
+            cards.append(card)
+        return cards
+
+    async def _build_email_template(
+        self,
+        provider_name: str,
+        request_summary: str,
+        language: str,
+        user_name: str = "",
+        provider_address: str = "",
+    ) -> tuple[str, str]:
+        """Return (subject, body) for a pre-filled enquiry email to a GP provider.
+
+        Uses an LLM call to produce natural prose from the structured
+        request_summary.  Falls back to a static template on any error.
+        """
+        from langchain_core.messages import HumanMessage
+        from ..prompts_templates import PROVIDER_ENQUIRY_EMAIL_PROMPT
+
+        prompt = PROVIDER_ENQUIRY_EMAIL_PROMPT.format(
+            language="German" if language == "de" else "English",
+            provider_name=provider_name,
+            provider_address=provider_address or "—",
+            user_name=user_name or "—",
+            request_summary=request_summary or "—",
+        )
+        try:
+            raw = await self.llm_service.generate([HumanMessage(content=prompt)])
+            # Strip optional markdown code fences
+            raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw.strip())
+            raw = re.sub(r"\n?```$", "", raw.strip())
+            parsed = json.loads(raw)
+            subject = str(parsed.get("subject", "")).strip()
+            body = str(parsed.get("body", "")).strip()
+            if subject and body:
+                return subject, body
+        except Exception as exc:
+            logger.warning("Email template LLM generation failed: %s", exc)
+
+        # ── Static fallback ────────────────────────────────────────────────────
+        return self._build_email_template_static(
+            provider_name, request_summary, language, user_name, provider_address
+        )
+
+    @staticmethod
+    def _build_email_template_static(
+        provider_name: str,
+        request_summary: str,
+        language: str,
+        user_name: str = "",
+        provider_address: str = "",
+    ) -> tuple[str, str]:
+        """Static fallback template used when the LLM email generation fails."""
+        location_note = f" ({provider_address})" if provider_address else ""
+        if language == "de":
+            subject = f"Kontaktanfrage: {provider_name}"
+            greeting = f"Sehr geehrte Damen und Herren von {provider_name}{location_note},"
+            intro = "ich möchte gerne eine Anfrage bei Ihnen stellen."
+            details_label = "Mein Anliegen"
+            closing = "Ich freue mich über Ihre Rückmeldung und bin gespannt, von Ihnen zu hören."
+            salutation = f"Mit freundlichen Grüßen,\n{user_name}" if user_name else "Mit freundlichen Grüßen"
+        else:
+            subject = f"Request: {provider_name}"
+            greeting = f"Dear {provider_name}{location_note} team,"
+            intro = "I would like to get in touch regarding a request."
+            details_label = "My request"
+            closing = "I look forward to hearing from you and discussing this further."
+            salutation = f"Kind regards,\n{user_name}" if user_name else "Kind regards"
+
+        body = (
+            f"{greeting}\n\n"
+            f"{intro}\n\n"
+            f"{details_label}:\n{request_summary}\n\n"
+            f"{closing}\n\n"
+            f"{salutation}"
+        )
+        return subject, body
+
     # ── Tool dispatch ──────────────────────────────────────────────────────────
 
     @staticmethod
@@ -1004,6 +1243,14 @@ class ResponseOrchestrator:
                                 # Surface provider list for stage-context use
                                 if fn_name == "search_providers" and isinstance(tool_result, list):
                                     self.conversation_service.context["providers_found"] = tool_result
+                                    # Yield provider cards for GP results before the follow-up narrative
+                                    _gp = [
+                                        p for p in tool_result
+                                        if (p.get("user") or {}).get("source") == "google_places"
+                                    ][:3]  # cap at top 3
+                                    if _gp:
+                                        _cards = await self._build_provider_cards(_gp, user_input)
+                                        yield {"type": "provider-cards", "cards": _cards}
                                 # Sync in-memory user_context after provider pitch response so
                                 # _should_pitch_provider won't re-fire when stage hits COMPLETED.
                                 if fn_name == "record_provider_interest" and isinstance(tool_result, dict):
@@ -1085,6 +1332,26 @@ class ResponseOrchestrator:
                 next_pending: list[tuple[str, Any]] = []
                 # Only the first follow-up stream sees the real user utterance.
                 follow_up_user_input = user_input if follow_up_iter == 0 else " "
+                # Yield provider cards before the first follow-up narrative when
+                # transitioning to FINALIZE with GP results (CONFIRMATION→FINALIZE path).
+                if follow_up_iter == 0:
+                    _has_finalize_transition = any(
+                        name == "signal_transition"
+                        and isinstance(res, dict)
+                        and res.get("stage") == "finalize"
+                        for name, res in current_pending
+                    )
+                    if _has_finalize_transition:
+                        _providers = self.conversation_service.context.get("providers_found", [])
+                        _gp_for_finalize = [
+                            p for p in _providers
+                            if (p.get("user") or {}).get("source") == "google_places"
+                        ][:3]  # cap at top 3
+                        if _gp_for_finalize:
+                            _finalize_cards = await self._build_provider_cards(
+                                _gp_for_finalize, user_input
+                            )
+                            yield {"type": "provider-cards", "cards": _finalize_cards}
                 async for chunk in self._run_follow_up_stream(
                     current_pending, follow_up_user_input, session_id, context,
                     ai_response_parts, next_pending

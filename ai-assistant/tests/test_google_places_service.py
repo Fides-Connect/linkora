@@ -473,8 +473,13 @@ class TestExtractReviewSnippets:
 
 class TestReviewEnrichment:
     async def test_search_optimized_summary_includes_review_snippets(self) -> None:
-        """When reviews are present, search_optimized_summary must include them."""
+        """Reviews are passed to the LLM synthesiser as context; the output
+        becomes the English search_optimized_summary."""
         svc = _make_service()
+        # LLM returns something that proves review context was used
+        svc._llm.generate = AsyncMock(
+            return_value="Specialises in Harry Potter themed wedding cakes for large events."
+        )
         place = _fake_place(
             editorial_summary="Professional wedding cake bakery in Berlin.",
             reviews=[
@@ -499,15 +504,20 @@ class TestReviewEnrichment:
 
         assert len(captured_competence) == 1
         summary = captured_competence[0]["search_optimized_summary"]
-        assert "Harry Potter" in summary
-        assert "Customer experiences:" in summary
-        # description remains clean (no review text)
-        description = captured_competence[0]["description"]
-        assert description == "Professional wedding cake bakery in Berlin."
+        # summary is the English LLM synthesis result
+        assert summary == "Specialises in Harry Potter themed wedding cakes for large events."
+        # description remains the original GP editorial text (may be non-English)
+        assert captured_competence[0]["description"] == "Professional wedding cake bakery in Berlin."
+        # Old direct-concatenation format must NOT appear
+        assert "Customer experiences:" not in summary
 
     async def test_search_optimized_summary_equals_description_when_no_reviews(self) -> None:
-        """When no reviews, search_optimized_summary falls back to description."""
+        """search_optimized_summary is always the English LLM synthesis result;
+        description keeps the original editorial text."""
         svc = _make_service()
+        svc._llm.generate = AsyncMock(
+            return_value="Expert plumber offering emergency and installation services in Munich."
+        )
         place = _fake_place(
             editorial_summary="Expert plumber in Munich.",
             reviews=[],
@@ -527,7 +537,12 @@ class TestReviewEnrichment:
             await svc.fetch_and_ingest("plumber Munich")
 
         assert len(captured_competence) == 1
-        assert captured_competence[0]["search_optimized_summary"] == "Expert plumber in Munich."
+        # search_optimized_summary is the English LLM output
+        assert captured_competence[0]["search_optimized_summary"] == (
+            "Expert plumber offering emergency and installation services in Munich."
+        )
+        # description is still the original editorial summary
+        assert captured_competence[0]["description"] == "Expert plumber in Munich."
 
     async def test_synthesis_uses_review_context(self) -> None:
         """_synthesise_description must pass review snippets to the LLM prompt."""
@@ -554,3 +569,58 @@ class TestReviewEnrichment:
 
         assert len(captured_prompts) == 1
         assert "Harry Potter" in captured_prompts[0]
+
+    async def test_review_snippets_stored_in_competence_data(self) -> None:
+        """review_snippets must be populated in competence_data when reviews are present."""
+        svc = _make_service()
+        svc._llm.generate = AsyncMock(return_value="Custom cake specialist.")
+        place = _fake_place(
+            editorial_summary="Custom cake shop.",
+            reviews=[
+                _make_review("Beautiful designs"),
+                _make_review("Very punctual delivery"),
+                _make_review("Will recommend to friends"),
+            ],
+        )
+        captured_competence: list[dict] = []
+
+        def _capture(user_data: dict, competence_data: dict | None = None) -> str | None:
+            if competence_data:
+                captured_competence.append(competence_data)
+            return user_data["uuid"]
+
+        with (
+            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=[place])),
+            patch("ai_assistant.hub_spoke_ingestion.HubSpokeIngestion.upsert_user",
+                  side_effect=_capture),
+        ):
+            await svc.fetch_and_ingest("cake shop")
+
+        assert len(captured_competence) == 1
+        snippets = captured_competence[0]["review_snippets"]
+        assert isinstance(snippets, list)
+        assert len(snippets) == 3
+        assert "Beautiful designs" in snippets
+        assert "Very punctual delivery" in snippets
+
+    async def test_review_snippets_empty_when_no_reviews(self) -> None:
+        """review_snippets must be an empty list when no reviews are available."""
+        svc = _make_service()
+        svc._llm.generate = AsyncMock(return_value="Plumber in Munich.")
+        place = _fake_place(editorial_summary="Plumber in Munich.", reviews=[])
+        captured_competence: list[dict] = []
+
+        def _capture(user_data: dict, competence_data: dict | None = None) -> str | None:
+            if competence_data:
+                captured_competence.append(competence_data)
+            return user_data["uuid"]
+
+        with (
+            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=[place])),
+            patch("ai_assistant.hub_spoke_ingestion.HubSpokeIngestion.upsert_user",
+                  side_effect=_capture),
+        ):
+            await svc.fetch_and_ingest("plumber")
+
+        assert len(captured_competence) == 1
+        assert captured_competence[0]["review_snippets"] == []

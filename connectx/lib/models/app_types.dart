@@ -71,5 +71,9 @@ typedef OnChatMessageCallback = void Function(String text, bool isUser, bool isC
 /// Callback for when the backend runtime FSM changes state.
 typedef OnRuntimeStateCallback = void Function(AgentRuntimeState state);
 
+/// Callback for when provider cards are received from the backend.
+/// Each card is a raw JSON map; parsing to a typed model is done upstream.
+typedef OnProviderCardsCallback = void Function(List<Map<String, dynamic>> cards);
+
 /// Callback for locale changes
 typedef OnLocaleChangeCallback = void Function(String languageCode);

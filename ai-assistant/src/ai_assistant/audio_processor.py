@@ -736,6 +736,14 @@ class AudioProcessor:
                         first_chunk = True
                         continue
 
+                    # Provider cards: forward over the DataChannel before the
+                    # follow-up narrative so Flutter shows them first.
+                    if isinstance(chunk, dict) and chunk.get("type") == "provider-cards":
+                        cards = chunk.get("cards")
+                        if cards:
+                            self._dc_bridge.send_provider_cards(cards)
+                        continue
+
                     if not isinstance(chunk, str):
                         continue
 

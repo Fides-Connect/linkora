@@ -68,10 +68,19 @@ def _candidate_to_text(candidate: dict[str, Any]) -> str:
     """Build a single string representing a provider candidate for the cross-encoder.
 
     We concatenate the most semantically rich fields so the model can judge
-    relevance holistically:
+    relevance holistically.
+
+    Registered platform providers:
       - title          — what they do (most important)
       - search_optimized_summary — LLM-refined bio (primary vector source in Weaviate)
       - skills_list    — enumerated keywords
+
+    Google Places providers (no skills_list):
+      - title          — business name
+      - search_optimized_summary — LLM-synthesised English summary
+      - category       — GP primary type (e.g. "Wedding service")
+      - description    — editorial summary in its original language
+      - review_snippets — raw customer review fragments (up to 3)
     """
     parts = []
     title = candidate.get("title") or candidate.get("category") or ""
@@ -82,9 +91,23 @@ def _candidate_to_text(candidate: dict[str, Any]) -> str:
     if summary:
         parts.append(summary)
 
+    # Registered-provider skills
     skills = candidate.get("skills_list") or []
     if skills:
         parts.append("Skills: " + ", ".join(skills))
+
+    # GP-provider fields (only populated for Google Places records)
+    category = candidate.get("category") or ""
+    if category and category not in title:
+        parts.append(category)
+
+    description = candidate.get("description") or ""
+    if description and description not in summary:
+        parts.append(description)
+
+    review_snippets = (candidate.get("review_snippets") or [])[:3]
+    if review_snippets:
+        parts.append("Customer reviews: " + ". ".join(review_snippets))
 
     return ". ".join(filter(None, parts)) or "No description available."
 
@@ -189,7 +212,14 @@ class CrossEncoderService:
         # (e.g. a software developer returned for an electrician query) from surfacing
         # when the candidate pool is sparse. Configurable via CROSS_ENCODER_MIN_SCORE
         # env var (default -5.0 on the ms-marco model scale, range roughly -10 to +10).
-        above_threshold = [c for c in scored if c["rerank_score"] >= self._min_score]
+        # NOTE: Google Places providers are exempt — their relevance was already validated
+        # by the Places API query, and the cross-encoder (trained on passage retrieval)
+        # systematically underscores short business-listing descriptions.
+        above_threshold = [
+            c for c in scored
+            if c["rerank_score"] >= self._min_score
+            or c.get("user", {}).get("source") == "google_places"
+        ]
         if len(above_threshold) < len(scored):
             logger.info(
                 "min_score=%.1f filtered out %d/%d candidates below relevance threshold",
