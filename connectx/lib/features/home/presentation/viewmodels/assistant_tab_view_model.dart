@@ -59,6 +59,7 @@ class AssistantTabViewModel extends ChangeNotifier {
   String get statusText => _statusText;
   String? get error => _error;
   bool get isVoiceMode => _isVoiceMode;
+  bool get voiceEnabled => _speechService.voiceEnabled;
 
   // ── Initialisation ───────────────────────────────────────────────────────
   void initialize(String localStatusText, String languageCode) {
@@ -272,6 +273,7 @@ class AssistantTabViewModel extends ChangeNotifier {
   Future<void> startChat({bool voiceMode = false, String? pendingText}) async {
     if (_isStarting || _conversationState != ConversationState.idle) return;
     _isStarting = true;
+    if (voiceMode && !_speechService.voiceEnabled) voiceMode = false;
     _isVoiceMode = voiceMode;
     if (pendingText == null || pendingText.trim().isEmpty) {
       _pendingTextMessage = null;
@@ -352,7 +354,7 @@ class AssistantTabViewModel extends ChangeNotifier {
   /// Switch to voice mode: acquire microphone and renegotiate the WebRTC
   /// connection so the server activates the STT + TTS pipeline.
   Future<void> switchToVoiceMode() async {
-    if (_isVoiceMode) return;
+    if (_isVoiceMode || !_speechService.voiceEnabled) return;
     _isVoiceMode = true;
     notifyListeners();
     try {

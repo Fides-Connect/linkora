@@ -11,7 +11,9 @@ import '../viewmodels/home_tab_view_model.dart';
 import 'user_page.dart';
 
 class MenuTabPage extends StatelessWidget {
-  const MenuTabPage({super.key});
+  final bool showProfileItem;
+
+  const MenuTabPage({super.key, this.showProfileItem = true});
 
   void _showLanguageDialog(BuildContext context) {
     final localizations = AppLocalizations.of(context);
@@ -102,23 +104,25 @@ class MenuTabPage extends StatelessWidget {
                     },
                    ),
                   const SizedBox(height: 40),
-                  _MenuItem(
-                    icon: Icons.person_outline,
-                    title: localizations?.menuUser ?? 'User',
-                    onTap: () {
-                      final viewModel = context.read<HomeTabViewModel>();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ChangeNotifierProvider.value(
-                            value: viewModel,
-                            child: const UserPage(),
+                  if (showProfileItem) ...[
+                    _MenuItem(
+                      icon: Icons.person_outline,
+                      title: localizations?.menuUser ?? 'User',
+                      onTap: () {
+                        final viewModel = context.read<HomeTabViewModel>();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ChangeNotifierProvider.value(
+                              value: viewModel,
+                              child: const UserPage(),
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 16),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   _MenuItem(
                     icon: Icons.language,
                     title: localizations?.menuLanguage ?? 'Language',

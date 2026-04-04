@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../localization/app_localizations.dart';
@@ -23,25 +24,41 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
   late AssistantTabViewModel _assistantViewModel;
   late HomeTabViewModel _homeTabViewModel;
 
+  late final bool _isLiteMode;
   late final List<Widget> _pages;
+
+  static bool _readLiteMode() {
+    try {
+      return dotenv.env['APP_MODE']?.toLowerCase() == 'lite';
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    _isLiteMode = _readLiteMode();
     _assistantViewModel = AssistantTabViewModel();
     _homeTabViewModel = HomeTabViewModel();
 
-    _pages = [
-      const HomeTabPage(),
-      const AssistantTabPage(),
-      const FavoritesTabPage(),
-      const MenuTabPage(),
-    ];
-
-    // Explicitly handle async initialization
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadInitialData();
-    });
+    if (_isLiteMode) {
+      _pages = [
+        const AssistantTabPage(),
+        const MenuTabPage(showProfileItem: false),
+      ];
+    } else {
+      _pages = [
+        const HomeTabPage(),
+        const AssistantTabPage(),
+        const FavoritesTabPage(),
+        const MenuTabPage(),
+      ];
+      // Explicitly handle async initialization
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadInitialData();
+      });
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -80,30 +97,46 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
       ],
       child: Scaffold(
         body: IndexedStack(index: _selectedIndex, children: _pages),
-        bottomNavigationBar: BottomNavigationBar(
-          type: BottomNavigationBarType.fixed, // Needed for 4+ items
-          items: <BottomNavigationBarItem>[
-            BottomNavigationBarItem(
-              icon: const Icon(Icons.home),
-              label: localizations?.navHome ?? 'Home',
-            ),
-            BottomNavigationBarItem(
-              icon: const Icon(Icons.auto_awesome),
-              label: localizations?.navAssistant ?? 'Assistant',
-            ),
-            BottomNavigationBarItem(
-              icon: const Icon(Icons.favorite),
-              label: localizations?.navFavorites ?? 'Favorites',
-            ),
-            BottomNavigationBarItem(
-              icon: const Icon(Icons.menu),
-              label: localizations?.navMenu ?? 'Menu',
-            ),
-          ],
-          currentIndex: _selectedIndex,
-          selectedItemColor: AppConstants.primaryCyan,
-          onTap: _onItemTapped,
-        ),
+        bottomNavigationBar: _isLiteMode
+            ? BottomNavigationBar(
+                items: <BottomNavigationBarItem>[
+                  BottomNavigationBarItem(
+                    icon: const Icon(Icons.auto_awesome),
+                    label: localizations?.navAssistant ?? 'Assistant',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: const Icon(Icons.menu),
+                    label: localizations?.navMenu ?? 'Menu',
+                  ),
+                ],
+                currentIndex: _selectedIndex,
+                selectedItemColor: AppConstants.primaryCyan,
+                onTap: _onItemTapped,
+              )
+            : BottomNavigationBar(
+                type: BottomNavigationBarType.fixed,
+                items: <BottomNavigationBarItem>[
+                  BottomNavigationBarItem(
+                    icon: const Icon(Icons.home),
+                    label: localizations?.navHome ?? 'Home',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: const Icon(Icons.auto_awesome),
+                    label: localizations?.navAssistant ?? 'Assistant',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: const Icon(Icons.favorite),
+                    label: localizations?.navFavorites ?? 'Favorites',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: const Icon(Icons.menu),
+                    label: localizations?.navMenu ?? 'Menu',
+                  ),
+                ],
+                currentIndex: _selectedIndex,
+                selectedItemColor: AppConstants.primaryCyan,
+                onTap: _onItemTapped,
+              ),
       ),
     );
   }

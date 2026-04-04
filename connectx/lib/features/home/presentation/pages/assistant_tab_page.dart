@@ -34,14 +34,16 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await PermissionHelper.requestMicrophonePermission(context);
-      if (!mounted) return;
+      final vm = context.read<AssistantTabViewModel>();
+      if (vm.voiceEnabled) {
+        await PermissionHelper.requestMicrophonePermission(context);
+        if (!mounted) return;
+      }
       await PermissionHelper.requestNotificationPermission(context);
 
       if (mounted) {
         final localizations = AppLocalizations.of(context);
         final locale = Localizations.localeOf(context);
-        final vm = context.read<AssistantTabViewModel>();
         vm.initialize(
           localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
           locale.languageCode,
@@ -85,9 +87,11 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
     final topPadding = MediaQuery.of(context).padding.top;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     // Estimate input row height based on keyboard visibility.
-    // 20 (top spacing) + 80/48 (mic button animates on focus) + 30/10 (bottom gap animates on focus)
-    const double maxInputRowHeight = 20.0 + 80.0 + 30.0; // unfocused
-    const double minInputRowHeight = 20.0 + 48.0 + 10.0; // focused / keyboard visible
+    // With mic button: 20 (top spacing) + 80/48 (mic) + 30/10 (bottom gap)
+    // Text-only (no mic): 20 + 50 (text field) + 30/10 (bottom gap)
+    final bool showMicButton = viewModel.voiceEnabled;
+    final double maxInputRowHeight = showMicButton ? 20.0 + 80.0 + 30.0 : 20.0 + 50.0 + 30.0;
+    final double minInputRowHeight = showMicButton ? 20.0 + 48.0 + 10.0 : 20.0 + 50.0 + 10.0;
     final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
     final inputRowHeight = keyboardVisible ? minInputRowHeight : maxInputRowHeight;
     final chatHeight =
@@ -103,29 +107,30 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
             children: [
               const AppBackground(),
 
-              // Fixed AI Visualizer in background
-              Positioned(
-                top: -50,
-                left: 0,
-                right: 0,
-                child: SizedBox(
-                  height: 400,
-                  child: Center(
-                    child: AINeuralVisualizer(
-                      isListening:
-                          viewModel.conversationState ==
-                          ConversationState.listening,
-                      isProcessing:
-                          viewModel.conversationState ==
-                          ConversationState.processing,
-                      size: AppConstants.neuralVisualizerSize,
-                      primaryColor: AppConstants.primaryCyan,
-                      secondaryColor: AppConstants.primaryPurple,
-                      accentColor: AppConstants.accentPurple,
+              // Fixed AI Visualizer in background (hidden in lite/text-only mode)
+              if (viewModel.voiceEnabled)
+                Positioned(
+                  top: -50,
+                  left: 0,
+                  right: 0,
+                  child: SizedBox(
+                    height: 400,
+                    child: Center(
+                      child: AINeuralVisualizer(
+                        isListening:
+                            viewModel.conversationState ==
+                            ConversationState.listening,
+                        isProcessing:
+                            viewModel.conversationState ==
+                            ConversationState.processing,
+                        size: AppConstants.neuralVisualizerSize,
+                        primaryColor: AppConstants.primaryCyan,
+                        secondaryColor: AppConstants.primaryPurple,
+                        accentColor: AppConstants.accentPurple,
+                      ),
                     ),
                   ),
                 ),
-              ),
 
               // Chat and input overlay
               Column(
@@ -141,6 +146,7 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                   ChatInputRow(
                     state: viewModel.conversationState,
                     isVoiceMode: viewModel.isVoiceMode,
+                    showMicButton: viewModel.voiceEnabled,
                     hintText:
                         AppLocalizations.of(context)?.typeMessageHint ??
                         'Type a message...',

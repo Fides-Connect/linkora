@@ -10,6 +10,7 @@ import '../../../../utils/constants.dart';
 class ChatInputRow extends StatefulWidget {
   final ConversationState state;
   final bool isVoiceMode;
+  final bool showMicButton;
   final VoidCallback onMicTap;
   final Function(String) onTextSubmit;
   final Function(bool)? onFocusChanged;
@@ -19,6 +20,7 @@ class ChatInputRow extends StatefulWidget {
     super.key,
     required this.state,
     required this.isVoiceMode,
+    this.showMicButton = true,
     required this.onMicTap,
     required this.onTextSubmit,
     this.onFocusChanged,
@@ -86,8 +88,8 @@ class _ChatInputRowState extends State<ChatInputRow> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
-              // Microphone button - animates size and position
-              AnimatedContainer(
+              // Microphone button - animates size and position (hidden in text-only/lite mode)
+              if (widget.showMicButton) AnimatedContainer(
                 duration: AppConstants.defaultTransitionDuration,
                 curve: Curves.easeInOut,
                 width: micSize,
@@ -155,7 +157,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                 ),
               ),
 
-              AnimatedContainer(
+              if (widget.showMicButton) AnimatedContainer(
                 duration: AppConstants.defaultTransitionDuration,
                 curve: Curves.easeInOut,
                 width: _isTextFieldFocused ? 12.0 : 20.0,
