@@ -11,6 +11,7 @@ class ChatInputRow extends StatefulWidget {
   final ConversationState state;
   final bool isVoiceMode;
   final bool showMicButton;
+  final bool enabled;
   final VoidCallback onMicTap;
   final Function(String) onTextSubmit;
   final Function(bool)? onFocusChanged;
@@ -21,6 +22,7 @@ class ChatInputRow extends StatefulWidget {
     required this.state,
     required this.isVoiceMode,
     this.showMicButton = true,
+    this.enabled = true,
     required this.onMicTap,
     required this.onTextSubmit,
     this.onFocusChanged,
@@ -165,9 +167,12 @@ class _ChatInputRowState extends State<ChatInputRow> {
 
               // Text field - expands via maxLines, no wrapping AnimatedContainer
               Expanded(
-                child: TextField(
+                child: Opacity(
+                  opacity: widget.enabled ? 1.0 : 0.4,
+                  child: TextField(
                   controller: _textController,
                   focusNode: _focusNode,
+                  enabled: widget.enabled,
                   onTap: () {
                     _focusNode.requestFocus();
                   },
@@ -217,6 +222,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                   ),
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _handleTextSubmit(),
+                ),
                 ),
               ),
             ],

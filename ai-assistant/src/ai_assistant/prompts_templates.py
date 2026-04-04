@@ -11,7 +11,12 @@ def get_language_instruction(language: str = 'de', fallback_from: str = "") -> s
         Language instruction string
     """
     lang_name = "English" if language == 'en' else "German"
-    base = f"Your response must be in {lang_name}."
+    base = (
+        f"Your response must be in {lang_name}. "
+        f"This applies to every single word, including the short opening sentence — "
+        f"any example phrases given in the instructions (e.g. \"Got it.\", \"Sure!\", \"Of course!\") "
+        f"are English placeholders only; always translate them into natural {lang_name} equivalents."
+    )
     # B3: Cross-lingual handling — instruct the LLM to acknowledge input in other languages
     cross_lingual = (
         f" If the user writes or speaks in a language other than {lang_name}, "
@@ -891,21 +896,27 @@ Each string must be in {language_name}. No markdown, no explanation. Example:
 ["Spezialisiert auf Hochzeitstorten für große Gruppen.", "Maßgeschneiderte Backwaren für besondere Anlässe."]"""
 
 PROVIDER_CARD_REASONING_PROMPT = """\
-You are generating brief match justifications for service provider recommendations.
+You are generating concise match justifications for service provider recommendations.
 
 User's request: {query}
 
 Providers found:
 {providers}
 
-For each of the {count} provider(s) listed above, write a single concise sentence \
-(max 15 words) in {language_name} explaining why this provider matches the user's request. \
-If customer review quotes are provided for a provider, incorporate a concrete positive aspect \
-from those reviews. Otherwise focus on a concrete specialty or standout fact — not generic \
-praise ("great service", "highly recommended").
+For each of the {count} provider(s) listed above, write 1–2 sentences (max 30 words total) \
+in {language_name} that explain exactly why this provider is a strong match for the request.
+
+Rules:
+- Use concrete facts from the provider data: their exact type/specialty and location.
+- If customer review quotes are provided, cite a specific positive aspect mentioned in them \
+(not just "customers like it").
+- Do NOT mention ratings, stars, or review counts — these are shown separately on the card.
+- Never use generic phrases like "great service", "highly recommended", or "perfect choice".
+- Do not repeat the user's request word-for-word.
 
 Return your response as a JSON array of {count} string(s), one per provider, \
 in the same order. Example:
-["Spezialisiert auf Hochzeitstorten, Kunden loben die pünktliche Lieferung.", "Hochgelobt für individuelle Tortengestaltungen."]
+["Spezialisiert auf Hochzeitsfotografie in München – Kunden loben natürliche Portraits.", \
+"Zentral in München, fokussiert auf Firmenportraits und Eventfotografie."]
 
 Return ONLY the JSON array. No markdown, no explanation."""

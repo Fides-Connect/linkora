@@ -387,6 +387,10 @@ class GooglePlacesService:
                     "description": description,
                     "search_optimized_summary": search_optimized_summary,
                     "category": _extract_category(place.get("types", [])),
+                    # primary_type: human-readable Google Places type label (e.g. "Wedding
+                    # Photographer"). Stored as a separate BM25+vector-searchable field so
+                    # exact type queries match even when the summary uses different phrasing.
+                    "primary_type": (place.get("primaryTypeDisplayName") or {}).get("text", ""),
                     # Store raw review snippets for card reasoning display.
                     # These are the original customer-written sentence fragments,
                     # kept separate from search_optimized_summary so the reasoning
@@ -446,13 +450,20 @@ class GooglePlacesService:
         if editorial_summary:
             extra_context += f" Official description: {editorial_summary}."
         if reviews:
-            snippets = _extract_review_snippets(reviews, max_count=3, max_chars=80)
+            snippets = _extract_review_snippets(reviews, max_count=5, max_chars=120)
             if snippets:
                 extra_context += f" Customers have mentioned: {'; '.join(snippets)}."
 
+        # Include all available type tags for richer vocabulary in the summary.
+        all_types = ", ".join(
+            t.replace("_", " ") for t in (place.get("types") or [])[:6]
+        )
+        type_context = (
+            f" Also classified as: {all_types}." if all_types and all_types != types_phrase else ""
+        )
         prompt = (
             f"Write ONE short English sentence describing the services offered by '{name}' "
-            f"which provides {types_phrase} in {location}.{extra_context} "
+            f"which provides {types_phrase} in {location}.{extra_context}{type_context} "
             "Focus on their specialties and unique offerings. "
             "The sentence MUST be in English regardless of any non-English text above. "
             "Return only the sentence, no preamble."

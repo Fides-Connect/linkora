@@ -362,18 +362,25 @@ class ResponseOrchestrator:
         from langchain_core.messages import HumanMessage
         from ..prompts_templates import PROVIDER_CARD_REASONING_PROMPT
 
-        def _name(p: dict) -> str:
-            return (p.get("user") or {}).get("name") or p.get("title", "")
+        def _provider_entry(idx: int, p: dict) -> str:
+            name = (p.get("user") or {}).get("name") or p.get("title", "")
+            primary_type = p.get("primary_type") or p.get("category") or ""
+            address = p.get("address") or (p.get("user") or {}).get("address") or ""
+            description = p.get("description", "")[:300]
+            snippets = (p.get("review_snippets") or [])[:5]
 
-        def _review_suffix(p: dict) -> str:
-            snippets = (p.get("review_snippets") or [])[:3]
-            if not snippets:
-                return ""
-            return " | Customer reviews: " + "; ".join(snippets)
+            type_str = f" ({primary_type})" if primary_type else ""
+            lines = [f"{idx + 1}. {name}{type_str}"]
+            if address:
+                lines.append(f"   Location: {address}")
+            if description:
+                lines.append(f"   Description: {description}")
+            if snippets:
+                lines.append("   Customer reviews: " + "; ".join(snippets))
+            return "\n".join(lines)
 
-        provider_items = "\n".join(
-            f"{i + 1}. {_name(p)}: {p.get('description', '')[:200]}{_review_suffix(p)}"
-            for i, p in enumerate(gp_results)
+        provider_items = "\n\n".join(
+            _provider_entry(i, p) for i, p in enumerate(gp_results)
         )
         language_name = "German" if language == "de" else language.capitalize()
         prompt = PROVIDER_CARD_REASONING_PROMPT.format(

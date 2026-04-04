@@ -170,6 +170,7 @@ class HubSpokeIngestion:
                     "feedback_negative": user_data.get("feedback_negative", []),
                     "average_rating": user_data.get("average_rating", 0.0),
                     "review_count": user_data.get("review_count", 0),
+                    "rating_count": user_data.get("rating_count", 0),
                     "created_at": user_data.get("created_at", datetime.now(UTC)),
                     "has_open_request": user_data.get("has_open_request", False),
                     "last_sign_in": last_active,
@@ -233,6 +234,7 @@ class HubSpokeIngestion:
             "feedback_negative": [],
             "average_rating": float(user_data.get("average_rating") or 0.0),
             "review_count": 0,
+            "rating_count": int(user_data.get("rating_count") or 0),
             "created_at": user_data.get("created_at", datetime.now(UTC)),
             "has_open_request": False,
             # last_sign_in intentionally None so ghost-filter is_none() passes.
@@ -281,6 +283,7 @@ class HubSpokeIngestion:
                     "availability_tags": [],
                     "availability_text": "",
                     "review_snippets": competence_data.get("review_snippets") or [],
+                    "primary_type": competence_data.get("primary_type", ""),
                 }
                 competence_collection = get_competence_collection()
                 try:

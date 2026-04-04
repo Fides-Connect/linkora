@@ -61,6 +61,8 @@ class AssistantTabViewModel extends ChangeNotifier {
   String? get error => _error;
   bool get isVoiceMode => _isVoiceMode;
   bool get voiceEnabled => _speechService.voiceEnabled;
+  /// True once the data channel is open and the backend can receive messages.
+  bool get isSessionReady => _dataChannelReady;
 
   // ── Initialisation ───────────────────────────────────────────────────────
   void initialize(String localStatusText, String languageCode) {
@@ -156,8 +158,12 @@ class AssistantTabViewModel extends ChangeNotifier {
             _lastMessageWasUser ||
             _chatMessages.isEmpty ||
             _chatMessages.last.isUser) {
-          // New AI response starting — let onRuntimeState drive _conversationState;
-          // only manage chat messages and mic state here.
+          // New AI response starting — clear processing state immediately so the
+          // typing indicator disappears as soon as the first text arrives,
+          // without waiting for the onRuntimeState(speaking) backend event.
+          if (_conversationState == ConversationState.processing) {
+            _conversationState = ConversationState.listening;
+          }
           _currentMessage = text;
           _chatMessages.add(ChatMessage(text: text, isUser: false));
           _lastMessageWasUser = false;

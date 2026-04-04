@@ -45,7 +45,10 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
         final localizations = AppLocalizations.of(context);
         final locale = Localizations.localeOf(context);
         vm.initialize(
-          localizations?.tapMicrophoneToStart ?? 'Tap microphone to start',
+          vm.voiceEnabled
+              ? (localizations?.tapMicrophoneToStart ??
+                  'Tap microphone to start')
+              : '',
           locale.languageCode,
         );
         // Auto-start a text session so the server greets the user by name
@@ -139,6 +142,7 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                     child: ChatDisplay(
                       messages: viewModel.chatMessages,
                       statusText: viewModel.statusText,
+                      state: viewModel.conversationState,
                       height: chatHeight > 0 ? chatHeight : 300,
                     ),
                   ),
@@ -147,6 +151,7 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                     state: viewModel.conversationState,
                     isVoiceMode: viewModel.isVoiceMode,
                     showMicButton: viewModel.voiceEnabled,
+                    enabled: viewModel.isSessionReady,
                     hintText:
                         AppLocalizations.of(context)?.typeMessageHint ??
                         'Type a message...',

@@ -130,7 +130,7 @@ class HubSpokeSearch:
                                     competence[_f] = user[_f]
                             if user.get('average_rating'):
                                 competence['rating'] = user['average_rating']
-                            if user.get('rating_count'):
+                            if user.get('rating_count') is not None:
                                 competence['rating_count'] = user['rating_count']
 
                     # Keep only the best-scoring competence per user
@@ -183,7 +183,7 @@ class HubSpokeSearch:
                                     competence[_f] = user[_f]
                             if user.get('average_rating'):
                                 competence['rating'] = user['average_rating']
-                            if user.get('rating_count'):
+                            if user.get('rating_count') is not None:
                                 competence['rating_count'] = user['rating_count']
 
                     results.append(competence)
@@ -361,7 +361,7 @@ class HubSpokeSearch:
                             competence[_f] = user[_f]
                     if user.get('average_rating'):
                         competence['rating'] = user['average_rating']
-                    if user.get('rating_count'):
+                    if user.get('rating_count') is not None:
                         competence['rating_count'] = user['rating_count']
                     if user.get('photo_url'):
                         competence['photo_url'] = user['photo_url']
@@ -474,7 +474,7 @@ class HubSpokeSearch:
                     query=query_text,
                     limit=5,
                     alpha=alpha,
-                    query_properties=["title^2", "category", "description", "search_optimized_summary", "availability_text"],
+                    query_properties=["title^2", "primary_type^1.5", "category", "description", "search_optimized_summary", "availability_text"],
                     return_metadata=MetadataQuery(score=True),
                 )
                 logger.debug(
@@ -493,11 +493,12 @@ class HubSpokeSearch:
                 limit=fetch_limit * 10,  # Fetch more for client-side grouping
                 filters=filter_clause,
                 alpha=alpha,
-                # Boost title (2×) to prioritize exact service name matches. category, description,
+                # Boost title (2×) to prioritize exact service name matches. primary_type (1.5×)
+                # handles precise GP type labels like "Wedding Photographer". category, description,
                 # search_optimized_summary, and availability_text are searched at standard weight.
                 # search_optimized_summary is the primary vector source and also benefits BM25 recall
                 # for niche skills well-described in the summary but not literally in the title.
-                query_properties=["title^2", "category", "description", "search_optimized_summary", "availability_text"],
+                query_properties=["title^2", "primary_type^1.5", "category", "description", "search_optimized_summary", "availability_text"],
                 return_metadata=MetadataQuery(score=True),
                 return_references=QueryReference(
                     link_on="owned_by",

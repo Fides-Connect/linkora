@@ -77,10 +77,11 @@ def _candidate_to_text(candidate: dict[str, Any]) -> str:
 
     Google Places providers (no skills_list):
       - title          — business name
+      - primary_type   — exact GP type label (e.g. "Wedding Photographer")
       - search_optimized_summary — LLM-synthesised English summary
-      - category       — GP primary type (e.g. "Wedding service")
+      - category       — GP broad category (e.g. "Wedding service")
       - description    — editorial summary in its original language
-      - review_snippets — raw customer review fragments (up to 3)
+      - review_snippets — raw customer review fragments (up to 5)
     """
     parts = []
     title = candidate.get("title") or candidate.get("category") or ""
@@ -97,15 +98,19 @@ def _candidate_to_text(candidate: dict[str, Any]) -> str:
         parts.append("Skills: " + ", ".join(skills))
 
     # GP-provider fields (only populated for Google Places records)
+    primary_type = candidate.get("primary_type") or ""
+    if primary_type and primary_type not in title:
+        parts.append(primary_type)
+
     category = candidate.get("category") or ""
-    if category and category not in title:
+    if category and category not in title and category not in primary_type:
         parts.append(category)
 
     description = candidate.get("description") or ""
     if description and description not in summary:
         parts.append(description)
 
-    review_snippets = (candidate.get("review_snippets") or [])[:3]
+    review_snippets = (candidate.get("review_snippets") or [])[:5]
     if review_snippets:
         parts.append("Customer reviews: " + ". ".join(review_snippets))
 

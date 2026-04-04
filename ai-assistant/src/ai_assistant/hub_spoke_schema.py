@@ -138,6 +138,15 @@ def init_hub_spoke_schema() -> bool | None:
                             vectorize_property_name=True,
                             skip_vectorization=False,
                         ),
+                        # primary_type: Google Places primaryTypeDisplayName (e.g. "Wedding
+                        # Photographer"). Vectorized so nearText queries benefit; also
+                        # BM25-searchable for exact-type keyword matching.
+                        Property(
+                            name="primary_type",
+                            data_type=DataType.TEXT,
+                            skip_vectorization=False,
+                            index_searchable=True,
+                        ),
                         # skills_list: explicit + implicit skills, stored for retrieval.
                         # NOT vectorized individually — the summary already captures them.
                         Property(name="skills_list", data_type=DataType.TEXT_ARRAY,
@@ -179,6 +188,7 @@ def init_hub_spoke_schema() -> bool | None:
                         Property(name="feedback_negative", data_type=DataType.TEXT_ARRAY),
                         Property(name="average_rating", data_type=DataType.NUMBER),
                         Property(name="review_count", data_type=DataType.INT),
+                        Property(name="rating_count", data_type=DataType.INT, skip_vectorization=True),
                         # External-source metadata (Google Places integration)
                         Property(name="source", data_type=DataType.TEXT, skip_vectorization=True),
                         Property(name="phone", data_type=DataType.TEXT, skip_vectorization=True),
@@ -228,6 +238,7 @@ def init_hub_spoke_schema() -> bool | None:
             ("address", DataType.TEXT, True),
             ("opening_hours", DataType.TEXT, True),
             ("maps_url", DataType.TEXT, True),
+            ("rating_count", DataType.INT, True),
         ]
         user_collection = client.collections.get(USER_COLLECTION)
         user_config = user_collection.config.get()
@@ -247,6 +258,8 @@ def init_hub_spoke_schema() -> bool | None:
         # NOT vectorized — the search_optimized_summary already captures review context.
         _new_competence_properties = [
             ("review_snippets", DataType.TEXT_ARRAY, True),
+            # primary_type: GP primaryTypeDisplayName — vectorized for richer semantic matching.
+            ("primary_type", DataType.TEXT, False),
         ]
         competence_config = competence_collection.config.get()
         existing_comp_prop_names = {p.name for p in (competence_config.properties or [])}
