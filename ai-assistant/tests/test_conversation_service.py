@@ -16,7 +16,7 @@ class TestConversationStageEnum:
 
     def test_all_9_members_exist(self):
         expected = {
-            "TRIAGE", "CLARIFY", "TOOL_EXECUTION",
+            "GREETING", "TRIAGE", "CLARIFY", "TOOL_EXECUTION",
             "CONFIRMATION", "FINALIZE", "RECOVERY", "COMPLETED",
             "PROVIDER_PITCH", "PROVIDER_ONBOARDING",
         }
@@ -582,8 +582,8 @@ class TestStageManagement:
     """Test conversation stage management."""
 
     def test_initial_stage_is_triage(self, conversation_service):
-        """Initial stage must be TRIAGE."""
-        assert conversation_service.get_current_stage() == ConversationStage.TRIAGE
+        """Initial stage must be GREETING."""
+        assert conversation_service.get_current_stage() == ConversationStage.GREETING
 
     def test_set_stage_to_triage(self, conversation_service):
         conversation_service.set_stage(ConversationStage.TRIAGE)
@@ -676,8 +676,8 @@ class TestConversationFlow:
         assert greeting is not None
         assert len(greeting) > 0
 
-        # Stage is NOT advanced by generate_greeting_text — still TRIAGE
-        assert conversation_service.get_current_stage() == ConversationStage.TRIAGE
+        # Stage is NOT advanced by generate_greeting_text — still GREETING
+        assert conversation_service.get_current_stage() == ConversationStage.GREETING
 
 
 # ─────────────────────────────────────────────────────────────────────────────

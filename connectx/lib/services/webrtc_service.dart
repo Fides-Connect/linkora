@@ -81,6 +81,8 @@ class WebRTCService {
   List<Map<String, dynamic>>? _iceServers;
   Completer<void>? _iceConfigCompleter;
   final Duration _iceConfigTimeout;
+  final Duration _prewarmTimeout;
+  final Duration _connectPrewarmWait;
 
   // Deep pre-warm state — true once the hollow pre-warm connection (ICE + DC)
   // is fully established and waiting for the user to tap.
@@ -110,6 +112,8 @@ class WebRTCService {
     String? serverUrl,
     String? languageCode,
     Duration iceConfigTimeout = const Duration(seconds: 5),
+    Duration prewarmTimeout = const Duration(seconds: 15),
+    Duration connectPrewarmWait = const Duration(seconds: 8),
   }) : _webRTCWrapper = webRTCWrapper ?? WebRTCWrapper(),
        _webSocketFactory =
            webSocketFactory ??
@@ -119,6 +123,8 @@ class WebRTCService {
        _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper(),
        _audioRoutingServiceFactory = audioRoutingServiceFactory,
        _iceConfigTimeout = iceConfigTimeout,
+       _prewarmTimeout = prewarmTimeout,
+       _connectPrewarmWait = connectPrewarmWait,
        _languageCode = languageCode ?? 'de' {
     // Load server URL from environment variable
     final String? rawServer =
@@ -188,7 +194,7 @@ class WebRTCService {
       final completer = _prewarmReadyCompleter;
       if (completer != null) {
         try {
-          await completer.future.timeout(const Duration(seconds: 8));
+          await completer.future.timeout(_connectPrewarmWait);
         } catch (_) {
           // Pre-warm timed out or failed — fall through to normal connect.
           _isPrewarmed = false;
@@ -340,9 +346,16 @@ class WebRTCService {
     _prewarmReadyCompleter = Completer<void>();
     _dataChannelOpenFired = false;
     _iceConfigCompleter = Completer<void>();
+    // Track the objects created by THIS invocation so the catch block only
+    // cleans up what we own.  connect() may have already replaced _signaling
+    // and _peerConnection with a live session's objects; blindly closing them
+    // from a delayed prewarm cleanup would kill an active session.
+    WebSocketChannel? mySignaling;
+    RTCPeerConnection? myPc;
     try {
       // Open WS — _connectSignaling() sees _isPrewarming and adds hold_start=true.
       await _connectSignaling();
+      mySignaling = _signaling;
       try {
         await _iceConfigCompleter!.future.timeout(_iceConfigTimeout);
       } on TimeoutException {
@@ -350,25 +363,34 @@ class WebRTCService {
       }
       // Create peer connection without a local audio track (no getUserMedia).
       await _createPeerConnection();
+      myPc = _peerConnection;
       // Send a hollow offer (data channel only, no audio m-line) with hold_start.
       await _createHollowOffer();
       // Wait until ICE + DTLS + DC are fully established.
-      await _prewarmReadyCompleter!.future.timeout(const Duration(seconds: 15));
+      await _prewarmReadyCompleter!.future.timeout(_prewarmTimeout);
       _isPrewarmed = true;
       debugPrint('WebRTC: Deep pre-warm complete — ICE negotiated, DC open, server holding');
     } catch (e) {
       debugPrint('WebRTC: Deep pre-warm failed (non-critical): $e');
       _isPrewarmed = false;
       _prewarmReadyCompleter = null;
-      try { await _signaling?.sink.close(); } catch (_) {}
-      _signaling = null;
-      _iceServers = null;
-      if (_peerConnection != null) {
-        await _peerConnection!.close();
-        _peerConnection = null;
+      // Only close the objects this prewarm invocation created.  Use
+      // identical() before nulling shared fields so a concurrently-started
+      // text session (whose connect() replaced _signaling/_peerConnection) is
+      // never touched.
+      try { mySignaling?.sink.close(); } catch (_) {}
+      if (identical(_signaling, mySignaling)) {
+        _signaling = null;
+        _iceServers = null;
       }
-      _dataChannel = null;
-      _remoteDescriptionSet = false;
+      if (myPc != null) {
+        await myPc.close();
+      }
+      if (identical(_peerConnection, myPc)) {
+        _peerConnection = null;
+        _dataChannel = null;
+        _remoteDescriptionSet = false;
+      }
     } finally {
       _isPrewarming = false;
     }

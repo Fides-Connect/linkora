@@ -82,8 +82,15 @@ class AssistantTabViewModel extends ChangeNotifier {
     // the mic button.
     if (_warmupLanguage != languageCode) {
       _warmupLanguage = languageCode;
-      unawaited(_speechService.preWarmConnection());
-      unawaited(_speechService.warmUpGreeting());
+      // Skip voice-only warmups when the deployment does not support voice
+      // (e.g. lite mode).  preWarm() is a voice ICE optimisation;
+      // warmUpGreeting() pre-generates TTS audio — neither is useful for
+      // text-only sessions and the failed pre-warm can race with the live
+      // text session if its cleanup fires late.
+      if (_speechService.voiceEnabled) {
+        unawaited(_speechService.preWarmConnection());
+        unawaited(_speechService.warmUpGreeting());
+      }
     }
   }
 
@@ -271,8 +278,11 @@ class AssistantTabViewModel extends ChangeNotifier {
     }
     // Clear history from any prior session so each new session begins with a
     // clean slate and previous greetings / messages are not shown again.
-    // _chatMessages.clear();
-    // _pendingEchoTexts.clear();
+    _chatMessages.clear();
+    _pendingEchoTexts.clear();
+    _currentMessage = '';
+    _lastMessageWasUser = false;
+    notifyListeners();
     // _pendingTextMessage set above in the optimistic block when pendingText is non-null
     _dataChannelReady = false;
 

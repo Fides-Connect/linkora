@@ -57,6 +57,7 @@ def json_serializer(obj: object) -> str:
 
 class ConversationStage(StrEnum):
     """External conversation stage — owned exclusively by ResponseOrchestrator."""
+    GREETING      = "greeting"
     TRIAGE        = "triage"
     CLARIFY       = "clarify"
     TOOL_EXECUTION = "tool_execution"
@@ -70,6 +71,7 @@ class ConversationStage(StrEnum):
 
 # Legal stage transitions: { from_stage: { allowed_to_stages } }
 _LEGAL_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
+    ConversationStage.GREETING:       [ConversationStage.TRIAGE],
     ConversationStage.TRIAGE:         [ConversationStage.CONFIRMATION, ConversationStage.CLARIFY,
                                        ConversationStage.TOOL_EXECUTION, ConversationStage.RECOVERY,
                                        ConversationStage.PROVIDER_ONBOARDING],
@@ -134,7 +136,7 @@ class ConversationService:
         self.google_places_service = google_places_service
         self._profile = profile if profile is not None else FULL_PROFILE
 
-        self.current_stage: ConversationStage = ConversationStage.TRIAGE
+        self.current_stage: ConversationStage = ConversationStage.GREETING
         self.context: dict[str, Any] = {
             "user_problem": [],
             "ai_responses": [],
@@ -157,11 +159,6 @@ class ConversationService:
             "google_places_used": False,
             "google_places_error": False,
             "google_places_announced": False,
-            # Set True on session creation; cleared by ResponseOrchestrator after
-            # the first successful LLM response in TRIAGE.  When True the TRIAGE
-            # prompt greets the user instead of scoping immediately.  .get() must
-            # be used (not .pop()) so LLM retries preserve the greeting intent.
-            "is_first_message": True,
         }
 
         logger.info("Conversation service initialized: agent=%s, company=%s", agent_name, company_name)
@@ -199,49 +196,32 @@ class ConversationService:
             fallback_from = self.context.pop("language_fallback_from", "")
             language_instruction = get_language_instruction(self.language, fallback_from=fallback_from)
             user_name = self.context.get("user_name", "")
-            # Use .get() (not .pop()) so the flag survives LLM retries on the same
-            # turn.  ResponseOrchestrator clears it after the first successful chunk.
-            is_first_message = self.context.get("is_first_message", False)
-            if is_first_message:
-                name_clause = (
-                    f"Greet **{user_name}** warmly by name."
-                    if user_name
-                    else "Use a warm, generic greeting (e.g., 'Hello, welcome back!')."
-                )
-                has_open_request = "Yes" if self.context.get("has_open_request", False) else "No"
-                if has_open_request == "Yes":
-                    request_clause = (
-                        "Then acknowledge their active request: 'I see you have an open request with us.' "
-                        "Ask whether they'd like to check on it or if they have something new to discuss."
-                    )
-                else:
-                    request_clause = "Then ask an open, friendly question: 'How can I help you today?'"
-                greeting_instruction = (
-                    "**This is the very first message of the session — greet the user AND begin triage simultaneously:**\n"
-                    f"1. {name_clause}\n"
-                    f"2. {request_clause}\n"
-                    "Keep the greeting and opening question to 2–3 sentences total, then proceed directly to scoping as needed."
-                )
-            else:
-                greeting_instruction = (
-                    "**Never re-greet or re-echo:** The user has already been welcomed. "
-                    "Do NOT start your response with \"Hello\", \"Hi\", \"Welcome\", \"Good day\", "
-                    "or any greeting phrase. Do NOT paraphrase the user's request back to them as a "
-                    "preamble (e.g., \"No problem at all, I can help you find an electrician!\") before "
-                    "asking a scoping question. Jump directly to the first question or, if the request "
-                    "is already complete, to `signal_transition`."
-                )
+            # Greeting was already delivered by GREETING stage — never re-greet in TRIAGE.
+            greeting_instruction = (
+                "**Never re-greet or re-echo:** The user has already been welcomed. "
+                "Do NOT start your response with \"Hello\", \"Hi\", \"Welcome\", \"Good day\", "
+                "or any greeting phrase. Do NOT paraphrase the user's request back to them as a "
+                "preamble (e.g., \"No problem at all, I can help you find an electrician!\") before "
+                "asking a scoping question. Jump directly to the first question or, if the request "
+                "is already complete, to `signal_transition`."
+            )
             # GP enabled: location becomes mandatory — inject the MRI instruction.
             gp_active = (
                 self._profile.google_places_always_active
                 and self.google_places_service is not None
             )
             location_mri_instruction = (
-                "IMPORTANT: Location is a MANDATORY requirement before you may proceed to "
-                "CONFIRMATION. You MUST ask for a city or region before any other "
-                "extended-context field. Do not call "
-                'signal_transition(target_stage="confirmation") until the user has '
-                "provided a location."
+                "\n**⚠ LOCATION — MANDATORY 4th MRI ELEMENT (OVERRIDES ALL EARLIER RULES):**\n"
+                "For this session, the MRI Gate has FOUR required elements, not three:\n"
+                "  1. Core Intent  2. ≥3 Contextual Details  3. Availability/Urgency  "
+                "4. **Location** (city or area where the service is needed)\n"
+                "- The brief is NOT complete until the user has provided a location.\n"
+                "- Do NOT call `signal_transition(target_stage=\"confirmation\")` until location "
+                "is also collected — even when Core Intent + 3 Details + Urgency are all satisfied.\n"
+                "- This rule overrides the DOUBLE-CONFIRMATION TRAP: asking 'Where is the work "
+                "needed — which city or area?' is a legitimate scoping question, not a confirmation.\n"
+                "- If the user explicitly dismisses the location question (Respect Dismissals rule), "
+                "accept the dismissal and proceed with empty location.\n"
                 if gp_active else ""
             )
             return ChatPromptTemplate.from_messages([
@@ -277,22 +257,22 @@ class ConversationService:
                 google_places_announcement = ""
             elif gp_error:
                 google_places_announcement = (
-                    "The Google Maps search was temporarily unavailable. "
-                    "Briefly inform the user (once only) that results are sourced from "
-                    "registered providers only."
+                    f"The Google Maps search was temporarily unavailable. "
+                    f"Briefly inform the user (once only) in {language_name} that results "
+                    f"are sourced from registered providers only."
                 )
             elif gp_used and not gp_announced:
                 google_places_announcement = (
-                    "Begin your response with a single natural sentence informing the user "
-                    "that you are also searching Google Maps for nearby providers — "
-                    "exactly once."
+                    f"Begin your response with a single natural sentence in {language_name} "
+                    f"informing the user that you are also searching Google Maps for nearby "
+                    f"providers — exactly once."
                 )
                 self.context["google_places_announced"] = True
             elif gp_used and gp_announced:
                 google_places_announcement = (
-                    "NOTE: You already informed the user at the start of this FINALIZE "
-                    "session that you also searched Google Maps. "
-                    "Do NOT repeat this announcement."
+                    f"NOTE: You already informed the user at the start of this FINALIZE "
+                    f"session in {language_name} that you also searched Google Maps. "
+                    f"Do NOT repeat this announcement."
                 )
             else:
                 google_places_announcement = ""

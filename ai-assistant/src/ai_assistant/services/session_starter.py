@@ -227,9 +227,9 @@ class VoiceSessionStarter(SessionStarter):
             # Push greeting bubble to Flutter.
             self._dc.send_chat(greeting_text, is_user=False, is_chunk=False)
 
-            # Greeting delivered — clear the first-message flag so subsequent
-            # TRIAGE turns don't re-greet.  TRIAGE is already the initial stage.
-            self._conv.context["is_first_message"] = False
+            # Greeting delivered — advance GREETING → TRIAGE so subsequent voice
+            # turns use the scoping prompt without any re-greeting.
+            self._orchestrator.handle_signal_transition("triage")
             self.initialized_event.set()
 
             # Play audio.
@@ -263,9 +263,8 @@ class VoiceSessionStarter(SessionStarter):
                 exc,
                 exc_info=True,
             )
-            # Clear first-message flag so the next user turn doesn't attempt to
-            # re-greet.  Stage stays at TRIAGE (already the initial stage).
-            self._conv.context["is_first_message"] = False
+            # Advance to TRIAGE so the next user turn can be processed normally.
+            self._orchestrator.handle_signal_transition("triage")
         finally:
             # Keep is_ai_speaking=True until the audio queue actually drains.
             # Clearing it here while audio is still buffered in the output
@@ -282,16 +281,15 @@ class VoiceSessionStarter(SessionStarter):
 
 
 class TextSessionStarter(SessionStarter):
-    """Text-mode initializer: greeting bubble → seed history → TRIAGE ready.
+    """Text-mode initializer: greeting bubble → GREETING→TRIAGE transition → TRIAGE ready.
 
     For non-buffered sessions: generates a personalised greeting text, pushes it
     as a DataChannel chat bubble, seeds LLM history for coherent follow-up turns,
-    then clears the is_first_message flag so subsequent TRIAGE turns don't re-greet.
+    then transitions GREETING → TRIAGE so subsequent turns use the scoping prompt.
 
     For buffered sessions (a user message arrived before the session was ready):
-    skips the standalone greeting.  is_first_message stays True so the first
-    generate_response_stream() call greets the user and processes their intent
-    simultaneously in a single TRIAGE turn.
+    skips the standalone greeting and immediately advances to TRIAGE so the
+    buffered message is processed as a normal scoping turn.
 
     TTS is skipped (text-only session).
     """
@@ -369,10 +367,9 @@ class TextSessionStarter(SessionStarter):
 
             if self._buffered_message:
                 # A first user message arrived before the session was ready.
-                # Skip the standalone greeting so the LLM greets the user AND
-                # handles their intent together in the first TRIAGE turn.
-                # is_first_message stays True — ResponseOrchestrator will clear it
-                # after the first successful LLM chunk.
+                # Skip the standalone greeting and advance to TRIAGE immediately
+                # so the buffered message is processed as a normal scoping turn.
+                self._orchestrator.handle_signal_transition("triage")
                 logger.info(
                     "TextSessionStarter: skipped standalone greeting (buffered message) for %s",
                     self._connection_id,
@@ -392,8 +389,9 @@ class TextSessionStarter(SessionStarter):
                         self._first_message_event.wait(), timeout=0.3
                     )
                     # A real message arrived in the window — skip the autonomous
-                    # greeting; is_first_message stays True so TRIAGE greets the
-                    # user while responding to their intent in one turn.
+                    # Advance from GREETING to TRIAGE so the user's buffered
+                    # message is processed as a normal TRIAGE turn.
+                    self._orchestrator.handle_signal_transition("triage")
                     logger.info(
                         "TextSessionStarter: skipped standalone greeting (late DC message) for %s",
                         self._connection_id,
@@ -415,9 +413,9 @@ class TextSessionStarter(SessionStarter):
             history = self._llm.get_session_history(self._connection_id)
             history.add_message(AIMessage(content=greeting_text))
 
-            # Greeting delivered — clear the first-message flag so subsequent
-            # TRIAGE turns don't re-greet.  TRIAGE is already the initial stage.
-            self._conv.context["is_first_message"] = False
+            # Greeting delivered — advance GREETING → TRIAGE so subsequent turns
+            # use the scoping prompt without any re-greeting.
+            self._orchestrator.handle_signal_transition("triage")
             logger.info(
                 "TextSessionStarter: TRIAGE ready for %s (user=%r)",
                 self._connection_id,
@@ -430,9 +428,8 @@ class TextSessionStarter(SessionStarter):
                 exc,
                 exc_info=True,
             )
-            # Clear first-message flag so the next user turn doesn't attempt
-            # to re-greet.  Stage stays at TRIAGE (already the initial stage).
-            self._conv.context["is_first_message"] = False
+            # Advance to TRIAGE so the next user turn can be processed normally.
+            self._orchestrator.handle_signal_transition("triage")
         finally:
             self.initialized_event.set()
 

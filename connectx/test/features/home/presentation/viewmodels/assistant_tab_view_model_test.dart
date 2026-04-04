@@ -105,6 +105,54 @@ void main() {
       await vm.startChat(voiceMode: false, pendingText: '  trimmed  ');
       expect(vm.chatMessages.first.text, 'trimmed');
     });
+
+    test('clears prior history before adding pending text', () async {
+      final cbs = init();
+      // Simulate a previous session that ended without explicit stopChat
+      // (e.g. server disconnect → onDisconnected → state=idle, no clear).
+      (cbs['chat'] as OnChatMessageCallback)('Hello from old session', false, false);
+      expect(vm.chatMessages.length, 1);
+
+      // New session start with a pending message must clear the old greeting.
+      await vm.startChat(voiceMode: false, pendingText: 'I need a plumber');
+      expect(vm.chatMessages.length, 1);
+      expect(vm.chatMessages.first.text, 'I need a plumber');
+    });
+  });
+
+  group('startChat() history clearing', () {
+    setUp(() {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+    });
+
+    test('clears prior chat history so new greeting is not doubled', () async {
+      final cbs = init();
+      // Simulate leftover greeting from a previous session (ended via
+      // disconnect without an explicit stopChat).
+      (cbs['chat'] as OnChatMessageCallback)('Hello from old session!', false, false);
+      expect(vm.chatMessages.length, 1);
+
+      // Start a fresh session.
+      await vm.startChat(voiceMode: false);
+      expect(vm.chatMessages, isEmpty,
+          reason: 'Old messages must be cleared so the new greeting '
+              'is not shown alongside the previous one.');
+    });
+
+    test('clears prior messages and immediately notifies listeners', () async {
+      final cbs = init();
+      (cbs['chat'] as OnChatMessageCallback)('Old greeting', false, false);
+      int notifyCount = 0;
+      vm.addListener(() => notifyCount++);
+
+      await vm.startChat(voiceMode: false);
+
+      // At least one notification must have fired during/before startChat
+      // so the UI can show the cleared state while connecting.
+      expect(notifyCount, greaterThanOrEqualTo(1));
+      expect(vm.chatMessages, isEmpty);
+    });
   });
 
   group('startChat() error handling', () {

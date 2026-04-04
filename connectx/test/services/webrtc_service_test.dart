@@ -400,4 +400,94 @@ void main() {
       await httpService.disconnect();
     });
   });
+
+  group('preWarm() race-condition safety', () {
+    // Regression test for: preWarm()'s catch-block cleanup must never close
+    // service fields (_peerConnection / _signaling) that have been replaced by
+    // a concurrently-started text session.
+    //
+    // Scenario reproduced here:
+    //   1. preWarm() creates prewarmPc, then waits on _prewarmReadyCompleter.
+    //   2. connect(mode:'text') times out waiting for the prewarm and starts a
+    //      cold text connect which creates textPc — replacing _peerConnection.
+    //   3. preWarm()'s prewarmTimeout fires → its catch block must only close
+    //      prewarmPc (myPc), NOT the now-active textPc.
+    test('does not close active text session PC when prewarm cleanup fires late',
+        () async {
+      // ── Arrange ──────────────────────────────────────────────────────────
+      final prewarmPc = MockRTCPeerConnection();
+      final textPc = MockRTCPeerConnection();
+
+      // Both PCs need the minimal stubs used inside _createPeerConnection().
+      for (final pc in [prewarmPc, textPc]) {
+        when(pc.createDataChannel(any, any))
+            .thenAnswer((_) async => mockDataChannel);
+        when(pc.createOffer(any))
+            .thenAnswer((_) async => RTCSessionDescription('sdp', 'offer'));
+        when(pc.setLocalDescription(any)).thenAnswer((_) async {});
+        when(pc.close()).thenAnswer((_) async {});
+        // Callback setters all return null via returnValueForMissingStub.
+      }
+
+      // createPeerConnection returns prewarmPc first, textPc second.
+      int pcCount = 0;
+      when(mockWebRTCWrapper.createPeerConnection(any))
+          .thenAnswer((_) async => (++pcCount == 1) ? prewarmPc : textPc);
+
+      // Two separate WS channels so prewarm and text sessions don't share a
+      // stream.  Prewarm WS stream stays open (never sends ICE config, which
+      // is fine because iceConfigTimeout = Duration.zero in the service).
+      final prewarmSink = MockWebSocketSink();
+      final prewarmWs = MockWebSocketChannel();
+      when(prewarmWs.sink).thenReturn(prewarmSink);
+      when(prewarmWs.stream)
+          .thenAnswer((_) => StreamController<dynamic>().stream);
+      when(prewarmSink.add(any)).thenReturn(null);
+      when(prewarmSink.close()).thenAnswer((_) async {});
+
+      final textSink = MockWebSocketSink();
+      final textWs = MockWebSocketChannel();
+      final textStreamCtrl = StreamController<dynamic>();
+      when(textWs.sink).thenReturn(textSink);
+      when(textWs.stream).thenAnswer((_) => textStreamCtrl.stream);
+      when(textSink.add(any)).thenReturn(null);
+      when(textSink.close())
+          .thenAnswer((_) async => await textStreamCtrl.close());
+
+      int wsCount = 0;
+      final raceService = WebRTCService(
+        webRTCWrapper: mockWebRTCWrapper,
+        webSocketFactory: (uri, headers) =>
+            (++wsCount == 1) ? prewarmWs : textWs,
+        audioRoutingServiceFactory: () => AudioRoutingService(
+          hardwareController: mockAudioHardwareController,
+          deviceCheckInterval: testDeviceCheckInterval,
+          inputChangeDebounce: testInputChangeDebounce,
+        ),
+        firebaseAuthWrapper: mockFirebaseAuthWrapper,
+        serverUrl: 'localhost:8000',
+        iceConfigTimeout: Duration.zero,
+        // connectPrewarmWait (1 ms) < prewarmTimeout (50 ms) so connect()
+        // creates textPc BEFORE the prewarm cleanup fires.
+        prewarmTimeout: const Duration(milliseconds: 50),
+        connectPrewarmWait: const Duration(milliseconds: 1),
+      );
+
+      // ── Act ───────────────────────────────────────────────────────────────
+      // Run both concurrently; preWarm finishes after ~50 ms timeout.
+      await Future.wait([
+        raceService.preWarm(),
+        raceService.connect(mode: 'text'),
+      ]);
+
+      // ── Assert ────────────────────────────────────────────────────────────
+      // preWarm's own PC must have been closed by its cleanup.
+      verify(prewarmPc.close()).called(1);
+      // The text session PC must NOT have been touched by the prewarm cleanup.
+      verifyNever(textPc.close());
+
+      await raceService.disconnect();
+      if (!textStreamCtrl.isClosed) await textStreamCtrl.close();
+    });
+  });
 }

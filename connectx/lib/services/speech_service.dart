@@ -25,6 +25,10 @@ class SpeechService {
   // Language configuration
   String _languageCode = 'de';
 
+  /// True when APP_MODE=full (default). Set APP_MODE=lite in .env to disable
+  /// voice pre-warming and mic handling for lite-mode deployments.
+  final bool voiceEnabled;
+
   // Callbacks
   OnSpeechStartCallback? onSpeechStart;
   OnSpeechEndCallback? onSpeechEnd;
@@ -37,15 +41,25 @@ class SpeechService {
   /// a remote audio track. The UI should revert to text mode.
   Function()? onVoiceUpgradeTimeout;
 
+  static bool _readVoiceEnabled() {
+    try {
+      return dotenv.env['APP_MODE']?.toLowerCase() != 'lite';
+    } catch (_) {
+      return true; // dotenv not loaded (e.g. in unit tests) → default full
+    }
+  }
+
   SpeechService({
     PermissionWrapper? permissionWrapper,
     WebRTCService Function(String)? webRTCServiceFactory,
     FirebaseAuthWrapper? firebaseAuthWrapper,
+    bool? voiceEnabled,
   }) : _permissionWrapper = permissionWrapper ?? PermissionWrapper(),
        _webRTCServiceFactory =
            webRTCServiceFactory ??
            ((lang) => WebRTCService(languageCode: lang)),
-       _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper();
+       _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper(),
+       voiceEnabled = voiceEnabled ?? _readVoiceEnabled();
 
   /// Set the language code for the AI Assistant
   void setLanguageCode(String languageCode) {
