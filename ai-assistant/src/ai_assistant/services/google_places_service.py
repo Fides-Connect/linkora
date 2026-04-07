@@ -31,6 +31,7 @@ from weaviate.util import generate_uuid5
 
 from ..hub_spoke_ingestion import HubSpokeIngestion
 from .llm_service import LLMService
+from .webpage_crawler import WebCrawlResult, WebPageCrawler
 
 logger = logging.getLogger(__name__)
 
@@ -414,8 +415,26 @@ class GooglePlacesService:
             )
             for place in raw_results
         ]
-        raw_summaries: list[Any] = await asyncio.gather(*summary_tasks, return_exceptions=True)
+        crawler = WebPageCrawler(self._llm)
+        crawl_tasks = [
+            crawler.extract_provider_info(
+                url=(place.get("websiteUri") or ""),
+                provider_name=(place.get("displayName") or {}).get("text", ""),
+                query=query,
+            )
+            for place in raw_results
+        ]
+        raw_summaries, raw_crawl_results = await asyncio.gather(
+            asyncio.gather(*summary_tasks, return_exceptions=True),
+            asyncio.gather(*crawl_tasks, return_exceptions=True),
+        )
         english_summaries: list[str | None] = [r if isinstance(r, str) else None for r in raw_summaries]
+        crawl_results: list[Any] = list(raw_crawl_results)
+        crawl_successes = sum(1 for r in crawl_results if isinstance(r, WebCrawlResult))
+        logger.info(
+            "Webpage enrichment: %d/%d providers crawled successfully",
+            crawl_successes, len(crawl_results),
+        )
 
         results: list[dict[str, Any]] = []
         for idx, place in enumerate(raw_results):
@@ -475,6 +494,19 @@ class GooglePlacesService:
             if raw_hours:
                 opening_hours = "\n".join(raw_hours)
 
+            # Merge crawl enrichment into description / summary fields.
+            crawl = crawl_results[idx] if idx < len(crawl_results) else None
+            if crawl is not None and not isinstance(crawl, Exception):
+                if isinstance(crawl, WebCrawlResult):
+                    if crawl.specialities:
+                        search_optimized_summary = f"{search_optimized_summary} {crawl.specialities}".strip()
+                    if crawl.services:
+                        services_text = ", ".join(crawl.services[:10])
+                        search_optimized_summary = f"{search_optimized_summary} Services: {services_text}".strip()
+                    extra = " ".join(filter(None, [crawl.portfolio_highlights, crawl.coverage_area])).strip()
+                    if extra:
+                        description = f"{description} {extra}".strip()
+
             results.append({
                 "place_id": place_id,
                 "user_uuid": user_uuid,
@@ -501,7 +533,9 @@ class GooglePlacesService:
                 "review_snippets": _extract_review_snippets(
                     place.get("reviews") or [], max_count=5, max_chars=120
                 ),
-                "skills_list": [],
+                "skills_list": _merge_crawl_skills(crawl_results, idx),
+                "webpage_crawled": _crawl_succeeded(crawl_results, idx),
+                "email": crawl.email if isinstance(crawl, WebCrawlResult) else "",
             })
 
         return results
@@ -546,6 +580,8 @@ class GooglePlacesService:
                         "maps_url": place["maps_url"],
                         "review_snippets": place["review_snippets"],
                         "skills_list": place.get("skills_list") or [],
+                        "webpage_crawled": place.get("webpage_crawled", False),
+                        "email": place.get("email") or "",
                         "place_id": place["place_id"],
                     },
                     uuid=place["comp_uuid"],
@@ -697,6 +733,30 @@ _TYPE_CATEGORY_MAP: dict[str, str] = {
     "photographer": "Events",
     "florist": "Events",
 }
+
+
+def _merge_crawl_skills(crawl_results: list[Any], idx: int) -> list[str]:
+    """Return de-duplicated service list from the crawl result at *idx*.
+
+    Returns an empty list if the result is absent, an exception, or not a
+    ``WebCrawlResult`` instance.
+    """
+    if idx >= len(crawl_results):
+        return []
+    crawl = crawl_results[idx]
+    if crawl is None or isinstance(crawl, Exception):
+        return []
+    if not isinstance(crawl, WebCrawlResult):
+        return []
+    return list(dict.fromkeys(s for s in crawl.services if s))[:20]
+
+
+def _crawl_succeeded(crawl_results: list[Any], idx: int) -> bool:
+    """Return ``True`` if the crawl result at *idx* is a valid ``WebCrawlResult``."""
+    if idx >= len(crawl_results):
+        return False
+    crawl = crawl_results[idx]
+    return isinstance(crawl, WebCrawlResult)
 
 
 def _extract_category(types: list[str]) -> str:

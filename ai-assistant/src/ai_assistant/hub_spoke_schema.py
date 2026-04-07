@@ -380,6 +380,8 @@ def init_lite_schema() -> bool | None:
                          skip_vectorization=True),
                 # ── Source tracking ──────────────────────────────────────────
                 Property(name="place_id", data_type=DataType.TEXT, skip_vectorization=True),
+                Property(name="webpage_crawled", data_type=DataType.BOOL, skip_vectorization=True),
+                Property(name="email", data_type=DataType.TEXT, skip_vectorization=True),
             ],
         )
         logger.info("Created multi-tenant collection: %s", LITE_COMPETENCE_COLLECTION)

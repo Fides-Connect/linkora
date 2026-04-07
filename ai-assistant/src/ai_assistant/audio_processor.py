@@ -225,6 +225,14 @@ class AudioProcessor:
 
     def _make_session_starter(self, mode: SessionMode) -> SessionStarter:
         """Create a SessionStarter strategy for the given mode."""
+        # Always pass the module-level firestore service for name lookup —
+        # it is a read-only operation and should work even in lite mode where
+        # assistant.firestore_service is None (tools/AI-convs disabled).
+        name_lookup_fs = (
+            _firestore_service
+            if _firestore_service is not None
+            else self.ai_assistant.firestore_service
+        )
         return SessionStarterFactory.create(
             mode,
             conversation_service=self.ai_assistant.conversation_service,
@@ -238,7 +246,7 @@ class AudioProcessor:
             connection_id=self.connection_id,
             interrupt_event=self.interrupt_event,
             on_speaking_change=lambda speaking: setattr(self, "is_ai_speaking", speaking),
-            firestore_service=self.ai_assistant.firestore_service,
+            firestore_service=name_lookup_fs,
             buffered_message=self._buffered_message,
             first_message_event=self._first_message_received,
             monitor_playback_fn=self._monitor_playback_completion,

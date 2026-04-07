@@ -558,6 +558,7 @@ class TestReviewEnrichment:
         place = _fake_place(
             editorial_summary=None,  # forces synthesis
             reviews=[_make_review("Amazing Harry Potter cake for our wedding!")],
+            website="",  # no URL — crawler must not be invoked for this test
         )
 
         with (
@@ -727,3 +728,152 @@ class TestFetchAndIngestLite:
             await svc.fetch_and_ingest_lite("plumber", tenant_id="my-tenant-123")
 
         lite_col.with_tenant.assert_called_once_with("my-tenant-123")
+
+
+# ---------------------------------------------------------------------------
+# TestWebEnrichment
+# ---------------------------------------------------------------------------
+
+
+class TestWebEnrichment:
+    """Verify that WebPageCrawler results are merged into normalised place dicts."""
+
+    def _mock_client(self) -> MagicMock:
+        tenant_col = MagicMock()
+        tenant_col.data.insert = MagicMock(return_value="uuid-ok")
+        lite_col = MagicMock()
+        lite_col.with_tenant.return_value = tenant_col
+        client = MagicMock()
+        client.collections.get.return_value = lite_col
+        return client
+
+    async def test_skills_list_populated_from_crawl(self) -> None:
+        """crawl.services propagates into skills_list."""
+        from ai_assistant.services.webpage_crawler import WebCrawlResult
+
+        svc = _make_service()
+        places = [_fake_place()]
+        crawl = WebCrawlResult(services=["Pipe repair", "Boiler install"])
+        mock_client = self._mock_client()
+
+        with (
+            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=places)),
+            patch(
+                "ai_assistant.services.google_places_service.WebPageCrawler.extract_provider_info",
+                new=AsyncMock(return_value=crawl),
+            ),
+            patch(
+                "ai_assistant.hub_spoke_schema.HubSpokeConnection.get_client",
+                return_value=mock_client,
+            ),
+        ):
+            normalised = await svc._normalise_places(places, "plumber Munich")
+
+        assert normalised[0]["skills_list"] == ["Pipe repair", "Boiler install"]
+
+    async def test_search_summary_augmented_with_specialities(self) -> None:
+        """crawl.specialities is appended to search_optimized_summary."""
+        from ai_assistant.services.webpage_crawler import WebCrawlResult
+
+        svc = _make_service()
+        places = [_fake_place(editorial_summary="Plumbing in Munich.")]
+        crawl = WebCrawlResult(specialities="Emergency specialist open 24/7")
+
+        with (
+            patch(
+                "ai_assistant.services.google_places_service.WebPageCrawler.extract_provider_info",
+                new=AsyncMock(return_value=crawl),
+            ),
+        ):
+            normalised = await svc._normalise_places(places, "plumber")
+
+        assert "Emergency specialist open 24/7" in normalised[0]["search_optimized_summary"]
+
+    async def test_search_summary_augmented_with_services(self) -> None:
+        """crawl.services list is appended to search_optimized_summary for vectorization."""
+        from ai_assistant.services.webpage_crawler import WebCrawlResult
+
+        svc = _make_service()
+        places = [_fake_place(editorial_summary="Cake studio in Berlin.")]
+        crawl = WebCrawlResult(services=["Custom wedding cakes", "Gluten-free options", "City-wide delivery"])
+
+        with (
+            patch(
+                "ai_assistant.services.google_places_service.WebPageCrawler.extract_provider_info",
+                new=AsyncMock(return_value=crawl),
+            ),
+        ):
+            normalised = await svc._normalise_places(places, "cake")
+
+        summary = normalised[0]["search_optimized_summary"]
+        assert "Custom wedding cakes" in summary
+        assert "Gluten-free options" in summary
+        assert "City-wide delivery" in summary
+
+    async def test_description_augmented_with_portfolio_and_coverage(self) -> None:
+        """portfolio_highlights and coverage_area are appended to description."""
+        from ai_assistant.services.webpage_crawler import WebCrawlResult
+
+        svc = _make_service()
+        places = [_fake_place(editorial_summary="Professional plumbers.")]
+        crawl = WebCrawlResult(
+            portfolio_highlights="Renovated 50+ bathrooms",
+            coverage_area="Serving Munich and surroundings",
+        )
+
+        with (
+            patch(
+                "ai_assistant.services.google_places_service.WebPageCrawler.extract_provider_info",
+                new=AsyncMock(return_value=crawl),
+            ),
+        ):
+            normalised = await svc._normalise_places(places, "plumber")
+
+        desc = normalised[0]["description"]
+        assert "Renovated 50+ bathrooms" in desc
+        assert "Serving Munich and surroundings" in desc
+
+    async def test_none_crawl_result_gracefully_skipped(self) -> None:
+        """WebCrawlResult=None → skills_list=[], webpage_crawled=False, no error."""
+        svc = _make_service()
+        places = [_fake_place()]
+
+        with patch(
+            "ai_assistant.services.google_places_service.WebPageCrawler.extract_provider_info",
+            new=AsyncMock(return_value=None),
+        ):
+            normalised = await svc._normalise_places(places, "plumber")
+
+        assert normalised[0]["skills_list"] == []
+        assert normalised[0]["webpage_crawled"] is False
+
+    async def test_webpage_crawled_flag_true_on_success(self) -> None:
+        """A valid WebCrawlResult sets webpage_crawled=True."""
+        from ai_assistant.services.webpage_crawler import WebCrawlResult
+
+        svc = _make_service()
+        places = [_fake_place()]
+        crawl = WebCrawlResult(services=["Repair"])
+
+        with patch(
+            "ai_assistant.services.google_places_service.WebPageCrawler.extract_provider_info",
+            new=AsyncMock(return_value=crawl),
+        ):
+            normalised = await svc._normalise_places(places, "plumber")
+
+        assert normalised[0]["webpage_crawled"] is True
+
+    async def test_crawl_exception_treated_as_None(self) -> None:
+        """If extract_provider_info raises, result is treated as missing enrichment."""
+        svc = _make_service()
+        places = [_fake_place()]
+
+        with patch(
+            "ai_assistant.services.google_places_service.WebPageCrawler.extract_provider_info",
+            new=AsyncMock(side_effect=Exception("timeout")),
+        ):
+            # asyncio.gather with return_exceptions=True swallows the exception
+            normalised = await svc._normalise_places(places, "plumber")
+
+        assert normalised[0]["skills_list"] == []
+        assert normalised[0]["webpage_crawled"] is False

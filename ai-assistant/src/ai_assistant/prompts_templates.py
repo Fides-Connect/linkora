@@ -186,10 +186,10 @@ You may EITHER generate natural-language text (Path C) OR call `signal_transitio
 1. Short First Sentence (Latency): Open with one very short standalone sentence of 3–8 words — e.g. "Perfect!", "Great, almost there!", "Sure thing!" This is spoken immediately while the rest is processed.
 2. Open directly with the confirmation summary — do NOT start with a fresh greeting, a preamble like "No problem at all!", "Alright!", "Of course!", or any sentence that simply re-acknowledges the user's request. The user already knows you understood them. Jump straight to the summary.
 3. Summarize what has been agreed upon in 2–3 plain, natural sentences, combining the summary and the confirmation ask into one cohesive statement. Include location, timeframe/dates, and budget **only when the user provided them** — omit anything not mentioned. Do not invent or guess these values.
-4. End with a concise confirmation question, e.g. "Does that sound right, or did I miss anything important?"
+4. End with a concise confirmation question, e.g. "Does that sound right?"
 
-**Example (GOOD — with extras):** "So you're looking for an electrician to install new lights in your living room in Munich, ideally starting next Monday, with a budget around €300. Does that sound right, or did I miss anything?"
-**Example (GOOD — without extras):** "So you're looking for an electrician to install new lights in your home. Does that sound right, or did I miss any important details?"
+**Example (GOOD — with extras):** "So you're looking for an electrician to install new lights in your living room in Munich, ideally starting next Monday, with a budget around €300. Does that sound right?"
+**Example (GOOD — without extras):** "So you're looking for an electrician to install new lights in your home. Does that sound right?"
 **Example (BAD):** "No problem at all! I can certainly help you find an electrician. Alright, so just to confirm — you're looking for an electrician..."
 **Example (BAD — stuck loop):** The user said "right" and you responded with a new summary instead of calling signal_transition. Never do this.
 
@@ -857,6 +857,8 @@ Rules:
 PROVIDER_ENQUIRY_EMAIL_PROMPT = """\
 You are writing a professional, warm email on behalf of a user who wants to contact a service provider.
 
+IMPORTANT: Write the ENTIRE email — every word of the greeting, body, and closing signature — in {language}. Do not mix languages under any circumstances.
+
 Language: {language}
 Provider name: {provider_name}
 Provider address: {provider_address}
@@ -872,6 +874,10 @@ The email should:
 - Describe the user's request in natural sentences (e.g. date, location, specific requirements)
 - Close warmly and invite a response
 - End with the user's name
+
+IMPORTANT — user's name handling:
+- If "User's name" above is a real name (not "—" or empty), use it verbatim in the email introduction and at the closing signature. Never invent a placeholder like "[User's Name]" or "[Your Name]".
+- If "User's name" is "—" or empty, do NOT invent any placeholder. Instead, write the email in first person without mentioning a name, and close with only the salutation (e.g. "Kind regards," / "Mit freundlichen Grüßen,") without any name beneath it.
 
 For the subject line: write a short, specific subject that describes the request (e.g. "Anfrage: Hochzeitstorte für 50 Personen" or "Wedding Cake Request for July 2026"). Do NOT use generic words like "Enquiry" or "Anfrage" alone.
 
@@ -891,9 +897,10 @@ Use the provided English description as context to understand their specialties 
 Providers:
 {providers}
 
-Return ONLY a JSON array of {count} string(s), one per provider, in the same order.
-Each string must be in {language_name}. No markdown, no explanation. Example:
-["Spezialisiert auf Hochzeitstorten für große Gruppen.", "Maßgeschneiderte Backwaren für besondere Anlässe."]"""
+Return ONLY a numbered list of exactly {count} line(s), one per provider, in the same order.
+Each line must be in {language_name}. No markdown, no JSON, no explanation. Example:
+1. Spezialisiert auf Hochzeitstorten für große Gruppen.
+2. Maßgeschneiderte Backwaren für besondere Anlässe."""
 
 PROVIDER_CARD_REASONING_PROMPT = """\
 You are generating concise match justifications for service provider recommendations.
@@ -914,9 +921,31 @@ Rules:
 - Never use generic phrases like "great service", "highly recommended", or "perfect choice".
 - Do not repeat the user's request word-for-word.
 
-Return your response as a JSON array of {count} string(s), one per provider, \
+Return your response as a numbered list of exactly {count} line(s), one per provider, \
 in the same order. Example:
-["Spezialisiert auf Hochzeitsfotografie in München – Kunden loben natürliche Portraits.", \
-"Zentral in München, fokussiert auf Firmenportraits und Eventfotografie."]
+1. Spezialisiert auf Hochzeitstfotografie in München – Kunden loben natürliche Portraits.
+2. Zentral in München, fokussiert auf Firmenportraits und Eventfotografie.
 
-Return ONLY the JSON array. No markdown, no explanation."""
+Return ONLY the numbered list. No markdown, no JSON, no explanation."""
+
+WEBPAGE_EXTRACTION_PROMPT = """\
+You are extracting service-relevant information from a provider's website text.
+
+Provider name: {provider_name}
+User's search context: {query}
+
+Website text (may be truncated):
+{page_text}
+
+Extract ONLY information relevant to the services this provider offers.
+Ignore navigation menus, cookie consent banners, footer links, legal text, and generic marketing boilerplate.
+
+Return a JSON object with exactly these fields:
+{{
+  "services": ["list of up to 10 specific services or offerings mentioned, in English"],
+  "specialities": "one sentence (max 80 chars) describing their standout specialty, in English",
+  "portfolio_highlights": "one sentence (max 80 chars) about notable past work or portfolio, in English, or empty string",
+  "coverage_area": "geographic service area if explicitly stated, in English (e.g. 'Serving Berlin and Brandenburg'), or empty string"
+}}
+
+Return ONLY the JSON object. No markdown, no explanation."""

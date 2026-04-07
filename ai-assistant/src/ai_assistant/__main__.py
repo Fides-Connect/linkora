@@ -86,7 +86,7 @@ async def main() -> None:
 
     # Log configuration
     logger.info("Configuration:")
-    logger.info("  AGENT_MODE: %s", os.getenv('AGENT_MODE', 'full'))
+    logger.info("  Agent Mode: %s", os.getenv('AGENT_MODE', 'full'))
     logger.info("  Firestore Database: %s", os.getenv('FIRESTORE_DATABASE_NAME', '(default)'))
     logger.info("  Language DE: %s", os.getenv('LANGUAGE_CODE_DE', 'de-DE'))
     logger.info("  Voice DE: %s", os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat'))

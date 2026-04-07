@@ -474,7 +474,7 @@ class HubSpokeSearch:
                     query=query_text,
                     limit=5,
                     alpha=alpha,
-                    query_properties=["title^2", "primary_type^1.5", "category", "description", "search_optimized_summary", "availability_text"],
+                    query_properties=["title^2", "primary_type^1.5", "category", "description", "search_optimized_summary", "availability_text", "skills_list", "review_snippets"],
                     return_metadata=MetadataQuery(score=True),
                 )
                 logger.debug(
@@ -498,7 +498,9 @@ class HubSpokeSearch:
                 # search_optimized_summary, and availability_text are searched at standard weight.
                 # search_optimized_summary is the primary vector source and also benefits BM25 recall
                 # for niche skills well-described in the summary but not literally in the title.
-                query_properties=["title^2", "primary_type^1.5", "category", "description", "search_optimized_summary", "availability_text"],
+                # skills_list and review_snippets are BM25-indexed and catch keyword matches that
+                # may not appear in the vectorized summary (e.g. specific service names from the crawler).
+                query_properties=["title^2", "primary_type^1.5", "category", "description", "search_optimized_summary", "availability_text", "skills_list", "review_snippets"],
                 return_metadata=MetadataQuery(score=True),
                 return_references=QueryReference(
                     link_on="owned_by",
@@ -632,7 +634,8 @@ class HubSpokeSearch:
                 limit=limit,
                 alpha=alpha,
                 query_properties=["title^2", "primary_type^1.5", "category",
-                                   "description", "search_optimized_summary"],
+                                   "description", "search_optimized_summary",
+                                   "skills_list", "review_snippets"],
                 return_metadata=MetadataQuery(score=True),
             )
 
@@ -663,6 +666,7 @@ class HubSpokeSearch:
                         "photo_url": props.get("photo_url", ""),
                         "opening_hours": props.get("opening_hours", ""),
                         "maps_url": props.get("maps_url", ""),
+                        "email": props.get("email", ""),
                     },
                     # Expose GP contact fields at top level for card rendering
                     "phone": props.get("phone", ""),
@@ -671,6 +675,7 @@ class HubSpokeSearch:
                     "photo_url": props.get("photo_url", ""),
                     "opening_hours": props.get("opening_hours", ""),
                     "maps_url": props.get("maps_url", ""),
+                    "email": props.get("email", ""),
                 }
                 results.append(result)
 

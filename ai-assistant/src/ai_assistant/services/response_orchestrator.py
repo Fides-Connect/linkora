@@ -347,11 +347,9 @@ class ResponseOrchestrator:
         )
         try:
             raw = await self.llm_service.generate([HumanMessage(content=prompt)])
-            match = re.search(r"\[.*?\]", raw, re.DOTALL)
-            if match:
-                parsed = json.loads(match.group())
-                if isinstance(parsed, list) and len(parsed) == len(gp_results):
-                    return [str(r) for r in parsed]
+            items = re.findall(r"(?m)^\s*\d+\.\s*(.+?)\s*$", raw)
+            if len(items) == len(gp_results):
+                return items
         except Exception as exc:
             logger.warning("Provider card description localisation failed: %s", exc)
         return [p.get("description", "") for p in gp_results]
@@ -399,11 +397,9 @@ class ResponseOrchestrator:
         )
         try:
             raw = await self.llm_service.generate([HumanMessage(content=prompt)])
-            match = re.search(r"\[.*?\]", raw, re.DOTALL)
-            if match:
-                parsed = json.loads(match.group())
-                if isinstance(parsed, list) and len(parsed) == len(gp_results):
-                    return [str(r) for r in parsed]
+            items = re.findall(r"(?m)^\s*\d+\.\s*(.+?)\s*$", raw)
+            if len(items) == len(gp_results):
+                return items
         except Exception as exc:
             logger.warning("Provider card reasoning failed: %s", exc)
         return [""] * len(gp_results)
@@ -461,8 +457,8 @@ class ResponseOrchestrator:
                 "name": provider_name,
                 "description": localised_descs[i] if i < len(localised_descs) else p.get("description", ""),
                 "reasoning": reasoning[i] if i < len(reasoning) else "",
-                "rating": p.get("rating"),
-                "rating_count": p.get("rating_count"),
+                "rating": user.get("average_rating"),
+                "rating_count": user.get("rating_count"),
                 "website": p.get("website") or user.get("website") or None,
                 "phone": p.get("phone") or user.get("phone") or None,
                 "address": provider_address or None,
@@ -502,7 +498,7 @@ class ResponseOrchestrator:
             language="German" if language == "de" else "English",
             provider_name=provider_name,
             provider_address=provider_address or "—",
-            user_name=user_name or "—",
+            user_name=user_name or "",
             request_summary=request_summary or "—",
         )
         try:

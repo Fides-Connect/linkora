@@ -2927,7 +2927,7 @@ class TestLocaliseCardDescriptions:
         ]
         german_list = ["Deutscher Text A.", "Deutscher Text B."]
         orch.llm_service.generate = AsyncMock(
-            return_value=f'["Deutscher Text A.", "Deutscher Text B."]'
+            return_value="1. Deutscher Text A.\n2. Deutscher Text B."
         )
 
         result = await orch._localise_card_descriptions(gp_results, "Query", "de")
@@ -2987,7 +2987,7 @@ class TestGenerateCardReasoning:
 
         async def capture_generate(messages):
             captured_prompt.append(messages[0].content)
-            return '["Specialises in wedding cakes, praised for punctual delivery."]'
+            return "1. Specialises in wedding cakes, praised for punctual delivery."
 
         orch.llm_service.generate = capture_generate
 
@@ -3013,7 +3013,7 @@ class TestGenerateCardReasoning:
 
         async def capture_generate(messages):
             captured_prompt.append(messages[0].content)
-            return '["Traditionelle Bäckerei, ideal für individuelle Torten."]'
+            return "1. Traditionelle Bäckerei, ideal für individuelle Torten."
 
         orch.llm_service.generate = capture_generate
 
@@ -3036,7 +3036,7 @@ class TestGenerateCardReasoning:
 
         async def capture_generate(messages):
             captured_prompt.append(messages[0].content)
-            return '["Good match for the request."]'
+            return "1. Good match for the request."
 
         orch.llm_service.generate = capture_generate
 
