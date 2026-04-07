@@ -12,6 +12,7 @@ from weaviate.auth import AuthApiKey
 try:
     from .hub_spoke_schema import (
         init_hub_spoke_schema,
+        init_lite_schema,
         get_user_collection,
         get_competence_collection,
         WeaviateCollection,
@@ -20,6 +21,7 @@ try:
 except ImportError:
     from hub_spoke_schema import (  # type: ignore[no-redef]
         init_hub_spoke_schema,
+        init_lite_schema,
         get_user_collection,
         get_competence_collection,
         WeaviateCollection,
@@ -113,10 +115,13 @@ def init_weaviate_schema() -> bool | None:
         # Initialize hub and spoke schema
         init_hub_spoke_schema()
         logger.info("Hub and Spoke schema initialization complete")
+        # Initialize lite multi-tenant schema
+        init_lite_schema()
+        logger.info("Lite schema initialization complete")
         return True
 
     except Exception as e:
-        logger.error("Error initializing Hub and Spoke schema: %s", e)
+        logger.error("Error initializing schema: %s", e)
         raise
 
 

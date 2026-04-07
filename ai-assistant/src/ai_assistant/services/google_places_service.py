@@ -204,6 +204,75 @@ class GooglePlacesService:
         )
         return GpResult(providers_written=count, error=False, query=query, duration_ms=duration_ms)
 
+    async def fetch_and_ingest_lite(
+        self,
+        query: str,
+        tenant_id: str,
+        limit: int = 20,
+    ) -> GpResult:
+        """Fetch GP places and write them into an isolated ``LiteCompetence`` tenant.
+
+        Identical circuit-breaker and retry logic to :meth:`fetch_and_ingest`.
+        Writes to the multi-tenant ``LiteCompetence`` collection instead of the
+        shared ``User`` + ``Competence`` hub-spoke collections.  The tenant is
+        created inside :meth:`_upsert_to_lite` and must be deleted by the caller
+        (via :func:`hub_spoke_search.HubSpokeSearch.delete_lite_tenant`) once the
+        search is complete.
+
+        Returns a :class:`GpResult` where ``providers_written`` counts objects
+        successfully written to the tenant.
+        """
+        # ── Circuit breaker guard ─────────────────────────────────────────────
+        if self._circuit_opened_at is not None:
+            elapsed = time.monotonic() - self._circuit_opened_at
+            if elapsed < _CIRCUIT_RESET_SECONDS:
+                logger.warning(
+                    "GP circuit open (%.0f s remaining) — skipping lite fetch.",
+                    _CIRCUIT_RESET_SECONDS - elapsed,
+                )
+                return GpResult(error=True, error_code="circuit_open")
+            logger.info("GP circuit reset after %.0f s cooldown.", elapsed)
+            self._circuit_opened_at = None
+            self._consecutive_failures = 0
+
+        t_start = time.monotonic()
+        try:
+            raw_results = await self._fetch_places(query, limit)
+        except _RateLimitError:
+            self._record_failure()
+            return GpResult(error=True, error_code="rate_limited", query=query)
+        except _HttpError:
+            self._record_failure()
+            return GpResult(error=True, error_code="http_error", query=query,
+                            duration_ms=int((time.monotonic() - t_start) * 1000))
+        except TimeoutError:
+            self._record_failure()
+            return GpResult(error=True, error_code="timeout", query=query,
+                            duration_ms=int((time.monotonic() - t_start) * 1000))
+        except Exception as exc:
+            logger.error("GP lite fetch unexpected error: %s", exc, exc_info=True)
+            self._record_failure()
+            return GpResult(error=True, error_code="http_error", query=query,
+                            duration_ms=int((time.monotonic() - t_start) * 1000))
+
+        duration_ms = int((time.monotonic() - t_start) * 1000)
+        if not raw_results:
+            logger.info(
+                "GP lite fetch 0 results for query=%r (duration=%d ms)", query, duration_ms
+            )
+            self._reset_failures()
+            return GpResult(providers_written=0, error=False, query=query, duration_ms=duration_ms)
+
+        normalised = await self._normalise_places(raw_results, query)
+        count = await self._upsert_to_lite(normalised, tenant_id)
+        self._reset_failures()
+
+        logger.info(
+            "GP lite pipeline complete: query=%r results=%d upserted=%d duration_ms=%d",
+            query, len(raw_results), count, duration_ms,
+        )
+        return GpResult(providers_written=count, error=False, query=query, duration_ms=duration_ms)
+
     # ──────────────────────────────────────────────────────────────────────────
     # Private helpers
     # ──────────────────────────────────────────────────────────────────────────
@@ -267,9 +336,61 @@ class GooglePlacesService:
         self, raw_results: list[dict[str, Any]], query: str
     ) -> int:
         """
-        Normalise Places API results and upsert User+Competence pairs.
+        Normalise Places API results and upsert User+Competence pairs (full mode).
 
         Returns the number of nodes successfully written.
+        """
+        normalised = await self._normalise_places(raw_results, query)
+        count = 0
+        for place in normalised:
+            try:
+                user_data: dict[str, Any] = {
+                    "uuid": place["user_uuid"],
+                    "user_id": None,
+                    "name": place["name"],
+                    "email": None,
+                    "is_service_provider": True,
+                    "source": "google_places",
+                    "phone": place["phone"],
+                    "website": place["website"],
+                    "address": place["address"],
+                    "average_rating": place["average_rating"],
+                    "rating_count": place["rating_count"],
+                    "photo_url": place["photo_url"],
+                    "opening_hours": place["opening_hours"],
+                    "maps_url": place["maps_url"],
+                }
+                competence_data: dict[str, Any] = {
+                    "uuid": place["comp_uuid"],
+                    "competence_id": f"gp:{place['place_id']}",
+                    "title": place["title"],
+                    "description": place["description"],
+                    "search_optimized_summary": place["search_optimized_summary"],
+                    "category": place["category"],
+                    "primary_type": place["primary_type"],
+                    "review_snippets": place["review_snippets"],
+                }
+                result_uuid = HubSpokeIngestion.upsert_user(user_data, competence_data)
+                if result_uuid:
+                    count += 1
+                    logger.info("GP upserted: name=%r place_id=%r", place["name"], place["place_id"])
+                else:
+                    logger.warning("GP upsert failed for place_id=%r", place["place_id"])
+            except Exception as exc:
+                logger.error(
+                    "GP normalise_and_upsert: error for place_id=%r: %s",
+                    place.get("place_id"), exc, exc_info=True,
+                )
+        return count
+
+    async def _normalise_places(
+        self, raw_results: list[dict[str, Any]], query: str
+    ) -> list[dict[str, Any]]:
+        """
+        Normalise raw Places API results into flat dicts.
+
+        Returns one dict per place containing all fields used by both the
+        full-mode hub-spoke upsert path and the lite-mode LiteCompetence path.
 
         The ``search_optimized_summary`` field is always generated in English
         (via an LLM synthesis call) regardless of the language returned by the
@@ -282,8 +403,6 @@ class GooglePlacesService:
         provider card shows the authentic GP text.
         """
         # Build English search_optimized_summaries for all places concurrently.
-        # The synthesiser receives the raw editorial summary (if any) as context
-        # so it can name real specialties rather than relying on generic type tags.
         summary_tasks = [
             self._synthesise_description(
                 place,
@@ -298,121 +417,148 @@ class GooglePlacesService:
         raw_summaries: list[Any] = await asyncio.gather(*summary_tasks, return_exceptions=True)
         english_summaries: list[str | None] = [r if isinstance(r, str) else None for r in raw_summaries]
 
-        count = 0
+        results: list[dict[str, Any]] = []
         for idx, place in enumerate(raw_results):
-            try:
-                place_id: str = place.get("id", "")
-                if not place_id:
-                    continue
+            place_id: str = place.get("id", "")
+            if not place_id:
+                continue
 
-                # Deterministic UUIDs — same place_id always → same UUID
-                user_uuid = str(generate_uuid5(place_id))
-                comp_uuid = str(generate_uuid5(f"{place_id}:competence"))
+            # Deterministic UUIDs — same place_id always → same UUID
+            user_uuid = str(generate_uuid5(place_id))
+            comp_uuid = str(generate_uuid5(f"{place_id}:competence"))
 
-                # User-facing description: editorialSummary first (in original
-                # language), synthetic fallback, then name+types as last resort.
-                description: str = (
-                    (place.get("editorialSummary") or {}).get("text", "").strip()
-                )
-                if not description:
-                    synth = english_summaries[idx]
-                    if isinstance(synth, str) and synth:
-                        description = synth
-                if not description:
-                    types = place.get("types", [])
-                    display_name = (place.get("displayName") or {}).get("text", "")
-                    description = f"{display_name} — {', '.join(types[:3])}"
+            # User-facing description: editorialSummary first (in original
+            # language), synthetic fallback, then name+types as last resort.
+            description: str = (
+                (place.get("editorialSummary") or {}).get("text", "").strip()
+            )
+            if not description:
+                synth = english_summaries[idx]
+                if isinstance(synth, str) and synth:
+                    description = synth
+            if not description:
+                types = place.get("types", [])
+                display_name = (place.get("displayName") or {}).get("text", "")
+                description = f"{display_name} — {', '.join(types[:3])}"
 
-                # search_optimized_summary: always English (for cross-encoder +
-                # vector index compatibility). Fall back to the (possibly non-English)
-                # description only if synthesis failed entirely.
-                synth_summary = english_summaries[idx]
-                if isinstance(synth_summary, str) and synth_summary:
-                    search_optimized_summary = synth_summary
-                else:
-                    search_optimized_summary = description
+            # search_optimized_summary: always English (for cross-encoder +
+            # vector index compatibility). Fall back to the (possibly non-English)
+            # description only if synthesis failed entirely.
+            synth_summary = english_summaries[idx]
+            search_optimized_summary = (
+                synth_summary
+                if isinstance(synth_summary, str) and synth_summary
+                else description
+            )
 
-                # Phone / address — stored in Weaviate, masked in logs
-                phone: str = place.get("nationalPhoneNumber") or ""
-                address: str = place.get("formattedAddress") or ""
-                name: str = (place.get("displayName") or {}).get("text", "")
+            # Phone / address — stored in Weaviate, masked in logs
+            phone: str = place.get("nationalPhoneNumber") or ""
+            address: str = place.get("formattedAddress") or ""
+            name: str = (place.get("displayName") or {}).get("text", "")
 
-                # Photo URL — first photo from Places API
-                photo: str = ""
-                raw_photos = place.get("photos") or []
-                if raw_photos and self._api_key:
-                    photo_name = raw_photos[0].get("name", "")
-                    if photo_name:
-                        photo = (
-                            f"https://places.googleapis.com/v1/{photo_name}"
-                            f"/media?maxWidthPx=400&key={self._api_key}"
-                        )
-
-                # Opening hours — human-readable weekday strings
-                opening_hours: str = ""
-                raw_hours = (place.get("regularOpeningHours") or {}).get(
-                    "weekdayDescriptions", []
-                )
-                if raw_hours:
-                    opening_hours = "\n".join(raw_hours)
-
-                user_data: dict[str, Any] = {
-                    "uuid": user_uuid,
-                    "user_id": None,
-                    "name": name,
-                    "email": None,
-                    "is_service_provider": True,
-                    "source": "google_places",
-                    "phone": phone,
-                    "website": place.get("websiteUri") or "",
-                    "address": address,
-                    "average_rating": float(place.get("rating") or 0.0),
-                    "rating_count": int(place.get("userRatingCount") or 0),
-                    "photo_url": photo,
-                    "opening_hours": opening_hours,
-                    # Deep link that opens the Google Maps place card directly.
-                    # The Maps URL API requires both `query` (place name) AND
-                    # `query_place_id` — the place_id alone is silently ignored.
-                    "maps_url": (
-                        "https://www.google.com/maps/search/?api=1"
-                        f"&query={urllib.parse.quote(name)}"
-                        f"&query_place_id={place_id}"
-                    ),
-                }
-                competence_data: dict[str, Any] = {
-                    "uuid": comp_uuid,
-                    "competence_id": f"gp:{place_id}",
-                    "title": name,
-                    "description": description,
-                    "search_optimized_summary": search_optimized_summary,
-                    "category": _extract_category(place.get("types", [])),
-                    # primary_type: human-readable Google Places type label (e.g. "Wedding
-                    # Photographer"). Stored as a separate BM25+vector-searchable field so
-                    # exact type queries match even when the summary uses different phrasing.
-                    "primary_type": (place.get("primaryTypeDisplayName") or {}).get("text", ""),
-                    # Store raw review snippets for card reasoning display.
-                    # These are the original customer-written sentence fragments,
-                    # kept separate from search_optimized_summary so the reasoning
-                    # LLM can quote them directly in the user's session language.
-                    "review_snippets": _extract_review_snippets(
-                        place.get("reviews") or [], max_count=5, max_chars=120
-                    ),
-                }
-
-                result_uuid = HubSpokeIngestion.upsert_user(user_data, competence_data)
-                if result_uuid:
-                    count += 1
-                    logger.info(
-                        "GP upserted: name=%r place_id=%r",
-                        name, place_id,
+            # Photo URL — first photo from Places API
+            photo: str = ""
+            raw_photos = place.get("photos") or []
+            if raw_photos and self._api_key:
+                photo_name = raw_photos[0].get("name", "")
+                if photo_name:
+                    photo = (
+                        f"https://places.googleapis.com/v1/{photo_name}"
+                        f"/media?maxWidthPx=400&key={self._api_key}"
                     )
-                else:
-                    logger.warning("GP upsert failed for place_id=%r", place_id)
 
+            # Opening hours — human-readable weekday strings
+            opening_hours: str = ""
+            raw_hours = (place.get("regularOpeningHours") or {}).get(
+                "weekdayDescriptions", []
+            )
+            if raw_hours:
+                opening_hours = "\n".join(raw_hours)
+
+            results.append({
+                "place_id": place_id,
+                "user_uuid": user_uuid,
+                "comp_uuid": comp_uuid,
+                "name": name,
+                "title": name,
+                "description": description,
+                "search_optimized_summary": search_optimized_summary,
+                "phone": phone,
+                "website": place.get("websiteUri") or "",
+                "address": address,
+                "average_rating": float(place.get("rating") or 0.0),
+                "rating_count": int(place.get("userRatingCount") or 0),
+                "photo_url": photo,
+                "opening_hours": opening_hours,
+                # Deep link that opens the Google Maps place card directly.
+                "maps_url": (
+                    "https://www.google.com/maps/search/?api=1"
+                    f"&query={urllib.parse.quote(name)}"
+                    f"&query_place_id={place_id}"
+                ),
+                "category": _extract_category(place.get("types", [])),
+                "primary_type": (place.get("primaryTypeDisplayName") or {}).get("text", ""),
+                "review_snippets": _extract_review_snippets(
+                    place.get("reviews") or [], max_count=5, max_chars=120
+                ),
+                "skills_list": [],
+            })
+
+        return results
+
+    async def _upsert_to_lite(
+        self, normalised: list[dict[str, Any]], tenant_id: str
+    ) -> int:
+        """Write normalised GP places into LiteCompetence under ``tenant_id``.
+
+        The tenant is created here.  The caller is responsible for deleting it
+        after the search is complete via ``HubSpokeSearch.delete_lite_tenant``.
+
+        Returns the number of objects successfully inserted.
+        """
+        from ..hub_spoke_schema import get_lite_competence_collection
+
+        lite_col = get_lite_competence_collection()
+
+        # Create the isolated partition for this search.
+        from weaviate.classes.tenants import Tenant as _Tenant
+        lite_col.tenants.create([_Tenant(name=tenant_id)])
+        tenant_col = lite_col.with_tenant(tenant_id)
+
+        count = 0
+        for place in normalised:
+            try:
+                tenant_col.data.insert(
+                    properties={
+                        "name": place["name"],
+                        "title": place["title"],
+                        "description": place["description"],
+                        "search_optimized_summary": place["search_optimized_summary"],
+                        "primary_type": place["primary_type"],
+                        "category": place["category"],
+                        "phone": place["phone"],
+                        "website": place["website"],
+                        "address": place["address"],
+                        "average_rating": place["average_rating"],
+                        "rating_count": place["rating_count"],
+                        "photo_url": place["photo_url"],
+                        "opening_hours": place["opening_hours"],
+                        "maps_url": place["maps_url"],
+                        "review_snippets": place["review_snippets"],
+                        "skills_list": place.get("skills_list") or [],
+                        "place_id": place["place_id"],
+                    },
+                    uuid=place["comp_uuid"],
+                )
+                count += 1
+                logger.info(
+                    "Lite upsert [tenant=%s]: name=%r place_id=%r",
+                    tenant_id, place["name"], place["place_id"],
+                )
             except Exception as exc:
                 logger.error(
-                    "GP normalise_and_upsert: error for place %r: %s",
-                    place.get("place_id"), exc, exc_info=True,
+                    "Lite upsert failed [tenant=%s] place_id=%r: %s",
+                    tenant_id, place.get("place_id"), exc, exc_info=True,
                 )
 
         return count

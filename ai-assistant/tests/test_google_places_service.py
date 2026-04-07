@@ -624,3 +624,106 @@ class TestReviewEnrichment:
 
         assert len(captured_competence) == 1
         assert captured_competence[0]["review_snippets"] == []
+
+
+# ---------------------------------------------------------------------------
+# fetch_and_ingest_lite()
+# ---------------------------------------------------------------------------
+
+
+class TestFetchAndIngestLite:
+    """fetch_and_ingest_lite writes to an isolated LiteCompetence tenant."""
+
+    def _mock_client(self) -> MagicMock:
+        """Return a mock Weaviate client whose LiteCompetence collection supports tenants."""
+        tenant_col = MagicMock()
+        tenant_col.data.insert = MagicMock(return_value="uuid-ok")
+
+        lite_col = MagicMock()
+        lite_col.with_tenant.return_value = tenant_col
+
+        client = MagicMock()
+        client.collections.get.return_value = lite_col
+        return client
+
+    async def test_success_returns_written_count(self) -> None:
+        svc = _make_service()
+        places = [_fake_place(place_id=f"id{i}") for i in range(3)]
+        mock_client = self._mock_client()
+
+        with (
+            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=places)),
+            patch(
+                "ai_assistant.hub_spoke_schema.HubSpokeConnection.get_client",
+                return_value=mock_client,
+            ),
+        ):
+            result = await svc.fetch_and_ingest_lite("plumber Munich", tenant_id="t-abc")
+
+        assert isinstance(result, GpResult)
+        assert result.providers_written == 3
+        assert result.error is False
+        assert result.error_code == ""
+
+    async def test_zero_results_does_not_create_tenant(self) -> None:
+        svc = _make_service()
+        mock_client = self._mock_client()
+
+        with (
+            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=[])),
+            patch(
+                "ai_assistant.hub_spoke_schema.HubSpokeConnection.get_client",
+                return_value=mock_client,
+            ),
+        ):
+            result = await svc.fetch_and_ingest_lite("nonsense xyz", tenant_id="t-abc")
+
+        assert result.providers_written == 0
+        assert result.error is False
+        # No Weaviate collection access should have happened
+        mock_client.collections.get.assert_not_called()
+
+    async def test_rate_limit_returns_error(self) -> None:
+        svc = _make_service()
+        with patch.object(svc, "_fetch_places", new=AsyncMock(side_effect=_RateLimitError())):
+            result = await svc.fetch_and_ingest_lite("plumber Munich", tenant_id="t-abc")
+
+        assert result.error is True
+        assert result.error_code == "rate_limited"
+
+    async def test_http_error_returns_error(self) -> None:
+        svc = _make_service()
+        with patch.object(svc, "_fetch_places", new=AsyncMock(side_effect=_HttpError(503))):
+            result = await svc.fetch_and_ingest_lite("test", tenant_id="t-abc")
+
+        assert result.error is True
+        assert result.error_code == "http_error"
+
+    async def test_circuit_open_returns_error(self) -> None:
+        svc = _make_service()
+        import time
+        svc._circuit_opened_at = time.monotonic()
+        svc._consecutive_failures = _CIRCUIT_THRESHOLD
+
+        result = await svc.fetch_and_ingest_lite("test", tenant_id="t-abc")
+
+        assert result.error is True
+        assert result.error_code == "circuit_open"
+
+    async def test_tenant_id_passed_to_upsert(self) -> None:
+        """The tenant_id must be forwarded to the LiteCompetence collection."""
+        svc = _make_service()
+        places = [_fake_place(place_id="ChIJlite")]
+        mock_client = self._mock_client()
+        lite_col = mock_client.collections.get.return_value
+
+        with (
+            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=places)),
+            patch(
+                "ai_assistant.hub_spoke_schema.HubSpokeConnection.get_client",
+                return_value=mock_client,
+            ),
+        ):
+            await svc.fetch_and_ingest_lite("plumber", tenant_id="my-tenant-123")
+
+        lite_col.with_tenant.assert_called_once_with("my-tenant-123")

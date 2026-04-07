@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 # Collection names
 USER_COLLECTION = "User"
 COMPETENCE_COLLECTION = "Competence"
+# Lite-mode ephemeral collection — multi-tenant; one tenant per search, deleted after the search.
+LITE_COMPETENCE_COLLECTION = "LiteCompetence"
 WeaviateCollection: TypeAlias = Collection[Any, Any]
 
 class HubSpokeConnection:
@@ -318,3 +320,113 @@ def cleanup_hub_spoke_schema() -> bool | None:
     except Exception as e:
         logger.error("Error cleaning up Hub and Spoke schema: %s", e)
         raise
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Lite-mode multi-tenant helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+def init_lite_schema() -> bool | None:
+    """Create the ``LiteCompetence`` collection with multi-tenancy enabled.
+
+    Safe to call multiple times — skips creation when the collection already
+    exists.  Multi-tenancy is a collection-level flag that must be set at
+    creation time and cannot be added later.
+
+    The collection is flat (no cross-references) so that per-search tenants
+    can be created and deleted atomically without any cascade concerns.
+    """
+    try:
+        client = HubSpokeConnection.get_client()
+
+        if client.collections.exists(LITE_COMPETENCE_COLLECTION):
+            logger.info("Collection already exists: %s", LITE_COMPETENCE_COLLECTION)
+            return True
+
+        client.collections.create(
+            name=LITE_COMPETENCE_COLLECTION,
+            multi_tenancy_config=Configure.multi_tenancy(enabled=True),
+            vector_config=Configure.Vectors.text2vec_model2vec(),  # type: ignore[attr-defined]
+            properties=[
+                # ── Display fields ───────────────────────────────────────────
+                Property(name="name", data_type=DataType.TEXT,
+                         skip_vectorization=True, index_searchable=True),
+                Property(name="title", data_type=DataType.TEXT,
+                         skip_vectorization=True, index_searchable=True),
+                Property(name="description", data_type=DataType.TEXT,
+                         skip_vectorization=True, index_searchable=True),
+                # ── Primary vector source (English) ──────────────────────────
+                Property(name="search_optimized_summary", data_type=DataType.TEXT,
+                         vectorize_property_name=True, skip_vectorization=False),
+                # ── Keyword-searchable category fields ───────────────────────
+                Property(name="primary_type", data_type=DataType.TEXT,
+                         skip_vectorization=False, index_searchable=True),
+                Property(name="category", data_type=DataType.TEXT,
+                         skip_vectorization=True, index_searchable=True),
+                # ── Contact / location (skip vectorization) ──────────────────
+                Property(name="phone", data_type=DataType.TEXT, skip_vectorization=True),
+                Property(name="website", data_type=DataType.TEXT, skip_vectorization=True),
+                Property(name="address", data_type=DataType.TEXT, skip_vectorization=True),
+                Property(name="opening_hours", data_type=DataType.TEXT, skip_vectorization=True),
+                Property(name="maps_url", data_type=DataType.TEXT, skip_vectorization=True),
+                # ── Rating ───────────────────────────────────────────────────
+                Property(name="average_rating", data_type=DataType.NUMBER, skip_vectorization=True),
+                Property(name="rating_count", data_type=DataType.INT, skip_vectorization=True),
+                # ── Media / reviews ──────────────────────────────────────────
+                Property(name="photo_url", data_type=DataType.TEXT, skip_vectorization=True),
+                Property(name="review_snippets", data_type=DataType.TEXT_ARRAY,
+                         skip_vectorization=True),
+                Property(name="skills_list", data_type=DataType.TEXT_ARRAY,
+                         skip_vectorization=True),
+                # ── Source tracking ──────────────────────────────────────────
+                Property(name="place_id", data_type=DataType.TEXT, skip_vectorization=True),
+            ],
+        )
+        logger.info("Created multi-tenant collection: %s", LITE_COMPETENCE_COLLECTION)
+        return True
+
+    except weaviate.exceptions.ObjectAlreadyExistsError:
+        logger.info("Collection already exists (race): %s", LITE_COMPETENCE_COLLECTION)
+        return True
+    except Exception as exc:
+        logger.error("Error initialising %s schema: %s", LITE_COMPETENCE_COLLECTION, exc)
+        raise
+
+
+def get_lite_competence_collection() -> WeaviateCollection:
+    """Return the ``LiteCompetence`` collection, ensuring the schema exists."""
+    client = HubSpokeConnection.get_client()
+    if not client.collections.exists(LITE_COMPETENCE_COLLECTION):
+        logger.warning("%s collection missing — auto-initialising", LITE_COMPETENCE_COLLECTION)
+        init_lite_schema()
+    return client.collections.get(LITE_COMPETENCE_COLLECTION)
+
+
+def cleanup_orphaned_lite_tenants() -> None:
+    """Delete all tenants in ``LiteCompetence`` on server startup.
+
+    All tenants in this collection are ephemeral — one per search, deleted
+    after the search completes.  Any tenants present at startup are orphans
+    from a previous process that crashed before cleanup.  Removing them is
+    safe and prevents unbounded accumulation.
+
+    Logs a warning and returns silently if Weaviate is unreachable or the
+    collection does not exist yet (e.g. first run).
+    """
+    try:
+        client = HubSpokeConnection.get_client()
+        if not client.collections.exists(LITE_COMPETENCE_COLLECTION):
+            logger.info("Startup: %s collection not yet created — skipping orphan cleanup",
+                        LITE_COMPETENCE_COLLECTION)
+            return
+        lite_col = client.collections.get(LITE_COMPETENCE_COLLECTION)
+        tenants = lite_col.tenants.get()
+        if tenants:
+            tenant_names = list(tenants.keys())
+            lite_col.tenants.remove(tenant_names)
+            logger.info("Startup: removed %d orphaned lite tenant(s): %s",
+                        len(tenant_names), tenant_names)
+        else:
+            logger.info("Startup: no orphaned lite tenants found")
+    except Exception as exc:
+        logger.warning("Startup: lite tenant cleanup failed (non-fatal): %s", exc)

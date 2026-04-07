@@ -42,7 +42,7 @@ from .api.v1.router import register_v1_routes  # noqa: E402
 from .api.deps import COMPETENCE_ENRICHER_KEY  # noqa: E402
 from .weaviate_sync import run_startup_sync  # noqa: E402
 from .services.llm_service import LLMService  # noqa: E402
-from .hub_spoke_schema import HubSpokeConnection  # noqa: E402
+from .hub_spoke_schema import HubSpokeConnection, cleanup_orphaned_lite_tenants  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -101,6 +101,9 @@ async def main() -> None:
 
     # Sync Firestore → Weaviate (opt-in via WEAVIATE_SYNC_ON_STARTUP=true)
     await run_startup_sync()
+
+    # Clean up any orphaned LiteCompetence tenants from previous crashes
+    cleanup_orphaned_lite_tenants()
 
     # Initialize signaling server
     logger.info("Initializing signaling server...")
