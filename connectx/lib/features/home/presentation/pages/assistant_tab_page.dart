@@ -147,6 +147,11 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                       height: chatHeight > 0 ? chatHeight : 300,
                     ),
                   ),
+                  // Session-ended banner: shown after timeout with a "New Session" button
+                  if (viewModel.sessionEnded)
+                    _SessionEndedBanner(
+                      onNewSession: () => viewModel.startChat(voiceMode: false),
+                    ),
                   const SizedBox(height: 20),
                   ChatInputRow(
                     state: viewModel.conversationState,
@@ -228,6 +233,50 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Banner shown when a session ended (e.g. 10-min idle timeout) with a button
+/// to start a fresh session while keeping the previous chat visible above.
+class _SessionEndedBanner extends StatelessWidget {
+  final VoidCallback onNewSession;
+  const _SessionEndedBanner({required this.onNewSession});
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: Colors.black.withValues(alpha: 0.55),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              localizations?.sessionEndedBanner ??
+                  'Session ended after 10 minutes of inactivity',
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ),
+          const SizedBox(width: 12),
+          TextButton(
+            onPressed: onNewSession,
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: AppConstants.primaryCyan.withValues(alpha: 0.8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: Text(
+              localizations?.newSessionButton ?? 'New Session',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
     );
   }

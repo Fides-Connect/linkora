@@ -115,4 +115,8 @@ class MessagesEN {
   static const String averageRating = 'Average Rating';
   static const String positiveFeedback = 'Positive Feedback';
   static const String negativeFeedback = 'Negative Feedback';
+
+  // Session ended banner
+  static const String sessionEndedBanner = 'Session ended after 10 minutes of inactivity';
+  static const String newSessionButton = 'New Session';
 }

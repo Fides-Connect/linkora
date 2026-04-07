@@ -155,6 +155,20 @@ class AppLocalizations {
     return MessagesEN.typeMessageHint;
   }
 
+  String get sessionEndedBanner {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.sessionEndedBanner;
+    }
+    return MessagesEN.sessionEndedBanner;
+  }
+
+  String get newSessionButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.newSessionButton;
+    }
+    return MessagesEN.newSessionButton;
+  }
+
   String get connecting {
     if (locale.languageCode == 'de') {
       return MessagesDE.connecting;

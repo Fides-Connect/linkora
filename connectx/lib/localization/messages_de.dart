@@ -115,4 +115,8 @@ class MessagesDE {
   static const String averageRating = 'Durchschnittliche Bewertung';
   static const String positiveFeedback = 'Positives Feedback';
   static const String negativeFeedback = 'Negatives Feedback';
+
+  // Session ended banner
+  static const String sessionEndedBanner = 'Sitzung nach 10 Minuten Inaktivität beendet';
+  static const String newSessionButton = 'Neue Sitzung';
 }

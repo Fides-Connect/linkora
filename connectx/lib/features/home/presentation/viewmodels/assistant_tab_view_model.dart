@@ -44,6 +44,9 @@ class AssistantTabViewModel extends ChangeNotifier {
   Timer? _idleTimer;
   static const _idleTimeout = Duration(minutes: 10);
 
+  /// True after the idle timer fires so the UI can offer a "New Session" button.
+  bool _sessionEnded = false;
+
   /// Deduplication guard: tracks the language for which warmup was last
   /// triggered.  Prevents re-firing warmup on every [initialize] call (which
   /// can happen on every rebuild) while still re-firing when the UI language
@@ -63,6 +66,8 @@ class AssistantTabViewModel extends ChangeNotifier {
   bool get voiceEnabled => _speechService.voiceEnabled;
   /// True once the data channel is open and the backend can receive messages.
   bool get isSessionReady => _dataChannelReady;
+  /// True when the session ended (timeout or explicit stop) and chat history is preserved.
+  bool get sessionEnded => _sessionEnded;
 
   // ── Initialisation ───────────────────────────────────────────────────────
   void initialize(String localStatusText, String languageCode) {
@@ -274,13 +279,13 @@ class AssistantTabViewModel extends ChangeNotifier {
     }
     _conversationState = ConversationState.idle;
     _currentMessage = '';
-    _chatMessages.clear();
     _statusText = _resetStatusText;
     _isVoiceMode = false;
     _dataChannelReady = false;
     _pendingTextMessage = null;
     _pendingEchoTexts.clear();
     _isStarting = false;
+    _sessionEnded = _chatMessages.isNotEmpty;
     notifyListeners();
   }
 
@@ -300,6 +305,7 @@ class AssistantTabViewModel extends ChangeNotifier {
     }
     // Clear history from any prior session so each new session begins with a
     // clean slate and previous greetings / messages are not shown again.
+    _sessionEnded = false;
     _chatMessages.clear();
     _pendingEchoTexts.clear();
     _currentMessage = '';
@@ -335,7 +341,8 @@ class AssistantTabViewModel extends ChangeNotifier {
     }
   }
 
-  /// Stop the session and clear history.
+  /// Stop the session. Chat history is preserved so the user can review it
+  /// and tap "New Session" to start fresh.
   Future<void> stopChat(String resetStatusText) async {
     _resetStatusText = resetStatusText;
     _idleTimer?.cancel();
@@ -349,13 +356,13 @@ class AssistantTabViewModel extends ChangeNotifier {
 
     _conversationState = ConversationState.idle;
     _currentMessage = '';
-    _chatMessages.clear();
     _statusText = resetStatusText;
     _isVoiceMode = false;
     _dataChannelReady = false;
     _pendingTextMessage = null;
     _pendingEchoTexts.clear();
     _isStarting = false;
+    _sessionEnded = _chatMessages.isNotEmpty;
     notifyListeners();
   }
 
@@ -430,6 +437,10 @@ class AssistantTabViewModel extends ChangeNotifier {
     _error = null;
     notifyListeners();
   }
+
+  // ── Test helpers ─────────────────────────────────────────────────────────
+  @visibleForTesting
+  void triggerIdleTimeoutForTest() => _handleIdleTimeout();
 
   // ── Dispose ───────────────────────────────────────────────────────────────
   @override

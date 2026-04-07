@@ -488,8 +488,8 @@ void main() {
   });
 
   // ══════════════════════════════════════════════════════════════════════════
-  // stopChat() — resets new fields
-  // ══════════════════════════════════════════════════════════════════════════
+  // stopChat() — resets fields, preserves history
+  // ════════════════════════════════════════════════════════════════════════════
 
   group('stopChat() new-field reset', () {
     test('resets isVoiceMode and dataChannelReady', () async {
@@ -505,6 +505,85 @@ void main() {
       // After stop a new call to sendTextMessage should set error (not ready)
       vm.sendTextMessage('should fail');
       expect(vm.error, isNotNull);
+    });
+
+    test('preserves chat history after stop', () async {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['chat'] as OnChatMessageCallback)('Hello!', false, false);
+      expect(vm.chatMessages.length, 1);
+
+      await vm.stopChat('Done');
+
+      expect(vm.chatMessages.length, 1,
+          reason: 'History must be preserved after stop so user can review it');
+    });
+
+    test('sets sessionEnded=true when messages exist after stop', () async {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['chat'] as OnChatMessageCallback)('Hello!', false, false);
+
+      await vm.stopChat('Done');
+
+      expect(vm.sessionEnded, isTrue);
+    });
+
+    test('sets sessionEnded=false when no messages exist after stop', () async {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      init();
+      await vm.startChat(voiceMode: false);
+      // No messages added
+
+      await vm.stopChat('Done');
+
+      expect(vm.sessionEnded, isFalse);
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // sessionEnded — idle timeout preserves history
+  // ════════════════════════════════════════════════════════════════════════════
+
+  group('sessionEnded after idle timeout', () {
+    test('chat history is preserved after idle timeout fires', () async {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      (cbs['chat'] as OnChatMessageCallback)('Hi from AI', false, false);
+      expect(vm.chatMessages.length, 1);
+
+      // Fire the idle timeout handler directly
+      // ignore: invalid_use_of_protected_member
+      vm.triggerIdleTimeoutForTest();
+
+      expect(vm.chatMessages.length, 1,
+          reason: 'Messages must survive the timeout so user can review them');
+      expect(vm.sessionEnded, isTrue);
+      expect(vm.conversationState, ConversationState.idle);
+    });
+
+    test('sessionEnded is cleared when new session starts', () async {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['chat'] as OnChatMessageCallback)('hello', false, false);
+      vm.triggerIdleTimeoutForTest();
+      expect(vm.sessionEnded, isTrue);
+
+      await vm.startChat(voiceMode: false);
+
+      expect(vm.sessionEnded, isFalse);
+      expect(vm.chatMessages, isEmpty,
+          reason: 'New session must clear previous messages');
     });
   });
 
