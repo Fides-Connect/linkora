@@ -23,7 +23,7 @@ import logging
 import os
 import time
 import urllib.parse
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import aiohttp
@@ -169,14 +169,14 @@ class GooglePlacesService:
         t_start = time.monotonic()
         try:
             raw_results = await self._fetch_places(query, limit)
-        except _RateLimitError as exc:
+        except _RateLimitError:
             self._record_failure()
             return GpResult(error=True, error_code="rate_limited", query=query)
-        except _HttpError as exc:
+        except _HttpError:
             self._record_failure()
             return GpResult(error=True, error_code="http_error", query=query,
                             duration_ms=int((time.monotonic() - t_start) * 1000))
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._record_failure()
             return GpResult(error=True, error_code="timeout", query=query,
                             duration_ms=int((time.monotonic() - t_start) * 1000))
@@ -295,9 +295,8 @@ class GooglePlacesService:
             )
             for place in raw_results
         ]
-        english_summaries: list[str | None] = list(
-            await asyncio.gather(*summary_tasks, return_exceptions=True)
-        )
+        raw_summaries: list[Any] = await asyncio.gather(*summary_tasks, return_exceptions=True)
+        english_summaries: list[str | None] = [r if isinstance(r, str) else None for r in raw_summaries]
 
         count = 0
         for idx, place in enumerate(raw_results):

@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 from langchain_core.messages import AIMessage
 
-from .conversation_service import ConversationService, ConversationStage, is_legal_transition
+from .conversation_service import ConversationService, ConversationStage
 from .llm_service import LLMService, SIGNAL_TRANSITION_SCHEMA
 from .agent_runtime_fsm import AgentRuntimeFSM
 from .agent_tools import AgentToolRegistry, ToolContext, ToolPermissionError, FINALIZE_TOOL_SCHEMAS
@@ -71,8 +71,8 @@ class ResponseOrchestrator:
         conversation_service: ConversationService,
         runtime_fsm: AgentRuntimeFSM | None = None,
         tool_registry: AgentToolRegistry | None = None,
-        ai_conversation_service: "AIConversationService | None" = None,
-        profile: "AgentProfile | None" = None,
+        ai_conversation_service: AIConversationService | None = None,
+        profile: AgentProfile | None = None,
     ) -> None:
         from .agent_profile import FULL_PROFILE
 
@@ -325,7 +325,7 @@ class ResponseOrchestrator:
         language_name = "German" if language == "de" else language.capitalize()
 
         def _name(p: dict) -> str:
-            return (p.get("user") or {}).get("name") or p.get("title", "")
+            return str((p.get("user") or {}).get("name") or p.get("title", ""))
 
         provider_items = "\n".join(
             f"{i + 1}. {_name(p)}: {p.get('search_optimized_summary') or p.get('description', '')[:200]}"

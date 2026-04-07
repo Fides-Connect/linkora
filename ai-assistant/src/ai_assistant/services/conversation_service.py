@@ -5,7 +5,7 @@ Handles conversation flow, stage management, and orchestration.
 import logging
 import json
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
@@ -18,15 +18,6 @@ if TYPE_CHECKING:
 
 from ..data_provider import DataProvider, SearchUnavailableError
 from ..prompts_templates import (
-    GREETING_AND_TRIAGE_PROMPT,
-    TRIAGE_CONVERSATION_PROMPT,
-    FINALIZE_SERVICE_REQUEST_PROMPT,
-    CLARIFY_PROMPT,
-    CONFIRMATION_PROMPT,
-    RECOVERY_PROMPT,
-    LOOP_BACK_PROMPT,
-    PROVIDER_PITCH_PROMPT,
-    PROVIDER_ONBOARDING_PROMPT,
     get_language_instruction,
     get_greeting_fallback,
     get_prompt,
@@ -103,8 +94,8 @@ class ConversationService:
                  agent_name: str = "Elin", company_name: str = "Linkora",
                  max_providers: int = 5, language: str = 'de',
                  cross_encoder_service: CrossEncoderService | None = None,
-                 google_places_service: "GooglePlacesService | None" = None,
-                 profile: "AgentProfile | None" = None) -> None:
+                 google_places_service: GooglePlacesService | None = None,
+                 profile: AgentProfile | None = None) -> None:
         """
         Initialize Conversation service.
 
@@ -251,7 +242,6 @@ class ConversationService:
             )
             gp_used = self.context.get("google_places_used", False)
             gp_error = self.context.get("google_places_error", False)
-            gp_announced = self.context.get("google_places_announced", False)
 
             # Provider cards make the GP search self-evident — suppress the
             # announcement in all success cases. Only surface a note on error.
@@ -737,10 +727,10 @@ class ConversationService:
 
     async def _run_gp_pipeline(
         self,
-        gp_service: "GooglePlacesService",
+        gp_service: GooglePlacesService,
         query_text: str,
         hyde_text: str,
-    ) -> "GpResult":
+    ) -> GpResult:
         """Drive the Google Places enrichment phase (Stage 2).
 
         1. Generates a Places search phrase via the LLM.
