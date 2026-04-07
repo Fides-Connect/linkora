@@ -28,6 +28,15 @@ from ..data_provider import SearchUnavailableError  # noqa: F401 (used below)
 logger = logging.getLogger(__name__)
 
 
+def is_legal_transition(
+    current: ConversationStage,
+    target: ConversationStage,
+    legal_transitions: dict,
+) -> bool:
+    """Return True when *target* is in the allowed transitions from *current*."""
+    return target in legal_transitions.get(current, [])
+
+
 def _extract_user_text_from_system_event(raw_text: str) -> str:
     """Extract user text from a buffered system-event wrapper when present."""
     clean = raw_text.strip()
@@ -103,8 +112,7 @@ class ResponseOrchestrator:
             return False
 
         current = self.conversation_service.get_current_stage()
-        allowed = self._profile.legal_transitions.get(current, [])
-        if target not in allowed:
+        if not is_legal_transition(current, target, self._profile.legal_transitions):
             logger.warning(
                 "handle_signal_transition: illegal %s → %s — ignored", current, target
             )

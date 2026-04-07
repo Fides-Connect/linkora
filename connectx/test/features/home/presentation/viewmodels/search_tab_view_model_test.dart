@@ -83,10 +83,10 @@ void main() {
          expect(viewModel.chatMessages.length, 2);
          expect(viewModel.chatMessages.last.text, 'Hi there');
          expect(viewModel.chatMessages.last.isUser, false);
-         // onChatMessage no longer sets state to listening; only onRuntimeState
-         // is authoritative for state transitions after a user turn.
-         // State remains processing until the backend emits runtime-state:listening.
-         expect(viewModel.conversationState, ConversationState.processing);
+         // onChatMessage immediately transitions processing → listening as soon
+         // as the first AI text arrives so the typing indicator disappears.
+         // onRuntimeState(speaking) fires afterwards and keeps state in listening.
+         expect(viewModel.conversationState, ConversationState.listening);
       });
   });
 

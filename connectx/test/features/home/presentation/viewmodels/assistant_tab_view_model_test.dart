@@ -12,6 +12,11 @@ void main() {
 
   setUp(() {
     mockSpeech = MockSpeechService();
+    // voiceEnabled defaults to false in the generated mock; most voice-mode
+    // tests require it to be true so the ViewModel's guard does not suppress
+    // the voice path.  Tests that explicitly require voiceEnabled=false stub
+    // it locally.
+    when(mockSpeech.voiceEnabled).thenReturn(true);
     vm = AssistantTabViewModel(speechService: mockSpeech);
   });
 
