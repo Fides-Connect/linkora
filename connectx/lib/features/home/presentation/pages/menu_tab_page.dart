@@ -12,8 +12,13 @@ import 'user_page.dart';
 
 class MenuTabPage extends StatelessWidget {
   final bool showProfileItem;
+  final bool showNotificationsToggle;
 
-  const MenuTabPage({super.key, this.showProfileItem = true});
+  const MenuTabPage({
+    super.key,
+    this.showProfileItem = true,
+    this.showNotificationsToggle = true,
+  });
 
   void _showLanguageDialog(BuildContext context) {
     final localizations = AppLocalizations.of(context);
@@ -129,10 +134,12 @@ class MenuTabPage extends StatelessWidget {
                     onTap: () => _showLanguageDialog(context),
                   ),
                   const SizedBox(height: 16),
-                  _NotificationsToggleItem(
-                    title: localizations?.menuNotifications ?? 'Notifications',
-                  ),
-                  const SizedBox(height: 16),
+                  if (showNotificationsToggle) ...[  
+                    _NotificationsToggleItem(
+                      title: localizations?.menuNotifications ?? 'Notifications',
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   _MenuItem(
                     icon: Icons.logout,
                     title: localizations?.menuLogout ?? 'Logout',

@@ -26,8 +26,12 @@ warnings.filterwarnings(
     category=DeprecationWarning,
 )
 
-from aiohttp import web  # noqa: E402
+# Load .env before any application imports so that module-level constants
+# (e.g. _IS_LITE_MODE in endpoint modules) are evaluated with the correct values.
 from dotenv import load_dotenv  # noqa: E402
+load_dotenv()
+
+from aiohttp import web  # noqa: E402
 import firebase_admin  # noqa: E402
 
 from .signaling_server import SignalingServer  # noqa: E402
@@ -35,6 +39,7 @@ from .common_endpoints import setup_cors  # noqa: E402
 from .services.admin_service import AdminService  # noqa: E402
 from .services.agent_profile import get_profile  # noqa: E402
 from .api.v1.router import register_v1_routes  # noqa: E402
+from .api.deps import COMPETENCE_ENRICHER_KEY  # noqa: E402
 from .weaviate_sync import run_startup_sync  # noqa: E402
 from .services.llm_service import LLMService  # noqa: E402
 from .hub_spoke_schema import HubSpokeConnection  # noqa: E402
@@ -49,9 +54,6 @@ logger = logging.getLogger(__name__)
 
 async def main() -> None:
     """Main application entry point."""
-    # Load environment variables
-    load_dotenv()
-
     # Set log level from environment
     logging.getLogger().setLevel(os.getenv('LOG_LEVEL', 'INFO').upper())
 
@@ -130,7 +132,7 @@ async def main() -> None:
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             max_output_tokens=2048,
         )
-        app["competence_enricher"] = _CompetenceEnricher(llm=_rest_llm.llm)  # type: ignore[arg-type]
+        app[COMPETENCE_ENRICHER_KEY] = _CompetenceEnricher(llm=_rest_llm.llm)  # type: ignore[arg-type]
         logger.info("CompetenceEnricher wired to REST app for /me/competencies endpoints")
     else:
         logger.warning("GEMINI_API_KEY not set — competence enrichment disabled for REST endpoints")

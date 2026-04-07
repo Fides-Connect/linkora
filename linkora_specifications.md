@@ -825,7 +825,9 @@ The table below provides a complete at-a-glance overview of which features are a
 | MRI: contextual details (min. 3) | Required | Required |
 | MRI: location | Required when GP enabled; soft-ask otherwise | Always required |
 | Soft-asks (budget, etc.) | Yes | Yes |
-| Chat message persistence | Yes (30-day TTL) | Yes (30-day TTL) |
+| Firestore reads and writes | Yes (user context, conversation history, settings) | No — all Firestore activity disabled |
+| Push notifications | Yes | No |
+| Chat message persistence | Yes (30-day TTL) | No — session is purely in-memory |
 
 ### 14.3 Full Mode
 
@@ -945,7 +947,11 @@ In lite mode, the AI assistant session uses a direct WebSocket connection (`/ws/
 
 #### Chat Message Persistence
 
-AI conversation messages are persisted to Firestore in lite mode, using the same 30-day TTL rules as full mode.
+Lite mode does not persist any data to Firestore. The entire conversation session is in-memory only. No conversation history, user context, or settings are read from or written to Firestore during a lite-mode session. The auth sync REST endpoint returns a minimal success response without creating or updating any user document. The settings endpoint returns default values without reading from Firestore.
+
+#### Push Notifications
+
+Push notifications are disabled in lite mode. The client must not request FCM permissions, must not register an FCM token, and must not listen for or display any push or local notifications. The notification toggle control must not appear in the settings menu when in lite mode.
 
 ### 14.5 Invariants Shared Across Both Modes
 

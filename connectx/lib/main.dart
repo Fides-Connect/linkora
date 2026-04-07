@@ -80,47 +80,51 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Set up background message handler
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  final isLiteMode = dotenv.env['APP_MODE']?.toLowerCase() == 'lite';
 
-  // Show a local notification when the app is in the foreground and a
-  // service-request status-change push arrives (FCM does not auto-display
-  // notification-payload messages while the app is active).
-  // Tapping the local notification calls _openServiceRequestDetail.
-  final notificationService = NotificationService();
-  await notificationService.initialize(
-    onNotificationTap: (payload) {
-      // payload format: "<type>:<service_request_id>"
-      final colonIndex = payload.indexOf(':');
-      if (colonIndex != -1) {
-        final id = payload.substring(colonIndex + 1);
-        _openServiceRequestDetail(id);
+  if (!isLiteMode) {
+    // Set up background message handler
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    // Show a local notification when the app is in the foreground and a
+    // service-request status-change push arrives (FCM does not auto-display
+    // notification-payload messages while the app is active).
+    // Tapping the local notification calls _openServiceRequestDetail.
+    final notificationService = NotificationService();
+    await notificationService.initialize(
+      onNotificationTap: (payload) {
+        // payload format: "<type>:<service_request_id>"
+        final colonIndex = payload.indexOf(':');
+        if (colonIndex != -1) {
+          final id = payload.substring(colonIndex + 1);
+          _openServiceRequestDetail(id);
+        }
+      },
+    );
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      final type = message.data['type'];
+      if (type == 'service_request_status_change' ||
+          type == 'new_service_request') {
+        final title = message.notification?.title ?? 'Service Request Update';
+        final body = message.notification?.body ?? 'You have a new service request update.';
+        notificationService.showNotification(
+          id: DateTime.now().millisecondsSinceEpoch,
+          title: title,
+          body: body,
+          payload: '$type:${message.data['service_request_id'] ?? ''}',
+        );
       }
-    },
-  );
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    final type = message.data['type'];
-    if (type == 'service_request_status_change' ||
-        type == 'new_service_request') {
-      final title = message.notification?.title ?? 'Service Request Update';
-      final body = message.notification?.body ?? 'You have a new service request update.';
-      notificationService.showNotification(
-        id: DateTime.now().millisecondsSinceEpoch,
-        title: title,
-        body: body,
-        payload: '$type:${message.data['service_request_id'] ?? ''}',
-      );
-    }
-  });
+    });
 
-  // Navigate to detail page when the app is opened via a notification tap
-  // while the app was in the background.
-  FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationOpen);
+    // Navigate to detail page when the app is opened via a notification tap
+    // while the app was in the background.
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationOpen);
 
-  // Navigate when the app was fully terminated and launched via notification.
-  _handleNotificationOpen(
-    await FirebaseMessaging.instance.getInitialMessage(),
-  );
+    // Navigate when the app was fully terminated and launched via notification.
+    _handleNotificationOpen(
+      await FirebaseMessaging.instance.getInitialMessage(),
+    );
+  }
 
   final userProvider = UserProvider();
   await userProvider.init();
@@ -188,9 +192,13 @@ class _ConnectXAppState extends State<ConnectXApp> {
         setState(() => _locale = Locale(normalized, ''));
       }
     }
-    final notificationsEnabledRaw = settings['notifications_enabled'];
-    if (notificationsEnabledRaw is bool) {
-      await NotificationService().setNotificationsEnabled(notificationsEnabledRaw);
+    // Notifications are disabled in lite mode — skip syncing the preference.
+    final isLiteMode = dotenv.env['APP_MODE']?.toLowerCase() == 'lite';
+    if (!isLiteMode) {
+      final notificationsEnabledRaw = settings['notifications_enabled'];
+      if (notificationsEnabledRaw is bool) {
+        await NotificationService().setNotificationsEnabled(notificationsEnabledRaw);
+      }
     }
   }
 

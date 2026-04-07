@@ -45,7 +45,7 @@ class _ConnectXHomePageState extends State<ConnectXHomePage> {
     if (_isLiteMode) {
       _pages = [
         const AssistantTabPage(),
-        const MenuTabPage(showProfileItem: false),
+        const MenuTabPage(showProfileItem: false, showNotificationsToggle: false),
       ];
     } else {
       _pages = [

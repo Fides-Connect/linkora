@@ -38,8 +38,9 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
       if (vm.voiceEnabled) {
         await PermissionHelper.requestMicrophonePermission(context);
         if (!mounted) return;
+        await PermissionHelper.requestNotificationPermission(context);
+        if (!mounted) return;
       }
-      await PermissionHelper.requestNotificationPermission(context);
 
       if (mounted) {
         final localizations = AppLocalizations.of(context);

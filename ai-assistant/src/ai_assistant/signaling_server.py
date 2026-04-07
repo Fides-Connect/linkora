@@ -203,8 +203,9 @@ class SignalingServer:
         if raw_language in SUPPORTED_LANGUAGES:
             language = raw_language
         else:
-            # Attempt to read the user's stored language setting from Firestore.
-            if user_id:
+            # Attempt to read the user's stored language setting from Firestore
+            # only when Firestore is enabled for this deployment mode.
+            if user_id and self._profile.firestore_enabled:
                 try:
                     user_doc = await self._firestore.get_user(user_id)
                     stored_language = (user_doc or {}).get('language')

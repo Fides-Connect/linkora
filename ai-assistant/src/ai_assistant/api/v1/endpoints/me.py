@@ -4,6 +4,7 @@ Current user management endpoints.
 """
 from typing import Any
 import logging
+import os
 from aiohttp import web
 from pydantic import ValidationError
 from weaviate.classes.query import Filter
@@ -12,10 +13,12 @@ from ai_assistant.firestore_service import FirestoreService
 from ai_assistant.weaviate_models import UserModelWeaviate
 from ai_assistant.hub_spoke_ingestion import HubSpokeIngestion
 from ai_assistant.hub_spoke_schema import get_user_collection
-from ...deps import get_current_user_id, serialize_datetime
+from ...deps import get_current_user_id, serialize_datetime, COMPETENCE_ENRICHER_KEY
 
 logger = logging.getLogger(__name__)
 firestore_service = FirestoreService()
+
+_IS_LITE_MODE = os.getenv("AGENT_MODE", "full").lower().strip() == "lite"
 
 
 async def get_me(request: web.Request) -> web.Response:
@@ -278,7 +281,7 @@ async def create_my_competence(request: web.Request) -> web.Response:
         if created_competence:
             # Enrich before writing to Weaviate so the vector and BM25 fields
             # (search_optimized_summary, skills_list, availability_tags) are populated.
-            enricher = request.app.get("competence_enricher")
+            enricher = request.app.get(COMPETENCE_ENRICHER_KEY)
             if enricher is not None:
                 try:
                     enriched = await enricher.enrich(created_competence)
@@ -425,6 +428,14 @@ async def get_settings(request: web.Request) -> web.Response:
     """GET /api/v1/me/settings - Get current user's app settings."""
     try:
         user_id = await get_current_user_id(request)
+
+        # In lite mode Firestore is disabled — return default settings.
+        if _IS_LITE_MODE:
+            return web.json_response({
+                'language': _DEFAULT_SETTINGS['language'],
+                'notifications_enabled': False,
+            })
+
         user = await firestore_service.get_user(user_id)
         if not user:
             return web.json_response({'error': 'User not found'}, status=404)
@@ -458,6 +469,17 @@ async def update_settings(request: web.Request) -> web.Response:
         body = await request.json()
         if not isinstance(body, dict):
             return web.json_response({'error': 'Request body must be a JSON object'}, status=400)
+
+        # In lite mode Firestore is disabled — acknowledge the request without persisting.
+        if _IS_LITE_MODE:
+            language = body.get('language', _DEFAULT_SETTINGS['language'])
+            if not isinstance(language, str) or language not in {'en', 'de'}:
+                language = _DEFAULT_SETTINGS['language']
+            return web.json_response({
+                'language': language,
+                'notifications_enabled': False,
+            })
+
         user = await firestore_service.get_user(user_id)
         if not user:
             return web.json_response({'error': 'User not found'}, status=404)

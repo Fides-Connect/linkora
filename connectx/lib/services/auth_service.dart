@@ -44,7 +44,11 @@ class AuthService {
     if (_initialized) return;
 
     // Initialize FCM in the background — do not block app startup on a network call.
-    unawaited(_userService.initializeFCM());
+    // In lite mode notifications are disabled, so FCM is not initialized.
+    final isLiteMode = dotenv.env['APP_MODE']?.toLowerCase() == 'lite';
+    if (!isLiteMode) {
+      unawaited(_userService.initializeFCM());
+    }
 
     // Initialize GoogleSignIn with proper configuration
     final bool isAndroid =

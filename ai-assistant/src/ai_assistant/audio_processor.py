@@ -156,13 +156,17 @@ class AudioProcessor:
             session_id=self.connection_id
         )
 
-        # Wire AIConversationService so every session is persisted to Firestore.
-        ai_conv_service = AIConversationService(firestore_service=_firestore_service)
+        # Wire AIConversationService — Firestore is disabled in lite mode so no
+        # conversation history is persisted and no user context is read.
+        firestore_for_session = (
+            _firestore_service if assistant._profile.firestore_enabled else None
+        )
+        ai_conv_service = AIConversationService(firestore_service=firestore_for_session)
         assistant.response_orchestrator.ai_conversation_service = ai_conv_service
 
-        # Inject the same FirestoreService so the tool-context has a live client.
-        # Without this, all Firestore-dependent tools receive None and crash.
-        assistant.firestore_service = _firestore_service  # type: ignore[attr-defined, assignment]
+        # Inject FirestoreService into the tool context. None disables all
+        # Firestore-dependent operations (user context, provider pitch, tools).
+        assistant.firestore_service = firestore_for_session  # type: ignore[attr-defined, assignment]
 
         logger.info(
             "AI Assistant created with language '%s': %s, %s",

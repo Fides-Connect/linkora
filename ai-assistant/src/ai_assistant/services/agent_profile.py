@@ -70,6 +70,13 @@ class AgentProfile:
     """When ``False`` the ``SignalingServer`` rejects ``?mode=voice`` connections
     with close code 4403 and ``PeerConnectionHandler`` skips all audio paths."""
 
+    firestore_enabled: bool
+    """When ``False`` all Firestore reads and writes are skipped for the
+    lifetime of the session and its associated REST endpoints.  The AI session
+    runs entirely in-memory; no conversation history is persisted and no user
+    context is fetched from Firestore.  Intended for lite-mode deployments that
+    serve anonymous or external users where data persistence is undesirable."""
+
     # ── Prompts ────────────────────────────────────────────────────────────
     prompt_key: str
     """Key into ``PROMPT_SETS`` in ``prompts_templates.py`` — ``"full"`` or ``"lite"``."""
@@ -159,6 +166,7 @@ FULL_PROFILE = AgentProfile(
     finalize_auto_complete=False,
     google_places_always_active=False,
     voice_enabled=True,
+    firestore_enabled=True,
     prompt_key="full",
 )
 
@@ -170,6 +178,7 @@ LITE_PROFILE = AgentProfile(
     finalize_auto_complete=True,
     google_places_always_active=True,
     voice_enabled=False,
+    firestore_enabled=False,
     prompt_key="lite",
 )
 
