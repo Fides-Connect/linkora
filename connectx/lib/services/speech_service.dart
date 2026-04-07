@@ -4,6 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
+import 'lite_chat_service.dart';
 import 'webrtc_service.dart';
 import 'wrappers.dart';
 import '../models/app_types.dart';
@@ -14,6 +15,9 @@ class SpeechService {
   // WebRTC service for server communication
   WebRTCService? _webrtcService;
 
+  // Lite-mode direct WebSocket chat service (used when voiceEnabled == false)
+  LiteChatService? _liteChatService;
+
   // Remote audio renderer for WebRTC audio playback
   RTCVideoRenderer? _remoteRenderer;
 
@@ -21,6 +25,7 @@ class SpeechService {
   final PermissionWrapper _permissionWrapper;
   final FirebaseAuthWrapper _firebaseAuthWrapper;
   final WebRTCService Function(String) _webRTCServiceFactory;
+  final LiteChatService Function(String) _liteChatServiceFactory;
 
   // Language configuration
   String _languageCode = 'de';
@@ -53,12 +58,16 @@ class SpeechService {
   SpeechService({
     PermissionWrapper? permissionWrapper,
     WebRTCService Function(String)? webRTCServiceFactory,
+    LiteChatService Function(String)? liteChatServiceFactory,
     FirebaseAuthWrapper? firebaseAuthWrapper,
     bool? voiceEnabled,
   }) : _permissionWrapper = permissionWrapper ?? PermissionWrapper(),
        _webRTCServiceFactory =
            webRTCServiceFactory ??
            ((lang) => WebRTCService(languageCode: lang)),
+       _liteChatServiceFactory =
+           liteChatServiceFactory ??
+           ((lang) => LiteChatService(languageCode: lang)),
        _firebaseAuthWrapper = firebaseAuthWrapper ?? FirebaseAuthWrapper(),
        voiceEnabled = voiceEnabled ?? _readVoiceEnabled();
 
@@ -146,6 +155,13 @@ class SpeechService {
   }
 
   void stopSpeech() async {
+    // Lite mode
+    if (!voiceEnabled) {
+      await _liteChatService?.disconnect();
+      _liteChatService = null;
+      return;
+    }
+
     // Stop and clean up WebRTC service
     _webrtcService?.disconnect();
     _webrtcService = null;
@@ -161,6 +177,11 @@ class SpeechService {
   /// Start speech session by connecting to AI-Assistant server via WebRTC
   /// The server will handle audio streaming, STT, LLM, and TTS processing
   Future<void> startSpeech({String mode = 'voice'}) async {
+    if (!voiceEnabled) {
+      await _startLiteChat();
+      return;
+    }
+
     onSpeechStart?.call();
 
     try {
@@ -175,6 +196,55 @@ class SpeechService {
       onSpeechEnd?.call();
       rethrow;
     }
+  }
+
+  Future<void> _startLiteChat() async {
+    onSpeechStart?.call();
+    try {
+      _initializeLiteChat();
+      await _liteChatService!.connect();
+      debugPrint('SpeechService: LiteChat connected to AI-Assistant server');
+    } catch (e) {
+      onSpeechEnd?.call();
+      rethrow;
+    }
+  }
+
+  void _initializeLiteChat() {
+    _liteChatService = _liteChatServiceFactory(_languageCode);
+
+    _liteChatService!.onConnected = () {
+      debugPrint('SpeechService: LiteChat connected');
+      onConnected?.call();
+    };
+
+    _liteChatService!.onDisconnected = () {
+      debugPrint('SpeechService: LiteChat disconnected');
+      onDisconnected?.call();
+      onSpeechEnd?.call();
+    };
+
+    _liteChatService!.onError = (String error) {
+      debugPrint('SpeechService: LiteChat error: $error');
+      onSpeechEnd?.call();
+    };
+
+    _liteChatService!.onChatMessage = (String text, bool isUser, bool isChunk) {
+      onChatMessage?.call(text, isUser, isChunk);
+    };
+
+    _liteChatService!.onRuntimeState = (AgentRuntimeState state) {
+      onRuntimeState?.call(state);
+    };
+
+    _liteChatService!.onProviderCards = (List<Map<String, dynamic>> cards) {
+      onProviderCards?.call(cards);
+    };
+
+    _liteChatService!.onDataChannelOpen = () {
+      debugPrint('SpeechService: LiteChat session ready');
+      onDataChannelOpen?.call();
+    };
   }
 
   Future<void> _initialize({String mode = 'voice'}) async {
@@ -290,8 +360,19 @@ class SpeechService {
   ///
   /// [text] - The text message to send
   /// [messageId] - Optional stable ID for echo deduplication (GAP-4).
-  /// Returns `true` if the message was dispatched, `false` if the WebRTC service is not ready.
+  /// Returns `true` if the message was dispatched, `false` if the service is not ready.
   bool sendTextMessage(String text, {String? messageId}) {
+    if (!voiceEnabled) {
+      if (_liteChatService == null) {
+        debugPrint(
+          'SpeechService: Cannot send text message, LiteChat service not initialized',
+        );
+        return false;
+      }
+      _liteChatService!.sendTextMessage(text);
+      return true;
+    }
+
     if (_webrtcService == null) {
       debugPrint(
         'SpeechService: Cannot send text message, WebRTC service not initialized',

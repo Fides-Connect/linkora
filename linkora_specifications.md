@@ -930,7 +930,18 @@ Lite mode is strictly text-based. The following are prohibited in lite mode:
 
 If a client attempts to establish a lite-mode session with `?mode=voice`, the server must reject the combination, log a warning, and either refuse the connection or silently downgrade to text mode. A lite-mode server must not accept voice sessions under any circumstance.
 
-Because audio is absent, the lite-mode session always behaves as a text session: no spoken greeting is synthesised, and the initial text greeting is dispatched over the DataChannel from the `GREETING` stage and then transitions to `TRIAGE`, exactly as described in §3.1 for text mode.
+Because audio is absent, the lite-mode session always behaves as a text session: no spoken greeting is synthesised, and the initial text greeting is dispatched over the transport channel from the `GREETING` stage and then transitions to `TRIAGE`, exactly as described in §3.1 for text mode.
+
+#### Lite-Mode Transport
+
+In lite mode, the AI assistant session uses a direct WebSocket connection (`/ws/chat`) instead of WebRTC. The WebSocket carries the same JSON message protocol as the DataChannel in full mode. Specifically:
+
+- The client sends `{"type": "text-input", "text": "…"}` frames.
+- The server sends `{"type": "chat", …}`, `{"type": "runtime-state", …}`, and `{"type": "provider-cards", …}` frames.
+- On `wss://` connections from non-web clients, the Firebase ID token is conveyed as an `Authorization: Bearer` header at connection time.
+- On `ws://` connections or web clients, the Firebase ID token is sent as the first message: `{"type": "auth", "token": "…"}`.
+- Both client and server enforce a 10-minute idle timeout. If no message is exchanged within 10 minutes, the session is torn down and the client is notified via the disconnect path.
+- Messages sent by the client before the session is fully established (auth confirmed) are queued client-side and flushed immediately once the session becomes active.
 
 #### Chat Message Persistence
 

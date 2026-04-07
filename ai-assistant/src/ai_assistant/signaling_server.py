@@ -14,6 +14,7 @@ from aiortc import RTCSessionDescription
 from firebase_admin import auth as firebase_auth
 
 from .peer_connection_handler import PeerConnectionHandler
+from .chat_connection_handler import ChatConnectionHandler
 from .firestore_service import FirestoreService
 from .services.agent_profile import FULL_PROFILE, AgentProfile
 
@@ -83,7 +84,7 @@ class SignalingServer:
     """Manages WebSocket connections and WebRTC signaling."""
 
     def __init__(self, profile: AgentProfile | None = None) -> None:
-        self.active_connections: dict[str, PeerConnectionHandler] = {}
+        self.active_connections: dict[str, PeerConnectionHandler | ChatConnectionHandler] = {}
         self._firestore = FirestoreService()
         self._profile: AgentProfile = profile if profile is not None else FULL_PROFILE
 
@@ -315,6 +316,130 @@ class SignalingServer:
 
         else:
             logger.warning("Unknown message type: %s", msg_type)
+
+    async def handle_chat_websocket(self, request: web.Request) -> web.WebSocketResponse:
+        """Handle a text-only lite-mode WebSocket connection (``GET /ws/chat``).
+
+        No WebRTC, no ICE, no DataChannel.  After Firebase auth the connection
+        is handed off to a ``ChatConnectionHandler`` which creates an
+        ``AudioProcessor`` in text mode and forwards messages over the
+        WebSocketBridge.
+        """
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+
+        connection_id = str(id(ws))
+        client_ip = request.remote
+
+        # ── Authentication (identical two-path logic as handle_websocket) ────
+        user_id: str | None = None
+        auth_header = request.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header[len('Bearer '):]
+            try:
+                decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
+                user_id = decoded_token['uid']
+                logger.debug("Chat WS token verified for uid: %s", user_id)
+            except Exception as exc:
+                logger.warning("Chat WS auth failed — invalid token: %s", exc)
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
+        else:
+            try:
+                first_msg = await asyncio.wait_for(ws.receive(), timeout=10.0)
+            except Exception as exc:
+                logger.warning("Chat WS auth timeout from %s: %s", client_ip, exc)
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
+            if first_msg.type != WSMsgType.TEXT:
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
+            try:
+                auth_data = json.loads(first_msg.data)
+                if auth_data.get('type') != 'auth' or not auth_data.get('token'):
+                    raise ValueError('First message is not an auth message')
+                token = auth_data['token']
+                decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
+                user_id = decoded_token['uid']
+                logger.info("Chat WS web-auth from %s for uid: %s", client_ip, user_id)
+            except Exception as exc:
+                logger.warning("Chat WS auth failed from %s: %s", client_ip, exc)
+                await ws.close(code=4401, message=b'Unauthorized')
+                return ws
+
+        # ── Language resolution (same logic as handle_websocket) ─────────────
+        raw_language = request.query.get('language', '')
+        stored_language: str | None = None
+        if raw_language in SUPPORTED_LANGUAGES:
+            language = raw_language
+        else:
+            if user_id:
+                try:
+                    user_doc = await self._firestore.get_user(user_id)
+                    stored_language = (user_doc or {}).get('language')
+                except Exception as exc:
+                    logger.warning("Could not fetch user language for %s: %s", user_id, exc)
+            if stored_language in SUPPORTED_LANGUAGES:
+                language = stored_language
+            else:
+                language = 'en'
+                if raw_language:
+                    logger.warning(
+                        "Chat WS unsupported language '%s' from %s; falling back to 'en'",
+                        raw_language, client_ip,
+                    )
+
+        language_fallback_from = (
+            raw_language
+            if (raw_language and raw_language not in SUPPORTED_LANGUAGES
+                and language == 'en'
+                and (not stored_language or stored_language not in SUPPORTED_LANGUAGES))
+            else ""
+        )
+
+        logger.info(
+            "New chat WS connection: %s from %s (user: %s, language: %s)",
+            connection_id, client_ip, user_id, language,
+        )
+
+        handler = ChatConnectionHandler(
+            connection_id=connection_id,
+            websocket=ws,
+            user_id=user_id,
+            language=language,
+            language_fallback_from=language_fallback_from,
+            profile=self._profile,
+        )
+        self.active_connections[connection_id] = handler
+
+        try:
+            await handler.start()
+
+            async for msg in ws:
+                if msg.type == WSMsgType.TEXT:
+                    try:
+                        data = json.loads(msg.data)
+                        if data.get('type') == 'text-input':
+                            text = data.get('text', '')
+                            handler.handle_text_input(text)
+                        else:
+                            logger.debug(
+                                "Chat WS: ignoring message type '%s' from %s",
+                                data.get('type'), connection_id,
+                            )
+                    except json.JSONDecodeError as exc:
+                        logger.error("Chat WS invalid JSON from %s: %s", connection_id, exc)
+                    except Exception as exc:
+                        logger.error("Chat WS message error from %s: %s", connection_id, exc, exc_info=True)
+                elif msg.type == WSMsgType.ERROR:
+                    logger.error("Chat WS error for %s: %s", connection_id, ws.exception())
+                elif msg.type == WSMsgType.CLOSE:
+                    logger.info("Chat WS client %s initiated close", connection_id)
+        finally:
+            logger.info("Chat WS connection closed: %s", connection_id)
+            await handler.close()
+            self.active_connections.pop(connection_id, None)
+        return ws
 
     async def health_check(self, request: web.Request) -> web.Response:
         """Health check endpoint."""

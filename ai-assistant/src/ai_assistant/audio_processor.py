@@ -191,6 +191,22 @@ class AudioProcessor:
         except Exception as exc:  # pragma: no cover
             logger.warning("Could not re-emit FSM state on DC attach: %s", exc)
 
+    def set_chat_bridge(self, bridge: object) -> None:
+        """Replace the outbound message bridge (e.g. WebSocketBridge for lite mode).
+
+        Must be called BEFORE :meth:`start` so that the session starter and
+        delivery strategy references are both updated to the new bridge.
+        """
+        self._dc_bridge = bridge  # type: ignore[assignment]
+        # Recreate strategies so they hold a reference to the new bridge,
+        # not the DataChannelBridge created in __init__.
+        self._delivery = self._make_delivery(self.session_mode)
+        self._session_starter = self._make_session_starter(self.session_mode)
+        logger.info(
+            "Chat bridge replaced with %s for connection %s",
+            type(bridge).__name__, self.connection_id,
+        )
+
     # ── Strategy factories ────────────────────────────────────────────────────
 
     def _make_delivery(self, mode: SessionMode) -> ResponseDelivery:

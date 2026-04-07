@@ -31,7 +31,7 @@ from ai_assistant.services.ai_conversation_service import AIConversationService
 from langchain_core.messages import AIMessage
 
 from .conversation_service import ConversationStage
-from .data_channel_bridge import DataChannelBridge
+from .chat_bridge import ChatBridge
 from .greeting_cache import get_greeting_cache
 from .session_mode import SessionMode
 
@@ -125,7 +125,7 @@ class VoiceSessionStarter(SessionStarter):
         data_provider: DataProvider,
         tts_service: TextToSpeechService,
         llm_service: LLMService,
-        dc_bridge: DataChannelBridge,
+        dc_bridge: ChatBridge,
         output_track: AudioOutputTrack,
         user_id: str | None,
         connection_id: str,
@@ -301,7 +301,7 @@ class TextSessionStarter(SessionStarter):
         response_orchestrator: ResponseOrchestrator,
         data_provider: DataProvider,
         llm_service: LLMService,
-        dc_bridge: DataChannelBridge,
+        dc_bridge: ChatBridge,
         user_id: str | None,
         connection_id: str,
         firestore_service: FirestoreService | None = None,
@@ -446,7 +446,7 @@ class SessionStarterFactory:
         data_provider: DataProvider,
         tts_service: TextToSpeechService | None = None,
         llm_service: LLMService | None = None,
-        dc_bridge: DataChannelBridge | None = None,
+        dc_bridge: ChatBridge | None = None,
         output_track: AudioOutputTrack | None = None,
         user_id: str | None = None,
         connection_id: str = "",

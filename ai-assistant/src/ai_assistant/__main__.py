@@ -113,6 +113,7 @@ async def main() -> None:
     # Create web application
     app = web.Application()
     app.router.add_get('/ws', signaling_server.handle_websocket)
+    app.router.add_get('/ws/chat', signaling_server.handle_chat_websocket)
     app.router.add_get('/health', signaling_server.health_check)
 
     # Register v1 API routes
@@ -143,6 +144,7 @@ async def main() -> None:
 
     logger.info("Starting AI Assistant server on %s:%s", host, port)
     logger.info("WebSocket endpoint: ws://%s:%s/ws", host, port)
+    logger.info("Chat WebSocket endpoint: ws://%s:%s/ws/chat", host, port)
     logger.info("Health check: http://%s:%s/health", host, port)
     logger.info("API v1: http://%s:%s/api/v1/", host, port)
     logger.info("Sign-In: http://%s:%s/api/v1/auth/sign-in-google", host, port)
