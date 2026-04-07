@@ -106,6 +106,11 @@ void main() {
       expect(vm.conversationState, ConversationState.connecting);
     });
 
+    test('sets state to connecting even without pendingText (loading spinner)', () async {
+      await vm.startChat(voiceMode: false);
+      expect(vm.conversationState, ConversationState.connecting);
+    });
+
     test('trims pendingText before adding', () async {
       await vm.startChat(voiceMode: false, pendingText: '  trimmed  ');
       expect(vm.chatMessages.first.text, 'trimmed');
@@ -664,6 +669,64 @@ void main() {
       rsCb(AgentRuntimeState.thinking);
       rsCb(AgentRuntimeState.speaking);
       expect(notifyCount, 2);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Language change — session restart
+  // ══════════════════════════════════════════════════════════════════════════
+
+  group('initialize() language change', () {
+    setUp(() {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      when(mockSpeech.stopSpeech()).thenReturn(null);
+    });
+
+    test('restarts active session when language changes', () async {
+      final cbs = init(lang: 'de');
+      // Simulate an active session (data channel open → connecting → ready)
+      (cbs['speechStart'] as OnSpeechStartCallback)();
+      (cbs['dataChannelOpen'] as Function())();
+      expect(vm.conversationState, isNot(ConversationState.idle));
+
+      // Switch language — should stop the current session and start a fresh one
+      vm.initialize('Ready', 'en');
+      // Let the unawaited futures run
+      await Future.microtask(() {});
+      await Future.microtask(() {});
+
+      verify(mockSpeech.stopSpeech()).called(greaterThanOrEqualTo(1));
+      verify(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .called(greaterThanOrEqualTo(1));
+    });
+
+    test('does not restart when language is unchanged', () async {
+      final cbs = init(lang: 'de');
+      (cbs['speechStart'] as OnSpeechStartCallback)();
+      (cbs['dataChannelOpen'] as Function())();
+      clearInteractions(mockSpeech);
+
+      // Same language — no restart
+      vm.initialize('Ready', 'de');
+      await Future.microtask(() {});
+
+      verifyNever(mockSpeech.stopSpeech());
+      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode')));
+    });
+
+    test('does not restart when session is idle', () async {
+      init(lang: 'de');
+      // Session is idle (never started)
+      expect(vm.conversationState, ConversationState.idle);
+
+      vm.initialize('Ready', 'en');
+      await Future.microtask(() {});
+
+      verifyNever(mockSpeech.stopSpeech());
+      // startSpeech should not be called from initialize() itself — only from
+      // startChat() which is called by the page's initState, not here.
+      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode')));
     });
   });
 }

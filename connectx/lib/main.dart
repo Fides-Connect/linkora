@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/providers/user_provider.dart';
 import 'features/auth/presentation/pages/start_page.dart';
@@ -158,13 +159,21 @@ class _ConnectXAppState extends State<ConnectXApp> {
   UserProvider? _userProvider;
   bool? _prevAuthenticated;
 
+  static const _kLanguageKey = 'lite_language';
+  static final bool _isLiteMode =
+      dotenv.env['APP_MODE']?.toLowerCase() == 'lite';
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _userProvider = context.read<UserProvider>();
       _userProvider!.addListener(_onAuthChanged);
-      if (_userProvider!.isAuthenticated) _applyBackendSettings();
+      if (_isLiteMode) {
+        _restoreLocalLanguage();
+      } else if (_userProvider!.isAuthenticated) {
+        _applyBackendSettings();
+      }
     });
   }
 
@@ -176,12 +185,15 @@ class _ConnectXAppState extends State<ConnectXApp> {
 
   void _onAuthChanged() {
     final isAuth = _userProvider?.isAuthenticated ?? false;
-    if (isAuth && _prevAuthenticated != true) _applyBackendSettings();
+    if (isAuth && _prevAuthenticated != true && !_isLiteMode) _applyBackendSettings();
     _prevAuthenticated = isAuth;
   }
 
   /// Fetches language + notifications_enabled from the backend and applies
   /// them locally. Runs once after login and on each fresh authentication.
+  ///
+  /// Only used in full mode. In lite mode, [_restoreLocalLanguage] is used
+  /// instead because the server has no persistent settings state.
   Future<void> _applyBackendSettings() async {
     final settings = await UserService().getSettings();
     if (settings == null || !mounted) return;
@@ -192,13 +204,20 @@ class _ConnectXAppState extends State<ConnectXApp> {
         setState(() => _locale = Locale(normalized, ''));
       }
     }
-    // Notifications are disabled in lite mode — skip syncing the preference.
-    final isLiteMode = dotenv.env['APP_MODE']?.toLowerCase() == 'lite';
-    if (!isLiteMode) {
-      final notificationsEnabledRaw = settings['notifications_enabled'];
-      if (notificationsEnabledRaw is bool) {
-        await NotificationService().setNotificationsEnabled(notificationsEnabledRaw);
-      }
+    final notificationsEnabledRaw = settings['notifications_enabled'];
+    if (notificationsEnabledRaw is bool) {
+      await NotificationService().setNotificationsEnabled(notificationsEnabledRaw);
+    }
+  }
+
+  /// Restores the user's last-chosen language from local storage in lite mode.
+  /// Falls back to the system locale (i.e. [_locale] stays null) if no
+  /// preference has been saved yet.
+  Future<void> _restoreLocalLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_kLanguageKey);
+    if (saved != null && (saved == 'en' || saved == 'de') && mounted) {
+      setState(() => _locale = Locale(saved, ''));
     }
   }
 
@@ -206,6 +225,13 @@ class _ConnectXAppState extends State<ConnectXApp> {
     setState(() {
       _locale = locale;
     });
+    if (_isLiteMode) {
+      // Persist the choice locally — in lite mode there is no Firestore to
+      // back this up, so shared_preferences is the source of truth.
+      SharedPreferences.getInstance().then(
+        (prefs) => prefs.setString(_kLanguageKey, locale.languageCode),
+      );
+    }
   }
 
   @override

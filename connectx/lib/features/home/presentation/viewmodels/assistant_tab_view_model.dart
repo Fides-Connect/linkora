@@ -91,16 +91,30 @@ class AssistantTabViewModel extends ChangeNotifier {
     // the mic button.
     if (_warmupLanguage != languageCode) {
       _warmupLanguage = languageCode;
-      // Skip voice-only warmups when the deployment does not support voice
-      // (e.g. lite mode).  preWarm() is a voice ICE optimisation;
-      // warmUpGreeting() pre-generates TTS audio — neither is useful for
-      // text-only sessions and the failed pre-warm can race with the live
-      // text session if its cleanup fires late.
-      if (_speechService.voiceEnabled) {
-        unawaited(_speechService.preWarmConnection());
-        unawaited(_speechService.warmUpGreeting());
+      if (_conversationState != ConversationState.idle) {
+        // A session is currently active.  The server has already locked that
+        // session to the old language (STT config, LLM prompts, TTS voice).
+        // Restart immediately so the new language takes effect right away.
+        final wasVoiceMode = _isVoiceMode;
+        unawaited(_restartForLanguageChange(localStatusText, wasVoiceMode));
+      } else {
+        // No active session — skip voice-only warmups when the deployment
+        // does not support voice (e.g. lite mode).
+        if (_speechService.voiceEnabled) {
+          unawaited(_speechService.preWarmConnection());
+          unawaited(_speechService.warmUpGreeting());
+        }
       }
     }
+  }
+
+  /// Stops the current session and starts a fresh one in the new language.
+  /// Called fire-and-forget from [initialize] when the language changes
+  /// while a session is active.
+  Future<void> _restartForLanguageChange(
+      String statusText, bool voiceMode) async {
+    await stopChat(statusText);
+    await startChat(voiceMode: voiceMode);
   }
 
   // ── Callback wiring ───────────────────────────────────────────────────────
@@ -310,9 +324,11 @@ class AssistantTabViewModel extends ChangeNotifier {
     _pendingEchoTexts.clear();
     _currentMessage = '';
     _lastMessageWasUser = false;
-    notifyListeners();
-    // _pendingTextMessage set above in the optimistic block when pendingText is non-null
     _dataChannelReady = false;
+    // Always enter connecting immediately so the loading spinner is shown even
+    // when there is no pending text (e.g. the auto-started greeting session).
+    _conversationState = ConversationState.connecting;
+    notifyListeners();
 
     // Optimistic update: show the user's first message immediately so the UI
     // responds before the server echo arrives (which may take a few seconds
@@ -323,7 +339,6 @@ class AssistantTabViewModel extends ChangeNotifier {
       _pendingTextMessage = pendingText.trim();
       _chatMessages.add(optimisticMsg);
       _lastMessageWasUser = true;
-      _conversationState = ConversationState.connecting;
       notifyListeners();
     }
 

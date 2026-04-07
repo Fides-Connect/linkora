@@ -628,77 +628,64 @@ class TestReviewEnrichment:
 
 
 # ---------------------------------------------------------------------------
-# fetch_and_ingest_lite()
+# fetch_as_providers() — Weaviate-free lite path
 # ---------------------------------------------------------------------------
 
 
-class TestFetchAndIngestLite:
-    """fetch_and_ingest_lite writes to an isolated LiteCompetence tenant."""
+class TestFetchAsProviders:
+    """fetch_as_providers returns provider dicts shaped for the cross-encoder
+    and FINALIZE prompt, without writing to or reading from Weaviate."""
 
-    def _mock_client(self) -> MagicMock:
-        """Return a mock Weaviate client whose LiteCompetence collection supports tenants."""
-        tenant_col = MagicMock()
-        tenant_col.data.insert = MagicMock(return_value="uuid-ok")
-
-        lite_col = MagicMock()
-        lite_col.with_tenant.return_value = tenant_col
-
-        client = MagicMock()
-        client.collections.get.return_value = lite_col
-        return client
-
-    async def test_success_returns_written_count(self) -> None:
+    async def test_returns_provider_dicts_with_correct_shape(self) -> None:
+        """Happy path: normalised places become properly shaped provider dicts."""
         svc = _make_service()
-        places = [_fake_place(place_id=f"id{i}") for i in range(3)]
-        mock_client = self._mock_client()
+        places = [_fake_place(place_id="ChIJtest", name="Cake Studio")]
 
-        with (
-            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=places)),
-            patch(
-                "ai_assistant.hub_spoke_schema.HubSpokeConnection.get_client",
-                return_value=mock_client,
-            ),
-        ):
-            result = await svc.fetch_and_ingest_lite("plumber Munich", tenant_id="t-abc")
+        with patch.object(svc, "_fetch_places", new=AsyncMock(return_value=places)):
+            providers, result = await svc.fetch_as_providers(
+                structured_query="cake maker Berlin",
+                hyde_text="A professional cake studio in Berlin",
+            )
 
-        assert isinstance(result, GpResult)
-        assert result.providers_written == 3
         assert result.error is False
-        assert result.error_code == ""
+        assert result.providers_written == 1
+        assert len(providers) == 1
 
-    async def test_zero_results_does_not_create_tenant(self) -> None:
+        p = providers[0]
+        # Must have the fields cross-encoder and FINALIZE expect
+        assert "uuid" in p
+        assert "title" in p
+        assert "search_optimized_summary" in p
+        assert "skills_list" in p
+        assert "review_snippets" in p
+        assert "user" in p
+        assert p["user"]["source"] == "google_places"
+        assert p["user"]["is_service_provider"] is True
+        # Contact fields must be at top level too (for Flutter card rendering)
+        assert "phone" in p
+        assert "website" in p
+        assert "address" in p
+
+    async def test_zero_results_returns_empty_list(self) -> None:
         svc = _make_service()
-        mock_client = self._mock_client()
+        with patch.object(svc, "_fetch_places", new=AsyncMock(return_value=[])):
+            providers, result = await svc.fetch_as_providers(
+                structured_query="plumber Munich",
+                hyde_text="",
+            )
 
-        with (
-            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=[])),
-            patch(
-                "ai_assistant.hub_spoke_schema.HubSpokeConnection.get_client",
-                return_value=mock_client,
-            ),
-        ):
-            result = await svc.fetch_and_ingest_lite("nonsense xyz", tenant_id="t-abc")
-
+        assert providers == []
+        assert result.error is False
         assert result.providers_written == 0
-        assert result.error is False
-        # No Weaviate collection access should have happened
-        mock_client.collections.get.assert_not_called()
 
     async def test_rate_limit_returns_error(self) -> None:
         svc = _make_service()
         with patch.object(svc, "_fetch_places", new=AsyncMock(side_effect=_RateLimitError())):
-            result = await svc.fetch_and_ingest_lite("plumber Munich", tenant_id="t-abc")
+            providers, result = await svc.fetch_as_providers("plumber Munich", hyde_text="")
 
+        assert providers == []
         assert result.error is True
         assert result.error_code == "rate_limited"
-
-    async def test_http_error_returns_error(self) -> None:
-        svc = _make_service()
-        with patch.object(svc, "_fetch_places", new=AsyncMock(side_effect=_HttpError(503))):
-            result = await svc.fetch_and_ingest_lite("test", tenant_id="t-abc")
-
-        assert result.error is True
-        assert result.error_code == "http_error"
 
     async def test_circuit_open_returns_error(self) -> None:
         svc = _make_service()
@@ -706,28 +693,13 @@ class TestFetchAndIngestLite:
         svc._circuit_opened_at = time.monotonic()
         svc._consecutive_failures = _CIRCUIT_THRESHOLD
 
-        result = await svc.fetch_and_ingest_lite("test", tenant_id="t-abc")
+        providers, result = await svc.fetch_as_providers("plumber Munich", hyde_text="")
 
+        assert providers == []
         assert result.error is True
         assert result.error_code == "circuit_open"
 
-    async def test_tenant_id_passed_to_upsert(self) -> None:
-        """The tenant_id must be forwarded to the LiteCompetence collection."""
-        svc = _make_service()
-        places = [_fake_place(place_id="ChIJlite")]
-        mock_client = self._mock_client()
-        lite_col = mock_client.collections.get.return_value
 
-        with (
-            patch.object(svc, "_fetch_places", new=AsyncMock(return_value=places)),
-            patch(
-                "ai_assistant.hub_spoke_schema.HubSpokeConnection.get_client",
-                return_value=mock_client,
-            ),
-        ):
-            await svc.fetch_and_ingest_lite("plumber", tenant_id="my-tenant-123")
-
-        lite_col.with_tenant.assert_called_once_with("my-tenant-123")
 
 
 # ---------------------------------------------------------------------------
@@ -738,15 +710,6 @@ class TestFetchAndIngestLite:
 class TestWebEnrichment:
     """Verify that WebPageCrawler results are merged into normalised place dicts."""
 
-    def _mock_client(self) -> MagicMock:
-        tenant_col = MagicMock()
-        tenant_col.data.insert = MagicMock(return_value="uuid-ok")
-        lite_col = MagicMock()
-        lite_col.with_tenant.return_value = tenant_col
-        client = MagicMock()
-        client.collections.get.return_value = lite_col
-        return client
-
     async def test_skills_list_populated_from_crawl(self) -> None:
         """crawl.services propagates into skills_list."""
         from ai_assistant.services.webpage_crawler import WebCrawlResult
@@ -754,17 +717,12 @@ class TestWebEnrichment:
         svc = _make_service()
         places = [_fake_place()]
         crawl = WebCrawlResult(services=["Pipe repair", "Boiler install"])
-        mock_client = self._mock_client()
 
         with (
             patch.object(svc, "_fetch_places", new=AsyncMock(return_value=places)),
             patch(
                 "ai_assistant.services.google_places_service.WebPageCrawler.extract_provider_info",
                 new=AsyncMock(return_value=crawl),
-            ),
-            patch(
-                "ai_assistant.hub_spoke_schema.HubSpokeConnection.get_client",
-                return_value=mock_client,
             ),
         ):
             normalised = await svc._normalise_places(places, "plumber Munich")

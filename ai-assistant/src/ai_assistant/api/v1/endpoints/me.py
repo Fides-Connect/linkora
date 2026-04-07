@@ -470,14 +470,17 @@ async def update_settings(request: web.Request) -> web.Response:
         if not isinstance(body, dict):
             return web.json_response({'error': 'Request body must be a JSON object'}, status=400)
 
-        # In lite mode Firestore is disabled — acknowledge the request without persisting.
+        # In lite mode Firestore is disabled — echo back validated values without persisting.
         if _IS_LITE_MODE:
             language = body.get('language', _DEFAULT_SETTINGS['language'])
             if not isinstance(language, str) or language not in {'en', 'de'}:
                 language = _DEFAULT_SETTINGS['language']
+            notifications_enabled = body.get('notifications_enabled', _DEFAULT_SETTINGS['notifications_enabled'])
+            if not isinstance(notifications_enabled, bool):
+                notifications_enabled = _DEFAULT_SETTINGS['notifications_enabled']
             return web.json_response({
                 'language': language,
-                'notifications_enabled': False,
+                'notifications_enabled': notifications_enabled,
             })
 
         user = await firestore_service.get_user(user_id)

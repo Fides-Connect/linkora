@@ -205,74 +205,80 @@ class GooglePlacesService:
         )
         return GpResult(providers_written=count, error=False, query=query, duration_ms=duration_ms)
 
-    async def fetch_and_ingest_lite(
+    async def fetch_as_providers(
         self,
-        query: str,
-        tenant_id: str,
+        structured_query: str,
+        hyde_text: str,
+        location: str = "",
         limit: int = 20,
-    ) -> GpResult:
-        """Fetch GP places and write them into an isolated ``LiteCompetence`` tenant.
+    ) -> tuple[list[dict[str, Any]], GpResult]:
+        """Fetch GP places and return them as provider dicts — no Weaviate write.
 
-        Identical circuit-breaker and retry logic to :meth:`fetch_and_ingest`.
-        Writes to the multi-tenant ``LiteCompetence`` collection instead of the
-        shared ``User`` + ``Competence`` hub-spoke collections.  The tenant is
-        created inside :meth:`_upsert_to_lite` and must be deleted by the caller
-        (via :func:`hub_spoke_search.HubSpokeSearch.delete_lite_tenant`) once the
-        search is complete.
+        Lite-mode entry point.  The returned provider dicts include all crawler
+        enrichment (skills, specialities, email) and match the shape the
+        cross-encoder, FINALIZE prompt, and Flutter card renderer expect.
 
-        Returns a :class:`GpResult` where ``providers_written`` counts objects
-        successfully written to the tenant.
+        Returns:
+            ``(providers, gp_result)`` where *providers* is ready for reranking.
         """
-        # ── Circuit breaker guard ─────────────────────────────────────────────
         if self._circuit_opened_at is not None:
             elapsed = time.monotonic() - self._circuit_opened_at
             if elapsed < _CIRCUIT_RESET_SECONDS:
                 logger.warning(
-                    "GP circuit open (%.0f s remaining) — skipping lite fetch.",
+                    "GP circuit open (%.0f s remaining) — skipping fetch.",
                     _CIRCUIT_RESET_SECONDS - elapsed,
                 )
-                return GpResult(error=True, error_code="circuit_open")
+                return [], GpResult(error=True, error_code="circuit_open")
             logger.info("GP circuit reset after %.0f s cooldown.", elapsed)
             self._circuit_opened_at = None
             self._consecutive_failures = 0
 
         t_start = time.monotonic()
+        query = await self.generate_query(
+            structured_query=structured_query,
+            hyde_text=hyde_text,
+            location=location,
+        )
+        if not query:
+            logger.info("GP fetch_as_providers skipped: generate_query returned None.")
+            return [], GpResult(providers_written=0, error=False, error_code="llm_skip")
+
         try:
             raw_results = await self._fetch_places(query, limit)
         except _RateLimitError:
             self._record_failure()
-            return GpResult(error=True, error_code="rate_limited", query=query)
+            return [], GpResult(error=True, error_code="rate_limited", query=query)
         except _HttpError:
             self._record_failure()
-            return GpResult(error=True, error_code="http_error", query=query,
-                            duration_ms=int((time.monotonic() - t_start) * 1000))
+            return [], GpResult(error=True, error_code="http_error", query=query,
+                                duration_ms=int((time.monotonic() - t_start) * 1000))
         except TimeoutError:
             self._record_failure()
-            return GpResult(error=True, error_code="timeout", query=query,
-                            duration_ms=int((time.monotonic() - t_start) * 1000))
+            return [], GpResult(error=True, error_code="timeout", query=query,
+                                duration_ms=int((time.monotonic() - t_start) * 1000))
         except Exception as exc:
-            logger.error("GP lite fetch unexpected error: %s", exc, exc_info=True)
+            logger.error("GP fetch_as_providers unexpected error: %s", exc, exc_info=True)
             self._record_failure()
-            return GpResult(error=True, error_code="http_error", query=query,
-                            duration_ms=int((time.monotonic() - t_start) * 1000))
+            return [], GpResult(error=True, error_code="http_error", query=query,
+                                duration_ms=int((time.monotonic() - t_start) * 1000))
 
         duration_ms = int((time.monotonic() - t_start) * 1000)
         if not raw_results:
             logger.info(
-                "GP lite fetch 0 results for query=%r (duration=%d ms)", query, duration_ms
+                "GP fetch_as_providers 0 results for query=%r (duration=%d ms)", query, duration_ms
             )
             self._reset_failures()
-            return GpResult(providers_written=0, error=False, query=query, duration_ms=duration_ms)
+            return [], GpResult(providers_written=0, error=False, query=query, duration_ms=duration_ms)
 
         normalised = await self._normalise_places(raw_results, query)
-        count = await self._upsert_to_lite(normalised, tenant_id)
+        providers = [_normalised_to_provider(p) for p in normalised]
         self._reset_failures()
-
         logger.info(
-            "GP lite pipeline complete: query=%r results=%d upserted=%d duration_ms=%d",
-            query, len(raw_results), count, duration_ms,
+            "GP fetch_as_providers complete: query=%r providers=%d duration_ms=%d",
+            query, len(providers), duration_ms,
         )
-        return GpResult(providers_written=count, error=False, query=query, duration_ms=duration_ms)
+        return providers, GpResult(providers_written=len(providers), error=False,
+                                   query=query, duration_ms=duration_ms)
 
     # ──────────────────────────────────────────────────────────────────────────
     # Private helpers
@@ -391,7 +397,7 @@ class GooglePlacesService:
         Normalise raw Places API results into flat dicts.
 
         Returns one dict per place containing all fields used by both the
-        full-mode hub-spoke upsert path and the lite-mode LiteCompetence path.
+        full-mode hub-spoke upsert path and the lite-mode fetch_as_providers path.
 
         The ``search_optimized_summary`` field is always generated in English
         (via an LLM synthesis call) regardless of the language returned by the
@@ -540,65 +546,6 @@ class GooglePlacesService:
 
         return results
 
-    async def _upsert_to_lite(
-        self, normalised: list[dict[str, Any]], tenant_id: str
-    ) -> int:
-        """Write normalised GP places into LiteCompetence under ``tenant_id``.
-
-        The tenant is created here.  The caller is responsible for deleting it
-        after the search is complete via ``HubSpokeSearch.delete_lite_tenant``.
-
-        Returns the number of objects successfully inserted.
-        """
-        from ..hub_spoke_schema import get_lite_competence_collection
-
-        lite_col = get_lite_competence_collection()
-
-        # Create the isolated partition for this search.
-        from weaviate.classes.tenants import Tenant as _Tenant
-        lite_col.tenants.create([_Tenant(name=tenant_id)])
-        tenant_col = lite_col.with_tenant(tenant_id)
-
-        count = 0
-        for place in normalised:
-            try:
-                tenant_col.data.insert(
-                    properties={
-                        "name": place["name"],
-                        "title": place["title"],
-                        "description": place["description"],
-                        "search_optimized_summary": place["search_optimized_summary"],
-                        "primary_type": place["primary_type"],
-                        "category": place["category"],
-                        "phone": place["phone"],
-                        "website": place["website"],
-                        "address": place["address"],
-                        "average_rating": place["average_rating"],
-                        "rating_count": place["rating_count"],
-                        "photo_url": place["photo_url"],
-                        "opening_hours": place["opening_hours"],
-                        "maps_url": place["maps_url"],
-                        "review_snippets": place["review_snippets"],
-                        "skills_list": place.get("skills_list") or [],
-                        "webpage_crawled": place.get("webpage_crawled", False),
-                        "email": place.get("email") or "",
-                        "place_id": place["place_id"],
-                    },
-                    uuid=place["comp_uuid"],
-                )
-                count += 1
-                logger.info(
-                    "Lite upsert [tenant=%s]: name=%r place_id=%r",
-                    tenant_id, place["name"], place["place_id"],
-                )
-            except Exception as exc:
-                logger.error(
-                    "Lite upsert failed [tenant=%s] place_id=%r: %s",
-                    tenant_id, place.get("place_id"), exc, exc_info=True,
-                )
-
-        return count
-
     async def _synthesise_description(
         self,
         place: dict[str, Any],
@@ -610,8 +557,8 @@ class GooglePlacesService:
         Generate a short English-language service summary for a Place.
 
         This is used exclusively as the ``search_optimized_summary`` fed to the
-        Weaviate vector index and the ms-marco cross-encoder — both of which are
-        English-only.  Always outputs English regardless of the session language
+        ms-marco cross-encoder and (in full mode) to the Weaviate vector index —
+        both of which are English-only.  Always outputs English regardless of the session language
         or the language of the editorial_summary / reviews provided.
 
         ``editorial_summary`` — when provided (e.g. from editorialSummary in the
@@ -733,6 +680,48 @@ _TYPE_CATEGORY_MAP: dict[str, str] = {
     "photographer": "Events",
     "florist": "Events",
 }
+
+
+def _normalised_to_provider(place: dict[str, Any]) -> dict[str, Any]:
+    """Convert a ``_normalise_places()`` dict to the provider shape expected by
+    the cross-encoder, FINALIZE prompt, and Flutter card renderer.
+    """
+    return {
+        "uuid": place["comp_uuid"],
+        "score": 0.0,  # no retrieval score; cross-encoder supplies rerank_score
+        "title": place["title"],
+        "description": place.get("description", ""),
+        "search_optimized_summary": place.get("search_optimized_summary", ""),
+        "primary_type": place.get("primary_type", ""),
+        "category": place.get("category", ""),
+        "skills_list": place.get("skills_list") or [],
+        "review_snippets": place.get("review_snippets") or [],
+        "user": {
+            "uuid": place["user_uuid"],
+            "user_id": None,
+            "name": place["name"],
+            "source": "google_places",
+            "is_service_provider": True,
+            "phone": place.get("phone", ""),
+            "website": place.get("website", ""),
+            "address": place.get("address", ""),
+            "average_rating": place.get("average_rating", 0.0),
+            "rating_count": place.get("rating_count", 0),
+            "photo_url": place.get("photo_url", ""),
+            "opening_hours": place.get("opening_hours", ""),
+            "maps_url": place.get("maps_url", ""),
+            "email": place.get("email", ""),
+        },
+        "phone": place.get("phone", ""),
+        "website": place.get("website", ""),
+        "address": place.get("address", ""),
+        "photo_url": place.get("photo_url", ""),
+        "opening_hours": place.get("opening_hours", ""),
+        "maps_url": place.get("maps_url", ""),
+        "email": place.get("email", ""),
+        "average_rating": place.get("average_rating", 0.0),
+        "rating_count": place.get("rating_count", 0),
+    }
 
 
 def _merge_crawl_skills(crawl_results: list[Any], idx: int) -> list[str]:

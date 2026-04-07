@@ -268,19 +268,28 @@ nano .env
 # Gemini AI
 GEMINI_API_KEY=your_gemini_api_key_here
 
+# Agent mode: "full" (default) or "lite"
+# full  — Weaviate vector search + voice + Firestore (full platform)
+# lite  — Google Places API search + text-only (no Weaviate, no Firestore)
+AGENT_MODE=full
+
 # Firestore Database Configuration
 # Specify which Firestore database to use (e.g., "development", "production")
 # This database must be created in your Firestore instance beforehand
 # If not set, defaults to "(default)" database
+# Not required in lite mode.
 FIRESTORE_DATABASE_NAME=(default)
 
-# Weaviate Configuration
+# Weaviate Configuration (full mode only)
 # Local Weaviate (self-hosted)
 WEAVIATE_URL=http://localhost:8090
 
 # Cloud Weaviate (Weaviate Cloud Services - takes precedence over local WEAVIATE_URL)
 # WEAVIATE_CLUSTER_URL=https://your-cluster.weaviate.network
 # WEAVIATE_API_KEY=your-weaviate-cloud-api-key
+
+# Google Places API key (required for lite mode, optional for full mode)
+# GOOGLE_PLACES_API_KEY=your_places_api_key_here
 
 # Language and Voice Configuration
 # German configuration
@@ -323,6 +332,75 @@ WEAVIATE_API_KEY=your-weaviate-cloud-api-key
 - Persistent data storage
 - Hybrid search (vector + keyword)
 - Support for both local and cloud deployments
+
+### Lite Mode (no Weaviate)
+
+Set `AGENT_MODE=lite` to run the assistant with the Google Places API as the
+provider source instead of Weaviate. This requires only a single container — no
+Weaviate VM, no VPC connector.
+
+**Pipeline:**
+```
+User query
+    │
+    ▼
+generate_query()      — LLM distils intent + location
+    │
+    ▼
+Google Places API     — returns up to 20 nearby providers
+    │
+    ▼
+WebPageCrawler        — enriches each provider (skills, email, portfolio)
+    │
+    ▼
+ms-marco cross-encoder — reranks by semantic relevance
+    │
+    ▼
+FINALIZE prompt / Flutter card renderer
+```
+
+**Key differences from full mode:**
+
+| | Full mode | Lite mode |
+|---|---|---|
+| Voice | Enabled | Text-only |
+| Provider storage | Weaviate (persistent) | Google Places (ephemeral) |
+| Provider onboarding | Full tool flow | Not available |
+| Firestore | Required | Not required |
+| Session modes | `?mode=voice` and `?mode=text` | `?mode=text` only |
+
+**Required env vars:**
+
+```bash
+AGENT_MODE=lite
+GEMINI_API_KEY=your_gemini_api_key_here
+GOOGLE_PLACES_API_KEY=your_places_api_key_here
+```
+
+**Local lite mode with Docker Compose:**
+
+```bash
+cd ai-assistant
+AGENT_MODE=lite GOOGLE_PLACES_API_KEY=your_key docker-compose up ai-assistant
+```
+
+No `weaviate` service needs to be started. No `init_database.py` needed.
+
+**Circuit breaker**: if the Google Places API returns errors on multiple
+consecutive calls, the circuit opens and `search_providers` returns an empty
+list with a user-friendly error message. The circuit resets after 60 seconds.
+
+**Crawler enrichment**: each Google Places result is enriched before being
+presented to the user. The following fields are populated when the provider's
+website is reachable:
+
+| Field | Source |
+|---|---|
+| `skills_list` | Crawled services / specialities |
+| `email` | Crawled contact section |
+| `description` | Crawled portfolio highlights + coverage area |
+| `search_optimized_summary` | Crawled specialities + services combined |
+| `webpage_crawled` | Set to `true` when enrichment succeeds |
 
 ### Voice Configuration
 
@@ -399,7 +477,7 @@ python main.py
 python -m uvicorn ai_assistant.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
-### With Weaviate
+### With Weaviate (full mode)
 
 ```bash
 # Terminal 1: Start Weaviate

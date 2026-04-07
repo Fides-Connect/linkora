@@ -42,7 +42,7 @@ from .api.v1.router import register_v1_routes  # noqa: E402
 from .api.deps import COMPETENCE_ENRICHER_KEY  # noqa: E402
 from .weaviate_sync import run_startup_sync  # noqa: E402
 from .services.llm_service import LLMService  # noqa: E402
-from .hub_spoke_schema import HubSpokeConnection, cleanup_orphaned_lite_tenants  # noqa: E402
+from .hub_spoke_schema import HubSpokeConnection  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -99,11 +99,12 @@ async def main() -> None:
     logger.info("  Debug Audio Record: %s", os.getenv('DEBUG_RECORD_AUDIO', 'false'))
     logger.info("  LLM Model: %s", os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'))
 
-    # Sync Firestore → Weaviate (opt-in via WEAVIATE_SYNC_ON_STARTUP=true)
-    await run_startup_sync()
+    _is_lite_mode = os.getenv("AGENT_MODE", "full").lower().strip() == "lite"
 
-    # Clean up any orphaned LiteCompetence tenants from previous crashes
-    cleanup_orphaned_lite_tenants()
+    # Sync Firestore → Weaviate (opt-in via WEAVIATE_SYNC_ON_STARTUP=true).
+    # Skipped entirely in lite mode — no Weaviate instance is expected.
+    if not _is_lite_mode:
+        await run_startup_sync()
 
     # Initialize signaling server
     logger.info("Initializing signaling server...")

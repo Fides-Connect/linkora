@@ -157,8 +157,12 @@ class SpeechService {
   void stopSpeech() async {
     // Lite mode
     if (!voiceEnabled) {
-      await _liteChatService?.disconnect();
+      // Null the reference synchronously (before any await) so a concurrent
+      // startChat() creating a new _liteChatService is never overwritten by
+      // the deferred null assignment from a previous stopSpeech() call.
+      final toDisconnect = _liteChatService;
       _liteChatService = null;
+      await toDisconnect?.disconnect();
       return;
     }
 

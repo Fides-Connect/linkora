@@ -34,6 +34,80 @@ Flutter App (ConnectX)
 
 ---
 
+## Lite Mode (Cloud Run only)
+
+Set `AGENT_MODE=lite` to run without Weaviate.  The assistant fetches providers
+directly from the Google Places API at query time, enriches them via web
+crawling, and reranks with a local cross-encoder model.
+
+```
+Flutter App (ConnectX)
+        │ WSS — Firebase ID token auth
+        ▼
+┌─────────────────────────────────┐
+│  Cloud Run: ai-assistant-dev    │  europe-west3  ~$10-20/mo
+│  AGENT_MODE=lite                │
+│  • Scales 1–3 instances         │
+│  • Min 1 instance (no cold start)│
+│  • Workload Identity (no keys)  │
+│  • Secrets via Secret Manager   │
+│  NO VPC connector needed        │
+└─────────────────────────────────┘
+         │
+         │ HTTPS — at query time
+         ▼
+  Google Places API
+```
+
+**Estimated monthly cost**: ~$10–20 (Cloud Run only, no VM).
+
+### Required secrets / env vars
+
+| Secret / env var | Required |
+|---|---|
+| `GEMINI_API_KEY` | Yes |
+| `GOOGLE_PLACES_API_KEY` | Yes |
+| `AGENT_MODE` | Set to `lite` |
+| Firebase / Firestore credentials | Not needed |
+| `WEAVIATE_URL` | Not needed |
+
+### Deploying lite mode to Cloud Run
+
+No Weaviate VM and no VPC connector are required. Steps 6, 7, and 8 from the
+one-time setup can be skipped entirely.
+
+```bash
+gcloud run deploy ai-assistant-dev \
+  --image europe-west3-docker.pkg.dev/<PROJECT_ID>/ai-assistant/ai-assistant:latest \
+  --region europe-west3 \
+  --service-account linkora-rt-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com \
+  --set-env-vars "AGENT_MODE=lite,PORT=8080" \
+  --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest,GOOGLE_PLACES_API_KEY=GOOGLE_PLACES_API_KEY:latest" \
+  --min-instances 1 \
+  --max-instances 3 \
+  --memory 1Gi \
+  --cpu 1
+```
+
+The `GOOGLE_PLACES_API_KEY` secret must be created in Secret Manager before
+the first deploy:
+
+```bash
+echo -n "your_places_key" | gcloud secrets create GOOGLE_PLACES_API_KEY \
+  --data-file=- --replication-policy=automatic
+```
+
+Grant the Runtime SA access to it:
+
+```bash
+RT_SA="linkora-rt-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com"
+gcloud secrets add-iam-policy-binding GOOGLE_PLACES_API_KEY \
+  --member="serviceAccount:${RT_SA}" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+---
+
 ## Prerequisites
 
 ```bash

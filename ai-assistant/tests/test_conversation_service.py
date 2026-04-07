@@ -295,10 +295,10 @@ class TestSearchProvidersPipelineIntegration:
 
 
 class TestLiteModeGpSourceFilter:
-    """Tests for lite mode multi-tenant GP pipeline.
+    """Tests for lite mode Weaviate-free GP pipeline.
 
-    Happy path: fetch_and_ingest_lite → HubSpokeSearch.search_lite_providers (no data_provider).
-    Error path: fetch_and_ingest_lite fails → fallback to data_provider.search_providers.
+    Happy path: fetch_as_providers → cross-encoder → providers_found (no Weaviate).
+    Error path: fetch_as_providers fails → search_error="unavailable" (no fallback).
     """
 
     def _make_lite_service(self, mock_llm_service, mock_data_provider):
@@ -317,60 +317,43 @@ class TestLiteModeGpSourceFilter:
     async def test_lite_mode_keeps_only_gp_providers(
         self, mock_llm_service, mock_data_provider
     ):
-        """Happy path: results come from HubSpokeSearch.search_lite_providers, not data_provider."""
+        """Happy path: results come directly from fetch_as_providers, no Weaviate."""
         from ai_assistant.services.conversation_service import GpResult
 
         gp_providers = [
-            {"provider_id": "gp1", "user": {"source": "google_places", "name": "GP Provider"}},
-            {"provider_id": "gp2", "user": {"source": "google_places", "name": "GP Provider 2"}},
+            {"uuid": "gp1", "title": "GP Provider", "user": {"source": "google_places", "name": "GP Provider"}},
+            {"uuid": "gp2", "title": "GP Provider 2", "user": {"source": "google_places", "name": "GP Provider 2"}},
         ]
         service, gp_service = self._make_lite_service(mock_llm_service, mock_data_provider)
-        gp_service.generate_query = AsyncMock(return_value="plumber Munich")
-        gp_service.fetch_and_ingest_lite = AsyncMock(
-            return_value=GpResult(providers_written=2, error=False)
-        )
-        service.context["user_problem"] = ["Ich brauche einen Klempner"]
-
-        with (
-            patch(
-                "ai_assistant.hub_spoke_search.HubSpokeSearch.search_lite_providers",
-                return_value=gp_providers,
-            ),
-            patch(
-                "ai_assistant.services.conversation_service._delete_lite_tenant_async",
-                new=AsyncMock(),
-            ),
-        ):
-            await service.search_providers_for_request()
-
-        found = service.context["providers_found"]
-        assert len(found) == 2
-        assert all(p.get("user", {}).get("source") == "google_places" for p in found)
-        # data_provider.search_providers must NOT be called in the happy path
-        mock_data_provider.search_providers.assert_not_called()
-
-    async def test_lite_mode_skips_filter_when_gp_failed(
-        self, mock_llm_service, mock_data_provider
-    ):
-        """When GP fails, the fallback uses data_provider.search_providers."""
-        from ai_assistant.services.conversation_service import GpResult
-
-        internal_providers = [
-            {"provider_id": "u1", "user": {"source": "", "name": "Registered User"}},
-        ]
-        mock_data_provider.search_providers = AsyncMock(return_value=internal_providers)
-        service, gp_service = self._make_lite_service(mock_llm_service, mock_data_provider)
-        gp_service.generate_query = AsyncMock(return_value="plumber Munich")
-        gp_service.fetch_and_ingest_lite = AsyncMock(
-            return_value=GpResult(providers_written=0, error=True, error_code="timeout")
+        gp_service.fetch_as_providers = AsyncMock(
+            return_value=(gp_providers, GpResult(providers_written=2, error=False))
         )
         service.context["user_problem"] = ["Ich brauche einen Klempner"]
 
         await service.search_providers_for_request()
 
         found = service.context["providers_found"]
-        assert len(found) == 1
-        assert found[0]["provider_id"] == "u1"
+        assert len(found) == 2
+        assert all(p.get("user", {}).get("source") == "google_places" for p in found)
+        # data_provider.search_providers must NOT be called
+        mock_data_provider.search_providers.assert_not_called()
+
+    async def test_lite_mode_gp_error_routes_to_recovery(
+        self, mock_llm_service, mock_data_provider
+    ):
+        """When GP fails, search_error is set and data_provider is never called."""
+        from ai_assistant.services.conversation_service import GpResult
+
+        service, gp_service = self._make_lite_service(mock_llm_service, mock_data_provider)
+        gp_service.fetch_as_providers = AsyncMock(
+            return_value=([], GpResult(providers_written=0, error=True, error_code="timeout"))
+        )
+        service.context["user_problem"] = ["Ich brauche einen Klempner"]
+
+        await service.search_providers_for_request()
+
+        assert service.context.get("search_error") == "unavailable"
+        mock_data_provider.search_providers.assert_not_called()
 
     async def test_full_mode_does_not_filter_by_source(
         self, conversation_service, mock_data_provider
@@ -394,24 +377,14 @@ class TestLiteModeGpSourceFilter:
         """google_places_error is False when GP succeeds."""
         from ai_assistant.services.conversation_service import GpResult
 
+        gp_providers = [{"uuid": "gp1", "title": "Baker", "user": {"source": "google_places", "name": "Baker"}}]
         service, gp_service = self._make_lite_service(mock_llm_service, mock_data_provider)
-        gp_service.generate_query = AsyncMock(return_value="plumber Munich")
-        gp_service.fetch_and_ingest_lite = AsyncMock(
-            return_value=GpResult(providers_written=3, error=False)
+        gp_service.fetch_as_providers = AsyncMock(
+            return_value=(gp_providers, GpResult(providers_written=1, error=False))
         )
         service.context["user_problem"] = ["need plumber"]
 
-        with (
-            patch(
-                "ai_assistant.hub_spoke_search.HubSpokeSearch.search_lite_providers",
-                return_value=[],
-            ),
-            patch(
-                "ai_assistant.services.conversation_service._delete_lite_tenant_async",
-                new=AsyncMock(),
-            ),
-        ):
-            await service.search_providers_for_request()
+        await service.search_providers_for_request()
 
         assert service.context["google_places_error"] is False
 
@@ -421,11 +394,9 @@ class TestLiteModeGpSourceFilter:
         """google_places_error is True when GP fails."""
         from ai_assistant.services.conversation_service import GpResult
 
-        mock_data_provider.search_providers = AsyncMock(return_value=[])
         service, gp_service = self._make_lite_service(mock_llm_service, mock_data_provider)
-        gp_service.generate_query = AsyncMock(return_value="plumber Munich")
-        gp_service.fetch_and_ingest_lite = AsyncMock(
-            return_value=GpResult(providers_written=0, error=True, error_code="timeout")
+        gp_service.fetch_as_providers = AsyncMock(
+            return_value=([], GpResult(providers_written=0, error=True, error_code="timeout"))
         )
         service.context["user_problem"] = ["need plumber"]
 

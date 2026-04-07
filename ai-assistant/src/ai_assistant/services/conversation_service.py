@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
-from uuid import uuid4
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.messages import HumanMessage
 
@@ -638,70 +637,31 @@ class ConversationService:
 
         self.context["request_summary"] = query_text
 
-        # Stage 2 (GP): In lite mode, fetch & ingest into an isolated
-        # per-search Weaviate tenant, then query that tenant directly.
-        # In full mode, use the shared hub-spoke index.
+        # Stage 2 (GP): In lite mode, GP results are fetched and normalised
+        # directly — no Weaviate write. In full mode, shared hub-spoke index.
         gp_active = (
             self._profile.google_places_always_active
             and self.google_places_service is not None
         )
         if gp_active:
-            tenant_id = str(uuid4())
-            gp_result = await self._run_gp_pipeline_lite(
-                self.google_places_service,  # type: ignore[arg-type]
-                query_text=query_text,
+            # Weaviate-free lite path: GP API → normalise → cross-encoder → done.
+            location = self._extract_location(query_text)
+            providers, gp_result = await self.google_places_service.fetch_as_providers(  # type: ignore[union-attr]
+                structured_query=query_text,
                 hyde_text=hyde_text,
-                tenant_id=tenant_id,
+                location=location,
             )
-            self.context["google_places_used"] = gp_result.providers_written > 0
+            self.context["google_places_used"] = len(providers) > 0
             self.context["google_places_error"] = gp_result.error
             if gp_result.error:
                 logger.warning(
-                    "GP lite pipeline error (%s): %s",
+                    "GP pipeline error (%s) — no fallback available in lite mode.",
                     gp_result.error_code,
-                    gp_result.error,
                 )
-                # Degradation path: fall back to shared Weaviate index.
-                try:
-                    providers = await self.data_provider.search_providers(
-                        query_text=query_text,
-                        limit=self.max_providers,
-                        hyde_text=hyde_text,
-                    )
-                except SearchUnavailableError as exc:
-                    logger.warning(
-                        "Search index also unreachable on GP fallback — routing to RECOVERY. (%s)", exc
-                    )
-                    self.context["search_error"] = "unavailable"
-                    return
-            elif gp_result.providers_written == 0:
-                # No GP results written — no tenant was created, return empty.
-                logger.info("Lite mode: GP returned 0 results.")
-                providers = []
-            else:
-                # Happy path: query the isolated tenant.
-                from ..hub_spoke_search import HubSpokeSearch
-                try:
-                    providers = await asyncio.get_event_loop().run_in_executor(
-                        None,
-                        lambda: HubSpokeSearch.search_lite_providers(
-                            search_request=query_text,
-                            tenant_id=tenant_id,
-                            limit=self.max_providers,
-                            hyde_text=hyde_text,
-                        ),
-                    )
-                except SearchUnavailableError as exc:
-                    logger.warning(
-                        "Lite tenant search unreachable — routing to RECOVERY. (%s)", exc
-                    )
-                    self.context["search_error"] = "unavailable"
-                    asyncio.create_task(_delete_lite_tenant_async(tenant_id))
-                    return
-                # Schedule async tenant deletion (fire-and-forget).
-                asyncio.create_task(_delete_lite_tenant_async(tenant_id))
+                self.context["search_error"] = "unavailable"
+                return
 
-            # Stage 4 (lite): rerank the GP results against the problem summary.
+            # Stage 4 (lite): rerank GP results via cross-encoder.
             if self.cross_encoder_service and providers:
                 logger.info(
                     "Reranking %d lite candidates with cross-encoder (top %d)...",
@@ -810,42 +770,6 @@ class ConversationService:
             logger.error("Unexpected GP pipeline error: %s", exc, exc_info=True)
             return GpResult(providers_written=0, error=True, error_code="unexpected")
 
-    async def _run_gp_pipeline_lite(
-        self,
-        gp_service: GooglePlacesService,
-        query_text: str,
-        hyde_text: str,
-        tenant_id: str,
-    ) -> GpResult:
-        """Drive the Google Places enrichment phase for lite multi-tenant mode.
-
-        Like ``_run_gp_pipeline`` but writes into an isolated ``LiteCompetence``
-        tenant partition instead of the shared hub-spoke index.
-
-        Returns a :class:`GpResult` describing what happened.
-        """
-        location = self._extract_location(query_text)
-        try:
-            query = await gp_service.generate_query(
-                structured_query=query_text,
-                hyde_text=hyde_text,
-                location=location,
-            )
-            if not query:
-                logger.info("GP lite pipeline skipped: generate_query returned None.")
-                return GpResult(providers_written=0, error=False, error_code="llm_skip")
-            gp_result = await gp_service.fetch_and_ingest_lite(query, tenant_id=tenant_id)
-            return GpResult(
-                providers_written=gp_result.providers_written,
-                error=bool(gp_result.error),
-                query=gp_result.query,
-                duration_ms=gp_result.duration_ms,
-                error_code=gp_result.error_code,
-            )
-        except Exception as exc:  # pragma: no cover
-            logger.error("Unexpected GP lite pipeline error: %s", exc, exc_info=True)
-            return GpResult(providers_written=0, error=True, error_code="unexpected")
-
     async def generate_greeting_text(
         self,
         user_name: str = "",
@@ -893,21 +817,3 @@ class ConversationService:
             return get_greeting_fallback(self.language)
 
 
-# ---------------------------------------------------------------------------
-# Module-level async helpers
-# ---------------------------------------------------------------------------
-
-async def _delete_lite_tenant_async(tenant_id: str) -> None:
-    """Fire-and-forget coroutine to delete a LiteCompetence tenant.
-
-    Runs after the search result has been returned to the user so the
-    delete does not add latency to the response.  Errors are logged but
-    never raised — tenant orphans are handled by startup cleanup.
-    """
-    from ..hub_spoke_search import HubSpokeSearch
-    try:
-        await asyncio.get_event_loop().run_in_executor(
-            None, HubSpokeSearch.delete_lite_tenant, tenant_id
-        )
-    except Exception as exc:
-        logger.warning("Background lite tenant deletion failed [%s]: %s", tenant_id, exc)

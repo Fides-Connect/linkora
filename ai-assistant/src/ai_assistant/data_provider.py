@@ -99,16 +99,33 @@ class WeaviateDataProvider(DataProvider):
         return self.provider_model.get_provider_by_id(provider_id)
 
 
+class NullDataProvider(DataProvider):
+    """No-op data provider used in lite mode (no Weaviate connection)."""
+
+    async def get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
+        return None
+
+    async def search_providers(
+        self, query_text: str, limit: int = 3, hyde_text: str = ""
+    ) -> list[dict[str, Any]]:
+        return []
+
+    async def get_provider_by_id(self, provider_id: str) -> dict[str, Any] | None:
+        return None
+
+
 def get_data_provider() -> DataProvider:
     """
-    Factory function to get the Weaviate data provider.
+    Factory function to get the appropriate data provider.
 
-    Now exclusively uses Weaviate with Hub and Spoke schema.
-    Set WEAVIATE_URL to configure connection (defaults to http://localhost:8090).
-
-    Returns:
-        WeaviateDataProvider instance
+    In lite mode (AGENT_MODE=lite), returns a NullDataProvider so no
+    Weaviate connection is ever attempted.
+    In full mode, returns the WeaviateDataProvider backed by the hub-spoke index.
+    Set WEAVIATE_URL to configure the Weaviate connection (default: http://localhost:8090).
     """
+    if os.getenv("AGENT_MODE", "full").lower().strip() == "lite":
+        logger.info("Lite mode — skipping Weaviate, using null data provider")
+        return NullDataProvider()
     weaviate_url = os.getenv('WEAVIATE_URL', 'http://localhost:8090')
     logger.info("Using Weaviate data provider at %s", weaviate_url)
     return WeaviateDataProvider()

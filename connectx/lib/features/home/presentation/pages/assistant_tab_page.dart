@@ -31,10 +31,49 @@ class _AssistantTabPageContent extends StatefulWidget {
 
 class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Called after initState AND whenever an InheritedWidget dependency changes
+    // (including locale changes from ConnectXApp.setLocale).  This ensures that
+    // _speechService._languageCode is always in sync with the current UI locale
+    // so the next session is started with the correct language.
+    //
+    // Deferred via addPostFrameCallback because didChangeDependencies() fires
+    // during _firstBuild (still inside the build phase).  Calling initialize()
+    // synchronously here would trigger notifyListeners() during build, which
+    // Flutter forbids.
+    final vm = context.read<AssistantTabViewModel>();
+    final localizations = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context);
+    final statusText = vm.voiceEnabled
+        ? (localizations?.tapMicrophoneToStart ?? 'Tap microphone to start')
+        : '';
+    final languageCode = locale.languageCode;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) vm.initialize(statusText, languageCode);
+    });
+  }
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
       final vm = context.read<AssistantTabViewModel>();
+
+      // Initialize language and callbacks BEFORE starting the session so that
+      // startChat() uses the correct language code from the start.  Without
+      // this, initialize() would fire AFTER startChat() (both use
+      // addPostFrameCallback; didChangeDependencies registers its callback
+      // second), causing a language mismatch that triggers an unnecessary
+      // stop-and-restart race.
+      final localizations = AppLocalizations.of(context);
+      final locale = Localizations.localeOf(context);
+      final statusText = vm.voiceEnabled
+          ? (localizations?.tapMicrophoneToStart ?? 'Tap microphone to start')
+          : '';
+      vm.initialize(statusText, locale.languageCode);
+
       if (vm.voiceEnabled) {
         await PermissionHelper.requestMicrophonePermission(context);
         if (!mounted) return;
@@ -43,15 +82,6 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
       }
 
       if (mounted) {
-        final localizations = AppLocalizations.of(context);
-        final locale = Localizations.localeOf(context);
-        vm.initialize(
-          vm.voiceEnabled
-              ? (localizations?.tapMicrophoneToStart ??
-                  'Tap microphone to start')
-              : '',
-          locale.languageCode,
-        );
         // Auto-start a text session so the server greets the user by name
         // as soon as the Assistant page opens, without requiring any input.
         await vm.startChat(voiceMode: false);
@@ -157,7 +187,9 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                     state: viewModel.conversationState,
                     isVoiceMode: viewModel.isVoiceMode,
                     showMicButton: viewModel.voiceEnabled,
-                    enabled: viewModel.isSessionReady,
+                    enabled: viewModel.isSessionReady &&
+                        viewModel.conversationState !=
+                            ConversationState.processing,
                     hintText:
                         AppLocalizations.of(context)?.typeMessageHint ??
                         'Type a message...',
