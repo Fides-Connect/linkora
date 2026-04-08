@@ -33,6 +33,10 @@ class AssistantTabViewModel extends ChangeNotifier {
   /// true once the data channel is confirmed open (safe to send text)
   bool _dataChannelReady = false;
 
+  /// true once the first AI message has been received.
+  /// Prevents the input field from being enabled before the greeting arrives.
+  bool _greetingReceived = false;
+
   /// Text message queued before the data channel was ready
   String? _pendingTextMessage;
 
@@ -66,6 +70,10 @@ class AssistantTabViewModel extends ChangeNotifier {
   bool get voiceEnabled => _speechService.voiceEnabled;
   /// True once the data channel is open and the backend can receive messages.
   bool get isSessionReady => _dataChannelReady;
+  /// True once the channel is open AND the first AI message has been received.
+  /// Use this to gate the chat input field so users cannot type before the
+  /// greeting arrives.
+  bool get isInputEnabled => _dataChannelReady && _greetingReceived;
   /// True when the session ended (timeout or explicit stop) and chat history is preserved.
   bool get sessionEnded => _sessionEnded;
 
@@ -173,7 +181,13 @@ class AssistantTabViewModel extends ChangeNotifier {
         // the authoritative source of truth but arrives slightly after the echo.
         _conversationState = ConversationState.processing;
       } else {
-        if (!isChunk ||
+        // Mark that the AI has sent at least one message so the input field
+      // becomes available (guarded by isInputEnabled).
+      if (!_greetingReceived) {
+          _greetingReceived = true;
+        }
+
+      if (!isChunk ||
             _lastMessageWasUser ||
             _chatMessages.isEmpty ||
             _chatMessages.last.isUser) {
@@ -296,6 +310,7 @@ class AssistantTabViewModel extends ChangeNotifier {
     _statusText = _resetStatusText;
     _isVoiceMode = false;
     _dataChannelReady = false;
+    _greetingReceived = false;
     _pendingTextMessage = null;
     _pendingEchoTexts.clear();
     _isStarting = false;
@@ -325,6 +340,7 @@ class AssistantTabViewModel extends ChangeNotifier {
     _currentMessage = '';
     _lastMessageWasUser = false;
     _dataChannelReady = false;
+    _greetingReceived = false;
     // Always enter connecting immediately so the loading spinner is shown even
     // when there is no pending text (e.g. the auto-started greeting session).
     _conversationState = ConversationState.connecting;
@@ -374,6 +390,7 @@ class AssistantTabViewModel extends ChangeNotifier {
     _statusText = resetStatusText;
     _isVoiceMode = false;
     _dataChannelReady = false;
+    _greetingReceived = false;
     _pendingTextMessage = null;
     _pendingEchoTexts.clear();
     _isStarting = false;

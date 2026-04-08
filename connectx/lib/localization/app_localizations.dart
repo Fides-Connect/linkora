@@ -169,6 +169,34 @@ class AppLocalizations {
     return MessagesEN.newSessionButton;
   }
 
+  String get deleteAccount {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.deleteAccount;
+    }
+    return MessagesEN.deleteAccount;
+  }
+
+  String get deleteAccountConfirmTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.deleteAccountConfirmTitle;
+    }
+    return MessagesEN.deleteAccountConfirmTitle;
+  }
+
+  String get deleteAccountConfirmMessage {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.deleteAccountConfirmMessage;
+    }
+    return MessagesEN.deleteAccountConfirmMessage;
+  }
+
+  String get deleteAccountError {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.deleteAccountError;
+    }
+    return MessagesEN.deleteAccountError;
+  }
+
   String get connecting {
     if (locale.languageCode == 'de') {
       return MessagesDE.connecting;

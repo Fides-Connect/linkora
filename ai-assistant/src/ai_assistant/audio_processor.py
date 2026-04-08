@@ -225,13 +225,10 @@ class AudioProcessor:
 
     def _make_session_starter(self, mode: SessionMode) -> SessionStarter:
         """Create a SessionStarter strategy for the given mode."""
-        # Always pass the module-level firestore service for name lookup —
-        # it is a read-only operation and should work even in lite mode where
-        # assistant.firestore_service is None (tools/AI-convs disabled).
+        # Gate on firestore_enabled (same as _create_language_specific_assistant)
+        # so that lite mode never touches Firestore for the user-name lookup.
         name_lookup_fs = (
-            _firestore_service
-            if _firestore_service is not None
-            else self.ai_assistant.firestore_service
+            _firestore_service if self.ai_assistant._profile.firestore_enabled else None
         )
         return SessionStarterFactory.create(
             mode,

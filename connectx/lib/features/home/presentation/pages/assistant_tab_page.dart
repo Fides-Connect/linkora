@@ -187,7 +187,7 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                     state: viewModel.conversationState,
                     isVoiceMode: viewModel.isVoiceMode,
                     showMicButton: viewModel.voiceEnabled,
-                    enabled: viewModel.isSessionReady &&
+                    enabled: viewModel.isInputEnabled &&
                         viewModel.conversationState !=
                             ConversationState.processing,
                     hintText:

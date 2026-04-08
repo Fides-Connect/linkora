@@ -116,6 +116,12 @@ class MessagesEN {
   static const String positiveFeedback = 'Positive Feedback';
   static const String negativeFeedback = 'Negative Feedback';
 
+  // Delete account
+  static const String deleteAccount = 'Delete Account';
+  static const String deleteAccountConfirmTitle = 'Delete Account';
+  static const String deleteAccountConfirmMessage = 'Are you sure you want to permanently delete your account? This action cannot be undone.';
+  static const String deleteAccountError = 'Failed to delete account. Please sign in again and retry.';
+
   // Session ended banner
   static const String sessionEndedBanner = 'Session ended after 10 minutes of inactivity';
   static const String newSessionButton = 'New Session';

@@ -130,6 +130,17 @@ class AuthService {
     _photoUrl = null;
   }
 
+  /// Permanently delete the current Firebase account.
+  /// Throws [FirebaseAuthException] with code 'requires-recent-login' if the
+  /// credential is stale — the caller must re-authenticate and retry.
+  Future<void> deleteAccount() async {
+    final user = _firebaseAuth.currentUser;
+    if (user == null) return;
+    await user.delete();
+    await _googleSignIn?.signOut();
+    _photoUrl = null;
+  }
+
   Future<UserCredential?> signInWithGoogle() async {
     if (_googleSignIn == null) {
       throw Exception('GoogleSignIn not initialized. Call initialize() first.');

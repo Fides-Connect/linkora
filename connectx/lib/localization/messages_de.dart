@@ -116,6 +116,12 @@ class MessagesDE {
   static const String positiveFeedback = 'Positives Feedback';
   static const String negativeFeedback = 'Negatives Feedback';
 
+  // Delete account
+  static const String deleteAccount = 'Konto löschen';
+  static const String deleteAccountConfirmTitle = 'Konto löschen';
+  static const String deleteAccountConfirmMessage = 'Möchten Sie Ihr Konto wirklich dauerhaft löschen? Diese Aktion kann nicht rückgängig gemacht werden.';
+  static const String deleteAccountError = 'Konto konnte nicht gelöscht werden. Bitte melden Sie sich erneut an und versuchen Sie es nochmal.';
+
   // Session ended banner
   static const String sessionEndedBanner = 'Sitzung nach 10 Minuten Inaktivität beendet';
   static const String newSessionButton = 'Neue Sitzung';

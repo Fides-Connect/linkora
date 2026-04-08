@@ -281,6 +281,66 @@ void main() {
   });
 
   // ══════════════════════════════════════════════════════════════════════════
+  // isInputEnabled — gated on first AI message
+  // ══════════════════════════════════════════════════════════════════════════
+
+  group('isInputEnabled', () {
+    setUp(() {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+    });
+
+    test('is false before startChat()', () {
+      expect(vm.isInputEnabled, isFalse);
+    });
+
+    test('is false after channel opens but before first AI message', () async {
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      expect(vm.isInputEnabled, isFalse);
+    });
+
+    test('becomes true after first AI message (complete)', () async {
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      (cbs['chat'] as OnChatMessageCallback)('Hello!', false, false);
+      expect(vm.isInputEnabled, isTrue);
+    });
+
+    test('becomes true on first AI chunk (streaming starts)', () async {
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      (cbs['chat'] as OnChatMessageCallback)('Hel', false, true);
+      expect(vm.isInputEnabled, isTrue);
+    });
+
+    test('stays false if only user messages arrive (no AI reply yet)', () async {
+      when(mockSpeech.sendTextMessage(any, messageId: anyNamed('messageId')))
+          .thenReturn(true);
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      (cbs['chat'] as OnChatMessageCallback)('user echo', true, false);
+      expect(vm.isInputEnabled, isFalse);
+    });
+
+    test('resets to false on startChat() after a session with AI messages', () async {
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      (cbs['chat'] as OnChatMessageCallback)('Hi!', false, false);
+      expect(vm.isInputEnabled, isTrue);
+
+      await vm.stopChat('Done');
+      await vm.startChat(voiceMode: false);
+      expect(vm.isInputEnabled, isFalse);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
   // sendTextMessage()
   // ══════════════════════════════════════════════════════════════════════════
 

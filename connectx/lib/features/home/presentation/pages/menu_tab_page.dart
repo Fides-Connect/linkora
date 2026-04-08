@@ -20,8 +20,47 @@ class MenuTabPage extends StatelessWidget {
     this.showNotificationsToggle = true,
   });
 
-  void _showLanguageDialog(BuildContext context) {
+  void _showDeleteAccountDialog(BuildContext context) {
     final localizations = AppLocalizations.of(context);
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(localizations?.deleteAccountConfirmTitle ?? 'Delete Account'),
+          content: Text(
+            localizations?.deleteAccountConfirmMessage ??
+                'Are you sure you want to permanently delete your account? This action cannot be undone.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text(localizations?.cancelButton ?? 'Cancel'),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+              onPressed: () async {
+                final userProvider = context.read<UserProvider>();
+                final messenger = ScaffoldMessenger.of(context);
+                final errorText = localizations?.deleteAccountError ??
+                    'Failed to delete account. Please sign in again and retry.';
+                Navigator.pop(dialogContext);
+                try {
+                  await userProvider.deleteAccount();
+                } catch (e) {
+                  messenger.showSnackBar(
+                    SnackBar(content: Text(errorText)),
+                  );
+                }
+              },
+              child: Text(localizations?.deleteAccount ?? 'Delete Account'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showLanguageDialog(BuildContext context) {    final localizations = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (context) {
@@ -146,6 +185,15 @@ class MenuTabPage extends StatelessWidget {
                     onTap: () async {
                       await context.read<UserProvider>().signOut();
                     },
+                    isDestructive: true,
+                    showArrow: false,
+                    centered: true,
+                  ),
+                  const SizedBox(height: 16),
+                  _MenuItem(
+                    icon: Icons.delete_forever,
+                    title: localizations?.deleteAccount ?? 'Delete Account',
+                    onTap: () => _showDeleteAccountDialog(context),
                     isDestructive: true,
                     showArrow: false,
                     centered: true,
