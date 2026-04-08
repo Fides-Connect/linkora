@@ -160,6 +160,12 @@ class MessagesDE {
   static const String aiStatusPreparingContact = 'Bereite Kontaktdaten vor';
   static const String aiStatusFindingMoreResults = 'Suche weitere Ergebnisse';
 
+  // ── Anbieter-Ergebnishinweis ──────────────────────────────────────────────────
+  static const String providerCardNoteTitle = 'Anbieter kontaktieren';
+  static const String providerCardNoteBody =
+      'Tippe auf \u201eAnfrage senden\u201c, um deine vollst\u00e4ndigen Anfrage-Details per E-Mail an den Anbieter zu schicken. '
+      'Hinweis: Die E-Mail-Adresse wird nicht immer automatisch gefunden. In diesem Fall wird die Mail ohne Empf\u00e4nger erstellt und du kannst sie manuell erg\u00e4nzen.';
+
   // ── Rechtliche Seiten ─────────────────────────────────────────────────────
   // Menüeinträge
   static const String menuImpressum = 'Impressum';

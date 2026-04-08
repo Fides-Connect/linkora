@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme_colors.dart';
+import '../../../../localization/app_localizations.dart';
 import '../../../../models/app_types.dart';
 import '../../../../models/chat_message.dart';
 import '../../../../utils/constants.dart';
@@ -121,15 +122,23 @@ class ChatDisplay extends StatelessWidget {
 
             // Provider cards message — render a column of cards, no text bubble
             if (message.cards != null && message.cards!.isNotEmpty) {
+              final l10n = AppLocalizations.of(context);
               return Padding(
                 padding: EdgeInsets.only(
                   bottom: 12.0,
                   top: needsExtraSpacing ? 24.0 : 0.0,
                 ),
                 child: Column(
-                  children: message.cards!
-                      .map((card) => ProviderCard(card: card))
-                      .toList(),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ...message.cards!
+                        .map((card) => ProviderCard(card: card)),
+                    const SizedBox(height: 6),
+                    _ProviderCardNote(
+                      title: l10n?.providerCardNoteTitle ?? 'How to contact providers',
+                      body: l10n?.providerCardNoteBody ?? '',
+                    ),
+                  ],
                 ),
               );
             }
@@ -266,6 +275,67 @@ class _TypingIndicatorState extends State<_TypingIndicator>
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Informational note shown below provider card results explaining how
+/// the "Send request" email button works and that email addresses may
+/// not always be detected automatically.
+class _ProviderCardNote extends StatelessWidget {
+  final String title;
+  final String body;
+
+  const _ProviderCardNote({required this.title, required this.body});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF6366F1).withValues(alpha:
+            Theme.of(context).brightness == Brightness.dark ? 0.10 : 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF6366F1).withValues(alpha: 0.20),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline_rounded,
+            size: 15,
+            color: const Color(0xFF6366F1).withValues(alpha: 0.80),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: context.appSecondaryColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  body,
+                  style: TextStyle(
+                    color: context.appHintColor,
+                    fontSize: 11,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

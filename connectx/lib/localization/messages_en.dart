@@ -160,6 +160,12 @@ class MessagesEN {
   static const String aiStatusPreparingContact = 'Preparing contact details';
   static const String aiStatusFindingMoreResults = 'Finding more results';
 
+  // ── Provider results note ─────────────────────────────────────────────────────
+  static const String providerCardNoteTitle = 'How to contact providers';
+  static const String providerCardNoteBody =
+      'Tap "Send request" to email your full request details directly to the provider. '
+      'Note: email addresses are not always found automatically. In that case the mail will be generated without a recipient address and you can fill it in manually.';
+
   // ── Legal pages ──────────────────────────────────────────────────────────────
   // Menu entry labels
   static const String menuImpressum = 'Legal Notice';

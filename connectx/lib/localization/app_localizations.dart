@@ -396,6 +396,17 @@ class AppLocalizations {
     return MessagesEN.editProfile;
   }
 
+  // Provider results note
+  String get providerCardNoteTitle {
+    if (locale.languageCode == 'de') return MessagesDE.providerCardNoteTitle;
+    return MessagesEN.providerCardNoteTitle;
+  }
+
+  String get providerCardNoteBody {
+    if (locale.languageCode == 'de') return MessagesDE.providerCardNoteBody;
+    return MessagesEN.providerCardNoteBody;
+  }
+
   // Profile
   String get menuUser {
     if (locale.languageCode == 'de') {
