@@ -8,6 +8,7 @@ import '../../../../main.dart';
 import '../../../../services/notification_service.dart';
 import '../../../../services/user_service.dart';
 import '../viewmodels/home_tab_view_model.dart';
+import 'legal_page.dart';
 import 'user_page.dart';
 
 class MenuTabPage extends StatelessWidget {
@@ -179,6 +180,82 @@ class MenuTabPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                   ],
+                  // ── Legal section ─────────────────────────────────────────
+                  const Divider(color: Colors.white24, height: 1),
+                  const SizedBox(height: 16),
+                  _MenuItem(
+                    icon: Icons.article_outlined,
+                    title: localizations?.menuImpressum ?? 'Legal Notice',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LegalPage(
+                          title: localizations?.impressumTitle ?? 'Legal Notice',
+                          content: localizations?.impressumContent ?? '',
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _MenuItem(
+                    icon: Icons.privacy_tip_outlined,
+                    title: localizations?.menuPrivacyPolicy ?? 'Privacy Policy',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LegalPage(
+                          title: localizations?.privacyPolicyTitle ?? 'Privacy Policy',
+                          content: localizations?.privacyPolicyContent ?? '',
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _MenuItem(
+                    icon: Icons.gavel_outlined,
+                    title: localizations?.menuTermsOfUse ?? 'Terms of Use',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LegalPage(
+                          title: localizations?.termsOfUseTitle ?? 'Terms of Use',
+                          content: localizations?.termsOfUseContent ?? '',
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _MenuItem(
+                    icon: Icons.warning_amber_outlined,
+                    title: localizations?.menuDisclaimer ?? 'Disclaimer',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LegalPage(
+                          title: localizations?.disclaimerTitle ?? 'Disclaimer',
+                          content: localizations?.disclaimerContent ?? '',
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _MenuItem(
+                    icon: Icons.code_outlined,
+                    title: localizations?.menuOpenSourceLicenses ?? 'Open Source Licenses',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LegalPage(
+                          title: localizations?.openSourceLicensesTitle ?? 'Open Source Licenses',
+                          content: localizations?.openSourceLicensesContent ?? '',
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Divider(color: Colors.white24, height: 1),
+                  const SizedBox(height: 16),
+                  // ── Destructive actions ───────────────────────────────────
                   _MenuItem(
                     icon: Icons.logout,
                     title: localizations?.menuLogout ?? 'Logout',

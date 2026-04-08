@@ -125,4 +125,99 @@ class MessagesEN {
   // Session ended banner
   static const String sessionEndedBanner = 'Session ended after 10 minutes of inactivity';
   static const String newSessionButton = 'New Session';
+
+  // ── Legal pages ──────────────────────────────────────────────────────────────
+  // Menu entry labels
+  static const String menuImpressum = 'Legal Notice';
+  static const String menuPrivacyPolicy = 'Privacy Policy';
+  static const String menuTermsOfUse = 'Terms of Use';
+  static const String menuDisclaimer = 'Disclaimer';
+  static const String menuOpenSourceLicenses = 'Open Source Licenses';
+
+  // Page titles
+  static const String impressumTitle = 'Legal Notice';
+  static const String privacyPolicyTitle = 'Privacy Policy';
+  static const String termsOfUseTitle = 'Terms of Use';
+  static const String disclaimerTitle = 'Disclaimer';
+  static const String openSourceLicensesTitle = 'Open Source Licenses';
+
+  // Page content — replace the placeholder blocks with your actual text.
+  static const String impressumContent = '''
+[Placeholder - replace with your actual legal notice]
+
+Operator:
+[Company or individual name]
+[Street, House no.]
+[Postal code, City, Country]
+
+Email: [your@email.com]
+Phone: [+1 000 000 0000]
+
+[Add any other legally required information.]''';
+
+  static const String privacyPolicyContent = '''
+[Placeholder - replace with your actual privacy policy]
+
+1. Data Controller
+[Name and contact of the data controller]
+
+2. What data do we collect?
+[List of data collected, e.g. name, email, location]
+
+3. Why do we collect it?
+[Purposes: account management, service delivery, analytics, etc.]
+
+4. Who has access to your data?
+[Third-party services, processors, partners]
+
+5. Your rights
+[Right to access, erasure, portability, objection]
+
+6. Contact
+[Data protection officer or contact details]''';
+
+  static const String termsOfUseContent = '''
+[Placeholder - replace with your actual terms of use]
+
+1. Acceptance
+By using this application you agree to these Terms of Use.
+
+2. Permitted use
+[Describe what users may and may not do.]
+
+3. Intellectual property
+[Ownership of content and trademarks]
+
+4. Limitation of liability
+[Liability exclusions]
+
+5. Changes
+We may update these terms at any time. Continued use constitutes acceptance.
+
+6. Contact
+[Contact details for legal inquiries]''';
+
+  static const String disclaimerContent = '''
+[Placeholder - replace with your actual disclaimer]
+
+The information and services provided in this application are for general informational purposes only and do not constitute legal, financial, or professional advice.
+
+We make no representations or warranties of any kind, express or implied, regarding the accuracy, completeness, or reliability of any content.
+
+By using this application you acknowledge that use is at your own risk.
+
+[Add any additional disclaimer text here.]''';
+
+  static const String openSourceLicensesContent = '''
+[Placeholder - replace with your actual open source license notices]
+
+This application is built using open source software. The respective licenses of all packages are listed below.
+
+[Package name] ([version])
+License: [License type, e.g. MIT, Apache 2.0, BSD]
+[Brief description or URL]
+
+...
+
+Tip: Flutter\'s built-in showLicensePage() widget can auto-generate these notices from your pubspec.yaml dependencies.''';
 }

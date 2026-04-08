@@ -645,6 +645,82 @@ class AppLocalizations {
     }
     return MessagesEN.addToFavorites;
   }
+
+  // ── Legal pages ──────────────────────────────────────────────────────────────
+  String get menuImpressum {
+    if (locale.languageCode == 'de') return MessagesDE.menuImpressum;
+    return MessagesEN.menuImpressum;
+  }
+
+  String get menuPrivacyPolicy {
+    if (locale.languageCode == 'de') return MessagesDE.menuPrivacyPolicy;
+    return MessagesEN.menuPrivacyPolicy;
+  }
+
+  String get menuTermsOfUse {
+    if (locale.languageCode == 'de') return MessagesDE.menuTermsOfUse;
+    return MessagesEN.menuTermsOfUse;
+  }
+
+  String get menuDisclaimer {
+    if (locale.languageCode == 'de') return MessagesDE.menuDisclaimer;
+    return MessagesEN.menuDisclaimer;
+  }
+
+  String get menuOpenSourceLicenses {
+    if (locale.languageCode == 'de') return MessagesDE.menuOpenSourceLicenses;
+    return MessagesEN.menuOpenSourceLicenses;
+  }
+
+  String get impressumTitle {
+    if (locale.languageCode == 'de') return MessagesDE.impressumTitle;
+    return MessagesEN.impressumTitle;
+  }
+
+  String get impressumContent {
+    if (locale.languageCode == 'de') return MessagesDE.impressumContent;
+    return MessagesEN.impressumContent;
+  }
+
+  String get privacyPolicyTitle {
+    if (locale.languageCode == 'de') return MessagesDE.privacyPolicyTitle;
+    return MessagesEN.privacyPolicyTitle;
+  }
+
+  String get privacyPolicyContent {
+    if (locale.languageCode == 'de') return MessagesDE.privacyPolicyContent;
+    return MessagesEN.privacyPolicyContent;
+  }
+
+  String get termsOfUseTitle {
+    if (locale.languageCode == 'de') return MessagesDE.termsOfUseTitle;
+    return MessagesEN.termsOfUseTitle;
+  }
+
+  String get termsOfUseContent {
+    if (locale.languageCode == 'de') return MessagesDE.termsOfUseContent;
+    return MessagesEN.termsOfUseContent;
+  }
+
+  String get disclaimerTitle {
+    if (locale.languageCode == 'de') return MessagesDE.disclaimerTitle;
+    return MessagesEN.disclaimerTitle;
+  }
+
+  String get disclaimerContent {
+    if (locale.languageCode == 'de') return MessagesDE.disclaimerContent;
+    return MessagesEN.disclaimerContent;
+  }
+
+  String get openSourceLicensesTitle {
+    if (locale.languageCode == 'de') return MessagesDE.openSourceLicensesTitle;
+    return MessagesEN.openSourceLicensesTitle;
+  }
+
+  String get openSourceLicensesContent {
+    if (locale.languageCode == 'de') return MessagesDE.openSourceLicensesContent;
+    return MessagesEN.openSourceLicensesContent;
+  }
 }
 
 class _AppLocalizationsDelegate
