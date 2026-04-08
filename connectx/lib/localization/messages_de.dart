@@ -151,70 +151,17 @@ class MessagesDE {
 
   // Seiteninhalt — ersetzen Sie die Platzhalter durch Ihre tatsächlichen Texte.
   static const String impressumContent = '''
-[Platzhalter - ersetzen Sie diesen Text mit Ihrem tatsächlichen Impressum]
+Angaben gemäß § 5 DDG
 
-Verantwortlich:
-[Name des Unternehmens oder der Person]
-[Straße und Hausnummer]
-[Postleitzahl, Stadt, Land]
+Thomas Bretthauer-Weber
+Schweiggerweg 20
+13627 Berlin
 
-E-Mail: [ihre@email.de]
-Telefon: [+49 000 000 0000]
+Kontakt
+E-Mail: thomas.bretthauer-weber@allinked.org
 
-[Fügen Sie hier weitere gesetzlich vorgeschriebene Angaben hinzu.]''';
-
-  static const String privacyPolicyContent = '''
-[Platzhalter - ersetzen Sie diesen Text mit Ihrer tatsächlichen Datenschutzerklärung]
-
-1. Verantwortlicher
-[Name und Kontakt des Verantwortlichen gemäß DSGVO]
-
-2. Welche Daten erheben wir?
-[Liste der erhobenen Daten, z. B. Name, E-Mail, Standort]
-
-3. Wozu erheben wir diese Daten?
-[Zwecke: Kontoverwaltung, Leistungserbringung, Analysen usw.]
-
-4. Wer hat Zugriff auf Ihre Daten?
-[Drittanbieter, Auftragsverarbeiter, Partner]
-
-5. Ihre Rechte
-[Auskunft, Löschung, Datenübertragbarkeit, Widerspruch]
-
-6. Kontakt
-[Datenschutzbeauftragter oder Kontaktdaten]''';
-
-  static const String termsOfUseContent = '''
-[Platzhalter - ersetzen Sie diesen Text mit Ihren tatsächlichen Nutzungsbedingungen]
-
-1. Zustimmung
-Mit der Nutzung dieser Anwendung stimmen Sie diesen Nutzungsbedingungen zu.
-
-2. Erlaubte Nutzung
-[Beschreiben Sie, was Nutzer tun dürfen und was nicht.]
-
-3. Geistiges Eigentum
-[Eigentum an Inhalten und Marken]
-
-4. Haftungsbeschränkung
-[Haftungsausschlüsse]
-
-5. Änderungen
-Wir können diese Bedingungen jederzeit aktualisieren. Die weitere Nutzung gilt als Zustimmung.
-
-6. Kontakt
-[Kontaktdaten für rechtliche Anfragen]''';
-
-  static const String disclaimerContent = '''
-[Platzhalter - ersetzen Sie diesen Text mit Ihrem tatsächlichen Haftungsausschluss]
-
-Die in dieser Anwendung bereitgestellten Informationen und Dienste dienen ausschließlich allgemeinen Informationszwecken und stellen keine rechtliche, finanzielle oder professionelle Beratung dar.
-
-Wir übernehmen keine Gewähr für die Richtigkeit, Vollständigkeit oder Zuverlässigkeit der bereitgestellten Inhalte.
-
-Mit der Nutzung dieser Anwendung erkennen Sie an, dass die Nutzung auf eigenes Risiko erfolgt.
-
-[Fügen Sie hier weiteren Haftungsausschlusstext ein.]''';
+Umsatzsteuer-ID
+Umsatzsteuer-Identifikationsnummer gemäß § 27 a Umsatzsteuergesetz: DE460374834''';
 
   static const String openSourceLicensesContent = '''
 [Platzhalter - ersetzen Sie diesen Text mit Ihren tatsächlichen Open-Source-Lizenzhinweisen]

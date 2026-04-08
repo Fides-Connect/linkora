@@ -719,7 +719,7 @@ class AppLocalizations {
   }
 
   String get privacyPolicyContent {
-    if (locale.languageCode == 'de') return MessagesDE.privacyPolicyContent;
+    if (locale.languageCode == 'de') return MessagesEN.privacyPolicyContent;
     return MessagesEN.privacyPolicyContent;
   }
 
@@ -729,7 +729,7 @@ class AppLocalizations {
   }
 
   String get termsOfUseContent {
-    if (locale.languageCode == 'de') return MessagesDE.termsOfUseContent;
+    if (locale.languageCode == 'de') return MessagesEN.termsOfUseContent;
     return MessagesEN.termsOfUseContent;
   }
 
@@ -739,7 +739,7 @@ class AppLocalizations {
   }
 
   String get disclaimerContent {
-    if (locale.languageCode == 'de') return MessagesDE.disclaimerContent;
+    if (locale.languageCode == 'de') return MessagesEN.disclaimerContent;
     return MessagesEN.disclaimerContent;
   }
 
