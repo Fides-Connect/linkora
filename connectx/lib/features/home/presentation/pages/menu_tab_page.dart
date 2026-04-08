@@ -8,6 +8,7 @@ import '../../../../main.dart';
 import '../../../../services/notification_service.dart';
 import '../../../../services/user_service.dart';
 import '../viewmodels/home_tab_view_model.dart';
+import 'info_page.dart';
 import 'legal_page.dart';
 import 'user_page.dart';
 
@@ -56,38 +57,6 @@ class MenuTabPage extends StatelessWidget {
               child: Text(localizations?.deleteAccount ?? 'Delete Account'),
             ),
           ],
-        );
-      },
-    );
-  }
-
-  void _showLanguageDialog(BuildContext context) {    final localizations = AppLocalizations.of(context);
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(localizations?.menuLanguage ?? 'Language'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: Text(localizations?.languageEnglish ?? 'English'),
-                onTap: () async {
-                  ConnectXApp.setLocale(context, const Locale('en', ''));
-                  await UserService().updateSettings(language: 'en');
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                title: Text(localizations?.languageGerman ?? 'German'),
-                onTap: () async {
-                  ConnectXApp.setLocale(context, const Locale('de', ''));
-                  await UserService().updateSettings(language: 'de');
-                  Navigator.pop(context);
-                },
-              ),
-            ],
-          ),
         );
       },
     );
@@ -168,10 +137,10 @@ class MenuTabPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 16),
                   ],
-                  _MenuItem(
-                    icon: Icons.language,
-                    title: localizations?.menuLanguage ?? 'Language',
-                    onTap: () => _showLanguageDialog(context),
+                  _LanguageMenuItem(
+                    label: localizations?.menuLanguage ?? 'Language',
+                    englishLabel: localizations?.languageEnglish ?? 'English',
+                    germanLabel: localizations?.languageGerman ?? 'German',
                   ),
                   const SizedBox(height: 16),
                   if (showNotificationsToggle) ...[  
@@ -250,6 +219,15 @@ class MenuTabPage extends StatelessWidget {
                           content: localizations?.openSourceLicensesContent ?? '',
                         ),
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _MenuItem(
+                    icon: Icons.info_outline,
+                    title: localizations?.menuInfo ?? 'About',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const InfoPage()),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -409,6 +387,121 @@ class _NotificationsToggleItemState extends State<_NotificationsToggleItem> {
               activeTrackColor: Colors.blueAccent,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Inline language selector that shows the active language without a dialog.
+///
+/// Renders a card with a label on the left and a segmented EN / DE toggle on
+/// the right.  The selected language is highlighted; tapping the other option
+/// updates the locale and persists the preference immediately.
+class _LanguageMenuItem extends StatelessWidget {
+  final String label;
+  final String englishLabel;
+  final String germanLabel;
+
+  const _LanguageMenuItem({
+    required this.label,
+    required this.englishLabel,
+    required this.germanLabel,
+  });
+
+  Future<void> _select(BuildContext context, String langCode) async {
+    ConnectXApp.setLocale(context, Locale(langCode, ''));
+    await UserService().updateSettings(language: langCode);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final currentCode = Localizations.localeOf(context).languageCode;
+
+    return Material(
+      color: Colors.white.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            const Icon(Icons.language, color: Colors.white),
+            const SizedBox(width: 16),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const Spacer(),
+            // Segmented toggle
+            Container(
+              height: 34,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _LangChip(
+                    label: englishLabel,
+                    shortLabel: 'EN',
+                    selected: currentCode == 'en',
+                    onTap: () => _select(context, 'en'),
+                  ),
+                  _LangChip(
+                    label: germanLabel,
+                    shortLabel: 'DE',
+                    selected: currentCode == 'de',
+                    onTap: () => _select(context, 'de'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LangChip extends StatelessWidget {
+  final String label;
+  final String shortLabel;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _LangChip({
+    required this.label,
+    required this.shortLabel,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: label,
+      child: GestureDetector(
+        onTap: selected ? null : onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            shortLabel,
+            style: TextStyle(
+              color: selected ? Colors.black87 : Colors.white,
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+              fontSize: 13,
+            ),
+          ),
         ),
       ),
     );

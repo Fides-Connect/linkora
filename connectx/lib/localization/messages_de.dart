@@ -134,6 +134,14 @@ class MessagesDE {
   static const String menuDisclaimer = 'Haftungsausschluss';
   static const String menuOpenSourceLicenses = 'Open-Source-Lizenzen';
 
+  // Info / Über-Seite
+  static const String menuInfo = 'Über die App';
+  static const String infoVersion = 'Version';
+  static const String infoBuild = 'Build';
+  static const String infoCreditsTitle = 'Mitwirkende';
+  static const String infoLinksTitle = 'Links';
+  static const String infoGithubLabel = 'GitHub-Projekt';
+
   // Seitentitel
   static const String impressumTitle = 'Impressum';
   static const String privacyPolicyTitle = 'Datenschutzerklärung';

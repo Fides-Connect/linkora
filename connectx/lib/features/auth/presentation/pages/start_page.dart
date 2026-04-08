@@ -36,22 +36,12 @@ class StartPage extends StatelessWidget {
           backgroundColor: Colors.transparent,
           elevation: 0,
           actions: [
-            PopupMenuButton<Locale>(
-              icon: const Icon(Icons.language),
-              tooltip: localizations?.selectLanguage ?? 'Select Language',
-              onSelected: (Locale locale) {
-                ConnectXApp.setLocale(context, locale);
-              },
-              itemBuilder: (BuildContext context) => [
-                const PopupMenuItem<Locale>(
-                  value: Locale('en', ''),
-                  child: Text('English'),
-                ),
-                const PopupMenuItem<Locale>(
-                  value: Locale('de', ''),
-                  child: Text('Deutsch'),
-                ),
-              ],
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: _LanguageToggle(
+                currentLocale: Localizations.localeOf(context),
+                onSelect: (locale) => ConnectXApp.setLocale(context, locale),
+              ),
             ),
           ],
         ),
@@ -124,6 +114,82 @@ class StartPage extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact segmented language toggle used on the start screen AppBar.
+///
+/// Shows two pill-shaped buttons side by side.  The currently active language
+/// is highlighted with a white fill and dark text; the inactive one is
+/// transparent with white text.
+class _LanguageToggle extends StatelessWidget {
+  final Locale currentLocale;
+  final ValueChanged<Locale> onSelect;
+
+  const _LanguageToggle({
+    required this.currentLocale,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 34,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ToggleButton(
+            label: 'EN',
+            selected: currentLocale.languageCode == 'en',
+            onTap: () => onSelect(const Locale('en', '')),
+          ),
+          _ToggleButton(
+            label: 'DE',
+            selected: currentLocale.languageCode == 'de',
+            onTap: () => onSelect(const Locale('de', '')),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToggleButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ToggleButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: selected ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.black87 : Colors.white,
+            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+            fontSize: 13,
+          ),
         ),
       ),
     );

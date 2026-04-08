@@ -672,6 +672,37 @@ class AppLocalizations {
     return MessagesEN.menuOpenSourceLicenses;
   }
 
+  // Info / About page
+  String get menuInfo {
+    if (locale.languageCode == 'de') return MessagesDE.menuInfo;
+    return MessagesEN.menuInfo;
+  }
+
+  String get infoVersion {
+    if (locale.languageCode == 'de') return MessagesDE.infoVersion;
+    return MessagesEN.infoVersion;
+  }
+
+  String get infoBuild {
+    if (locale.languageCode == 'de') return MessagesDE.infoBuild;
+    return MessagesEN.infoBuild;
+  }
+
+  String get infoCreditsTitle {
+    if (locale.languageCode == 'de') return MessagesDE.infoCreditsTitle;
+    return MessagesEN.infoCreditsTitle;
+  }
+
+  String get infoLinksTitle {
+    if (locale.languageCode == 'de') return MessagesDE.infoLinksTitle;
+    return MessagesEN.infoLinksTitle;
+  }
+
+  String get infoGithubLabel {
+    if (locale.languageCode == 'de') return MessagesDE.infoGithubLabel;
+    return MessagesEN.infoGithubLabel;
+  }
+
   String get impressumTitle {
     if (locale.languageCode == 'de') return MessagesDE.impressumTitle;
     return MessagesEN.impressumTitle;
