@@ -10,7 +10,7 @@ import math
 import logging
 from datetime import datetime, timedelta, UTC
 from typing import Any, TYPE_CHECKING, cast
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 
 if TYPE_CHECKING:
     from .ai_conversation_service import AIConversationService
@@ -21,7 +21,7 @@ from langchain_core.messages import AIMessage
 from .conversation_service import ConversationService, ConversationStage
 from .llm_service import LLMService, SIGNAL_TRANSITION_SCHEMA
 from .agent_runtime_fsm import AgentRuntimeFSM
-from .agent_tools import AgentToolRegistry, ToolContext, ToolPermissionError, FINALIZE_TOOL_SCHEMAS
+from .agent_tools import AgentToolRegistry, ToolContext, ToolPermissionError, FINALIZE_TOOL_SCHEMAS, BROWSE_TOOL_SCHEMAS
 from ..prompts_templates import get_fallback_error_message
 from ..data_provider import SearchUnavailableError  # noqa: F401 (used below)
 
@@ -54,7 +54,8 @@ _KNOWN_TOOL_NAMES_RE = re.compile(
     r'\b(?:signal_transition|search_providers|get_favorites|get_open_requests'
     r'|create_service_request|cancel_service_request|record_provider_interest|get_my_competencies'
     r'|save_competence_batch|delete_competences'
-    r'|accept_provider|reject_and_fetch_next|cancel_search|retry_search|generate_contact_template)\s*\([^)]*\)'
+    r'|accept_provider|reject_and_fetch_next|cancel_search|retry_search|generate_contact_template'
+    r'|show_next_providers)\s*\([^)]*\)'
 )
 
 def _strip_tool_call_text(text: str) -> str:
@@ -83,6 +84,7 @@ _TOOL_STATUS_LABELS: dict[str, str] = {
     "cancel_search": "Cancelling search",
     "retry_search": "Searching again",
     "generate_contact_template": "Preparing contact details",
+    "show_next_providers": "Finding more results",
 }
 
 
@@ -299,6 +301,7 @@ class ResponseOrchestrator:
         elif target_stage == ConversationStage.TRIAGE:
             if previous_stage in (
                 ConversationStage.COMPLETED, ConversationStage.FINALIZE,
+                ConversationStage.BROWSE,
                 ConversationStage.PROVIDER_ONBOARDING, ConversationStage.PROVIDER_PITCH,
             ):
                 # B9: preserve the triggering utterance BEFORE wiping context so it
@@ -324,6 +327,21 @@ class ResponseOrchestrator:
                 self.conversation_service.context.pop("search_outage_pending", None)
                 logger.info("RECOVERY → CONFIRMATION: outage retry path, draft preserved.")
             pending.append(("signal_transition", {"stage": "confirmation"}))
+
+        elif target_stage == ConversationStage.BROWSE:
+            # Reset browse_offset to 3 so the first show_next_providers call
+            # starts from the 4th provider (first 3 were shown in FINALIZE).
+            self.conversation_service.context["browse_offset"] = 3
+            providers = self.conversation_service.context.get("providers_found", [])
+            total_count = len(providers)
+            remaining_count = max(0, total_count - 3)
+            pending.append(("signal_transition", {
+                "stage": "browse",
+                "total_count": total_count,
+                "shown_count": 3,
+                "remaining_count": remaining_count,
+                "has_more": remaining_count > 0,
+            }))
 
         else:
             pending.append(("signal_transition", {"stage": target}))
@@ -728,6 +746,10 @@ class ResponseOrchestrator:
         # In FINALIZE, restrict the LLM to only the three FINALIZE tools.
         if follow_up_stage == ConversationStage.FINALIZE:
             self.llm_service.register_functions(session_id, list(FINALIZE_TOOL_SCHEMAS))
+        elif follow_up_stage == ConversationStage.BROWSE:
+            self.llm_service.register_functions(
+                session_id, [SIGNAL_TRANSITION_SCHEMA] + list(BROWSE_TOOL_SCHEMAS)
+            )
 
         # ── Accumulate problem description on CONFIRMATION → TRIAGE bounce-back ──
         # When the user sends a correction from CONFIRMATION (e.g. "change the
@@ -780,6 +802,12 @@ class ResponseOrchestrator:
                         await self._handle_finalize_tool(
                             fu_name, fu_args, session_id, context, new_pending
                         )
+                    elif fu_name == "show_next_providers":
+                        # BROWSE-stage tool in follow-up stream.
+                        async for browse_chunk in self._handle_show_next_providers(
+                            session_id, context, new_pending
+                        ):
+                            yield browse_chunk
                     else:
                     # Guard: search_providers is redundant in FINALIZE when the
                     # auto-search already ran and returned results on stage entry.
@@ -818,6 +846,44 @@ class ResponseOrchestrator:
                 if filtered.strip():
                     ai_response_parts.append(filtered)
                     yield filtered
+
+    async def _handle_show_next_providers(
+        self,
+        session_id: str,
+        context: dict[str, Any] | None,
+        pending: list[tuple[str, Any]],
+    ) -> AsyncGenerator[dict[str, Any]]:
+        """Handle the BROWSE-stage ``show_next_providers`` tool call.
+
+        Reads the next batch of 3 providers from ``providers_found`` starting
+        at ``browse_offset``, yields a ``provider-cards`` message, advances
+        the offset, and appends a follow-up payload to *pending* so the LLM
+        can generate a brief narrative response.
+        """
+        providers: list[dict] = self.conversation_service.context.get("providers_found", [])
+        offset: int = self.conversation_service.context.get("browse_offset", 3)
+        batch = providers[offset:offset + 3]
+
+        if not batch:
+            pending.append(("show_next_providers", {
+                "has_more": False,
+                "batch_size": 0,
+                "message": "No more providers available.",
+            }))
+            return
+
+        cards = await self._build_provider_cards(batch, "")
+        yield {"type": "provider-cards", "cards": cards}
+
+        new_offset = offset + len(batch)
+        self.conversation_service.context["browse_offset"] = new_offset
+        remaining = max(0, len(providers) - new_offset)
+        pending.append(("show_next_providers", {
+            "has_more": remaining > 0,
+            "batch_size": len(batch),
+            "shown_count": new_offset,
+            "total_count": len(providers),
+        }))
 
     async def _handle_finalize_tool(
         self,
@@ -1060,10 +1126,13 @@ class ResponseOrchestrator:
             current_stage = self.conversation_service.get_current_stage()
 
             # ── Register tools ─────────────────────────────────────────────────
-            # In FINALIZE, restrict the LLM to only the three FINALIZE tools so it
+            # In FINALIZE, restrict the LLM to only the FINALIZE tools so it
             # cannot call signal_transition, create_service_request, etc.
+            # In BROWSE, offer signal_transition + show_next_providers only.
             if current_stage == ConversationStage.FINALIZE:
                 tool_schemas = list(FINALIZE_TOOL_SCHEMAS)
+            elif current_stage == ConversationStage.BROWSE:
+                tool_schemas = [SIGNAL_TRANSITION_SCHEMA] + list(BROWSE_TOOL_SCHEMAS)
             else:
                 tool_schemas = [SIGNAL_TRANSITION_SCHEMA]
                 if self.tool_registry:
@@ -1213,6 +1282,16 @@ class ResponseOrchestrator:
                             await self._handle_finalize_tool(
                                 fn_name, fn_args, session_id, context, pending_tool_results
                             )
+                            self.runtime_fsm.transition("tool_done")
+
+                        elif fn_name == "show_next_providers":
+                            # BROWSE-stage tool: yield the next batch of provider cards.
+                            self.runtime_fsm.transition("tool_call")
+                            tool_calls_seen = True
+                            async for browse_chunk in self._handle_show_next_providers(
+                                session_id, context, pending_tool_results
+                            ):
+                                yield browse_chunk
                             self.runtime_fsm.transition("tool_done")
 
                         else:
@@ -1366,26 +1445,30 @@ class ResponseOrchestrator:
                 next_pending: list[tuple[str, Any]] = []
                 # Only the first follow-up stream sees the real user utterance.
                 follow_up_user_input = user_input if follow_up_iter == 0 else " "
-                # Yield provider cards before the first follow-up narrative when
-                # transitioning to FINALIZE with GP results (CONFIRMATION→FINALIZE path).
-                if follow_up_iter == 0:
-                    _has_finalize_transition = any(
-                        name == "signal_transition"
-                        and isinstance(res, dict)
-                        and res.get("stage") == "finalize"
-                        for name, res in current_pending
-                    )
-                    if _has_finalize_transition:
-                        _providers = self.conversation_service.context.get("providers_found", [])
-                        _gp_for_finalize = [
-                            p for p in _providers
-                            if (p.get("user") or {}).get("source") == "google_places"
-                        ][:3]  # cap at top 3
-                        if _gp_for_finalize:
-                            _finalize_cards = await self._build_provider_cards(
-                                _gp_for_finalize, user_input
-                            )
-                            yield {"type": "provider-cards", "cards": _finalize_cards}
+                # Yield provider cards before the follow-up narrative whenever a
+                # finalize transition is pending.  The guard is NOT limited to
+                # follow_up_iter==0 because in the TRIAGE→CONFIRMATION→FINALIZE
+                # path the finalize transition arrives at iter 1 (TRIAGE→CONFIRMATION
+                # happens in the main stream; CONFIRMATION→FINALIZE happens inside
+                # the first follow-up stream and lands in next_pending, which
+                # becomes current_pending at iter 1).
+                _has_finalize_transition = any(
+                    name == "signal_transition"
+                    and isinstance(res, dict)
+                    and res.get("stage") == "finalize"
+                    for name, res in current_pending
+                )
+                if _has_finalize_transition:
+                    _providers = self.conversation_service.context.get("providers_found", [])
+                    _gp_for_finalize = [
+                        p for p in _providers
+                        if (p.get("user") or {}).get("source") == "google_places"
+                    ][:3]  # cap at top 3
+                    if _gp_for_finalize:
+                        _finalize_cards = await self._build_provider_cards(
+                            _gp_for_finalize, user_input
+                        )
+                        yield {"type": "provider-cards", "cards": _finalize_cards}
                 async for chunk in self._run_follow_up_stream(
                     current_pending, follow_up_user_input, session_id, context,
                     ai_response_parts, next_pending
@@ -1425,19 +1508,21 @@ class ResponseOrchestrator:
             # the stage will persist until the next user utterance triggers one of
             # the three FINALIZE tools.  (§3.2)
             #
-            # Exception: lite mode (finalize_auto_complete=True).  After presenting
-            # the provider list the orchestrator auto-advances to COMPLETED without
-            # waiting for user input.  (§14.3)
+            # Exception: lite mode (finalize_auto_advance_stage is not None).  After
+            # presenting the initial provider cards the orchestrator auto-transitions
+            # to the configured target stage (BROWSE) without waiting for user input.  (§14.3)
             if (
-                self._profile.finalize_auto_complete
+                self._profile.finalize_auto_advance_stage is not None
                 and self.conversation_service.get_current_stage() == ConversationStage.FINALIZE
             ):
+                _auto_target = self._profile.finalize_auto_advance_stage
                 logger.info(
-                    "finalize_auto_complete: auto-advancing FINALIZE → COMPLETED"
+                    "finalize_auto_advance_stage: auto-advancing FINALIZE → %s",
+                    _auto_target.value,
                 )
                 auto_pending: list[tuple[str, Any]] = []
                 await self._apply_signal_transition_with_payload(
-                    "completed", session_id, context, auto_pending, user_input=""
+                    _auto_target.value, session_id, context, auto_pending, user_input=""
                 )
                 if auto_pending:
                     async for chunk in self._run_follow_up_stream(

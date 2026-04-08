@@ -54,6 +54,7 @@ class ConversationStage(StrEnum):
     TOOL_EXECUTION = "tool_execution"
     CONFIRMATION  = "confirmation"
     FINALIZE      = "finalize"
+    BROWSE        = "browse"
     RECOVERY      = "recovery"
     COMPLETED     = "completed"
     PROVIDER_PITCH      = "provider_pitch"
@@ -410,6 +411,27 @@ class ConversationService:
                 ("human", "{input}")
             ])
 
+        elif stage == ConversationStage.BROWSE:
+            providers = self.context.get("providers_found", [])
+            browse_offset = self.context.get("browse_offset", 3)
+            total_count = len(providers)
+            remaining_count = max(0, total_count - browse_offset)
+            language_instruction = get_language_instruction(self.language)
+            return ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(
+                    get_prompt(self._profile.prompt_key, "browse")
+                ).format(
+                    agent_name=self.agent_name,
+                    total_count=total_count,
+                    shown_count=browse_offset,
+                    remaining_count=remaining_count,
+                    has_more="yes" if remaining_count > 0 else "no",
+                    language_instruction=language_instruction,
+                ),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{input}")
+            ])
+
         elif stage == ConversationStage.COMPLETED:
             language_instruction = get_language_instruction(self.language)
             return ChatPromptTemplate.from_messages([
@@ -445,6 +467,7 @@ class ConversationService:
         self.context["request_summary"] = ""
         self.context["providers_found"] = []
         self.context["current_provider_index"] = 0
+        self.context["browse_offset"] = 3
         self.context["google_places_used"] = False
         self.context["google_places_error"] = False
         self.context["google_places_announced"] = False

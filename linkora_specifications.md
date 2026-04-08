@@ -844,7 +844,7 @@ Lite mode provides a simplified conversation experience optimised for fast, Goog
 
 #### Stages and Transitions
 
-The TRIAGE, CLARIFY, CONFIRMATION, FINALIZE, COMPLETED, and RECOVERY stages are active. The TOOL_EXECUTION, PROVIDER_PITCH, and PROVIDER_ONBOARDING stages are not accessible in lite mode; any transition targeting them is treated as an illegal transition and silently ignored.
+The TRIAGE, CLARIFY, CONFIRMATION, FINALIZE, BROWSE, COMPLETED, and RECOVERY stages are active. The TOOL_EXECUTION, PROVIDER_PITCH, and PROVIDER_ONBOARDING stages are not accessible in lite mode; any transition targeting them is treated as an illegal transition and silently ignored.
 
 | Current Stage | Allowed Next Stages |
 |---|---|
@@ -852,7 +852,8 @@ The TRIAGE, CLARIFY, CONFIRMATION, FINALIZE, COMPLETED, and RECOVERY stages are 
 | `TRIAGE` | `CONFIRMATION`, `CLARIFY`, `RECOVERY` |
 | `CLARIFY` | `TRIAGE` |
 | `CONFIRMATION` | `FINALIZE`, `TRIAGE` |
-| `FINALIZE` | `COMPLETED`, `RECOVERY`, `TRIAGE` |
+| `FINALIZE` | `BROWSE`, `TRIAGE`, `RECOVERY` |
+| `BROWSE` | `BROWSE`, `CONFIRMATION`, `TRIAGE`, `COMPLETED` |
 | `COMPLETED` | `TRIAGE` |
 | `RECOVERY` | `TRIAGE`, `CONFIRMATION` |
 
@@ -882,9 +883,22 @@ The table below compares MRI requirements across modes:
 
 #### FINALIZE Behaviour
 
-- The GP-backed provider search runs on entry to FINALIZE (identical pipeline to full mode: GP query generation → GP fetch → Weaviate upsert → Weaviate hybrid search).
-- After presenting the results to the user as a list, the system automatically advances to COMPLETED. The user is not asked to accept or reject a specific provider. No service request is created in Firestore.
-- If the search returns zero results, the system transitions to TRIAGE (not COMPLETED), informing the user that no match was found and inviting them to refine their request.
+- The GP-backed provider search runs on entry to FINALIZE (identical pipeline to full mode: GP query generation → GP fetch → Weaviate upsert → Weaviate hybrid search). Up to 15 providers are fetched (5 batches of 3).
+- The first 3 providers are presented to the user as provider cards immediately. The system then automatically and silently transitions to the BROWSE stage without waiting for user input.
+- If the search returns zero results, the system transitions to TRIAGE (not BROWSE), informing the user that no match was found and inviting them to refine their request.
+- No service request is created in Firestore. The user is not asked to accept or reject a specific provider.
+
+#### BROWSE Behaviour
+
+- BROWSE is the post-FINALIZE browsing stage in lite mode. The user can explore additional provider results, refine the search criteria, or start a new search.
+- On entry to BROWSE, the system has already shown the first 3 providers from the fetched result set. The remaining providers (up to 12) are available for the user to browse in batches of 3 on request.
+- The `show_next_providers` tool is the only BROWSE-specific tool. When called by the LLM, the orchestrator sends the next 3 provider cards to the client and advances the internal offset. No natural-language text is generated before the tool call; the LLM responds only in the follow-up prompt.
+- While in BROWSE, the LLM may also offer to:
+  - Refine the search criteria: transitions to CONFIRMATION.
+  - Search for a different service type: transitions to TRIAGE (which clears the current request context).
+  - End the session: transitions to COMPLETED.
+- When transitioning from BROWSE to TRIAGE, the current request context (accumulated problem description, provider results, browse offset) is cleared so the new search starts fresh.
+- The `show_next_providers` tool must not be offered when there are no more results to show.
 
 #### Provider Pitch
 
@@ -897,6 +911,7 @@ The table below lists all registered tools and their availability per mode. Tool
 | Tool | Full Mode | Lite Mode | Notes |
 |---|---|---|---|
 | `search_providers` | ✓ | ✓ | GP-backed in lite (always active) |
+| `show_next_providers` | ✗ | ✓ (BROWSE only) | Advances browse offset by 3; sends next provider card batch |
 | `get_favorites` | ✓ | ✗ | Not applicable in lite |
 | `get_open_requests` | ✓ | ✗ | Not applicable in lite |
 | `create_service_request` | ✓ | ✗ | No service requests in lite |
@@ -913,7 +928,8 @@ The table below describes how each active stage behaves differently in lite mode
 |---|---|---|
 | `TRIAGE` | Collects core intent + minimum 3 contextual details + availability + location (when GP enabled) + optional soft-asks | Identical to full mode, with location always a hard MRI requirement (not a soft-ask). |
 | `CONFIRMATION` | 2–3 sentence summary of the fully scoped request including all MRI fields | Identical to full mode. |
-| `FINALIZE` | Multi-turn: presents providers, waits for user to accept or reject; user can cancel search; service request written to Firestore on acceptance | Single-turn: presents GP results as a numbered list, then immediately and automatically transitions to COMPLETED; no user acceptance step; no Firestore write |
+| `FINALIZE` | Multi-turn: presents providers, waits for user to accept or reject; user can cancel search; service request written to Firestore on acceptance | Single-turn: presents first 3 GP results as provider cards, then immediately and automatically transitions to BROWSE; no user acceptance step; no Firestore write |
+| `BROWSE` | Not active | Post-FINALIZE browsing: user can view more results in batches of 3, refine search criteria (→ CONFIRMATION), start over (→ TRIAGE), or end session (→ COMPLETED) |
 | `COMPLETED` | Triggers provider pitch when user is eligible; asks if user needs anything else | No provider pitch; simply asks if the user needs anything else |
 
 #### Google Places

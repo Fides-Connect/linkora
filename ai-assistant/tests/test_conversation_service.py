@@ -17,7 +17,7 @@ class TestConversationStageEnum:
     def test_all_9_members_exist(self):
         expected = {
             "GREETING", "TRIAGE", "CLARIFY", "TOOL_EXECUTION",
-            "CONFIRMATION", "FINALIZE", "RECOVERY", "COMPLETED",
+            "CONFIRMATION", "FINALIZE", "BROWSE", "RECOVERY", "COMPLETED",
             "PROVIDER_PITCH", "PROVIDER_ONBOARDING",
         }
         actual = {m.name for m in ConversationStage}

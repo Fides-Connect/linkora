@@ -57,9 +57,16 @@ class AgentProfile:
     """When ``False`` the ``COMPLETED → PROVIDER_PITCH`` transition is never
     offered, regardless of user eligibility."""
 
-    finalize_auto_complete: bool
-    """Lite mode only.  After the FINALIZE provider list has been presented,
-    automatically advance to ``COMPLETED`` without waiting for user input."""
+    finalize_auto_advance_stage: ConversationStage | None
+    """When not ``None``, the orchestrator automatically transitions from
+    ``FINALIZE`` to this stage after presenting the provider list, without
+    waiting for user input.  ``None`` means FINALIZE is fully user-driven
+    (full mode).  Set to ``ConversationStage.BROWSE`` for lite mode so the
+    user can browse additional results after the initial three are shown."""
+
+    max_providers: int
+    """Maximum number of provider results to fetch from Weaviate per search.
+    Lite mode fetches up to 15 (5 batches of 3); full mode fetches 5."""
 
     google_places_always_active: bool
     """When ``True`` the Google Places pipeline runs for every FINALIZE entry
@@ -136,9 +143,15 @@ _LITE_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
     ConversationStage.CLARIFY:      [ConversationStage.TRIAGE],
     ConversationStage.CONFIRMATION: [ConversationStage.FINALIZE, ConversationStage.TRIAGE],
     ConversationStage.FINALIZE:     [
-        ConversationStage.COMPLETED,
-        ConversationStage.RECOVERY,
+        ConversationStage.BROWSE,
         ConversationStage.TRIAGE,
+        ConversationStage.RECOVERY,
+    ],
+    ConversationStage.BROWSE:       [
+        ConversationStage.BROWSE,
+        ConversationStage.CONFIRMATION,
+        ConversationStage.TRIAGE,
+        ConversationStage.COMPLETED,
     ],
     ConversationStage.COMPLETED:    [ConversationStage.TRIAGE],
     ConversationStage.RECOVERY:     [ConversationStage.TRIAGE, ConversationStage.CONFIRMATION],
@@ -163,7 +176,8 @@ FULL_PROFILE = AgentProfile(
         "delete_competences",
     }),
     provider_pitch_enabled=True,
-    finalize_auto_complete=False,
+    finalize_auto_advance_stage=None,
+    max_providers=5,
     google_places_always_active=False,
     voice_enabled=True,
     firestore_enabled=True,
@@ -173,9 +187,10 @@ FULL_PROFILE = AgentProfile(
 LITE_PROFILE = AgentProfile(
     name="lite",
     legal_transitions=_LITE_TRANSITIONS,
-    available_tool_names=frozenset({"search_providers"}),
+    available_tool_names=frozenset({"search_providers", "show_next_providers"}),
     provider_pitch_enabled=False,
-    finalize_auto_complete=True,
+    finalize_auto_advance_stage=ConversationStage.BROWSE,
+    max_providers=15,
     google_places_always_active=True,
     voice_enabled=False,
     firestore_enabled=False,

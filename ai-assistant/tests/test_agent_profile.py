@@ -53,8 +53,8 @@ def test_full_profile_provider_pitch_enabled():
     assert FULL_PROFILE.provider_pitch_enabled is True
 
 
-def test_full_profile_finalize_auto_complete_disabled():
-    assert FULL_PROFILE.finalize_auto_complete is False
+def test_full_profile_finalize_auto_advance_stage_disabled():
+    assert FULL_PROFILE.finalize_auto_advance_stage is None
 
 
 def test_full_profile_prompt_key():
@@ -105,8 +105,8 @@ def test_lite_profile_provider_pitch_disabled():
     assert LITE_PROFILE.provider_pitch_enabled is False
 
 
-def test_lite_profile_finalize_auto_complete_enabled():
-    assert LITE_PROFILE.finalize_auto_complete is True
+def test_lite_profile_finalize_auto_advance_stage_browse():
+    assert LITE_PROFILE.finalize_auto_advance_stage == ConversationStage.BROWSE
 
 
 def test_lite_profile_prompt_key():
@@ -114,7 +114,7 @@ def test_lite_profile_prompt_key():
 
 
 def test_lite_profile_only_search_providers_tool():
-    assert LITE_PROFILE.available_tool_names == frozenset({"search_providers"})
+    assert frozenset({"search_providers", "show_next_providers"}).issubset(LITE_PROFILE.available_tool_names)
 
 
 def test_lite_profile_no_provider_pitch_in_transitions():
@@ -176,8 +176,13 @@ def test_full_profile_finalize_can_reach_completed():
     assert ConversationStage.COMPLETED in FULL_PROFILE.legal_transitions[ConversationStage.FINALIZE]
 
 
+def test_lite_profile_finalize_can_reach_browse():
+    assert ConversationStage.BROWSE in LITE_PROFILE.legal_transitions[ConversationStage.FINALIZE]
+
+
 def test_lite_profile_finalize_can_reach_completed():
-    assert ConversationStage.COMPLETED in LITE_PROFILE.legal_transitions[ConversationStage.FINALIZE]
+    # FINALIZE no longer goes directly to COMPLETED in lite mode (goes via BROWSE)
+    assert ConversationStage.COMPLETED not in LITE_PROFILE.legal_transitions[ConversationStage.FINALIZE]
 
 
 def test_full_and_lite_are_different_objects():

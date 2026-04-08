@@ -124,6 +124,18 @@ class WebSocketBridge:
         except Exception as exc:
             logger.error("WebSocketBridge.send_runtime_state enqueue error: %s", exc)
 
+    def send_tool_status(self, label: str) -> None:
+        """Enqueue a ``{"type": "tool-status", "label": "…"}`` frame.
+
+        No-op when the WebSocket is closed or the label is empty.
+        """
+        if not self.is_open or not label:
+            return
+        try:
+            self._queue.put_nowait({"type": "tool-status", "label": label})
+        except Exception as exc:
+            logger.error("WebSocketBridge.send_tool_status enqueue error: %s", exc)
+
     def send_provider_cards(self, cards: list[dict]) -> None:
         """Enqueue a ``{"type": "provider-cards", …}`` frame.
 

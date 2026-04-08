@@ -1077,3 +1077,24 @@ FINALIZE_TOOL_SCHEMAS: list[dict[str, Any]] = [
     FINALIZE_TOOL_RETRY_SEARCH_SCHEMA,
     FINALIZE_TOOL_GENERATE_CONTACT_TEMPLATE_SCHEMA,
 ]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BROWSE-stage tool schemas
+# ─────────────────────────────────────────────────────────────────────────────
+
+BROWSE_SHOW_NEXT_SCHEMA: dict[str, Any] = {
+    "name": "show_next_providers",
+    "description": (
+        "Show the next batch of provider results to the user. "
+        "Call this when the user asks to see more results, browse further, "
+        "or wants to see additional providers beyond the initial set shown."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+    },
+}
+
+# Convenience list for LLM tool registration in the BROWSE stage.
+BROWSE_TOOL_SCHEMAS: list[dict[str, Any]] = [BROWSE_SHOW_NEXT_SCHEMA]

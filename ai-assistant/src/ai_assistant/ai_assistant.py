@@ -113,7 +113,7 @@ class AIAssistant:
             data_provider=self.data_provider,
             agent_name=AGENT_NAME,
             company_name=COMPANY_NAME,
-            max_providers=5,
+            max_providers=profile.max_providers,
             language=self.language,
             cross_encoder_service=self.cross_encoder_service,
             google_places_service=self.google_places_service,
