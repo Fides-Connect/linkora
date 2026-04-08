@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../core/widgets/feedback_display.dart';
 import '../../../../core/widgets/star_rating.dart';
@@ -29,11 +30,11 @@ class UserDetailPage extends StatelessWidget {
       appBar: AppBar(
         title: Text(
           user.name,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: context.appPrimaryColor),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: context.appPrimaryColor),
       ),
       body: Stack(
         children: [
@@ -52,12 +53,12 @@ class UserDetailPage extends StatelessWidget {
                         children: [
                           CircleAvatar(
                             radius: 50,
-                            backgroundColor: Colors.white.withValues(alpha: 0.2),
+                            backgroundColor: context.appSurface3,
                             child: Text(
                               user.name.isNotEmpty ? user.name[0] : '?',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 40,
-                                color: Colors.white,
+                                color: context.appPrimaryColor,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -65,8 +66,8 @@ class UserDetailPage extends StatelessWidget {
                           const SizedBox(height: 16),
                           Text(
                             user.name,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: context.appPrimaryColor,
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
                             ),
@@ -74,8 +75,8 @@ class UserDetailPage extends StatelessWidget {
                           const SizedBox(height: 24),
                           ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.blueAccent,
+                              backgroundColor: context.appPrimaryColor,
+                              foregroundColor: Theme.of(context).brightness == Brightness.dark ? Colors.black : Colors.white,
                               padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(24),
@@ -110,8 +111,8 @@ class UserDetailPage extends StatelessWidget {
                       children: [
                         Text(
                           localizations?.selfIntroductionTitle ?? 'Self Introduction',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: context.appPrimaryColor,
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
                           ),
@@ -121,13 +122,13 @@ class UserDetailPage extends StatelessWidget {
                           width: double.infinity,
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.1),
+                            color: context.appSurface1,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
                             user.selfIntroduction,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: context.appPrimaryColor,
                               fontSize: 16,
                               height: 1.5,
                             ),
@@ -147,8 +148,8 @@ class UserDetailPage extends StatelessWidget {
                       children: [
                         Text(
                           localizations?.competenciesTitle ?? 'Competencies',
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: context.appPrimaryColor,
                             fontSize: 20,
                             fontWeight: FontWeight.bold,
                           ),
@@ -160,8 +161,8 @@ class UserDetailPage extends StatelessWidget {
                           children: user.competencies.map((competency) {
                             return Chip(
                               label: Text(competency.title),
-                              backgroundColor: Colors.white.withValues(alpha: 0.2),
-                              labelStyle: const TextStyle(color: Colors.white),
+                              backgroundColor: context.appSurface3,
+                              labelStyle: TextStyle(color: context.appPrimaryColor),
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
                             );
                           }).toList(),
@@ -177,8 +178,8 @@ class UserDetailPage extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     child: Text(
                       localizations?.feedbackTitle ?? 'Feedback',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: context.appPrimaryColor,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
@@ -192,7 +193,7 @@ class UserDetailPage extends StatelessWidget {
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: context.appSurface1,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Column(
@@ -201,7 +202,7 @@ class UserDetailPage extends StatelessWidget {
                           Text(
                             localizations?.averageRating ?? 'Average Rating',
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
+                              color: context.appSecondaryColor,
                               fontSize: 14,
                             ),
                           ),
@@ -210,8 +211,8 @@ class UserDetailPage extends StatelessWidget {
                             children: [
                               Text(
                                 user.averageRating.toString(),
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: context.appPrimaryColor,
                                   fontSize: 32,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -222,7 +223,7 @@ class UserDetailPage extends StatelessWidget {
                               Text(
                                 '(${user.reviewCount})',
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.5),
+                                  color: context.appHintColor,
                                   fontSize: 14,
                                 ),
                               ),

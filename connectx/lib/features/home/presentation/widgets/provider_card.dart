@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../models/provider_card_data.dart';
 
 /// A rich card widget that displays a single provider result from Google Places.
@@ -13,10 +14,10 @@ class ProviderCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
+        color: context.appSurface1,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Colors.white.withValues(alpha: 0.12),
+          color: context.appSurface2,
           width: 1,
         ),
       ),
@@ -49,8 +50,8 @@ class ProviderCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         card.name,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: context.appPrimaryColor,
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
                         ),
@@ -68,8 +69,8 @@ class ProviderCard extends StatelessWidget {
                             card.ratingCount != null
                                 ? '${card.rating!.toStringAsFixed(1)} (${card.ratingCount})'
                                 : card.rating!.toStringAsFixed(1),
-                            style: const TextStyle(
-                              color: Colors.white70,
+                            style: TextStyle(
+                              color: context.appSecondaryColor,
                               fontSize: 13,
                               fontWeight: FontWeight.w500,
                             ),
@@ -85,7 +86,7 @@ class ProviderCard extends StatelessWidget {
                   Text(
                     card.reasoning,
                     style: TextStyle(
-                      color: Colors.greenAccent.shade100,
+                      color: const Color(0xFF10B981),
                       fontSize: 13,
                       fontStyle: FontStyle.italic,
                       height: 1.3,
@@ -97,8 +98,8 @@ class ProviderCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text(
                     card.description,
-                    style: const TextStyle(
-                      color: Colors.white70,
+                    style: TextStyle(
+                      color: context.appSecondaryColor,
                       fontSize: 13,
                       height: 1.4,
                     ),
@@ -106,7 +107,7 @@ class ProviderCard extends StatelessWidget {
                 ],
                 // Contact row
                 const SizedBox(height: 10),
-                const Divider(color: Colors.white12, height: 1),
+                Divider(color: context.appDividerLight, height: 1),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -187,21 +188,21 @@ class _ContactChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.08),
+          color: context.appSurface1,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: Colors.white54, size: 13),
+            Icon(icon, color: context.appHintColor, size: 13),
             const SizedBox(width: 5),
             Flexible(
               child: Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white70,
+                style: TextStyle(
+                  color: context.appSecondaryColor,
                   fontSize: 12,
                 ),
               ),

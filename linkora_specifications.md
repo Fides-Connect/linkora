@@ -672,6 +672,13 @@ The `FINALIZE` LLM is equipped with five functional tools: `accept_provider(prov
 
 - When an audio input device change is detected during a live voice session, the client must automatically recreate the audio track from the new device and renegotiate the peer connection, preserving the previous mute state. If a renegotiation is already in progress when the device change fires, the device change is deferred until the current renegotiation completes.
 
+### 7.10 Theme Selection and Persistence
+
+- The client app supports three theme modes: **System default** (follows the OS-level brightness), **Light**, and **Dark**.
+- The default theme mode on first launch is System default — the app must not default to a hardcoded dark or light theme.
+- The user's selected theme mode must be persisted locally and restored automatically on the next app launch.
+- The theme toggle control must be accessible from the menu/settings screen, immediately after the language selector.
+
 ---
 
 ## 8. REST API Behaviour

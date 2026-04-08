@@ -5,6 +5,7 @@ import 'package:flutter_signin_button/flutter_signin_button.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/providers/user_provider.dart';
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../theme.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
@@ -139,7 +140,7 @@ class _LanguageToggle extends StatelessWidget {
     return Container(
       height: 34,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.15),
+        color: context.appSurface2,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -180,13 +181,15 @@ class _ToggleButton extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
+          color: selected ? context.appPrimaryColor : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: selected ? Colors.black87 : Colors.white,
+            color: selected
+                ? (Theme.of(context).brightness == Brightness.dark ? Colors.black87 : Colors.white)
+                : context.appPrimaryColor,
             fontWeight: selected ? FontWeight.bold : FontWeight.normal,
             fontSize: 13,
           ),

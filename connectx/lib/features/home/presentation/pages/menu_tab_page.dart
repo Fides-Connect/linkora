@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../../core/providers/user_provider.dart';
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../main.dart';
@@ -23,234 +26,430 @@ class MenuTabPage extends StatelessWidget {
   });
 
   void _showDeleteAccountDialog(BuildContext context) {
-    final localizations = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context);
     showDialog(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(localizations?.deleteAccountConfirmTitle ?? 'Delete Account'),
-          content: Text(
-            localizations?.deleteAccountConfirmMessage ??
-                'Are you sure you want to permanently delete your account? This action cannot be undone.',
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n?.deleteAccountConfirmTitle ?? 'Delete Account'),
+        content: Text(
+          l10n?.deleteAccountConfirmMessage ??
+              'Are you sure you want to permanently delete your account? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(l10n?.cancelButton ?? 'Cancel'),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(localizations?.cancelButton ?? 'Cancel'),
-            ),
-            TextButton(
-              style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-              onPressed: () async {
-                final userProvider = context.read<UserProvider>();
-                final messenger = ScaffoldMessenger.of(context);
-                final errorText = localizations?.deleteAccountError ??
-                    'Failed to delete account. Please sign in again and retry.';
-                Navigator.pop(dialogContext);
-                try {
-                  await userProvider.deleteAccount();
-                } catch (e) {
-                  messenger.showSnackBar(
-                    SnackBar(content: Text(errorText)),
-                  );
-                }
-              },
-              child: Text(localizations?.deleteAccount ?? 'Delete Account'),
-            ),
-          ],
-        );
-      },
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            onPressed: () async {
+              final userProvider = context.read<UserProvider>();
+              final messenger = ScaffoldMessenger.of(context);
+              final errorText = l10n?.deleteAccountError ??
+                  'Failed to delete account. Please sign in again and retry.';
+              Navigator.pop(dialogContext);
+              try {
+                await userProvider.deleteAccount();
+              } catch (e) {
+                messenger.showSnackBar(SnackBar(content: Text(errorText)));
+              }
+            },
+            child: Text(l10n?.deleteAccount ?? 'Delete Account'),
+          ),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final localizations = AppLocalizations.of(context);
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      body: SafeArea(
-        child: Stack(
-          children: [
-            const AppBackground(),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: ListView(
-                children: [
-                   const SizedBox(height: 20),
-                   // User Section
-                   Consumer<UserProvider>(
-                    builder: (context, userProvider, _) {
-                      final user = userProvider.user;
-                      if (user == null) return const SizedBox.shrink();
-                      
-                      return Column(
-                        children: [
-                          CircleAvatar(
-                            radius: 50,
-                            backgroundColor: Colors.white.withValues(alpha: 0.1),
-                            backgroundImage: user.photoURL != null 
-                              ? NetworkImage(user.photoURL!) 
-                              : null,
-                            child: user.photoURL == null
-                              ? const Icon(Icons.person, size: 50, color: Colors.white)
-                              : null,
-                          ),
-                          const SizedBox(height: 16),
-                          Text(
-                            user.displayName ?? 'User',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          if (user.email != null) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              user.email!,
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.7),
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        ],
-                      );
-                    },
-                   ),
-                  const SizedBox(height: 40),
-                  if (showProfileItem) ...[
-                    _MenuItem(
-                      icon: Icons.person_outline,
-                      title: localizations?.menuUser ?? 'User',
-                      onTap: () {
-                        final viewModel = context.read<HomeTabViewModel>();
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ChangeNotifierProvider.value(
-                              value: viewModel,
-                              child: const UserPage(),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  _LanguageMenuItem(
-                    label: localizations?.menuLanguage ?? 'Language',
-                    englishLabel: localizations?.languageEnglish ?? 'English',
-                    germanLabel: localizations?.languageGerman ?? 'German',
+      body: Stack(
+        children: [
+          const AppBackground(),
+          SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 48),
+              children: [
+                // ── Profile header ──────────────────────────────────────
+                Consumer<UserProvider>(
+                  builder: (context, userProvider, _) {
+                    final user = userProvider.user;
+                    if (user == null) return const SizedBox.shrink();
+                    return _ProfileCard(
+                      displayName: user.displayName ?? 'User',
+                      email: user.email,
+                      photoURL: user.photoURL,
+                      showEdit: showProfileItem,
+                      editLabel: l10n?.editProfile ?? 'Edit Profile',
+                      onEditTap: showProfileItem
+                          ? () {
+                              final viewModel =
+                                  context.read<HomeTabViewModel>();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ChangeNotifierProvider.value(
+                                    value: viewModel,
+                                    child: const UserPage(),
+                                  ),
+                                ),
+                              );
+                            }
+                          : null,
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 32),
+
+                // ── Preferences ─────────────────────────────────────────
+                _SectionHeader(
+                    label: l10n?.preferencesSection ?? 'Preferences'),
+                const SizedBox(height: 8),
+                _SettingsGroup(children: [
+                  _LanguageRow(
+                    label: l10n?.menuLanguage ?? 'Language',
+                    englishLabel: l10n?.languageEnglish ?? 'English',
+                    germanLabel: l10n?.languageGerman ?? 'German',
                   ),
-                  const SizedBox(height: 16),
-                  if (showNotificationsToggle) ...[  
-                    _NotificationsToggleItem(
-                      title: localizations?.menuNotifications ?? 'Notifications',
+                  _ThemeModeRow(l10n: l10n),
+                  if (showNotificationsToggle)
+                    _NotificationsRow(
+                      title: l10n?.menuNotifications ?? 'Notifications',
                     ),
-                    const SizedBox(height: 16),
-                  ],
-                  // ── Legal section ─────────────────────────────────────────
-                  const Divider(color: Colors.white24, height: 1),
-                  const SizedBox(height: 16),
-                  _MenuItem(
+                ]),
+                const SizedBox(height: 32),
+
+                // ── Legal ────────────────────────────────────────────────
+                _SectionHeader(label: l10n?.legalSection ?? 'Legal'),
+                const SizedBox(height: 8),
+                _SettingsGroup(children: [
+                  _SettingsRow(
                     icon: Icons.article_outlined,
-                    title: localizations?.menuImpressum ?? 'Legal Notice',
+                    iconColor: const Color(0xFF3B82F6),
+                    title: l10n?.menuImpressum ?? 'Legal Notice',
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
-                          title: localizations?.impressumTitle ?? 'Legal Notice',
-                          content: localizations?.impressumContent ?? '',
+                          title: l10n?.impressumTitle ?? 'Legal Notice',
+                          content: l10n?.impressumContent ?? '',
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  _MenuItem(
+                  _SettingsRow(
                     icon: Icons.privacy_tip_outlined,
-                    title: localizations?.menuPrivacyPolicy ?? 'Privacy Policy',
+                    iconColor: const Color(0xFF10B981),
+                    title: l10n?.menuPrivacyPolicy ?? 'Privacy Policy',
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
-                          title: localizations?.privacyPolicyTitle ?? 'Privacy Policy',
-                          content: localizations?.privacyPolicyContent ?? '',
+                          title: l10n?.privacyPolicyTitle ?? 'Privacy Policy',
+                          content: l10n?.privacyPolicyContent ?? '',
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  _MenuItem(
+                  _SettingsRow(
                     icon: Icons.gavel_outlined,
-                    title: localizations?.menuTermsOfUse ?? 'Terms of Use',
+                    iconColor: const Color(0xFFF59E0B),
+                    title: l10n?.menuTermsOfUse ?? 'Terms of Use',
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
-                          title: localizations?.termsOfUseTitle ?? 'Terms of Use',
-                          content: localizations?.termsOfUseContent ?? '',
+                          title: l10n?.termsOfUseTitle ?? 'Terms of Use',
+                          content: l10n?.termsOfUseContent ?? '',
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  _MenuItem(
+                  _SettingsRow(
                     icon: Icons.warning_amber_outlined,
-                    title: localizations?.menuDisclaimer ?? 'Disclaimer',
+                    iconColor: const Color(0xFFEF4444),
+                    title: l10n?.menuDisclaimer ?? 'Disclaimer',
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
-                          title: localizations?.disclaimerTitle ?? 'Disclaimer',
-                          content: localizations?.disclaimerContent ?? '',
+                          title: l10n?.disclaimerTitle ?? 'Disclaimer',
+                          content: l10n?.disclaimerContent ?? '',
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  _MenuItem(
+                  _SettingsRow(
                     icon: Icons.code_outlined,
-                    title: localizations?.menuLicenses ?? 'Licenses',
+                    iconColor: const Color(0xFF8B5CF6),
+                    title: l10n?.menuLicenses ?? 'Licenses',
                     onTap: () => showLicensePage(
                       context: context,
                       applicationName: 'Linkora',
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  _MenuItem(
+                  _SettingsRow(
                     icon: Icons.info_outline,
-                    title: localizations?.menuInfo ?? 'About',
+                    iconColor: const Color(0xFF6366F1),
+                    title: l10n?.menuInfo ?? 'About',
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const InfoPage()),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  const Divider(color: Colors.white24, height: 1),
-                  const SizedBox(height: 16),
-                  // ── Destructive actions ───────────────────────────────────
-                  _MenuItem(
-                    icon: Icons.logout,
-                    title: localizations?.menuLogout ?? 'Logout',
+                ]),
+
+                const SizedBox(height: 32),
+
+                // ── Account ──────────────────────────────────────────────
+                _SectionHeader(label: l10n?.accountSection ?? 'Account'),
+                const SizedBox(height: 8),
+                _SettingsGroup(children: [
+                  _SettingsRow(
+                    icon: Icons.logout_rounded,
+                    iconColor: Colors.orange,
+                    title: l10n?.menuLogout ?? 'Sign Out',
+                    showChevron: false,
                     onTap: () async {
                       await context.read<UserProvider>().signOut();
                     },
-                    isDestructive: true,
-                    showArrow: false,
-                    centered: true,
                   ),
-                  const SizedBox(height: 16),
-                  _MenuItem(
-                    icon: Icons.delete_forever,
-                    title: localizations?.deleteAccount ?? 'Delete Account',
+                  _SettingsRow(
+                    icon: Icons.delete_forever_rounded,
+                    iconColor: Colors.redAccent,
+                    title: l10n?.deleteAccount ?? 'Delete Account',
+                    isDestructive: true,
+                    showChevron: false,
                     onTap: () => _showDeleteAccountDialog(context),
-                    isDestructive: true,
-                    showArrow: false,
-                    centered: true,
                   ),
+                ]),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Profile card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ProfileCard extends StatelessWidget {
+  final String displayName;
+  final String? email;
+  final String? photoURL;
+  final bool showEdit;
+  final String editLabel;
+  final VoidCallback? onEditTap;
+
+  const _ProfileCard({
+    required this.displayName,
+    this.email,
+    this.photoURL,
+    required this.showEdit,
+    required this.editLabel,
+    this.onEditTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        color: context.appSurface1,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.10),
+                  blurRadius: 32,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+      ),
+      child: Column(
+        children: [
+          // Accent gradient banner
+          Container(
+            height: 72,
+            decoration: BoxDecoration(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF6366F1)
+                      .withValues(alpha: isDark ? 0.45 : 0.28),
+                  const Color(0xFF22D3EE)
+                      .withValues(alpha: isDark ? 0.20 : 0.15),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+          ),
+          // Avatar + info (overlaps the banner)
+          Transform.translate(
+            offset: const Offset(0, -36),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: context.appSurface1,
+                        width: 3,
+                      ),
+                    ),
+                    child: CircleAvatar(
+                      radius: 38,
+                      backgroundColor: context.appSurface2,
+                      backgroundImage:
+                          photoURL != null ? NetworkImage(photoURL!) : null,
+                      child: photoURL == null
+                          ? Icon(
+                              Icons.person_rounded,
+                              size: 42,
+                              color: context.appAccent,
+                            )
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    displayName,
+                    style: GoogleFonts.plusJakartaSans(
+                      color: context.appPrimaryColor,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (email != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      email!,
+                      style: TextStyle(
+                        color: context.appSecondaryColor,
+                        fontSize: 13,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  if (showEdit) ...[
+                    const SizedBox(height: 14),
+                    GestureDetector(
+                      onTap: onEditTap,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 18, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: context.appAccent.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.edit_outlined,
+                                color: context.appAccent, size: 14),
+                            const SizedBox(width: 5),
+                            Text(
+                              editLabel,
+                              style: TextStyle(
+                                color: context.appAccent,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section header — PREFERENCES, LEGAL, ACCOUNT labels
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  final String label;
+  const _SectionHeader({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        label.toUpperCase(),
+        style: GoogleFonts.inter(
+          color: context.appHintColor,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 1.3,
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings group — shared rounded container, children separated by dividers
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SettingsGroup extends StatelessWidget {
+  final List<Widget> children;
+  const _SettingsGroup({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      decoration: BoxDecoration(
+        color: context.appSurface1,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 16,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          children: [
+            for (int i = 0; i < children.length; i++) ...[
+              children[i],
+              if (i < children.length - 1)
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: context.appDivider,
+                  indent: 54,
+                  endIndent: 0,
+                ),
+            ],
           ],
         ),
       ),
@@ -258,57 +457,73 @@ class MenuTabPage extends StatelessWidget {
   }
 }
 
-class _MenuItem extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-  final bool isDestructive;
-  final bool showArrow;
-  final bool centered;
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings row — colored icon tile + title + optional trailing widget
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const _MenuItem({
+class _SettingsRow extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+  final bool isDestructive;
+  final bool showChevron;
+
+  const _SettingsRow({
     required this.icon,
+    required this.iconColor,
     required this.title,
-    required this.onTap,
+    this.trailing,
+    this.onTap,
     this.isDestructive = false,
-    this.showArrow = true,
-    this.centered = false,
+    this.showChevron = true,
   });
 
   @override
   Widget build(BuildContext context) {
+    final effectiveIconColor =
+        isDestructive ? Colors.redAccent : iconColor;
+    final textColor =
+        isDestructive ? Colors.redAccent : context.appPrimaryColor;
+
     return Material(
-      color: Colors.white.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(12),
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
           child: Row(
-            mainAxisAlignment: centered ? MainAxisAlignment.center : MainAxisAlignment.start,
             children: [
-              Icon(
-                icon,
-                color: isDestructive ? Colors.redAccent : Colors.white,
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: effectiveIconColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(icon, size: 18, color: effectiveIconColor),
               ),
-              const SizedBox(width: 16),
-              Text(
-                title,
-                style: TextStyle(
-                  color: isDestructive ? Colors.redAccent : Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
-              if (showArrow) ...[
-                const Spacer(),
+              if (trailing != null)
+                trailing!
+              else if (showChevron)
                 Icon(
-                  Icons.arrow_forward_ios,
-                  color: isDestructive ? Colors.redAccent : Colors.white70,
-                  size: 16,
+                  Icons.chevron_right_rounded,
+                  color: context.appHintColor,
+                  size: 20,
                 ),
-              ],
             ],
           ),
         ),
@@ -317,15 +532,19 @@ class _MenuItem extends StatelessWidget {
   }
 }
 
-class _NotificationsToggleItem extends StatefulWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Notifications row
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _NotificationsRow extends StatefulWidget {
   final String title;
-  const _NotificationsToggleItem({required this.title});
+  const _NotificationsRow({required this.title});
 
   @override
-  State<_NotificationsToggleItem> createState() => _NotificationsToggleItemState();
+  State<_NotificationsRow> createState() => _NotificationsRowState();
 }
 
-class _NotificationsToggleItemState extends State<_NotificationsToggleItem> {
+class _NotificationsRowState extends State<_NotificationsRow> {
   late bool _enabled;
   final _notificationService = NotificationService();
 
@@ -338,15 +557,16 @@ class _NotificationsToggleItemState extends State<_NotificationsToggleItem> {
   Future<void> _toggle(bool value) async {
     await _notificationService.setNotificationsEnabled(value);
     setState(() => _enabled = value);
-    final success = await UserService().updateSettings(notificationsEnabled: value);
+    final success =
+        await UserService().updateSettings(notificationsEnabled: value);
     if (!success) {
-      // Revert local state if backend update failed.
       await _notificationService.setNotificationsEnabled(!value);
       if (!mounted) return;
       setState(() => _enabled = !value);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Failed to update notification settings. Please try again.'),
+          content: Text(
+              'Failed to update notification settings. Please try again.'),
         ),
       );
     }
@@ -354,51 +574,32 @@ class _NotificationsToggleItemState extends State<_NotificationsToggleItem> {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Icon(
-              _enabled ? Icons.notifications_active : Icons.notifications_off,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 16),
-            Text(
-              widget.title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const Spacer(),
-            Switch(
-              value: _enabled,
-              onChanged: _toggle,
-              activeThumbColor: Colors.white,
-              activeTrackColor: Colors.blueAccent,
-            ),
-          ],
-        ),
+    return _SettingsRow(
+      icon: _enabled
+          ? Icons.notifications_active_rounded
+          : Icons.notifications_off_rounded,
+      iconColor: _enabled ? const Color(0xFF6366F1) : const Color(0xFF94A3B8),
+      title: widget.title,
+      showChevron: false,
+      onTap: () => _toggle(!_enabled),
+      trailing: Switch(
+        value: _enabled,
+        onChanged: _toggle,
       ),
     );
   }
 }
 
-/// Inline language selector that shows the active language without a dialog.
-///
-/// Renders a card with a label on the left and a segmented EN / DE toggle on
-/// the right.  The selected language is highlighted; tapping the other option
-/// updates the locale and persists the preference immediately.
-class _LanguageMenuItem extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Language row
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LanguageRow extends StatelessWidget {
   final String label;
   final String englishLabel;
   final String germanLabel;
 
-  const _LanguageMenuItem({
+  const _LanguageRow({
     required this.label,
     required this.englishLabel,
     required this.germanLabel,
@@ -412,92 +613,179 @@ class _LanguageMenuItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currentCode = Localizations.localeOf(context).languageCode;
+    return _SettingsRow(
+      icon: Icons.language_rounded,
+      iconColor: const Color(0xFF3B82F6),
+      title: label,
+      showChevron: false,
+      trailing: _SegmentControl(
+        options: const ['EN', 'DE'],
+        tooltips: [englishLabel, germanLabel],
+        selected: currentCode == 'de' ? 1 : 0,
+        onSelect: (i) => _select(context, i == 0 ? 'en' : 'de'),
+      ),
+    );
+  }
+}
 
-    return Material(
-      color: Colors.white.withValues(alpha: 0.1),
-      borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            const Icon(Icons.language, color: Colors.white),
-            const SizedBox(width: 16),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const Spacer(),
-            // Segmented toggle
-            Container(
-              height: 34,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _LangChip(
-                    label: englishLabel,
-                    shortLabel: 'EN',
-                    selected: currentCode == 'en',
-                    onTap: () => _select(context, 'en'),
-                  ),
-                  _LangChip(
-                    label: germanLabel,
-                    shortLabel: 'DE',
-                    selected: currentCode == 'de',
-                    onTap: () => _select(context, 'de'),
-                  ),
-                ],
-              ),
-            ),
-          ],
+// ─────────────────────────────────────────────────────────────────────────────
+// Theme mode row
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ThemeModeRow extends StatefulWidget {
+  final AppLocalizations? l10n;
+  const _ThemeModeRow({this.l10n});
+
+  @override
+  State<_ThemeModeRow> createState() => _ThemeModeRowState();
+}
+
+class _ThemeModeRowState extends State<_ThemeModeRow> {
+  ThemeMode _selected = ThemeMode.system;
+  static const _kThemeModeKey = 'theme_mode';
+
+  @override
+  void initState() {
+    super.initState();
+    _restore();
+  }
+
+  Future<void> _restore() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kThemeModeKey);
+    ThemeMode mode = ThemeMode.system;
+    if (raw == 'dark') mode = ThemeMode.dark;
+    if (raw == 'light') mode = ThemeMode.light;
+    if (mounted) setState(() => _selected = mode);
+  }
+
+  void _select(ThemeMode mode) {
+    setState(() => _selected = mode);
+    ConnectXApp.setThemeMode(context, mode);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = widget.l10n;
+    return _SettingsRow(
+      icon: Icons.contrast_rounded,
+      iconColor: const Color(0xFF8B5CF6),
+      title: l10n?.menuTheme ?? 'Appearance',
+      showChevron: false,
+      trailing: _SegmentControl(
+        options: const ['', '', ''],
+        icons: const [
+          Icons.nights_stay_rounded,
+          Icons.wb_sunny_rounded,
+          Icons.phone_android_rounded,
+        ],
+        tooltips: [
+          l10n?.themeDark ?? 'Dark',
+          l10n?.themeLight ?? 'Light',
+          l10n?.themeSystem ?? 'System',
+        ],
+        selected: _selected == ThemeMode.dark
+            ? 0
+            : _selected == ThemeMode.light
+                ? 1
+                : 2,
+        onSelect: (i) => _select(
+          i == 0
+              ? ThemeMode.dark
+              : i == 1
+                  ? ThemeMode.light
+                  : ThemeMode.system,
         ),
       ),
     );
   }
 }
 
-class _LangChip extends StatelessWidget {
-  final String label;
-  final String shortLabel;
-  final bool selected;
-  final VoidCallback onTap;
+// ─────────────────────────────────────────────────────────────────────────────
+// Segment control — compact pill-style multi-option toggle
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const _LangChip({
-    required this.label,
-    required this.shortLabel,
+class _SegmentControl extends StatelessWidget {
+  final List<String> options;
+  final List<String> tooltips;
+  final List<IconData>? icons;
+  final int selected;
+  final ValueChanged<int> onSelect;
+
+  const _SegmentControl({
+    required this.options,
+    required this.tooltips,
     required this.selected,
-    required this.onTap,
+    required this.onSelect,
+    this.icons,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: label,
-      child: GestureDetector(
-        onTap: selected ? null : onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            shortLabel,
-            style: TextStyle(
-              color: selected ? Colors.black87 : Colors.white,
-              fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-              fontSize: 13,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: context.appSurface2,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(options.length, (i) {
+          final isSelected = selected == i;
+          final icon = icons != null ? icons![i] : null;
+          final label = options[i];
+          return Tooltip(
+            message: tooltips[i],
+            child: GestureDetector(
+              onTap: isSelected ? null : () => onSelect(i),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? (isDark
+                          ? const Color(0xFFF1F5F9)
+                          : const Color(0xFF0F172A))
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(7),
+                  boxShadow: isSelected
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.12),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Center(
+                  child: icon != null
+                      ? Icon(
+                          icon,
+                          size: 14,
+                          color: isSelected
+                              ? (isDark ? Colors.black87 : Colors.white)
+                              : context.appSecondaryColor,
+                        )
+                      : Text(
+                          label,
+                          style: TextStyle(
+                            color: isSelected
+                                ? (isDark ? Colors.black87 : Colors.white)
+                                : context.appSecondaryColor,
+                            fontSize: 12,
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        }),
       ),
     );
   }

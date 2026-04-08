@@ -354,6 +354,48 @@ class AppLocalizations {
     return MessagesEN.languageGerman;
   }
 
+  // Theme / Appearance
+  String get menuTheme {
+    if (locale.languageCode == 'de') return MessagesDE.menuTheme;
+    return MessagesEN.menuTheme;
+  }
+
+  String get themeDark {
+    if (locale.languageCode == 'de') return MessagesDE.themeDark;
+    return MessagesEN.themeDark;
+  }
+
+  String get themeLight {
+    if (locale.languageCode == 'de') return MessagesDE.themeLight;
+    return MessagesEN.themeLight;
+  }
+
+  String get themeSystem {
+    if (locale.languageCode == 'de') return MessagesDE.themeSystem;
+    return MessagesEN.themeSystem;
+  }
+
+  // Settings section headers
+  String get preferencesSection {
+    if (locale.languageCode == 'de') return MessagesDE.preferencesSection;
+    return MessagesEN.preferencesSection;
+  }
+
+  String get legalSection {
+    if (locale.languageCode == 'de') return MessagesDE.legalSection;
+    return MessagesEN.legalSection;
+  }
+
+  String get accountSection {
+    if (locale.languageCode == 'de') return MessagesDE.accountSection;
+    return MessagesEN.accountSection;
+  }
+
+  String get editProfile {
+    if (locale.languageCode == 'de') return MessagesDE.editProfile;
+    return MessagesEN.editProfile;
+  }
+
   // Profile
   String get menuUser {
     if (locale.languageCode == 'de') {

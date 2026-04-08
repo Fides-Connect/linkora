@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../core/widgets/feedback_display.dart';
 import '../../../../core/widgets/star_rating.dart';
@@ -103,11 +104,11 @@ class _UserPageState extends State<UserPage> {
       appBar: AppBar(
         title: Text(
           localizations?.menuUser ?? 'Profile',
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: context.appPrimaryColor),
         ),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: context.appPrimaryColor),
       ),
       body: Stack(
         children: [
@@ -123,8 +124,8 @@ class _UserPageState extends State<UserPage> {
                     padding: const EdgeInsets.all(16.0),
                     child: Text(
                       localizations?.selfIntroductionTitle ?? 'Self Introduction',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: context.appPrimaryColor,
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
@@ -135,13 +136,13 @@ class _UserPageState extends State<UserPage> {
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: context.appSurface1,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: TextField(
                         controller: _introController,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: context.appPrimaryColor,
                           fontSize: 16,
                           height: 1.5,
                         ),
@@ -186,8 +187,8 @@ class _UserPageState extends State<UserPage> {
                     padding: const EdgeInsets.all(16.0),
                     child: Text(
                       localizations?.competenciesTitle ?? 'Competencies',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: context.appPrimaryColor,
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
@@ -203,32 +204,32 @@ class _UserPageState extends State<UserPage> {
                           return InputChip(
                             label: Text(
                               competence.title,
-                              style: const TextStyle(color: Colors.white),
+                              style: TextStyle(color: context.appPrimaryColor),
                             ),
-                            backgroundColor: Colors.white.withValues(alpha: 0.1),
-                            deleteIcon: const Icon(
+                            backgroundColor: context.appSurface1,
+                            deleteIcon: Icon(
                               Icons.close,
                               size: 18,
-                              color: Colors.white70,
+                              color: context.appSecondaryColor,
                             ),
                             onDeleted: () => _removeCompetence(competence.id),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(20),
                               side: BorderSide(
-                                color: Colors.white.withValues(alpha: 0.2),
+                                color: context.appSurface3,
                               ),
                             ),
                           );
                         }),
                         ActionChip(
-                          label: const Icon(Icons.add,
-                              color: Colors.white, size: 20),
-                          backgroundColor: Colors.white.withValues(alpha: 0.1),
+                          label: Icon(Icons.add,
+                              color: context.appPrimaryColor, size: 20),
+                          backgroundColor: context.appSurface1,
                           onPressed: _showAddCompetenceDialog,
                           shape: const CircleBorder(),
                           padding: const EdgeInsets.all(8),
                           side: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.2),
+                            color: context.appSurface3,
                           ),
                         ),
                       ],
@@ -241,8 +242,8 @@ class _UserPageState extends State<UserPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     child: Text(
                       localizations?.feedbackTitle ?? 'Feedback',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: context.appPrimaryColor,
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
@@ -256,7 +257,7 @@ class _UserPageState extends State<UserPage> {
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
+                        color: context.appSurface1,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Column(
@@ -265,7 +266,7 @@ class _UserPageState extends State<UserPage> {
                           Text(
                             localizations?.averageRating ?? 'Average Rating',
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.7),
+                              color: context.appSecondaryColor,
                               fontSize: 14,
                             ),
                           ),
@@ -274,8 +275,8 @@ class _UserPageState extends State<UserPage> {
                             children: [
                               Text(
                                 profile?.averageRating.toString() ?? '0.0',
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: context.appPrimaryColor,
                                   fontSize: 32,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -287,9 +288,9 @@ class _UserPageState extends State<UserPage> {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                '(${profile?.reviewCount ?? 0})', 
+                                '(${profile?.reviewCount ?? 0})',
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.5),
+                                  color: context.appHintColor,
                                   fontSize: 14,
                                 ),
                               ),

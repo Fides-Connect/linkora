@@ -19,7 +19,7 @@ import 'firebase_options.dart';
 import 'localization/app_localizations.dart';
 import 'services/notification_service.dart';
 import 'services/user_service.dart';
-import 'theme.dart';
+import 'theme.dart' show appTheme, darkAppTheme, lightAppTheme;
 
 /// Global navigator key — used to push routes from outside the widget tree
 /// (e.g. when a push notification is tapped).
@@ -147,25 +147,30 @@ class ConnectXApp extends StatefulWidget {
   State<ConnectXApp> createState() => _ConnectXAppState();
 
   static void setLocale(BuildContext context, Locale newLocale) {
-    _ConnectXAppState? state =
-        context.findAncestorStateOfType<_ConnectXAppState>();
-    state?.setLocale(newLocale);
+    context.findAncestorStateOfType<_ConnectXAppState>()?.setLocale(newLocale);
+  }
+
+  static void setThemeMode(BuildContext context, ThemeMode mode) {
+    context.findAncestorStateOfType<_ConnectXAppState>()?.setThemeMode(mode);
   }
 }
 
 class _ConnectXAppState extends State<ConnectXApp> {
   Locale? _locale;
+  ThemeMode _themeMode = ThemeMode.system;
 
   UserProvider? _userProvider;
   bool? _prevAuthenticated;
 
   static const _kLanguageKey = 'lite_language';
+  static const _kThemeModeKey = 'theme_mode';
   static final bool _isLiteMode =
       dotenv.env['APP_MODE']?.toLowerCase() == 'lite';
 
   @override
   void initState() {
     super.initState();
+    _restoreThemeMode();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _userProvider = context.read<UserProvider>();
       _userProvider!.addListener(_onAuthChanged);
@@ -175,6 +180,29 @@ class _ConnectXAppState extends State<ConnectXApp> {
         _applyBackendSettings();
       }
     });
+  }
+
+  Future<void> _restoreThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kThemeModeKey);
+    ThemeMode mode = ThemeMode.system;
+    if (raw == 'dark') mode = ThemeMode.dark;
+    if (raw == 'light') mode = ThemeMode.light;
+    if (mounted) setState(() => _themeMode = mode);
+  }
+
+  void setThemeMode(ThemeMode mode) {
+    setState(() => _themeMode = mode);
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setString(
+        _kThemeModeKey,
+        mode == ThemeMode.dark
+            ? 'dark'
+            : mode == ThemeMode.light
+                ? 'light'
+                : 'system',
+      ),
+    );
   }
 
   @override
@@ -239,7 +267,9 @@ class _ConnectXAppState extends State<ConnectXApp> {
     return MaterialApp(
       title: 'ConnectX',
       navigatorKey: _navigatorKey,
-      theme: appTheme,
+      theme: lightAppTheme,
+      darkTheme: darkAppTheme,
+      themeMode: _themeMode,
       locale: _locale,
       localizationsDelegates: const [
         AppLocalizations.delegate,

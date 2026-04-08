@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/user.dart';
@@ -27,7 +28,7 @@ class FavoritesTabPage extends StatelessWidget {
                 child: Text(
                   AppLocalizations.of(context)?.favoritesScreenEmpty ??
                       'Favorites Screen (Empty)',
-                  style: const TextStyle(color: Colors.white),
+                  style: TextStyle(color: context.appPrimaryColor),
                 ),
               )
             else
@@ -48,7 +49,7 @@ class FavoritesTabPage extends StatelessWidget {
 
   Widget _buildFavoriteCard(BuildContext context, User user) {
     return Card(
-      color: Colors.white.withValues(alpha: 0.1),
+      color: context.appSurface1,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       elevation: 0,
       clipBehavior: Clip.antiAlias,
@@ -72,12 +73,12 @@ class FavoritesTabPage extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 30,
-                backgroundColor: Colors.white.withValues(alpha: 0.2),
+                backgroundColor: context.appSurface3,
                 child: Text(
                   user.name.isNotEmpty ? user.name[0] : '?',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 24,
-                    color: Colors.white,
+                    color: context.appPrimaryColor,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -89,8 +90,8 @@ class FavoritesTabPage extends StatelessWidget {
                   children: [
                     Text(
                       user.name,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: context.appPrimaryColor,
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
@@ -101,7 +102,7 @@ class FavoritesTabPage extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.9),
+                        color: context.appSecondaryColor,
                         fontSize: 14,
                       ),
                     ),
@@ -113,13 +114,13 @@ class FavoritesTabPage extends StatelessWidget {
                         return Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.15),
+                                color: context.appSurface2,
                                 borderRadius: BorderRadius.circular(4),
                               ),
                           child: Text(
                             comp.title,
-                            style: const TextStyle(
-                              color: Colors.white70,
+                            style: TextStyle(
+                              color: context.appSecondaryColor,
                               fontSize: 11,
                             ),
                           ),

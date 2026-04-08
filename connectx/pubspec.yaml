@@ -76,6 +76,9 @@ dependencies:
 
   # App version info (used on the About/Info page)
   package_info_plus: ^8.1.3
+
+  # Google Fonts for Plus Jakarta Sans and Inter typefaces
+  google_fonts: ^6.2.1
   
 dev_dependencies:
   flutter_test:

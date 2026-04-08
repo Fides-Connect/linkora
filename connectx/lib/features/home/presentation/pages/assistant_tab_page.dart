@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/widgets/app_background.dart';
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/app_types.dart';
 import '../../../../utils/constants.dart';
@@ -283,14 +284,14 @@ class _SessionEndedBanner extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: Colors.black.withValues(alpha: 0.55),
+      color: context.appSurface1,
       child: Row(
         children: [
           Expanded(
             child: Text(
               localizations?.sessionEndedBanner ??
                   'Session ended after 10 minutes of inactivity',
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              style: TextStyle(color: context.appSecondaryColor, fontSize: 13),
             ),
           ),
           const SizedBox(width: 12),

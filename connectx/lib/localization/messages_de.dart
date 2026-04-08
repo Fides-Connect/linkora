@@ -98,6 +98,18 @@ class MessagesDE {
   static const String languageEnglish = 'Englisch';
   static const String languageGerman = 'Deutsch';
 
+  // Theme / Appearance
+  static const String menuTheme = 'Erscheinungsbild';
+  static const String themeDark = 'Dunkel';
+  static const String themeLight = 'Hell';
+  static const String themeSystem = 'System';
+
+  // Settings section headers
+  static const String preferencesSection = 'Einstellungen';
+  static const String legalSection = 'Rechtliches';
+  static const String accountSection = 'Konto';
+  static const String editProfile = 'Profil bearbeiten';
+
   // Profile
   static const String menuProfile = 'Profil';
   static const String competenciesTitle = 'Kompetenzen';

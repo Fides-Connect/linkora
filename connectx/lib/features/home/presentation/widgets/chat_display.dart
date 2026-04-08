@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../models/app_types.dart';
 import '../../../../models/chat_message.dart';
 import '../../../../utils/constants.dart';
@@ -49,8 +50,8 @@ class ChatDisplay extends StatelessWidget {
               )
             : Text(
                 statusText,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: context.appPrimaryColor,
                   fontSize: 18,
                   fontWeight: FontWeight.w300,
                   height: 1.2,
@@ -150,10 +151,15 @@ class ChatDisplay extends StatelessWidget {
                     vertical: 10.0,
                   ),
                   decoration: BoxDecoration(
-                    color: isUser
-                        ? Colors.green.withValues(alpha: 0.1)
-                        : Colors.grey.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(16),
+                    color: isUser ? context.appAccent : context.appSurface1,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(18),
+                      topRight:
+                          isUser ? const Radius.circular(4) : const Radius.circular(18),
+                      bottomLeft:
+                          isUser ? const Radius.circular(18) : const Radius.circular(4),
+                      bottomRight: const Radius.circular(18),
+                    ),
                   ),
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.of(context).size.width * 0.75,
@@ -161,11 +167,10 @@ class ChatDisplay extends StatelessWidget {
                   child: Text(
                     text,
                     style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: isUser ? FontWeight.w400 : FontWeight.w300,
-                      fontStyle: isUser ? FontStyle.italic : FontStyle.normal,
-                      height: 1.2,
+                      color: isUser ? Colors.white : context.appPrimaryColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w400,
+                      height: 1.4,
                     ),
                     textAlign: isUser ? TextAlign.right : TextAlign.left,
                   ),
@@ -213,8 +218,13 @@ class _TypingIndicatorState extends State<_TypingIndicator>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       decoration: BoxDecoration(
-        color: Colors.grey.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
+        color: context.appSurface1,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(4),
+          topRight: Radius.circular(18),
+          bottomLeft: Radius.circular(18),
+          bottomRight: Radius.circular(18),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -237,7 +247,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
                         height: 7,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withValues(alpha: 0.7),
+                          color: context.appSecondaryColor,
                         ),
                       ),
                     ),
@@ -250,7 +260,7 @@ class _TypingIndicatorState extends State<_TypingIndicator>
             Text(
               widget.label,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.5),
+                color: context.appHintColor,
                 fontSize: 13,
                 fontWeight: FontWeight.w300,
               ),

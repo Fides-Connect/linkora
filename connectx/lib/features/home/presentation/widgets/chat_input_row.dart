@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../models/app_types.dart';
 import '../../../../utils/constants.dart';
 
@@ -178,15 +179,15 @@ class _ChatInputRowState extends State<ChatInputRow> {
                   },
                   maxLines: _isTextFieldFocused ? 5 : 1,
                   minLines: 1,
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  style: TextStyle(color: context.appPrimaryColor, fontSize: 16),
                   decoration: InputDecoration(
                     hintText: widget.hintText,
                     hintStyle: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
+                      color: context.appHintColor,
                       fontSize: 16,
                     ),
                     filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.1),
+                    fillColor: context.appSurface1,
                     contentPadding: EdgeInsets.symmetric(
                       horizontal: _isTextFieldFocused ? 16.0 : 12.0,
                       vertical: _isTextFieldFocused ? 12.0 : 14.0,
@@ -198,7 +199,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
                       borderSide: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: context.appSurface3,
                         width: 1,
                       ),
                     ),

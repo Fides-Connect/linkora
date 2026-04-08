@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../core/widgets/app_background.dart';
 
 /// Generic legal/informational page.
@@ -24,7 +25,7 @@ class LegalPage extends StatelessWidget {
         title: Text(title),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        foregroundColor: Colors.white,
+        foregroundColor: context.appPrimaryColor,
       ),
       body: Stack(
         children: [
@@ -34,8 +35,8 @@ class LegalPage extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               child: Text(
                 content,
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: context.appPrimaryColor,
                   fontSize: 14,
                   height: 1.7,
                 ),

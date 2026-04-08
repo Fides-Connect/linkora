@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 
@@ -64,7 +65,7 @@ class _InfoPageState extends State<InfoPage> {
         title: Text(localizations?.menuInfo ?? 'About'),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        foregroundColor: Colors.white,
+        foregroundColor: context.appPrimaryColor,
       ),
       body: Stack(
         children: [
@@ -91,8 +92,8 @@ class _InfoPageState extends State<InfoPage> {
                   Center(
                     child: Text(
                       'Linkora',
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: context.appPrimaryColor,
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
                       ),
@@ -103,7 +104,7 @@ class _InfoPageState extends State<InfoPage> {
                     child: Text(
                       '${localizations?.infoVersion ?? 'Version'} $_version (${localizations?.infoBuild ?? 'Build'} $_buildNumber)',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: context.appSecondaryColor,
                         fontSize: 14,
                       ),
                     ),
@@ -120,7 +121,7 @@ class _InfoPageState extends State<InfoPage> {
                       child: _InfoCard(
                         child: Row(
                           children: [
-                            const Icon(Icons.person_outline, color: Colors.white70, size: 20),
+                            Icon(Icons.person_outline, color: context.appSecondaryColor, size: 20),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(
@@ -128,8 +129,8 @@ class _InfoPageState extends State<InfoPage> {
                                 children: [
                                   Text(
                                     e.name,
-                                    style: const TextStyle(
-                                      color: Colors.white,
+                                    style: TextStyle(
+                                      color: context.appPrimaryColor,
                                       fontWeight: FontWeight.w600,
                                       fontSize: 15,
                                     ),
@@ -137,7 +138,7 @@ class _InfoPageState extends State<InfoPage> {
                                   Text(
                                     e.role,
                                     style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.65),
+                                      color: context.appSecondaryColor,
                                       fontSize: 13,
                                     ),
                                   ),
@@ -159,7 +160,7 @@ class _InfoPageState extends State<InfoPage> {
                     onTap: () => _openUrl(_githubUrl),
                     child: Row(
                       children: [
-                        const Icon(Icons.code, color: Colors.white70, size: 20),
+                        Icon(Icons.code, color: context.appSecondaryColor, size: 20),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -167,8 +168,8 @@ class _InfoPageState extends State<InfoPage> {
                             children: [
                               Text(
                                 localizations?.infoGithubLabel ?? 'GitHub Project',
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: context.appPrimaryColor,
                                   fontWeight: FontWeight.w600,
                                   fontSize: 15,
                                 ),
@@ -176,16 +177,16 @@ class _InfoPageState extends State<InfoPage> {
                               Text(
                                 _githubUrl,
                                 style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.65),
+                                  color: context.appSecondaryColor,
                                   fontSize: 12,
                                   decoration: TextDecoration.underline,
-                                  decorationColor: Colors.white54,
+                                  decorationColor: context.appHintColor,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const Icon(Icons.open_in_new, color: Colors.white54, size: 16),
+                        Icon(Icons.open_in_new, color: context.appHintColor, size: 16),
                       ],
                     ),
                   ),
@@ -216,7 +217,7 @@ class _SectionHeader extends StatelessWidget {
     return Text(
       text.toUpperCase(),
       style: TextStyle(
-        color: Colors.white.withValues(alpha: 0.5),
+        color: context.appHintColor,
         fontSize: 11,
         fontWeight: FontWeight.w700,
         letterSpacing: 1.2,
@@ -233,7 +234,7 @@ class _InfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.1),
+      color: context.appSurface1,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,

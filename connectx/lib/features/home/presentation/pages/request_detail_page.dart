@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/service_request.dart';
@@ -36,10 +37,10 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: Text(liveRequest.title, style: const TextStyle(color: Colors.white)),
+        title: Text(liveRequest.title, style: TextStyle(color: context.appPrimaryColor)),
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
+        iconTheme: IconThemeData(color: context.appPrimaryColor),
       ),
       body: Stack(
         children: [
@@ -55,7 +56,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.1),
+                      color: context.appSurface1,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Column(
@@ -73,8 +74,8 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                         Text(
                           liveRequest.title,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: context.appPrimaryColor,
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
                           ),
@@ -89,7 +90,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                               style: TextStyle(
                                 color: amount.startsWith('+')
                                     ? Colors.greenAccent
-                                    : Colors.white,
+                                    : context.appPrimaryColor,
                                 fontSize: 20,
                                 fontWeight: FontWeight.bold,
                               ),
@@ -209,9 +210,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                         children: [
                           CircleAvatar(
                             radius: 25,
-                            backgroundColor: Colors.white.withValues(
-                              alpha: 0.2,
-                            ),
+                            backgroundColor: context.appSurface3,
                             child: Builder(
                               builder: (context) {
                                 final currentUserId =
@@ -223,8 +222,8 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                                   isIncoming
                                       ? liveRequest.seekerUserInitials
                                       : liveRequest.selectedProviderUserInitials,
-                                  style: const TextStyle(
-                                    color: Colors.white,
+                                  style: TextStyle(
+                                    color: context.appPrimaryColor,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 );
@@ -247,8 +246,8 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                                       isIncoming
                                           ? liveRequest.seekerUserName
                                           : liveRequest.selectedProviderUserName,
-                                      style: const TextStyle(
-                                        color: Colors.white,
+                                      style: TextStyle(
+                                        color: context.appPrimaryColor,
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -260,9 +259,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                                           : (localizations?.provider ??
                                                 'Provider'),
                                       style: TextStyle(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.7,
-                                        ),
+                                        color: context.appSecondaryColor,
                                       ),
                                     ),
                                   ],
@@ -272,7 +269,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                           ),
                           const Icon(
                             Icons.arrow_forward_ios,
-                            color: Colors.white54,
+                            color: Colors.grey,
                             size: 16,
                           ),
                         ],
@@ -280,7 +277,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                     ),
                   ),
 
-                  const Divider(color: Colors.white24, height: 32),
+                  Divider(color: context.appDivider, height: 32),
 
                   // Details
                   _buildDetailRow(
@@ -305,13 +302,13 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                     liveRequest.location,
                   ),
 
-                  const Divider(color: Colors.white24, height: 32),
+                  Divider(color: context.appDivider, height: 32),
 
                   // Description
                   Text(
                     localizations?.description ?? 'Description',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: context.appPrimaryColor,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
@@ -320,7 +317,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
                   Text(
                     liveRequest.description,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.9),
+                      color: context.appSecondaryColor,
                       fontSize: 16,
                       height: 1.5,
                     ),
@@ -595,7 +592,7 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
           child: Text(
             label,
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
+              color: context.appHintColor,
               fontSize: 16,
             ),
           ),
@@ -603,8 +600,8 @@ class _RequestDetailPageState extends State<RequestDetailPage> {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: context.appPrimaryColor,
               fontSize: 16,
               fontWeight: FontWeight.w500,
             ),
