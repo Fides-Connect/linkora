@@ -50,7 +50,7 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
         : '';
     final languageCode = locale.languageCode;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) vm.initialize(statusText, languageCode);
+      if (mounted) vm.initialize(statusText, languageCode, aiStatusLabels: localizations?.aiStatusLabels ?? {});
     });
   }
 
@@ -72,7 +72,7 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
       final statusText = vm.voiceEnabled
           ? (localizations?.tapMicrophoneToStart ?? 'Tap microphone to start')
           : '';
-      vm.initialize(statusText, locale.languageCode);
+      vm.initialize(statusText, locale.languageCode, aiStatusLabels: localizations?.aiStatusLabels ?? {});
 
       if (vm.voiceEnabled) {
         await PermissionHelper.requestMicrophonePermission(context);

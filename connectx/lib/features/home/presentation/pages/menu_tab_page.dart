@@ -210,15 +210,10 @@ class MenuTabPage extends StatelessWidget {
                   const SizedBox(height: 16),
                   _MenuItem(
                     icon: Icons.code_outlined,
-                    title: localizations?.menuOpenSourceLicenses ?? 'Open Source Licenses',
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => LegalPage(
-                          title: localizations?.openSourceLicensesTitle ?? 'Open Source Licenses',
-                          content: localizations?.openSourceLicensesContent ?? '',
-                        ),
-                      ),
+                    title: localizations?.menuLicenses ?? 'Licenses',
+                    onTap: () => showLicensePage(
+                      context: context,
+                      applicationName: 'Linkora',
                     ),
                   ),
                   const SizedBox(height: 16),

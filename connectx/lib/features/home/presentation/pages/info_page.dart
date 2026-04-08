@@ -25,8 +25,8 @@ class _InfoPageState extends State<InfoPage> {
 
   /// People / teams to credit.  Add or remove entries freely.
   static const List<_CreditEntry> _credits = [
-    _CreditEntry(name: '[Your name here]', role: '[Role / Contribution]'),
-    _CreditEntry(name: '[Contributor]',    role: '[Role / Contribution]'),
+    _CreditEntry(name: 'Vinh Cao', role: 'Developer'),
+    _CreditEntry(name: 'Thomas Bretthauer-Weber', role: 'Developer'),
   ];
 
   // ── State ──────────────────────────────────────────────────────────────────

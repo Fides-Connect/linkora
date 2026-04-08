@@ -1,4 +1,4 @@
-def get_language_instruction(language: str = 'de', fallback_from: str = "") -> str:
+def get_language_instruction(language: str = 'de', fallback_from: str = "", prompt_key: str = "") -> str:
     """
     Get the language instruction for prompts based on the selected language.
 
@@ -6,6 +6,8 @@ def get_language_instruction(language: str = 'de', fallback_from: str = "") -> s
         language: Language code ('de' or 'en')
         fallback_from: If non-empty, the client requested this unsupported language
             and the system fell back to *language*. Include a notice to the user.
+        prompt_key: Profile key ('lite' or 'full'). When 'lite' and language is 'de',
+            the instruction enforces informal 'du' address.
 
     Returns:
         Language instruction string
@@ -17,6 +19,8 @@ def get_language_instruction(language: str = 'de', fallback_from: str = "") -> s
         f"any example phrases given in the instructions (e.g. \"Got it.\", \"Sure!\", \"Of course!\") "
         f"are English placeholders only; always translate them into natural {lang_name} equivalents."
     )
+    if language == "de" and prompt_key == "lite":
+        base += " Address the user informally using 'du', never 'Sie'."
     # B3: Cross-lingual handling — instruct the LLM to acknowledge input in other languages
     cross_lingual = (
         f" If the user writes or speaks in a language other than {lang_name}, "
@@ -774,8 +778,8 @@ You are {agent_name}, a helpful service coordinator.
 
 **Available actions you may offer the user:**
 - **See more results**: if `{has_more}` is "yes", offer to show the next batch by calling `show_next_providers()`. Do NOT mention a specific number; just say "more results".
-- **Refine the search**: offer to adjust the criteria (e.g. different location, time, or service type) by calling `signal_transition(target_stage="confirmation")`.
-- **Start over**: offer to search for a different service type by calling `signal_transition(target_stage="triage")`.
+- **Refine the search**: offer to adjust the criteria (e.g. different location or time) for the **same service type** by calling `signal_transition(target_stage="confirmation")`.
+- **Start over / new request**: if the user asks for a **different or entirely new service**, call `signal_transition(target_stage="triage")` immediately. Do NOT ask clarifying questions first — the system will carry the user's message into the new TRIAGE session automatically.
 - **Done**: if the user is satisfied and no longer needs help, call `signal_transition(target_stage="completed")`.
 
 **Rules:**
@@ -785,6 +789,7 @@ You are {agent_name}, a helpful service coordinator.
 - Do NOT use bullet points in your spoken response — speak in natural sentences.
 - When calling `show_next_providers()`: do NOT generate any preceding text. Call the tool silently; the orchestrator sends the cards and you will get a follow-up prompt to respond to.
 - When calling a `signal_transition`: do NOT generate any preceding text.
+- **CRITICAL — never collect requirements in BROWSE**: if the user expresses a new service need (any statement that sounds like a request for help with something), call `signal_transition(target_stage="triage")` immediately. Do NOT ask any clarifying questions while in this stage — that is TRIAGE's job. Staying in BROWSE to gather details and then attempting to search directly is forbidden.
 
 {language_instruction}
 """

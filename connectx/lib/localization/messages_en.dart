@@ -126,13 +126,35 @@ class MessagesEN {
   static const String sessionEndedBanner = 'Session ended after 10 minutes of inactivity';
   static const String newSessionButton = 'New Session';
 
+  // AI processing status labels — shown under the "..." animation while the assistant works.
+  // Client-generated (runtime state):
+  static const String aiStatusThinking = 'Thinking...';
+  static const String aiStatusComposing = 'Composing response...';
+  static const String aiStatusWorking = 'Working...';
+  // Server-sent tool status labels (must exactly match _TOOL_STATUS_LABELS in response_orchestrator.py):
+  static const String aiStatusSearchingProviders = 'Searching for providers';
+  static const String aiStatusLoadingFavorites = 'Loading your favorites';
+  static const String aiStatusLoadingRequests = 'Loading your requests';
+  static const String aiStatusSubmittingRequest = 'Submitting your request';
+  static const String aiStatusCancellingRequest = 'Cancelling your request';
+  static const String aiStatusSavingPreferences = 'Saving your preferences';
+  static const String aiStatusLoadingSkills = 'Loading your skills';
+  static const String aiStatusSavingSkills = 'Saving your skills';
+  static const String aiStatusRemovingSkills = 'Removing skills';
+  static const String aiStatusConfirmingChoice = 'Confirming your choice';
+  static const String aiStatusFindingNextMatch = 'Finding the next match';
+  static const String aiStatusCancellingSearch = 'Cancelling search';
+  static const String aiStatusSearchingAgain = 'Searching again';
+  static const String aiStatusPreparingContact = 'Preparing contact details';
+  static const String aiStatusFindingMoreResults = 'Finding more results';
+
   // ── Legal pages ──────────────────────────────────────────────────────────────
   // Menu entry labels
   static const String menuImpressum = 'Legal Notice';
   static const String menuPrivacyPolicy = 'Privacy Policy';
   static const String menuTermsOfUse = 'Terms of Use';
   static const String menuDisclaimer = 'Disclaimer';
-  static const String menuOpenSourceLicenses = 'Open Source Licenses';
+  static const String menuLicenses = 'Licenses';
 
   // Info / About page
   static const String menuInfo = 'About';
@@ -147,7 +169,7 @@ class MessagesEN {
   static const String privacyPolicyTitle = 'Privacy Policy';
   static const String termsOfUseTitle = 'Terms of Use';
   static const String disclaimerTitle = 'Disclaimer';
-  static const String openSourceLicensesTitle = 'Open Source Licenses';
+  static const String licensesTitle = 'Licenses';
 
   // Page content — replace the placeholder blocks with your actual text.
   static const String impressumContent = '''
@@ -462,16 +484,4 @@ UNDER NO CIRCUMSTANCE SHALL WE HAVE ANY LIABILITY TO YOU FOR ANY LOSS OR DAMAGE 
 
 This Disclaimer was created using Termly's Disclaimer Generator''';
 
-  static const String openSourceLicensesContent = '''
-[Placeholder - replace with your actual open source license notices]
-
-This application is built using open source software. The respective licenses of all packages are listed below.
-
-[Package name] ([version])
-License: [License type, e.g. MIT, Apache 2.0, BSD]
-[Brief description or URL]
-
-...
-
-Tip: Flutter\'s built-in showLicensePage() widget can auto-generate these notices from your pubspec.yaml dependencies.''';
 }

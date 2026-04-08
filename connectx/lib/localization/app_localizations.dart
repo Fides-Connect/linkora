@@ -667,9 +667,9 @@ class AppLocalizations {
     return MessagesEN.menuDisclaimer;
   }
 
-  String get menuOpenSourceLicenses {
-    if (locale.languageCode == 'de') return MessagesDE.menuOpenSourceLicenses;
-    return MessagesEN.menuOpenSourceLicenses;
+  String get menuLicenses {
+    if (locale.languageCode == 'de') return MessagesDE.menuLicenses;
+    return MessagesEN.menuLicenses;
   }
 
   // Info / About page
@@ -743,14 +743,39 @@ class AppLocalizations {
     return MessagesEN.disclaimerContent;
   }
 
-  String get openSourceLicensesTitle {
-    if (locale.languageCode == 'de') return MessagesDE.openSourceLicensesTitle;
-    return MessagesEN.openSourceLicensesTitle;
+  String get licensesTitle {
+    if (locale.languageCode == 'de') return MessagesDE.licensesTitle;
+    return MessagesEN.licensesTitle;
   }
 
-  String get openSourceLicensesContent {
-    if (locale.languageCode == 'de') return MessagesDE.openSourceLicensesContent;
-    return MessagesEN.openSourceLicensesContent;
+  /// Returns a map of English label key → localized label for all AI processing
+  /// status messages shown under the "..." animation.  The ViewModel uses this
+  /// to translate both client-generated runtime state labels and server-sent
+  /// tool-status strings without requiring a Flutter BuildContext.
+  Map<String, String> get aiStatusLabels {
+    if (locale.languageCode == 'de') {
+      return {
+        MessagesEN.aiStatusThinking: MessagesDE.aiStatusThinking,
+        MessagesEN.aiStatusComposing: MessagesDE.aiStatusComposing,
+        MessagesEN.aiStatusWorking: MessagesDE.aiStatusWorking,
+        MessagesEN.aiStatusSearchingProviders: MessagesDE.aiStatusSearchingProviders,
+        MessagesEN.aiStatusLoadingFavorites: MessagesDE.aiStatusLoadingFavorites,
+        MessagesEN.aiStatusLoadingRequests: MessagesDE.aiStatusLoadingRequests,
+        MessagesEN.aiStatusSubmittingRequest: MessagesDE.aiStatusSubmittingRequest,
+        MessagesEN.aiStatusCancellingRequest: MessagesDE.aiStatusCancellingRequest,
+        MessagesEN.aiStatusSavingPreferences: MessagesDE.aiStatusSavingPreferences,
+        MessagesEN.aiStatusLoadingSkills: MessagesDE.aiStatusLoadingSkills,
+        MessagesEN.aiStatusSavingSkills: MessagesDE.aiStatusSavingSkills,
+        MessagesEN.aiStatusRemovingSkills: MessagesDE.aiStatusRemovingSkills,
+        MessagesEN.aiStatusConfirmingChoice: MessagesDE.aiStatusConfirmingChoice,
+        MessagesEN.aiStatusFindingNextMatch: MessagesDE.aiStatusFindingNextMatch,
+        MessagesEN.aiStatusCancellingSearch: MessagesDE.aiStatusCancellingSearch,
+        MessagesEN.aiStatusSearchingAgain: MessagesDE.aiStatusSearchingAgain,
+        MessagesEN.aiStatusPreparingContact: MessagesDE.aiStatusPreparingContact,
+        MessagesEN.aiStatusFindingMoreResults: MessagesDE.aiStatusFindingMoreResults,
+      };
+    }
+    return {};
   }
 }
 

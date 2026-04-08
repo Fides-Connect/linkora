@@ -19,6 +19,8 @@ class AssistantTabViewModel extends ChangeNotifier {
   String _currentMessage = '';
   String _statusText = '';
   String _toolStatusLabel = '';
+  // Maps English label key → localized label; set on each initialize() call.
+  Map<String, String> _aiStatusLabels = {};
   bool _lastMessageWasUser = false;
   bool _areCallbacksSetup = false;
   String? _error;
@@ -80,7 +82,12 @@ class AssistantTabViewModel extends ChangeNotifier {
   bool get sessionEnded => _sessionEnded;
 
   // ── Initialisation ───────────────────────────────────────────────────────
-  void initialize(String localStatusText, String languageCode) {
+  /// Translates an English status label to the session language.
+  /// Falls back to the original [englishLabel] when no translation is found.
+  String _t(String englishLabel) => _aiStatusLabels[englishLabel] ?? englishLabel;
+
+  void initialize(String localStatusText, String languageCode, {Map<String, String> aiStatusLabels = const {}}) {
+    _aiStatusLabels = aiStatusLabels;
     _resetStatusText = localStatusText;
     if (_statusText.isEmpty ||
         (_chatMessages.isEmpty &&
@@ -227,17 +234,17 @@ class AssistantTabViewModel extends ChangeNotifier {
       // can see what the assistant is currently doing instead of plain dots.
       switch (state) {
         case AgentRuntimeState.thinking:
-          _toolStatusLabel = 'Thinking...';
+          _toolStatusLabel = _t('Thinking...');
         case AgentRuntimeState.llmStreaming:
-          _toolStatusLabel = 'Composing response...';
+          _toolStatusLabel = _t('Composing response...');
         case AgentRuntimeState.toolExecuting:
           // The backend emits a specific label via onToolStatus before this
           // state fires. Only fall back to a generic label if no specific one
           // arrived (e.g. for internal signal_transition calls).
           if (_toolStatusLabel.isEmpty ||
-              _toolStatusLabel == 'Thinking...' ||
-              _toolStatusLabel == 'Composing response...') {
-            _toolStatusLabel = 'Working...';
+              _toolStatusLabel == _t('Thinking...') ||
+              _toolStatusLabel == _t('Composing response...')) {
+            _toolStatusLabel = _t('Working...');
           }
         default:
           _toolStatusLabel = '';
@@ -259,7 +266,7 @@ class AssistantTabViewModel extends ChangeNotifier {
     };
 
     _speechService.onToolStatus = (String label) {
-      _toolStatusLabel = label;
+      _toolStatusLabel = _t(label);
       notifyListeners();
     };
 

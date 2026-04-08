@@ -186,7 +186,7 @@ class ConversationService:
             # B2: Pass any unsupported-language fallback note on the first turn only,
             # then clear it so subsequent prompts don't repeat it.
             fallback_from = self.context.pop("language_fallback_from", "")
-            language_instruction = get_language_instruction(self.language, fallback_from=fallback_from)
+            language_instruction = get_language_instruction(self.language, fallback_from=fallback_from, prompt_key=self._profile.prompt_key)
             user_name = self.context.get("user_name", "")
             # Greeting was already delivered by GREETING stage — never re-greet in TRIAGE.
             greeting_instruction = (
@@ -233,7 +233,7 @@ class ConversationService:
             idx = self.context.get("current_provider_index", 0)
             current_provider = providers[idx] if providers and idx < len(providers) else {}
             provider_json = json.dumps(current_provider, ensure_ascii=False, default=json_serializer)
-            language_instruction = get_language_instruction(self.language)
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
             language_name = "German" if self.language == "de" else "English"
 
             # GP announcement — controls first-entry vs. already-announced behaviour
@@ -316,7 +316,7 @@ class ConversationService:
                 "agent_name": self.agent_name,
                 # Always inject language so every stage (CLARIFY, CONFIRMATION,
                 # RECOVERY, …) responds in the session language, not just TRIAGE.
-                "language_instruction": get_language_instruction(self.language),
+                "language_instruction": get_language_instruction(self.language, prompt_key=self._profile.prompt_key),
             }
             if _is_triage_template:
                 fmt_kwargs["user_name"] = self.context.get("user_name", "")
@@ -373,7 +373,7 @@ class ConversationService:
             ])
 
         elif stage == ConversationStage.PROVIDER_PITCH:
-            language_instruction = get_language_instruction(self.language)
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
@@ -384,7 +384,7 @@ class ConversationService:
             ])
 
         elif stage == ConversationStage.PROVIDER_ONBOARDING:
-            language_instruction = get_language_instruction(self.language)
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
             current_competencies_json = json.dumps(
                 self.context.get("current_competencies", []),
                 ensure_ascii=False,
@@ -416,7 +416,7 @@ class ConversationService:
             browse_offset = self.context.get("browse_offset", 3)
             total_count = len(providers)
             remaining_count = max(0, total_count - browse_offset)
-            language_instruction = get_language_instruction(self.language)
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(
                     get_prompt(self._profile.prompt_key, "browse")
@@ -433,7 +433,7 @@ class ConversationService:
             ])
 
         elif stage == ConversationStage.COMPLETED:
-            language_instruction = get_language_instruction(self.language)
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
             return ChatPromptTemplate.from_messages([
                 SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
@@ -570,7 +570,7 @@ class ConversationService:
                     lines.append(f"{role}: {msg.content}")
                 history_excerpt = "\n".join(lines)
 
-        language_instruction = get_language_instruction(self.language)
+        language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
         extraction_prompt = STRUCTURED_QUERY_EXTRACTION_PROMPT.format(
             problem_summary=problem_summary,
             history_excerpt=history_excerpt,
@@ -812,7 +812,7 @@ class ConversationService:
         """
         try:
             logger.info("🤖 generate_greeting_text called with user_name='%s', has_open_request=%s", user_name, has_open_request)
-            language_instruction = get_language_instruction(self.language)
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
             resume_ctx = self.context.get("session_resume_context", "")
             system_prefix = f"{resume_ctx}\n\n" if resume_ctx else ""
             greeting_prompt = get_prompt(self._profile.prompt_key, "greeting")

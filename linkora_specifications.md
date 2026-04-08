@@ -78,6 +78,7 @@
 - **Unsupported Client Language**: If the client requests a language via WebSocket that the LLM is not localized or tested for (e.g., passing a rare dialect code), the system must fallback to English (`"en"`) and inform the user of the fallback in the first turn.
 - **Cross-Lingual Handling**: The AI prompt must strictly enforce that all responses remain in the session-defined language. If the user speaks in a different language, the AI must explicitly translate or acknowledge the input in the configured system language (e.g., "I see you're speaking German, but I am configured for English right now. How can I help?").
 - **Language Instruction Scope**: Every stage prompt (GREETING, TRIAGE, CLARIFY, CONFIRMATION, RECOVERY, FINALIZE, PROVIDER_PITCH, PROVIDER_ONBOARDING, and their lite-mode equivalents) must carry a `language_instruction` placeholder. The service layer must inject the language instruction into every prompt regardless of the stage, so no stage can silently revert to a default language mid-conversation. The single exception is the Google Places Query prompt, which always generates English search phrases to maximise API recall; this English query is internal and is never shown to users.
+- **German Formality in Lite Mode**: When the session language is German and the agent is operating in Lite mode, all AI responses must address the user using the informal "du" form. The AI must never use the formal "Sie" in Lite mode German sessions. In Full mode, and in all non-German sessions, this constraint does not apply.
 
 ### 3.2 Conversation Stages
 
@@ -894,9 +895,10 @@ The table below compares MRI requirements across modes:
 - On entry to BROWSE, the system has already shown the first 3 providers from the fetched result set. The remaining providers (up to 12) are available for the user to browse in batches of 3 on request.
 - The `show_next_providers` tool is the only BROWSE-specific tool. When called by the LLM, the orchestrator sends the next 3 provider cards to the client and advances the internal offset. No natural-language text is generated before the tool call; the LLM responds only in the follow-up prompt.
 - While in BROWSE, the LLM may also offer to:
-  - Refine the search criteria: transitions to CONFIRMATION.
-  - Search for a different service type: transitions to TRIAGE (which clears the current request context).
+  - Refine the search criteria for the **same service type** (different location or time): transitions to CONFIRMATION.
+  - Search for a **different or entirely new service**: transitions to TRIAGE immediately — the system preserves the user's triggering utterance and carries it into the new TRIAGE session automatically.
   - End the session: transitions to COMPLETED.
+- **The system must never collect requirements while in BROWSE.** If the user expresses a new service need, the system must transition to TRIAGE immediately without asking any clarifying questions first. Clarification is the responsibility of the TRIAGE stage.
 - When transitioning from BROWSE to TRIAGE, the current request context (accumulated problem description, provider results, browse offset) is cleared so the new search starts fresh.
 - The `show_next_providers` tool must not be offered when there are no more results to show.
 

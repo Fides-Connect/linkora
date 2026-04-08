@@ -126,13 +126,35 @@ class MessagesDE {
   static const String sessionEndedBanner = 'Sitzung nach 10 Minuten Inaktivität beendet';
   static const String newSessionButton = 'Neue Sitzung';
 
+  // KI-Verarbeitungsstatus-Labels — werden unter der "…"-Animation angezeigt.
+  // Client-seitig generiert (Runtime-Zustände):
+  static const String aiStatusThinking = 'Denke nach...';
+  static const String aiStatusComposing = 'Schreibe Antwort...';
+  static const String aiStatusWorking = 'Einen Moment...';
+  // Vom Server gesendete Tool-Status-Labels (müssen exakt mit _TOOL_STATUS_LABELS übereinstimmen):
+  static const String aiStatusSearchingProviders = 'Suche nach Anbietern';
+  static const String aiStatusLoadingFavorites = 'Lade deine Favoriten';
+  static const String aiStatusLoadingRequests = 'Lade deine Anfragen';
+  static const String aiStatusSubmittingRequest = 'Sende deine Anfrage';
+  static const String aiStatusCancellingRequest = 'Storniere deine Anfrage';
+  static const String aiStatusSavingPreferences = 'Speichere deine Einstellungen';
+  static const String aiStatusLoadingSkills = 'Lade deine Fähigkeiten';
+  static const String aiStatusSavingSkills = 'Speichere deine Fähigkeiten';
+  static const String aiStatusRemovingSkills = 'Entferne Fähigkeiten';
+  static const String aiStatusConfirmingChoice = 'Bestätige deine Auswahl';
+  static const String aiStatusFindingNextMatch = 'Suche nächste Übereinstimmung';
+  static const String aiStatusCancellingSearch = 'Breche Suche ab';
+  static const String aiStatusSearchingAgain = 'Suche erneut';
+  static const String aiStatusPreparingContact = 'Bereite Kontaktdaten vor';
+  static const String aiStatusFindingMoreResults = 'Suche weitere Ergebnisse';
+
   // ── Rechtliche Seiten ─────────────────────────────────────────────────────
   // Menüeinträge
   static const String menuImpressum = 'Impressum';
   static const String menuPrivacyPolicy = 'Datenschutzerklärung';
   static const String menuTermsOfUse = 'Nutzungsbedingungen';
   static const String menuDisclaimer = 'Haftungsausschluss';
-  static const String menuOpenSourceLicenses = 'Open-Source-Lizenzen';
+  static const String menuLicenses = 'Lizenzen';
 
   // Info / Über-Seite
   static const String menuInfo = 'Über die App';
@@ -147,7 +169,7 @@ class MessagesDE {
   static const String privacyPolicyTitle = 'Datenschutzerklärung';
   static const String termsOfUseTitle = 'Nutzungsbedingungen';
   static const String disclaimerTitle = 'Haftungsausschluss';
-  static const String openSourceLicensesTitle = 'Open-Source-Lizenzen';
+  static const String licensesTitle = 'Lizenzen';
 
   // Seiteninhalt — ersetzen Sie die Platzhalter durch Ihre tatsächlichen Texte.
   static const String impressumContent = '''
@@ -163,16 +185,4 @@ E-Mail: thomas.bretthauer-weber@allinked.org
 Umsatzsteuer-ID
 Umsatzsteuer-Identifikationsnummer gemäß § 27 a Umsatzsteuergesetz: DE460374834''';
 
-  static const String openSourceLicensesContent = '''
-[Platzhalter - ersetzen Sie diesen Text mit Ihren tatsächlichen Open-Source-Lizenzhinweisen]
-
-Diese Anwendung wurde mit Open-Source-Software entwickelt. Die jeweiligen Lizenzen aller verwendeten Pakete sind unten aufgeführt.
-
-[Paketname] ([Version])
-Lizenz: [Lizenztyp, z. B. MIT, Apache 2.0, BSD]
-[Kurzbeschreibung oder URL]
-
-...
-
-Hinweis: Das Flutter-Widget showLicensePage() kann Lizenzhinweise automatisch aus den Abhängigkeiten in pubspec.yaml generieren.''';
 }
