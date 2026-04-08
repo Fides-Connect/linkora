@@ -24,7 +24,7 @@ import os
 import time
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 from weaviate.util import generate_uuid5
@@ -141,7 +141,7 @@ class GooglePlacesService:
     async def fetch_and_ingest(
         self,
         query: str,
-        limit: int = 20,
+        limit: int = 60,
     ) -> GpResult:
         """
         Fetch providers from the Places Text Search API and upsert to Weaviate.
@@ -210,7 +210,7 @@ class GooglePlacesService:
         structured_query: str,
         hyde_text: str,
         location: str = "",
-        limit: int = 20,
+        limit: int = 60,
     ) -> tuple[list[dict[str, Any]], GpResult]:
         """Fetch GP places and return them as provider dicts — no Weaviate write.
 
@@ -292,26 +292,26 @@ class GooglePlacesService:
         required by the Places API (New).  The legacy ``textsearch/json`` GET
         endpoint is not used.
 
+        Pagination: the Places API caps each page at 20 results but returns a
+        ``nextPageToken`` when more are available.  This method follows up to
+        ``ceil(limit / 20)`` pages so callers can request up to 60 results
+        (3 pages × 20) in a single call.
+
         Retry policy:
         - HTTP 429: no retry, raises ``_RateLimitError``
         - HTTP 5xx: 1 retry after 500 ms; second failure raises ``_HttpError``
         - Other HTTP 4xx / timeout: immediate failure
         """
+        _PAGE_SIZE = 20  # Places API hard cap per page
         timeout = aiohttp.ClientTimeout(total=5)
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": self._api_key,
-            "X-Goog-FieldMask": _FIELD_MASK,
-        }
-        body: dict[str, Any] = {
-            "textQuery": query,
-            "pageSize": min(limit, 20),
-            # Include businesses that serve customers on-site or via delivery but
-            # have no physical storefront (e.g. mobile cleaners, photographers).
-            "includePureServiceAreaBusinesses": True,
+            "X-Goog-FieldMask": _FIELD_MASK + ",nextPageToken",
         }
 
-        async def _do_request() -> list[dict[str, Any]]:
+        async def _do_request(body: dict[str, Any]) -> dict[str, Any]:
+            """Make one POST and return the raw response dict."""
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
                     _PLACES_TEXT_SEARCH_URL,
@@ -324,20 +324,52 @@ class GooglePlacesService:
                         raise _ServerError(resp.status)
                     if resp.status >= 400:
                         raise _HttpError(resp.status)
-                    data = await resp.json()
-                    # New API returns {"places": [...]} — empty array or missing
-                    # key means zero results.
-                    return data.get("places") or []
+                    return cast(dict[str, Any], await resp.json())
 
-        try:
-            return await _do_request()
-        except _ServerError:
-            # 1 retry after 500 ms for transient 5xx
-            await asyncio.sleep(0.5)
+        async def _do_request_with_retry(body: dict[str, Any]) -> dict[str, Any]:
             try:
-                return await _do_request()
-            except _ServerError as exc:
-                raise _HttpError(exc.status) from exc
+                return await _do_request(body)
+            except _ServerError:
+                # 1 retry after 500 ms for transient 5xx
+                await asyncio.sleep(0.5)
+                try:
+                    return await _do_request(body)
+                except _ServerError as exc:
+                    raise _HttpError(exc.status) from exc
+
+        all_places: list[dict[str, Any]] = []
+        page_token: str | None = None
+        pages_remaining = max(1, -(-limit // _PAGE_SIZE))  # ceil division
+
+        while pages_remaining > 0 and len(all_places) < limit:
+            need = limit - len(all_places)
+            body: dict[str, Any] = {
+                "textQuery": query,
+                "pageSize": min(need, _PAGE_SIZE),
+                # Include businesses that serve customers on-site or via delivery
+                # but have no physical storefront (e.g. mobile cleaners, photographers).
+                "includePureServiceAreaBusinesses": True,
+            }
+            if page_token:
+                body["pageToken"] = page_token
+
+            data = await _do_request_with_retry(body)
+            batch = data.get("places") or []
+            all_places.extend(batch)
+            page_token = data.get("nextPageToken")
+            pages_remaining -= 1
+
+            if not page_token or not batch:
+                break  # No more results available
+
+            # Brief pause between pagination requests to stay within API rate limits.
+            await asyncio.sleep(0.1)
+
+        logger.info(
+            "GP _fetch_places: query=%r requested=%d fetched=%d",
+            query, limit, len(all_places),
+        )
+        return all_places[:limit]
 
     async def _normalise_and_upsert(
         self, raw_results: list[dict[str, Any]], query: str
