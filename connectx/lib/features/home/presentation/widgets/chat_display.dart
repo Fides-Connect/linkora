@@ -9,6 +9,7 @@ class ChatDisplay extends StatelessWidget {
   final List<ChatMessage> messages;
   final String statusText;
   final ConversationState state;
+  final String toolStatusLabel;
   final double? height;
 
   const ChatDisplay({
@@ -16,6 +17,7 @@ class ChatDisplay extends StatelessWidget {
     required this.messages,
     required this.statusText,
     required this.state,
+    this.toolStatusLabel = '',
     this.height,
   });
 
@@ -84,11 +86,11 @@ class ChatDisplay extends StatelessWidget {
           itemBuilder: (context, index) {
             // Index 0 (bottom) is the typing indicator when processing
             if (state == ConversationState.processing && index == 0) {
-              return const Padding(
-                padding: EdgeInsets.only(bottom: 12.0),
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: _TypingIndicator(),
+                  child: _TypingIndicator(label: toolStatusLabel),
                 ),
               );
             }
@@ -178,8 +180,10 @@ class ChatDisplay extends StatelessWidget {
 }
 
 /// Animated three-dot typing indicator shown while the AI is processing.
+/// When [label] is non-empty a short status text is shown below the dots.
 class _TypingIndicator extends StatefulWidget {
-  const _TypingIndicator();
+  final String label;
+  const _TypingIndicator({this.label = ''});
 
   @override
   State<_TypingIndicator> createState() => _TypingIndicatorState();
@@ -212,31 +216,47 @@ class _TypingIndicatorState extends State<_TypingIndicator>
         color: Colors.grey.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(3, (i) {
-              final phase = _controller.value * 2 * math.pi - i * (math.pi / 2);
-              final offset = -4.0 * math.sin(phase).clamp(-1.0, 1.0);
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3.0),
-                child: Transform.translate(
-                  offset: Offset(0, offset),
-                  child: Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.7),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(3, (i) {
+                  final phase = _controller.value * 2 * math.pi - i * (math.pi / 2);
+                  final offset = -4.0 * math.sin(phase).clamp(-1.0, 1.0);
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3.0),
+                    child: Transform.translate(
+                      offset: Offset(0, offset),
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white.withValues(alpha: 0.7),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                }),
               );
-            }),
-          );
-        },
+            },
+          ),
+          if (widget.label.isNotEmpty) ...[            const SizedBox(height: 6),
+            Text(
+              widget.label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 13,
+                fontWeight: FontWeight.w300,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

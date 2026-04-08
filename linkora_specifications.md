@@ -136,7 +136,7 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - If the LLM output contains verbatim tool-call invocations as text (e.g. `signal_transition(target_stage="finalize")`), those patterns must be stripped from the streamed text before delivery to the client. Only text matching a registered tool name is stripped.
 - When the `FINALIZE` provider-search is actively running, any new user input (voice or text) must be rejected. The system sends a bilingual acknowledgement (German and English) informing the user that the search is still in progress, and does not interrupt the search.
 - If the user disconnects or the session is intentionally terminated while a `FINALIZE` search is actively running, the background search tasks must be aborted to free system resources.
-- **Silent Tool Execution**: The LLM must never narrate or announce internal state transitions, database searches, or tool executions in natural language (e.g., 'Let me search the database'). If a transition or search is required, the LLM must emit the transition signal silently. Status updates regarding searches are handled exclusively by the client UI interpreting the `runtime-state`.
+- **Silent Tool Execution**: The LLM must never narrate or announce internal state transitions, database searches, or tool executions in natural language (e.g., 'Let me search the database'). If a transition or search is required, the LLM must emit the transition signal silently. The server communicates tool progress to the client exclusively via the `tool-status` DataChannel message; the client displays a contextual label (e.g. "Searching for providers", "Submitting your request") below the typing indicator while the tool executes. The label is cleared as soon as the tool finishes.
 - **Cascading Transitions Within a Single Turn**: When a stage transition triggers an autonomous follow-up LLM call that itself emits another transition (e.g., `TRIAGE → CONFIRMATION → TRIAGE → CONFIRMATION`), the system must continue processing each subsequent stage until no pending transitions remain or a safety depth limit is reached. No pending stage transition result shall be silently discarded mid-turn. The user must always receive a natural-language response from the final resolved stage, never silence.
 
 ### 3.4 Clarification & Minimum Required Information (MRI)
@@ -613,6 +613,8 @@ The `FINALIZE` LLM is equipped with five functional tools: `accept_provider(prov
 | Client → Server | `{"type": "mode-switch", "mode": "text" | "voice"}`                                        |
 | Server → Client | `{"type": "chat", "text": "…", "isUser": bool, "isChunk": bool}`                           |
 | Server → Client | `{"type": "runtime-state", "runtimeState": "<state>"}` — current agent runtime FSM state  |
+| Server → Client | `{"type": "tool-status", "label": "<human-readable label>"}` — emitted once before each tool execution |
+| Server → Client | `{"type": "provider-cards", "cards": […]}` — provider result cards |
 
 - `isChunk: true` means the message is a streaming fragment. The client must accumulate all fragments before treating the message as complete and displaying it.
 - The server emits a `runtime-state` message both when the DataChannel is first attached and again when it is confirmed open, so the client receives the correct state even if it connects after the FSM has already advanced.
@@ -948,7 +950,7 @@ Because audio is absent, the lite-mode session always behaves as a text session:
 In lite mode, the AI assistant session uses a direct WebSocket connection (`/ws/chat`) instead of WebRTC. The WebSocket carries the same JSON message protocol as the DataChannel in full mode. Specifically:
 
 - The client sends `{"type": "text-input", "text": "…"}` frames.
-- The server sends `{"type": "chat", …}`, `{"type": "runtime-state", …}`, and `{"type": "provider-cards", …}` frames.
+- The server sends `{"type": "chat", …}`, `{"type": "runtime-state", …}`, `{"type": "provider-cards", …}`, and `{"type": "tool-status", …}` frames.
 - On `wss://` connections from non-web clients, the Firebase ID token is conveyed as an `Authorization: Bearer` header at connection time.
 - On `ws://` connections or web clients, the Firebase ID token is sent as the first message: `{"type": "auth", "token": "…"}`.
 - Both client and server enforce a 10-minute idle timeout. If no message is exchanged within 10 minutes, the session is torn down and the client is notified via the disconnect path.

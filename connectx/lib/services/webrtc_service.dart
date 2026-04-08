@@ -57,6 +57,7 @@ class WebRTCService {
   Function()? onDataChannelOpen;
   OnRuntimeStateCallback? onRuntimeState;
   OnProviderCardsCallback? onProviderCards;
+  OnToolStatusCallback? onToolStatus;
   /// Called when the voice upgrade (renegotiation) does not produce a remote
   /// audio track within 5 seconds — the client should revert to text mode.
   Function()? onVoiceUpgradeTimeout;
@@ -739,6 +740,9 @@ class WebRTCService {
                   .toList();
               if (cards.isNotEmpty) onProviderCards?.call(cards);
             }
+          } else if (data['type'] == 'tool-status') {
+            final label = data['label'] as String?;
+            if (label != null && label.isNotEmpty) onToolStatus?.call(label);
           }
         } catch (e) {
           debugPrint('WebRTC: Data channel message error: $e');

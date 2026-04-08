@@ -67,6 +67,25 @@ def _strip_tool_call_text(text: str) -> str:
     return _KNOWN_TOOL_NAMES_RE.sub("", text)
 
 
+# Human-readable status labels sent to the client while a tool is executing.
+_TOOL_STATUS_LABELS: dict[str, str] = {
+    "search_providers": "Searching for providers",
+    "get_favorites": "Loading your favorites",
+    "get_open_requests": "Loading your requests",
+    "create_service_request": "Submitting your request",
+    "cancel_service_request": "Cancelling your request",
+    "record_provider_interest": "Saving your preferences",
+    "get_my_competencies": "Loading your skills",
+    "save_competence_batch": "Saving your skills",
+    "delete_competences": "Removing skills",
+    "accept_provider": "Confirming your choice",
+    "reject_and_fetch_next": "Finding the next match",
+    "cancel_search": "Cancelling search",
+    "retry_search": "Searching again",
+    "generate_contact_template": "Preparing contact details",
+}
+
+
 class ResponseOrchestrator:
     """
     Orchestrates LLM response generation with stage-aware conversation flow.
@@ -1181,6 +1200,10 @@ class ResponseOrchestrator:
                         self.runtime_fsm.transition("tool_done")
 
                     else:
+                        # Notify the client which tool is running so the UI can
+                        # show a descriptive status label instead of just "...".
+                        yield {"type": "tool-status", "label": _TOOL_STATUS_LABELS.get(fn_name, "Working")}
+
                         # FINALIZE-stage tools are intercepted here and never
                         # dispatched through the registry.
                         tool_result = None

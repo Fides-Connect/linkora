@@ -174,6 +174,7 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                       messages: viewModel.chatMessages,
                       statusText: viewModel.statusText,
                       state: viewModel.conversationState,
+                      toolStatusLabel: viewModel.toolStatusLabel,
                       height: chatHeight > 0 ? chatHeight : 300,
                     ),
                   ),

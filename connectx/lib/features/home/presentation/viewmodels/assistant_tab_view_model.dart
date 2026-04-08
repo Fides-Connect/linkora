@@ -18,6 +18,7 @@ class AssistantTabViewModel extends ChangeNotifier {
   final List<ChatMessage> _chatMessages = [];
   String _currentMessage = '';
   String _statusText = '';
+  String _toolStatusLabel = '';
   bool _lastMessageWasUser = false;
   bool _areCallbacksSetup = false;
   String? _error;
@@ -65,6 +66,7 @@ class AssistantTabViewModel extends ChangeNotifier {
   List<ChatMessage> get chatMessages => List.unmodifiable(_chatMessages);
   String get currentMessage => _currentMessage;
   String get statusText => _statusText;
+  String get toolStatusLabel => _toolStatusLabel;
   String? get error => _error;
   bool get isVoiceMode => _isVoiceMode;
   bool get voiceEnabled => _speechService.voiceEnabled;
@@ -221,6 +223,25 @@ class AssistantTabViewModel extends ChangeNotifier {
     _speechService.onRuntimeState = (AgentRuntimeState state) {
       _resetIdleTimer();
       _conversationState = _runtimeStateToConversationState(state);
+      // Provide a contextual label for each processing state so the user
+      // can see what the assistant is currently doing instead of plain dots.
+      switch (state) {
+        case AgentRuntimeState.thinking:
+          _toolStatusLabel = 'Thinking...';
+        case AgentRuntimeState.llmStreaming:
+          _toolStatusLabel = 'Composing response...';
+        case AgentRuntimeState.toolExecuting:
+          // The backend emits a specific label via onToolStatus before this
+          // state fires. Only fall back to a generic label if no specific one
+          // arrived (e.g. for internal signal_transition calls).
+          if (_toolStatusLabel.isEmpty ||
+              _toolStatusLabel == 'Thinking...' ||
+              _toolStatusLabel == 'Composing response...') {
+            _toolStatusLabel = 'Working...';
+          }
+        default:
+          _toolStatusLabel = '';
+      }
       notifyListeners();
     };
 
@@ -235,6 +256,11 @@ class AssistantTabViewModel extends ChangeNotifier {
         );
         notifyListeners();
       }
+    };
+
+    _speechService.onToolStatus = (String label) {
+      _toolStatusLabel = label;
+      notifyListeners();
     };
 
     _speechService.onVoiceUpgradeTimeout = () {

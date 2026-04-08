@@ -75,5 +75,10 @@ typedef OnRuntimeStateCallback = void Function(AgentRuntimeState state);
 /// Each card is a raw JSON map; parsing to a typed model is done upstream.
 typedef OnProviderCardsCallback = void Function(List<Map<String, dynamic>> cards);
 
+/// Callback for when the backend emits a tool-status label.
+/// The label is a short human-readable string describing the current operation,
+/// e.g. "Searching for providers" or "Submitting your request".
+typedef OnToolStatusCallback = void Function(String label);
+
 /// Callback for locale changes
 typedef OnLocaleChangeCallback = void Function(String languageCode);

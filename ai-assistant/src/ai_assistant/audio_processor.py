@@ -769,6 +769,14 @@ class AudioProcessor:
                             self._dc_bridge.send_provider_cards(cards)
                         continue
 
+                    # Tool status: forward the human-readable label so the UI
+                    # can show what the assistant is currently doing.
+                    if isinstance(chunk, dict) and chunk.get("type") == "tool-status":
+                        label = chunk.get("label", "")
+                        if label:
+                            self._dc_bridge.send_tool_status(label)
+                        continue
+
                     if not isinstance(chunk, str):
                         continue
 

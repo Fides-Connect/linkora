@@ -108,3 +108,18 @@ class DataChannelBridge:
             )
         except Exception as exc:
             logger.error("DataChannelBridge.send_provider_cards error: %s", exc)
+
+    def send_tool_status(self, label: str) -> None:
+        """Send a ``{"type": "tool-status", "label": "…"}`` status update.
+
+        No-op when the channel is not open or the label is empty.
+        """
+        if not self.is_open or not label:
+            return
+        channel = self._channel
+        if channel is None:
+            return
+        try:
+            channel.send(json.dumps({"type": "tool-status", "label": label}))
+        except Exception as exc:
+            logger.error("DataChannelBridge.send_tool_status error: %s", exc)

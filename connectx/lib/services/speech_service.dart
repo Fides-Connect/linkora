@@ -43,6 +43,7 @@ class SpeechService {
   OnRuntimeStateCallback? onRuntimeState;
   Function()? onDataChannelOpen;
   OnProviderCardsCallback? onProviderCards;
+  OnToolStatusCallback? onToolStatus;
   /// Called when the voice upgrade (renegotiation) timed out without receiving
   /// a remote audio track. The UI should revert to text mode.
   Function()? onVoiceUpgradeTimeout;
@@ -245,6 +246,10 @@ class SpeechService {
       onProviderCards?.call(cards);
     };
 
+    _liteChatService!.onToolStatus = (String label) {
+      onToolStatus?.call(label);
+    };
+
     _liteChatService!.onDataChannelOpen = () {
       debugPrint('SpeechService: LiteChat session ready');
       onDataChannelOpen?.call();
@@ -291,6 +296,10 @@ class SpeechService {
 
     _webrtcService!.onProviderCards = (List<Map<String, dynamic>> cards) {
       onProviderCards?.call(cards);
+    };
+
+    _webrtcService!.onToolStatus = (String label) {
+      onToolStatus?.call(label);
     };
 
     _webrtcService!.onRemoteStream = (MediaStream stream) {

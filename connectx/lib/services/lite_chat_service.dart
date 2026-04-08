@@ -58,6 +58,7 @@ class LiteChatService {
   OnChatMessageCallback? onChatMessage;
   OnRuntimeStateCallback? onRuntimeState;
   OnProviderCardsCallback? onProviderCards;
+  OnToolStatusCallback? onToolStatus;
 
   // ── Constructor ────────────────────────────────────────────────────────────
 
@@ -258,6 +259,10 @@ class LiteChatService {
             ?.whereType<Map<String, dynamic>>()
             .toList();
         if (cards != null) onProviderCards?.call(cards);
+
+      case 'tool-status':
+        final label = msg['label'] as String?;
+        if (label != null && label.isNotEmpty) onToolStatus?.call(label);
 
       default:
         debugPrint('LiteChatService: unknown message type: $type');
