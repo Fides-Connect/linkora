@@ -583,7 +583,7 @@ class ConversationService:
             )
             json_str = self._clean_json_response(json_response)
             structured_query = json.loads(json_str)
-            logger.info(
+            logger.debug(
                 "Generated structured query: %s",
                 json.dumps(structured_query, ensure_ascii=False),
             )
@@ -615,7 +615,8 @@ class ConversationService:
                 [HumanMessage(content=hyde_prompt)]
             )
             hyde_text = hyde_text.strip()
-            logger.info("Generated HyDE profile (%d chars): '%s...'" , len(hyde_text), hyde_text[:80])
+            logger.info("Generated HyDE profile (%d chars)", len(hyde_text))
+            logger.debug("HyDE profile content: '%s...'", hyde_text[:80])
             return hyde_text
         except Exception as exc:
             logger.error("Error generating HyDE text: %s", exc, exc_info=True)
@@ -644,7 +645,7 @@ class ConversationService:
                         included in the extraction prompt for richer context.
         """
         problem_summary = self.get_problem_summary()
-        logger.info(
+        logger.debug(
             "Starting multi-stage provider search from summary: '%s...'",
             problem_summary[:100],
         )
@@ -811,7 +812,7 @@ class ConversationService:
             Greeting text
         """
         try:
-            logger.info("🤖 generate_greeting_text called with user_name='%s', has_open_request=%s", user_name, has_open_request)
+            logger.debug("🤖 generate_greeting_text called with user_name='%s', has_open_request=%s", user_name, has_open_request)
             language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
             resume_ctx = self.context.get("session_resume_context", "")
             system_prefix = f"{resume_ctx}\n\n" if resume_ctx else ""
@@ -829,10 +830,10 @@ class ConversationService:
                 language_instruction=language_instruction
             )
 
-            logger.info("📨 Formatted prompt with user_name='%s' for LLM", user_name)
+            logger.debug("📨 Formatted prompt with user_name='%s' for LLM", user_name)
 
             greeting = await self.llm_service.generate(greeting_messages)
-            logger.info("Generated greeting: '%s'", greeting)
+            logger.debug("Generated greeting: '%s'", greeting)
             return greeting
 
         except Exception as e:

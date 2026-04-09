@@ -89,7 +89,7 @@ class SpeechToTextService:
 
                         # ── Logging ───────────────────────────────────────
                         if is_final:
-                            logger.info("✅ STT FINAL: '%s'", transcript)
+                            logger.debug("✅ STT FINAL: '%s'", transcript)
                         else:
                             logger.debug("⏳ STT interim: '%s'", transcript)
 

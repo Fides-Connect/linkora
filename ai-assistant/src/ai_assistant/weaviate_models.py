@@ -264,7 +264,7 @@ class ProviderModelWeaviate:
                 group_by_user=True   # One result per provider
             )
 
-            logger.info("Vector search found %s providers for: '%s...'", len(results), query_text[:50])
+            logger.info("Vector search found %s providers", len(results))
             return results
 
         except Exception as e:

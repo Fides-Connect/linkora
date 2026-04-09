@@ -523,7 +523,7 @@ class AudioProcessor:
             self._make_audio_chunks()
         ):
             if transcript and self.is_ai_speaking and len(transcript.strip()) > 0:
-                logger.info("Interrupt detected: '%s'", transcript)
+                logger.debug("Interrupt detected: '%s'", transcript)
                 await self._trigger_interrupt()
                 if is_final:
                     # The triggering transcript was the AI's own TTS echo —
@@ -706,7 +706,7 @@ class AudioProcessor:
     async def _process_final_transcript(self, transcript: str) -> None:
         """Process a final transcript through LLM -> TTS pipeline."""
         try:
-            logger.info("Processing final transcript: '%s'", transcript)
+            logger.debug("Processing final transcript: '%s'", transcript)
 
             # Notify the connection handler of activity (resets idle timer).
             # Guard: empty/noise transcripts must not reset the idle timer (§9).
@@ -729,10 +729,13 @@ class AudioProcessor:
 
             start_time = asyncio.get_event_loop().time()
 
-            # Reset interrupt event and set speaking flag
+            # Reset interrupt event; set speaking flag only in voice mode —
+            # in text mode there is no TTS playback so the flag stays False.
+            # process_text_input's _response_task guard handles re-entrant text.
             self.interrupt_event.clear()
-            logger.info("🔊 is_ai_speaking → True (response started)")
-            self.is_ai_speaking = True
+            if self.session_mode == SessionMode.VOICE:
+                logger.info("🔊 is_ai_speaking → True (response started)")
+                self.is_ai_speaking = True
 
             # Performance tracking
             perf_times = {
@@ -800,7 +803,7 @@ class AudioProcessor:
 
         except asyncio.CancelledError:
             # User interrupted — reset state and let the task exit cleanly.
-            logger.info(f"Response generation interrupted for: '{transcript}'")
+            logger.debug("Response generation interrupted for: '%s'", transcript)
             logger.info("🔇 is_ai_speaking → False (task cancelled)")
             self.is_ai_speaking = False
             raise

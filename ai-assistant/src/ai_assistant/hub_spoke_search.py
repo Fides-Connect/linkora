@@ -140,7 +140,7 @@ class HubSpokeSearch:
 
                 results = list(seen_users.values())[:limit]  # Limit to requested number
 
-                logger.info("Grouped search found %s unique users for: '%s...'", len(results), query[:50])
+                logger.info("Grouped search found %s unique users", len(results))
                 return results
 
             else:
@@ -188,7 +188,7 @@ class HubSpokeSearch:
 
                     results.append(competence)
 
-                logger.info("Ungrouped search found %s competencies for: '%s...'", len(results), query[:50])
+                logger.info("Ungrouped search found %s competencies", len(results))
                 return results
 
         except Exception as e:
@@ -458,7 +458,7 @@ class HubSpokeSearch:
                 query_text[:200],
             )
 
-            logger.info("Hybrid search query (%s): '%s...'", 'HyDE' if hyde_text else 'structured', query_text[:120])
+            logger.debug("Hybrid search query (%s): '%s...'", 'HyDE' if hyde_text else 'structured', query_text[:120])
             if availability_filter_applied:
                 logger.info("Availability filter applied: %r → filtering on availability_tags", available_time)
             else:

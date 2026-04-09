@@ -128,7 +128,7 @@ class GooglePlacesService:
                     len(query),
                 )
                 return None
-            logger.info("GP query generated: %r", query)
+            logger.debug("GP query generated: %r", query)
             return query
         except Exception as exc:
             logger.error(

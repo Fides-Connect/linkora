@@ -310,7 +310,7 @@ class ResponseOrchestrator:
                 self.conversation_service.reset_request_context()
                 if triggering_utterance:
                     self.conversation_service.context["user_problem"].append(triggering_utterance)
-                    logger.info(
+                    logger.debug(
                         "Preserved triggering utterance '%s...' for new TRIAGE session",
                         triggering_utterance[:50],
                     )
@@ -1495,10 +1495,8 @@ class ResponseOrchestrator:
             ):
                 logger.warning(
                     "CONFIRMATION stuck-stage: turn %d produced text without a "
-                    "signal_transition — LLM likely ignored the Decision Gate "
-                    "(user_input=%r).",
+                    "signal_transition — LLM likely ignored the Decision Gate.",
                     _conf_turns,
-                    user_input[:80],
                 )
 
             # ── Safety fallback: stuck-in-FINALIZE guard ─────────────────────────
