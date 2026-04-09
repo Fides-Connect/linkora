@@ -1,11 +1,14 @@
 name: Deploy AI-Assistant
 
 # Triggered after the AI Assistant Tests workflow passes on main.
+# workflow_dispatch allows manual triggering from any branch (useful for feature branch testing).
+# Note: workflow_run only works when this file is on the default branch (main).
 on:
   workflow_run:
     workflows: ["AI Assistant Tests"]
     types: [completed]
-    branches: [main, feature/integrate-google-places]
+    branches: [main]
+  workflow_dispatch:
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -16,7 +19,7 @@ env:
 jobs:
   deploy-ai-assistant:
     name: Deploy AI-Assistant to Cloud Run
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -26,7 +29,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -60,7 +63,7 @@ jobs:
 
       - name: Build and push Docker image
         run: |
-          SHA=${{ github.event.workflow_run.head_sha }}
+          SHA=${{ github.event.workflow_run.head_sha || github.sha }}
           IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/ai-assistant:${SHA}"
           IMAGE_LATEST="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.AR_REPO }}/ai-assistant:latest"
 
@@ -118,4 +121,4 @@ jobs:
           echo "- **Mode**: ${{ env.AGENT_MODE }}"                 >> $GITHUB_STEP_SUMMARY
           echo "- **URL**: $URL"                                    >> $GITHUB_STEP_SUMMARY
           echo "- **Image**: ${{ env.IMAGE }}"                     >> $GITHUB_STEP_SUMMARY
-          echo "- **Commit**: ${{ github.event.workflow_run.head_sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.event.workflow_run.head_sha || github.sha }}" >> $GITHUB_STEP_SUMMARY
