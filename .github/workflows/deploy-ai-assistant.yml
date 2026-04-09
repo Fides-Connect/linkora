@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          lfs: true
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
@@ -103,11 +104,11 @@ jobs:
             --set-secrets "GEMINI_API_KEY=gemini-api-key:latest,ADMIN_SECRET_KEY=admin-secret-key:latest,METERED_API_KEY=metered-api-key:latest,METERED_APP_NAME=metered-app-name:latest,GOOGLE_PLACES_API_KEY=google-places-api-key:latest" \
             --vpc-connector "${{ secrets.WEAVIATE_VPC_CONNECTOR }}" \
             --vpc-egress private-ranges-only \
-            --min-instances 1 \
-            --max-instances 3 \
+            --min-instances 0 \
+            --max-instances 1 \
             --concurrency 10 \
-            --memory 1Gi \
-            --cpu 1 \
+            --memory 2Gi \
+            --cpu 2 \
             --port 8080 \
             --timeout 3600 \
             --quiet

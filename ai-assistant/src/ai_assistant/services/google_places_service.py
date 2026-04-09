@@ -25,6 +25,7 @@ import time
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any, cast
+from collections.abc import Awaitable
 
 import aiohttp
 from weaviate.util import generate_uuid5
@@ -441,25 +442,35 @@ class GooglePlacesService:
         editorialSummary (in whatever language GP returns it) so that the
         provider card shows the authentic GP text.
         """
+        # Limit concurrent Gemini calls to avoid hitting the
+        # GenerateContentPaidTierInputTokensPerModelPerMinute quota (100k/min).
+        # With ~60 providers, each needing both a summary call and a crawl
+        # extraction call, firing all 120 simultaneously causes 429s.
+        _llm_sem = asyncio.Semaphore(5)
+
+        async def _throttled(coro: Awaitable[Any]) -> Any:
+            async with _llm_sem:
+                return await coro
+
         # Build English search_optimized_summaries for all places concurrently.
         summary_tasks = [
-            self._synthesise_description(
+            _throttled(self._synthesise_description(
                 place,
                 query,
                 reviews=place.get("reviews") or [],
                 editorial_summary=(
                     (place.get("editorialSummary") or {}).get("text", "").strip() or None
                 ),
-            )
+            ))
             for place in raw_results
         ]
         crawler = WebPageCrawler(self._llm)
         crawl_tasks = [
-            crawler.extract_provider_info(
+            _throttled(crawler.extract_provider_info(
                 url=(place.get("websiteUri") or ""),
                 provider_name=(place.get("displayName") or {}).get("text", ""),
                 query=query,
-            )
+            ))
             for place in raw_results
         ]
         raw_summaries, raw_crawl_results = await asyncio.gather(

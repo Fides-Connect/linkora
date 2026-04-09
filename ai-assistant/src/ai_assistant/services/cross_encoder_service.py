@@ -53,10 +53,24 @@ _DEFAULT_MIN_SCORE = -8.0
 
 
 def _resolve_model_name() -> str:
-    """Return the local bundled path if it exists, else the HF identifier."""
-    if (_BUNDLED_MODEL_DIR / "config.json").exists():
-        logger.debug("Using bundled cross-encoder model at %s", _BUNDLED_MODEL_DIR)
-        return str(_BUNDLED_MODEL_DIR)
+    """Return the local bundled path if it exists, else the HF identifier.
+
+    Checks (in order):
+    1. ``CROSS_ENCODER_MODEL_DIR`` env var — set in Docker so the installed
+       package can locate the model weights at their deployment path
+       (``/app/models/...``) even though ``__file__`` resolves into the
+       site-packages tree after ``pip install``.
+    2. The sibling ``models/`` directory relative to the source tree root.
+    3. Falls back to the HF Hub identifier (requires network access).
+    """
+    candidates = [_BUNDLED_MODEL_DIR]
+    env_dir = os.environ.get("CROSS_ENCODER_MODEL_DIR")
+    if env_dir:
+        candidates.insert(0, Path(env_dir))
+    for path in candidates:
+        if (path / "config.json").exists():
+            logger.debug("Using bundled cross-encoder model at %s", path)
+            return str(path)
     logger.warning(
         "Bundled model not found at %s — will download from HF Hub",
         _BUNDLED_MODEL_DIR,
