@@ -53,10 +53,11 @@ jobs:
               echo -n "$VALUE" | gcloud secrets create "$NAME" --data-file=- --quiet
             fi
           }
-          sync_secret "gemini-api-key"   "${{ secrets.GEMINI_API_KEY }}"
-          sync_secret "admin-secret-key" "${{ secrets.ADMIN_SECRET_KEY }}"
-          sync_secret "metered-api-key"  "${{ secrets.METERED_API_KEY }}"
-          sync_secret "metered-app-name" "${{ secrets.METERED_APP_NAME }}"
+          sync_secret "gemini-api-key"        "${{ secrets.GEMINI_API_KEY }}"
+          sync_secret "admin-secret-key"      "${{ secrets.ADMIN_SECRET_KEY }}"
+          sync_secret "metered-api-key"       "${{ secrets.METERED_API_KEY }}"
+          sync_secret "metered-app-name"      "${{ secrets.METERED_APP_NAME }}"
+          sync_secret "google-places-api-key" "${{ secrets.GOOGLE_PLACES_API_KEY }}"
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
@@ -99,7 +100,7 @@ jobs:
             --update-env-vars "GOOGLE_TTS_API_CONCURRENCY=5" \
             --update-env-vars "FIRESTORE_DATABASE_NAME=(default)" \
             --update-env-vars "DEBUG_RECORD_AUDIO=false" \
-            --set-secrets "GEMINI_API_KEY=gemini-api-key:latest,ADMIN_SECRET_KEY=admin-secret-key:latest,METERED_API_KEY=metered-api-key:latest,METERED_APP_NAME=metered-app-name:latest" \
+            --set-secrets "GEMINI_API_KEY=gemini-api-key:latest,ADMIN_SECRET_KEY=admin-secret-key:latest,METERED_API_KEY=metered-api-key:latest,METERED_APP_NAME=metered-app-name:latest,GOOGLE_PLACES_API_KEY=google-places-api-key:latest" \
             --vpc-connector "${{ secrets.WEAVIATE_VPC_CONNECTOR }}" \
             --vpc-egress private-ranges-only \
             --min-instances 1 \
