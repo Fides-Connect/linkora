@@ -5,7 +5,7 @@ on:
   workflow_run:
     workflows: ["AI Assistant Tests"]
     types: [completed]
-    branches: [main]
+    branches: [main, feature/integrate-google-places]
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -83,6 +83,7 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --service-account "${{ secrets.WIF_RT_SERVICE_ACCOUNT }}" \
+            --update-env-vars "AGENT_MODE=${{ secrets.AGENT_MODE }}" \
             --update-env-vars "WEAVIATE_URL=http://${{ secrets.WEAVIATE_VM_IP }}:${{ secrets.WEAVIATE_VM_PORT }}" \
             --update-env-vars "WEAVIATE_SYNC_ON_STARTUP=true" \
             --update-env-vars "GEMINI_MODEL=gemini-2.5-flash" \
@@ -112,8 +113,9 @@ jobs:
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region ${{ env.REGION }} \
             --format "value(status.url)")
-          echo "## AI-Assistant Deployed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **URL**: $URL" >> $GITHUB_STEP_SUMMARY
-          echo "- **Image**: ${{ env.IMAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "## AI-Assistant Deployed"                          >> $GITHUB_STEP_SUMMARY
+          echo ""                                                   >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode**: ${{ env.AGENT_MODE }}"                 >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: $URL"                                    >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ env.IMAGE }}"                     >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.event.workflow_run.head_sha }}" >> $GITHUB_STEP_SUMMARY
