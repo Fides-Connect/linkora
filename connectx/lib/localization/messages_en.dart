@@ -60,25 +60,25 @@ class MessagesEN {
 
   // Start page messages
   static const String welcomeTitle = 'Welcome to Linkora';
-  static const String welcomeMessage = 'Sign in to start communicating with the AI assistant';
+  static const String welcomeMessage = 'Sign in to start communicating with Elin and searching for services';
   static const String signInButton = 'Sign in with Google';
   static const String selectLanguage = 'Select Language';
 
   // Main page messages
   static const String tapMicrophoneToStart = 'Tap the microphone to start speaking';
   static const String typeMessageHint = 'Type a message...';
-  static const String connecting = 'Connecting to AI-Assistant...';
-  static const String connected = 'Connected! AI is listening and responding...';
+  static const String connecting = 'Connecting to Elin...';
+  static const String connected = 'Connected! Elin is listening and responding...';
   static const String disconnected = 'Disconnected';
   static const String connectionClosed = 'Connection closed';
 
   // Connection status dialog messages
   static const String connectionEstablishedTitle = 'Connection Established';
-  static const String connectionEstablishedMessage = 'Successfully connected to the AI-Assistant. You can now speak.';
+  static const String connectionEstablishedMessage = 'Successfully connected to Elin. You can now speak.';
   static const String connectionLostTitle = 'Connection Closed';
-  static const String connectionLostMessage = 'The connection to AI-Assistant has been closed.';
+  static const String connectionLostMessage = 'The connection to Elin has been closed.';
   static const String errorTitle = 'Error';
-  static const String errorOccurred = 'An error occurred while connecting to AI-Assistant.';
+  static const String errorOccurred = 'An error occurred while connecting to Elin.';
 
   // Navigation Bar
   static const String navHome = 'Home';

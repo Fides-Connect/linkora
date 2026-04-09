@@ -60,25 +60,25 @@ class MessagesDE {
 
   // Start page messages
   static const String welcomeTitle = 'Willkommen bei Linkora';
-  static const String welcomeMessage = 'Melden Sie sich an, um mit dem KI-Assistenten zu beginnen';
+  static const String welcomeMessage = 'Melde dich an, um mit Elin zu sprechen und nach Dienstleistungen zu suchen';
   static const String signInButton = 'Mit Google anmelden';
   static const String selectLanguage = 'Sprache wählen';
 
   // Main page messages
   static const String tapMicrophoneToStart = 'Tippen Sie auf das Mikrofon, um zu sprechen';
   static const String typeMessageHint = 'Nachricht eingeben...';
-  static const String connecting = 'Verbindung zum KI-Assistenten wird hergestellt...';
-  static const String connected = 'Verbunden! KI hört zu und antwortet...';
+  static const String connecting = 'Verbindung zu Elin wird hergestellt...';
+  static const String connected = 'Verbunden! Elin hört zu und antwortet...';
   static const String disconnected = 'Getrennt';
   static const String connectionClosed = 'Verbindung geschlossen';
 
   // Connection status dialog messages
   static const String connectionEstablishedTitle = 'Verbindung hergestellt';
-  static const String connectionEstablishedMessage = 'Erfolgreich mit dem KI-Assistenten verbunden. Sie können jetzt sprechen.';
+  static const String connectionEstablishedMessage = 'Erfolgreich mit Elin verbunden. Sie können jetzt sprechen.';
   static const String connectionLostTitle = 'Verbindung getrennt';
-  static const String connectionLostMessage = 'Die Verbindung zum KI-Assistenten wurde getrennt.';
+  static const String connectionLostMessage = 'Die Verbindung zu Elin wurde getrennt.';
   static const String errorTitle = 'Fehler';
-  static const String errorOccurred = 'Beim Verbinden mit dem KI-Assistenten ist ein Fehler aufgetreten.';
+  static const String errorOccurred = 'Beim Verbinden mit Elin ist ein Fehler aufgetreten.';
 
   // Navigation Bar
   static const String navHome = 'Startseite';
