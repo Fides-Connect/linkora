@@ -1,8 +1,7 @@
 name: Deploy AI-Assistant (Dev)
 
-# Triggered after the AI Assistant Tests workflow passes on main.
-# workflow_dispatch allows manual triggering from any branch (useful for feature branch testing).
-# Note: workflow_run only works when this file is on the default branch (main).
+# Triggered automatically after the AI Assistant Tests workflow passes on main.
+# Note: workflow_run only activates when this file is on the default branch (main).
 #
 # AGENT_MODE_DEV secret controls which mode is deployed:
 #   "lite" — text-only chat, Google Places as data source, no Weaviate, no TURN
@@ -12,12 +11,11 @@ on:
     workflows: ["AI Assistant Tests"]
     types: [completed]
     branches: [main]
-  workflow_dispatch:
 
 jobs:
   deploy:
     name: Deploy AI-Assistant (Dev)
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.conclusion == 'success'
     uses: ./.github/workflows/_deploy-ai-assistant.yml
     with:
       environment: Dev
