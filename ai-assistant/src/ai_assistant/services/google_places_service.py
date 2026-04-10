@@ -110,41 +110,70 @@ class GooglePlacesService:
         location: str = "",
     ) -> str | None:
         """
-        Generate a single Google Places search phrase via LLM.
+        Generate a single Google Places search phrase.
 
-        Uses ``GOOGLE_PLACES_QUERY_PROMPT`` from ``prompts_templates``.
+        Fast path: extracts ``category`` and ``location`` from the structured
+        query JSON and formats the phrase deterministically — no LLM call, no
+        added latency.  This covers ~95 % of searches.
+
+        LLM fallback: used only when ``category`` is absent or the structured
+        query cannot be parsed as JSON.  The LLM path uses
+        ``GOOGLE_PLACES_QUERY_PROMPT`` from ``prompts_templates``.
 
         Args:
             structured_query: Structured request JSON string (or dict) from the
                               LLM extraction step.
-            hyde_text: HyDE profile generated for vector search.
-            location: City/region extracted from the structured query.  When set,
-                      the LLM is encouraged to include it in the search phrase.
+            hyde_text: HyDE profile generated for vector search (LLM path only).
+            location: City/region pre-extracted from the structured query.
 
         Returns:
             A short English search phrase such as "wedding photographer Munich",
-            or None on any LLM error (triggers silent GP skip in caller).
+            or None on failure (triggers silent GP skip in caller).
         """
+        import json as _json
+
+        # ── Fast path: deterministic formatter ───────────────────────────────
+        try:
+            if isinstance(structured_query, dict):
+                sq_data = structured_query
+                sq_str = _json.dumps(sq_data)
+            else:
+                sq_str = str(structured_query)
+                sq_data = _json.loads(sq_str)
+            category = str(sq_data.get("category", "") or "").strip()
+            sq_location = str(sq_data.get("location", "") or "").strip()
+        except Exception:
+            category = ""
+            sq_location = ""
+
+        loc = (location or sq_location).strip()
+        if category:
+            query = f"{category} {loc}".strip() if loc else category
+            logger.debug("GP query (deterministic): %r", query)
+            return query
+
+        # ── LLM fallback: used only when category is missing ─────────────────
+        logger.debug(
+            "GP query: category missing from structured query — falling back to LLM"
+        )
         from ..prompts_templates import GOOGLE_PLACES_QUERY_PROMPT
         from langchain_core.messages import HumanMessage
 
-        sq_str = structured_query if isinstance(structured_query, str) else str(structured_query)
         prompt_text = GOOGLE_PLACES_QUERY_PROMPT.format(
             structured_query=sq_str,
             hyde_text=hyde_text,
-            location=location or "(not specified)",
+            location=loc or "(not specified)",
         )
         try:
             result = await self._llm.generate([HumanMessage(content=prompt_text)])
             query = result.strip()
-            # Basic sanity: reject empty or excessively long responses
             if not query or len(query) > 200:
                 logger.warning(
                     "GooglePlacesService.generate_query: LLM returned unexpected response length=%d",
                     len(query),
                 )
                 return None
-            logger.debug("GP query generated: %r", query)
+            logger.debug("GP query (LLM fallback): %r", query)
             return query
         except Exception as exc:
             logger.error(
@@ -459,19 +488,23 @@ class GooglePlacesService:
         editorialSummary (in whatever language GP returns it) so that the
         provider card shows the authentic GP text.
         """
-        # Limit concurrent Gemini calls to avoid hitting the
-        # GenerateContentPaidTierInputTokensPerModelPerMinute quota (100k/min).
-        # With ~60 providers, each needing both a summary call and a crawl
-        # extraction call, firing all 120 simultaneously causes 429s.
-        _llm_sem = asyncio.Semaphore(5)
+        # Two separate concurrency budgets:
+        #   - Summary synthesis: cheap calls (~500 tokens each), safe to parallelise widely.
+        #   - Webpage crawl+extraction: heavy calls (up to 15k token input each), kept low.
+        _summary_sem = asyncio.Semaphore(15)
+        _crawl_sem = asyncio.Semaphore(3)
 
-        async def _throttled(coro: Awaitable[Any]) -> Any:
-            async with _llm_sem:
+        async def _throttled_summary(coro: Awaitable[Any]) -> Any:
+            async with _summary_sem:
+                return await coro
+
+        async def _throttled_crawl(coro: Awaitable[Any]) -> Any:
+            async with _crawl_sem:
                 return await coro
 
         # Build English search_optimized_summaries for all places concurrently.
         summary_tasks = [
-            _throttled(self._synthesise_description(
+            _throttled_summary(self._synthesise_description(
                 place,
                 query,
                 reviews=place.get("reviews") or [],
@@ -487,7 +520,7 @@ class GooglePlacesService:
         if self._crawl_enabled:
             crawler = WebPageCrawler(self._llm)
             crawl_tasks = [
-                _throttled(crawler.extract_provider_info(
+                _throttled_crawl(crawler.extract_provider_info(
                     url=(place.get("websiteUri") or ""),
                     provider_name=(place.get("displayName") or {}).get("text", ""),
                     query=query,

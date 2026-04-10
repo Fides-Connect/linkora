@@ -103,15 +103,17 @@ class TestIsEnabled:
 
 class TestGenerateQuery:
     async def test_returns_phrase_on_success(self) -> None:
+        """Deterministic path: category present → no LLM call, phrase returned directly."""
         svc = _make_service()
-        svc._llm.generate = AsyncMock(return_value="  wedding photographer  ")
+        svc._llm.generate = AsyncMock()  # must NOT be called
         with patch.dict("os.environ", {"GOOGLE_PLACES_API_KEY": "key"}):
             result = await svc.generate_query(
                 structured_query='{"category": "Photography"}',
                 hyde_text="professional wedding photographer",
                 location="Berlin",
             )
-        assert result == "wedding photographer"
+        assert result == "Photography Berlin"
+        svc._llm.generate.assert_not_called()
 
     async def test_returns_none_on_llm_error(self) -> None:
         svc = _make_service()
@@ -136,16 +138,17 @@ class TestGenerateQuery:
         assert result is None
 
     async def test_accepts_dict_as_structured_query(self) -> None:
-        """generate_query should accept dict (not just str) without raising."""
+        """generate_query should accept dict directly, using the deterministic path."""
         svc = _make_service()
-        svc._llm.generate = AsyncMock(return_value="electrician Frankfurt")
+        svc._llm.generate = AsyncMock()  # must NOT be called
         with patch.dict("os.environ", {"GOOGLE_PLACES_API_KEY": "key"}):
             result = await svc.generate_query(
                 structured_query={"category": "Electrical"},
                 hyde_text="",
                 location="Frankfurt",
             )
-        assert result == "electrician Frankfurt"
+        assert result == "Electrical Frankfurt"
+        svc._llm.generate.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

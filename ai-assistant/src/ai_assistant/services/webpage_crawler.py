@@ -164,6 +164,18 @@ class WebPageCrawler:
             )
             return None
 
+        # Cap plain text before sending to the LLM to prevent enormous token
+        # bills on verbose sites (e.g. WordPress blogs with 400 KB pages).
+        # 15,000 characters ≈ 3,750 tokens — more than sufficient for the
+        # structured extraction task.
+        _MAX_CRAWL_TEXT_CHARS = 15_000
+        if len(combined_text) > _MAX_CRAWL_TEXT_CHARS:
+            logger.debug(
+                "Webpage crawl for %r: truncating %d → %d chars before LLM extraction",
+                provider_name, len(combined_text), _MAX_CRAWL_TEXT_CHARS,
+            )
+            combined_text = combined_text[:_MAX_CRAWL_TEXT_CHARS]
+
         result = await self._llm_extract(combined_text, provider_name, query)
         if result is not None:
             result.email = _extract_email(combined_html)
