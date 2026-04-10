@@ -17,8 +17,8 @@ class ChatBridge(Protocol):
     """Structural protocol for outbound message transports.
 
     Any class that provides ``is_open``, ``send_chat``, ``send_runtime_state``,
-    and ``send_provider_cards`` with matching signatures satisfies this protocol
-    without inheriting from it.
+    ``send_provider_cards``, and ``send_tool_status`` with matching signatures
+    satisfies this protocol without inheriting from it.
     """
 
     @property
@@ -36,4 +36,8 @@ class ChatBridge(Protocol):
 
     def send_provider_cards(self, cards: list[dict]) -> None:
         """Send provider card data to the client."""
+        ...
+
+    def send_tool_status(self, label: str) -> None:
+        """Send a ``{"type": "tool-status", …}`` message frame."""
         ...

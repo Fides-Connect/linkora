@@ -35,15 +35,15 @@ def register_v1_routes(app: web.Application) -> None:
     app.router.add_get('/api/v1/me/settings', me.get_settings)
     app.router.add_patch('/api/v1/me/settings', me.update_settings)
 
-    # AI conversation history (30-day TTL, both modes)
+    if is_lite:
+        return
+
+    # AI conversation history (30-day TTL, full mode only — requires Firestore)
     app.router.add_get('/api/v1/ai-conversations', ai_conversations.list_ai_conversations)
     app.router.add_get(
         '/api/v1/ai-conversations/{conversation_id}/messages',
         ai_conversations.get_ai_conversation_messages,
     )
-
-    if is_lite:
-        return
 
     # ── Full mode only ──────────────────────────────────────────────────────
 

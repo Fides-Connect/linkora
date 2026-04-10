@@ -385,8 +385,10 @@ class TextSessionStarter(SessionStarter):
             # latency for sessions with no pending message (vs the old fixed 300 ms).
             if self._first_message_event is not None:
                 try:
+                    elapsed = asyncio.get_event_loop().time() - _t0
+                    remaining_budget = max(0.0, 1.0 - elapsed)
                     await asyncio.wait_for(
-                        self._first_message_event.wait(), timeout=0.3
+                        self._first_message_event.wait(), timeout=remaining_budget
                     )
                     # A real message arrived in the window — skip the autonomous
                     # Advance from GREETING to TRIAGE so the user's buffered

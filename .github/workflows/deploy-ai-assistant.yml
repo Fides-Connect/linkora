@@ -15,6 +15,7 @@ env:
   REGION: europe-west3
   SERVICE_NAME: ai-assistant-dev
   AR_REPO: ai-assistant-dev  # Artifact Registry repository name
+  AGENT_MODE: ${{ secrets.AGENT_MODE }}
 
 jobs:
   deploy-ai-assistant:
