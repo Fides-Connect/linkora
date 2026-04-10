@@ -421,23 +421,36 @@ gcloud run services add-iam-policy-binding ai-assistant-dev \
 
 Add these in **Settings → Secrets and variables → Actions**:
 
+**Secrets required for both modes:**
+
 | Secret | Value / where to get it |
 |---|---|
 | `GCP_PROJECT_ID` | `gcloud config get-value project` |
 | `WIF_PROVIDER` | Output of WIF provider describe command in step 3 |
 | `WIF_CI_SERVICE_ACCOUNT` | `linkora-ci-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com` |
 | `WIF_RT_SERVICE_ACCOUNT` | `linkora-rt-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com` |
+| `GEMINI_API_KEY` | Your Gemini API key — synced to Secret Manager by the workflow |
+| `ADMIN_SECRET_KEY` | Your admin API secret — synced to Secret Manager by the workflow |
+
+**Additional secrets for full mode (`AGENT_MODE=full`):**
+
+| Secret | Value / where to get it |
+|---|---|
 | `WEAVIATE_VM_NAME` | `weaviate-vm-dev` |
 | `WEAVIATE_VM_ZONE` | `europe-west3-a` |
 | `WEAVIATE_VM_IP` | Internal IP from step 6 (e.g. `10.156.0.6`) |
 | `WEAVIATE_VM_PORT` | `8090` (host port mapped in docker-compose.yml) |
 | `WEAVIATE_VPC_CONNECTOR` | `ai-assistant-connect-dev` |
-| `GEMINI_API_KEY` | Your Gemini API key — synced to Secret Manager by the workflow |
-| `ADMIN_SECRET_KEY` | Your admin API secret — synced to Secret Manager by the workflow |
 | `METERED_APP_NAME` | Your Metered.ca application name (subdomain of `metered.live`) — synced to Secret Manager by the workflow |
 | `METERED_API_KEY` | Your Metered.ca API key — synced to Secret Manager by the workflow |
 
-The workflow syncs `GEMINI_API_KEY`, `ADMIN_SECRET_KEY`, `METERED_API_KEY`, and `METERED_APP_NAME` into Secret Manager on every deploy. Cloud Run injects them at runtime via `--set-secrets` (never in plain environment variables).
+**Additional secrets for lite mode (`AGENT_MODE=lite`):**
+
+| Secret | Value / where to get it |
+|---|---|
+| `GOOGLE_PLACES_API_KEY` | Your Google Places API key — synced to Secret Manager by the workflow |
+
+The workflow syncs secrets into Secret Manager on every deploy. Cloud Run injects them at runtime via `--set-secrets` (never in plain environment variables).
 
 ---
 
@@ -455,9 +468,12 @@ Push to main branch
         │       ▼
         │  [cloud-deploy.yml] deploy-ai-assistant
         │  build image → push to Artifact Registry
-        │  gcloud run deploy --vpc-connector=ai-assistant-connect-dev
+        │  if AGENT_MODE=full:
+        │    gcloud run deploy --vpc-connector=ai-assistant-connect-dev
+        │  if AGENT_MODE=lite:
+        │    gcloud run deploy (no VPC connector)
         │
-        └── weaviate/** changed?
+        └── weaviate/** changed? (full mode only)
                 │
                 ▼
            [cloud-deploy.yml] deploy-weaviate
@@ -471,13 +487,20 @@ Push to main branch
 
 ### Redeploy AI-Assistant without a code change
 
+**Full mode** (with VPC connector for Weaviate):
 ```bash
-# Trigger a new Cloud Run revision with the latest image
 gcloud run deploy ai-assistant-dev \
   --image europe-west3-docker.pkg.dev/<PROJECT_ID>/ai-assistant/ai-assistant:latest \
   --region europe-west3 \
   --vpc-connector=ai-assistant-connect-dev \
   --vpc-egress=private-ranges-only
+```
+
+**Lite mode** (no VPC connector):
+```bash
+gcloud run deploy ai-assistant-dev \
+  --image europe-west3-docker.pkg.dev/<PROJECT_ID>/ai-assistant/ai-assistant:latest \
+  --region europe-west3
 ```
 
 ### SSH into Weaviate VM

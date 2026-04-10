@@ -21,7 +21,7 @@ The AI-Assistant is the Python-based WebRTC server that powers the Linkora voice
 The AI-Assistant server is a containerized service that:
 - Receives audio streams from clients via WebRTC
 - Converts speech to text using Google Cloud Speech API
-- Processes queries using Google Gemini 3.0 Flash
+- Processes queries using Google Gemini 2.5 Flash
 - Generates natural-sounding responses using Google Cloud TTS
 - Streams audio responses back to clients
 - Manages multi-stage conversations
@@ -55,25 +55,36 @@ The AI-Assistant server is a containerized service that:
 
 ```
 ┌──────────┐
-│ GREETING │  Personalized greeting, asks user's needs
+│  TRIAGE  │  Intent gathering, scoping questions
 └────┬─────┘
+     │ intent clear
+     ▼
+┌──────────────┐
+│ CONFIRMATION │  Confirm details before provider search
+└────┬─────────┘
+     │                               │ ambiguous
+     ▼                               ▼
+┌──────────┐                     ┌─────────┐
+│ FINALIZE │  Provider results   │ CLARIFY │  Follow-up questions → TRIAGE
+└────┬─────┘  (email cards)      └─────────┘
      │
      ▼
 ┌──────────┐
-│ TRIAGE   │  Service coordinator - asks scoping questions
-└────┬─────┘  (not diagnostics)
-     │
-     │ Auto-transition on search database
-     ▼
-┌──────────┐
-│ FINALIZE │  Presents matched providers, handles feedback
+│COMPLETED │  Wrap-up
 └────┬─────┘
-     │
+     │ (if eligible after 30 days)
      ▼
-┌──────────┐
-│COMPLETED │  Confirms request, explains next steps
-└──────────┘
+┌────────────────┐
+│ PROVIDER_PITCH │  Invite to join as provider
+└────┬───────────┘
+     │ accepted
+     ▼
+┌─────────────────────┐
+│ PROVIDER_ONBOARDING │  Skill collection (max 2 questions/turn)
+└─────────────────────┘
 ```
+
+Any stage can transition to `RECOVERY` on error. `RECOVERY → TRIAGE`.
 
 ### Technical Features
 
@@ -96,58 +107,65 @@ ai-assistant/
 ├── src/ai_assistant/
 │   ├── __main__.py                # Application entry point
 │   ├── ai_assistant.py            # Core orchestration layer
-│   ├── audio_processor.py         # Audio stream processing
+│   ├── audio_processor.py         # STT→LLM→TTS hot path; interrupt gate
 │   ├── audio_track.py             # Audio track handling
-│   ├── peer_connection_handler.py # WebRTC management
-│   ├── signaling_server.py        # WebSocket signaling
+│   ├── chat_connection_handler.py # Per-connection handler for lite-mode /ws/chat
+│   ├── peer_connection_handler.py # WebRTC management (full mode)
+│   ├── signaling_server.py        # WebSocket/WebRTC signaling entry
 │   ├── common_endpoints.py        # Shared API endpoints (health, etc.)
 │   ├── data_provider.py           # Data access abstraction
-│   ├── firestore_service.py       # Firestore (Ground Truth) service
+│   ├── firestore_service.py       # Firestore service (full mode)
 │   ├── firestore_schemas.py       # Pydantic schemas for Firestore documents
 │   ├── seed_data.py               # Template data for user seeding
-│   ├── hub_spoke_schema.py        # Weaviate Hub & Spoke definition
-│   ├── hub_spoke_ingestion.py     # Data sync pipeline (Firestore -> Weaviate)
-│   ├── hub_spoke_search.py        # Advanced search logic
+│   ├── hub_spoke_schema.py        # Weaviate hub-spoke schema definition (full mode)
+│   ├── hub_spoke_ingestion.py     # Weaviate write/ingest pipeline (full mode)
+│   ├── hub_spoke_search.py        # Weaviate search logic (full mode)
 │   ├── weaviate_config.py         # Weaviate connection config
 │   ├── weaviate_models.py         # Weaviate data models
+│   ├── prompts_templates.py       # All LLM prompt strings
 │   ├── api/                       # REST API (v1 routes)
 │   │   ├── deps.py                # Dependency injection and auth
 │   │   └── v1/
 │   │       ├── router.py          # API v1 router
-│   │       └── endpoints/         # API endpoint modules
+│   │       └── endpoints/
 │   │           ├── auth.py        # Authentication endpoints
-│   │           ├── me.py          # Current user profile & settings endpoints
-│   │           ├── users.py       # User management endpoints
-│   │           ├── service_requests.py  # Service request endpoints
-│   │           ├── reviews.py     # Review endpoints
-│   │           └── ai_conversations.py  # AI conversation history endpoints
-│   ├── localization/              # Push-notification i18n strings
-│   │   ├── notifications_en.py    # English notification strings
-│   │   ├── notifications_de.py    # German notification strings
-│   │   └── notification_strings.py  # NotificationStrings resolver
+│   │           ├── me.py          # Current user profile & settings
+│   │           ├── users.py       # User management
+│   │           ├── service_requests.py
+│   │           ├── reviews.py
+│   │           └── ai_conversations.py
+│   ├── localization/              # Push notification i18n strings
 │   └── services/
 │       ├── admin_service.py           # Admin interface
+│       ├── agent_profile.py           # AgentProfile (full vs lite feature flags)
 │       ├── agent_runtime_fsm.py       # Deterministic 11-state runtime FSM
 │       ├── agent_tools.py             # Tool registry & capability checks
 │       ├── ai_conversation_service.py # AI conversation persistence (30-day TTL)
-│       ├── conversation_service.py    # Multi-stage conversations & stage FSM
-│       ├── response_orchestrator.py   # AI conversation flow (stage transitions)
-│       ├── llm_service.py             # Gemini LLM integration
-│       ├── speech_to_text_service.py  # Google STT integration
-│       ├── text_to_speech_service.py  # Google TTS integration
-│       ├── tts_playback_manager.py    # TTS playback synchronization
+│       ├── chat_bridge.py             # Chat ↔ AudioProcessor bridge
+│       ├── competence_enricher.py     # Competency AI enrichment (full mode)
+│       ├── conversation_service.py    # Stage FSM + context tracking
+│       ├── cross_encoder_service.py   # ms-marco cross-encoder reranking (singleton)
+│       ├── data_channel_bridge.py     # DataChannel ↔ AudioProcessor bridge
+│       ├── google_places_service.py   # GP pipeline: fetch → crawl → ingest (lite mode)
+│       ├── llm_service.py             # Gemini 2.5 Flash streaming
 │       ├── notification_service.py    # FCM push notifications (localised)
-│       ├── session_starter.py         # Session initialisation logic
-│       ├── user_seeding_service.py    # User onboarding and seeding
-│       └── transcript_processor.py    # Transcript handling
-│
+│       ├── response_delivery.py       # Sends final chunks to DataChannel / WS
+│       ├── response_orchestrator.py   # Stage transitions + tool dispatch
+│       ├── session_starter.py         # Session initialisation and greeting
+│       ├── session_mode.py            # SessionMode enum (voice / text)
+│       ├── speech_to_text_service.py  # Google STT (gRPC streaming)
+│       ├── text_to_speech_service.py  # Google TTS (Chirp3-HD)
+│       ├── tts_playback_manager.py    # Parallel sentence-level TTS
+│       ├── transcript_processor.py    # STT transcript → response pipeline
+│       ├── user_seeding_service.py    # Dev/demo user seeding
+│       ├── webpage_crawler.py         # Web-crawl enrichment for GP providers
+│       └── ws_bridge.py               # WebSocket bridge (lite-mode transport)
 ├── scripts/
-│   ├── init_database.py           # Database initialization (Firestore + Weaviate)
-│   ├── delete_weaviate_user.py    # User deletion utility for Weaviate
-│   ├── generate_admin_token.py    # Admin authentication
-│   ├── test_admin_interface.py    # Admin testing
-│   └── test_search_providers.py   # Search testing
-│
+│   ├── init_database.py           # Database init (Firestore + Weaviate)
+│   ├── delete_weaviate_user.py
+│   ├── generate_admin_token.py
+│   ├── test_admin_interface.py
+│   └── test_search_providers.py
 ├── tests/                         # Unit and integration tests
 
 ### Data Architecture: Hub & Spoke
@@ -187,7 +205,7 @@ AudioProcessor
             │   ├─→ Stage Management
             │   └─→ Context Tracking
             │
-            ├─→ Gemini 3.0 (Streaming)
+            ├─→ Gemini 2.5 Flash (Streaming)
             │       ↓
             │   AI Response Stream
             │
@@ -302,6 +320,11 @@ VOICE_NAME_EN=en-US-Chirp3-HD-Sulafat
 # Server Configuration
 PORT=8080
 LOG_LEVEL=INFO
+
+# Session idle timeout — close inactive connections after this many minutes
+# Applies to both WebRTC (full mode) and WebSocket chat (lite mode)
+# Default: 10 minutes
+SESSION_IDLE_TIMEOUT_MINUTES=10
 ```
 
 ## ⚙️ Configuration
@@ -500,7 +523,8 @@ All REST endpoints are under `/api/v1/` and require a Firebase Bearer token unle
 
 ```bash
 GET  /health                          # Service health status
-WS   /ws?mode=voice|text              # WebRTC signaling WebSocket
+WS   /ws?mode=voice|text              # WebRTC signaling (full mode)
+WS   /ws/chat?language=<lang>         # Text-only WebSocket chat (lite mode)
 ```
 
 ### Authentication
