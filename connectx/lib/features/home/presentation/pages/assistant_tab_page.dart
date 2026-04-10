@@ -272,7 +272,7 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
   }
 }
 
-/// Banner shown when a session ended (e.g. 10-min idle timeout) with a button
+/// Banner shown when a session ended (e.g. idle timeout) with a button
 /// to start a fresh session while keeping the previous chat visible above.
 class _SessionEndedBanner extends StatelessWidget {
   final VoidCallback onNewSession;
@@ -290,7 +290,7 @@ class _SessionEndedBanner extends StatelessWidget {
           Expanded(
             child: Text(
               localizations?.sessionEndedBanner ??
-                  'Session ended after 10 minutes of inactivity',
+                  'Session ended due to inactivity',
               style: TextStyle(color: context.appSecondaryColor, fontSize: 13),
             ),
           ),

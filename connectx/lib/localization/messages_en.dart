@@ -135,7 +135,7 @@ class MessagesEN {
   static const String deleteAccountError = 'Failed to delete account. Please sign in again and retry.';
 
   // Session ended banner
-  static const String sessionEndedBanner = 'Session ended after 10 minutes of inactivity';
+  static const String sessionEndedBanner = 'Session ended due to inactivity';
   static const String newSessionButton = 'New Session';
 
   // AI processing status labels — shown under the "..." animation while the assistant works.

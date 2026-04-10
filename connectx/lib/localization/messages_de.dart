@@ -135,7 +135,7 @@ class MessagesDE {
   static const String deleteAccountError = 'Konto konnte nicht gelöscht werden. Bitte melden Sie sich erneut an und versuchen Sie es nochmal.';
 
   // Session ended banner
-  static const String sessionEndedBanner = 'Sitzung nach 10 Minuten Inaktivität beendet';
+  static const String sessionEndedBanner = 'Sitzung wegen Inaktivität beendet';
   static const String newSessionButton = 'Neue Sitzung';
 
   // KI-Verarbeitungsstatus-Labels — werden unter der "…"-Animation angezeigt.
