@@ -104,17 +104,14 @@ class TestDataProviderFactory:
 class TestNullDataProvider:
     """Test NullDataProvider — lite mode no-op provider."""
 
-    @pytest.mark.asyncio
     async def test_get_user_by_id_returns_none(self):
         provider = NullDataProvider()
         assert await provider.get_user_by_id("any_id") is None
 
-    @pytest.mark.asyncio
     async def test_search_providers_returns_empty(self):
         provider = NullDataProvider()
         assert await provider.search_providers("plumber") == []
 
-    @pytest.mark.asyncio
     async def test_get_provider_by_id_returns_none(self):
         provider = NullDataProvider()
         assert await provider.get_provider_by_id("any_id") is None

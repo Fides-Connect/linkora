@@ -59,6 +59,8 @@ class WebSocketBridge:
 
         Safe to call multiple times — subsequent calls are no-ops.
         """
+        if self._sender_task is None or self._sender_task.done():
+            return
         self._queue.put_nowait(_STOP)
         if self._sender_task is not None and not self._sender_task.done():
             try:

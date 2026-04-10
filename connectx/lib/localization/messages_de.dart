@@ -189,7 +189,6 @@ class MessagesDE {
   static const String disclaimerTitle = 'Haftungsausschluss';
   static const String licensesTitle = 'Lizenzen';
 
-  // Seiteninhalt — ersetzen Sie die Platzhalter durch Ihre tatsächlichen Texte.
   static const String impressumContent = '''
 Angaben gemäß § 5 DDG
 

@@ -95,10 +95,11 @@ class ChatConnectionHandler:
         # Wire the AgentRuntimeFSM: state changes → WebSocket runtime-state frames.
         self._wire_runtime_fsm(self.audio_processor)
 
-        # Flush any messages that arrived before start() was called.
-        self._flush_pending_text_inputs()
-
         await self.audio_processor.start()
+        # Flush any messages that arrived before start() was called only after
+        # the AudioProcessor has fully initialized, so they cannot race ahead
+        # of greeting/session startup.
+        self._flush_pending_text_inputs()
         self._reset_idle_timer()
         logger.info("ChatConnectionHandler started: %s", self.connection_id)
 

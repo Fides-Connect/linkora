@@ -235,7 +235,6 @@ class TestSettingsEndpoints:
         body = json.loads(response.body)
         assert body['notifications_enabled'] is False
 
-    @pytest.mark.asyncio
     async def test_lite_mode_get_returns_defaults(self):
         """In lite mode GET returns default settings without touching Firestore."""
         import json
@@ -251,7 +250,6 @@ class TestSettingsEndpoints:
         assert body['notifications_enabled'] is False
         mock_fs.get_user.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_lite_mode_patch_echoes_body_without_firestore(self):
         """In lite mode PATCH echoes back validated language and notifications_enabled without persisting."""
         import json
@@ -269,7 +267,6 @@ class TestSettingsEndpoints:
         mock_fs.get_user.assert_not_called()
         mock_fs.update_user.assert_not_called()
 
-    @pytest.mark.asyncio
     async def test_lite_mode_patch_rejects_invalid_language(self):
         """In lite mode PATCH falls back to default language for unsupported values."""
         import json

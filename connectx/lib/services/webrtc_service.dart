@@ -380,7 +380,7 @@ class WebRTCService {
       // identical() before nulling shared fields so a concurrently-started
       // text session (whose connect() replaced _signaling/_peerConnection) is
       // never touched.
-      try { mySignaling?.sink.close(); } catch (_) {}
+      try { await mySignaling?.sink.close(); } catch (_) {}
       if (identical(_signaling, mySignaling)) {
         _signaling = null;
         _iceServers = null;
