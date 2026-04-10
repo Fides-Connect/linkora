@@ -1,0 +1,29 @@
+name: Deploy AI-Assistant (Prod)
+
+# Manually triggered only — prod deploys are intentional, not automatic.
+# Run this from the GitHub Actions tab after verifying the dev deployment is stable.
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy AI-Assistant (Prod)
+    uses: ./.github/workflows/_deploy-ai-assistant.yml
+    with:
+      environment: Prod
+      service_name: ai-assistant-prod
+      ar_repo: ai-assistant-prod
+      sm_secret_suffix: '-prod'
+      min_instances: 1
+      max_instances: 10
+      concurrency: 80
+      sha: ${{ github.sha }}
+    secrets:
+      gcp_project_id: ${{ secrets.GCP_PROJECT_ID_PROD }}
+      wif_provider: ${{ secrets.WIF_PROVIDER_PROD }}
+      wif_ci_service_account: ${{ secrets.WIF_CI_SERVICE_ACCOUNT_PROD }}
+      wif_rt_service_account: ${{ secrets.WIF_RT_SERVICE_ACCOUNT_PROD }}
+      agent_mode: ${{ secrets.AGENT_MODE_PROD }}
+      gemini_api_key: ${{ secrets.GEMINI_API_KEY_PROD }}
+      admin_secret_key: ${{ secrets.ADMIN_SECRET_KEY_PROD }}
+      google_places_api_key: ${{ secrets.GOOGLE_PLACES_API_KEY_PROD }}

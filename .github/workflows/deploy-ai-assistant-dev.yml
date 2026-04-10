@@ -1,0 +1,44 @@
+name: Deploy AI-Assistant (Dev)
+
+# Triggered after the AI Assistant Tests workflow passes on main.
+# workflow_dispatch allows manual triggering from any branch (useful for feature branch testing).
+# Note: workflow_run only works when this file is on the default branch (main).
+#
+# AGENT_MODE_DEV secret controls which mode is deployed:
+#   "lite" — text-only chat, Google Places as data source, no Weaviate, no TURN
+#   "full" — voice + text, Weaviate hub-spoke search, TURN via Metered.ca
+on:
+  workflow_run:
+    workflows: ["AI Assistant Tests"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy AI-Assistant (Dev)
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    uses: ./.github/workflows/_deploy-ai-assistant.yml
+    with:
+      environment: Dev
+      service_name: ai-assistant-dev
+      ar_repo: ai-assistant-dev
+      sm_secret_suffix: ''
+      min_instances: 0
+      max_instances: 1
+      concurrency: 10
+      sha: ${{ github.event.workflow_run.head_sha || github.sha }}
+    secrets:
+      gcp_project_id: ${{ secrets.GCP_PROJECT_ID_DEV }}
+      wif_provider: ${{ secrets.WIF_PROVIDER_DEV }}
+      wif_ci_service_account: ${{ secrets.WIF_CI_SERVICE_ACCOUNT_DEV }}
+      wif_rt_service_account: ${{ secrets.WIF_RT_SERVICE_ACCOUNT_DEV }}
+      agent_mode: ${{ secrets.AGENT_MODE_DEV }}
+      gemini_api_key: ${{ secrets.GEMINI_API_KEY_DEV }}
+      admin_secret_key: ${{ secrets.ADMIN_SECRET_KEY_DEV }}
+      google_places_api_key: ${{ secrets.GOOGLE_PLACES_API_KEY_DEV }}
+      metered_api_key: ${{ secrets.METERED_API_KEY_DEV }}
+      metered_app_name: ${{ secrets.METERED_APP_NAME_DEV }}
+      weaviate_vm_ip: ${{ secrets.WEAVIATE_VM_IP_DEV }}
+      weaviate_vm_port: ${{ secrets.WEAVIATE_VM_PORT_DEV }}
+      weaviate_vpc_connector: ${{ secrets.WEAVIATE_VPC_CONNECTOR_DEV }}
