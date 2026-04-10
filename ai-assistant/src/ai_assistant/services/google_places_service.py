@@ -75,6 +75,21 @@ class GooglePlacesService:
     def __init__(self, llm_service: LLMService) -> None:
         self._llm = llm_service
         self._api_key: str = os.getenv("GOOGLE_PLACES_API_KEY", "")
+        # Configurable result limit (GP_MAX_RESULTS env var, default 60).
+        # The Places API returns at most 20 results per page and supports up to
+        # 3 pages (60 results total).  Values above 60 are clamped to 60.
+        _raw_limit = os.getenv("GP_MAX_RESULTS", "60")
+        try:
+            self._max_results: int = max(1, min(int(_raw_limit), 60))
+        except ValueError:
+            logger.warning(
+                "GP_MAX_RESULTS=%r is not a valid integer — using default of 60.", _raw_limit
+            )
+            self._max_results = 60
+        # Webpage crawling enrichment (GP_WEBPAGE_CRAWL_ENABLED env var, default true).
+        self._crawl_enabled: bool = (
+            os.getenv("GP_WEBPAGE_CRAWL_ENABLED", "true").strip().lower() not in {"false", "0", "no"}
+        )
         # Circuit breaker state
         self._consecutive_failures: int = 0
         self._circuit_opened_at: float | None = None
@@ -142,7 +157,7 @@ class GooglePlacesService:
     async def fetch_and_ingest(
         self,
         query: str,
-        limit: int = 60,
+        limit: int | None = None,
     ) -> GpResult:
         """
         Fetch providers from the Places Text Search API and upsert to Weaviate.
@@ -168,9 +183,10 @@ class GooglePlacesService:
             self._circuit_opened_at = None
             self._consecutive_failures = 0
 
+        _limit = limit if limit is not None else self._max_results
         t_start = time.monotonic()
         try:
-            raw_results = await self._fetch_places(query, limit)
+            raw_results = await self._fetch_places(query, _limit)
         except _RateLimitError:
             self._record_failure()
             return GpResult(error=True, error_code="rate_limited", query=query)
@@ -211,7 +227,7 @@ class GooglePlacesService:
         structured_query: str,
         hyde_text: str,
         location: str = "",
-        limit: int = 60,
+        limit: int | None = None,
     ) -> tuple[list[dict[str, Any]], GpResult]:
         """Fetch GP places and return them as provider dicts — no Weaviate write.
 
@@ -234,6 +250,7 @@ class GooglePlacesService:
             self._circuit_opened_at = None
             self._consecutive_failures = 0
 
+        _limit = limit if limit is not None else self._max_results
         t_start = time.monotonic()
         query = await self.generate_query(
             structured_query=structured_query,
@@ -245,7 +262,7 @@ class GooglePlacesService:
             return [], GpResult(providers_written=0, error=False, error_code="llm_skip")
 
         try:
-            raw_results = await self._fetch_places(query, limit)
+            raw_results = await self._fetch_places(query, _limit)
         except _RateLimitError:
             self._record_failure()
             return [], GpResult(error=True, error_code="rate_limited", query=query)
@@ -464,26 +481,35 @@ class GooglePlacesService:
             ))
             for place in raw_results
         ]
-        crawler = WebPageCrawler(self._llm)
-        crawl_tasks = [
-            _throttled(crawler.extract_provider_info(
-                url=(place.get("websiteUri") or ""),
-                provider_name=(place.get("displayName") or {}).get("text", ""),
-                query=query,
-            ))
-            for place in raw_results
-        ]
-        raw_summaries, raw_crawl_results = await asyncio.gather(
-            asyncio.gather(*summary_tasks, return_exceptions=True),
-            asyncio.gather(*crawl_tasks, return_exceptions=True),
-        )
-        english_summaries: list[str | None] = [r if isinstance(r, str) else None for r in raw_summaries]
-        crawl_results: list[Any] = list(raw_crawl_results)
-        crawl_successes = sum(1 for r in crawl_results if isinstance(r, WebCrawlResult))
-        logger.info(
-            "Webpage enrichment: %d/%d providers crawled successfully",
-            crawl_successes, len(crawl_results),
-        )
+        english_summaries: list[str | None]
+        crawl_results: list[Any]
+
+        if self._crawl_enabled:
+            crawler = WebPageCrawler(self._llm)
+            crawl_tasks = [
+                _throttled(crawler.extract_provider_info(
+                    url=(place.get("websiteUri") or ""),
+                    provider_name=(place.get("displayName") or {}).get("text", ""),
+                    query=query,
+                ))
+                for place in raw_results
+            ]
+            raw_summaries, raw_crawl_results = await asyncio.gather(
+                asyncio.gather(*summary_tasks, return_exceptions=True),
+                asyncio.gather(*crawl_tasks, return_exceptions=True),
+            )
+            english_summaries = [r if isinstance(r, str) else None for r in raw_summaries]
+            crawl_results = list(raw_crawl_results)
+            crawl_successes = sum(1 for r in crawl_results if isinstance(r, WebCrawlResult))
+            logger.info(
+                "Webpage enrichment: %d/%d providers crawled successfully",
+                crawl_successes, len(crawl_results),
+            )
+        else:
+            raw_summaries = await asyncio.gather(*summary_tasks, return_exceptions=True)
+            english_summaries = [r if isinstance(r, str) else None for r in raw_summaries]
+            crawl_results = [None] * len(raw_results)
+            logger.info("Webpage enrichment disabled (GP_WEBPAGE_CRAWL_ENABLED=false).")
 
         results: list[dict[str, Any]] = []
         for idx, place in enumerate(raw_results):
