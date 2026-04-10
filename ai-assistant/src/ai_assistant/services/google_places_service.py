@@ -93,6 +93,17 @@ class GooglePlacesService:
         # Circuit breaker state
         self._consecutive_failures: int = 0
         self._circuit_opened_at: float | None = None
+        # Persistent HTTP session — reused across Places API calls to avoid
+        # repeated TCP connect + TLS handshake overhead.
+        self._http_session: aiohttp.ClientSession | None = None
+
+    def _get_http_session(self) -> aiohttp.ClientSession:
+        """Return the shared HTTP session, creating it lazily on first call."""
+        if self._http_session is None or self._http_session.closed:
+            self._http_session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=5)
+            )
+        return self._http_session
 
     # ──────────────────────────────────────────────────────────────────────────
     # Public API
@@ -350,7 +361,6 @@ class GooglePlacesService:
         - Other HTTP 4xx / timeout: immediate failure
         """
         _PAGE_SIZE = 20  # Places API hard cap per page
-        timeout = aiohttp.ClientTimeout(total=5)
         headers = {
             "Content-Type": "application/json",
             "X-Goog-Api-Key": self._api_key,
@@ -359,19 +369,19 @@ class GooglePlacesService:
 
         async def _do_request(body: dict[str, Any]) -> dict[str, Any]:
             """Make one POST and return the raw response dict."""
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    _PLACES_TEXT_SEARCH_URL,
-                    json=body,
-                    headers=headers,
-                ) as resp:
-                    if resp.status == 429:
-                        raise _RateLimitError()
-                    if resp.status >= 500:
-                        raise _ServerError(resp.status)
-                    if resp.status >= 400:
-                        raise _HttpError(resp.status)
-                    return cast(dict[str, Any], await resp.json())
+            session = self._get_http_session()
+            async with session.post(
+                _PLACES_TEXT_SEARCH_URL,
+                json=body,
+                headers=headers,
+            ) as resp:
+                if resp.status == 429:
+                    raise _RateLimitError()
+                if resp.status >= 500:
+                    raise _ServerError(resp.status)
+                if resp.status >= 400:
+                    raise _HttpError(resp.status)
+                return cast(dict[str, Any], await resp.json())
 
         async def _do_request_with_retry(body: dict[str, Any]) -> dict[str, Any]:
             try:

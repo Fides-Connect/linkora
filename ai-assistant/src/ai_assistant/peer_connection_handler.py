@@ -5,6 +5,7 @@ Manages individual WebRTC connections and media streams.
 import asyncio
 import json
 import logging
+import os
 from aiohttp import web
 from aiortc import (
     RTCConfiguration,
@@ -121,9 +122,10 @@ class PeerConnectionHandler:
             )
 
     async def _idle_timeout_task(self) -> None:
-        """Close the connection after 10 minutes of inactivity."""
+        """Close the connection after SESSION_IDLE_TIMEOUT_MINUTES of inactivity."""
         try:
-            await asyncio.sleep(600)  # 10 minutes
+            _timeout_minutes = int(os.getenv("SESSION_IDLE_TIMEOUT_MINUTES", "10"))
+            await asyncio.sleep(_timeout_minutes * 60)
             logger.info("Idle timeout reached for connection %s — closing", self.connection_id)
             await self.close()
         except asyncio.CancelledError:

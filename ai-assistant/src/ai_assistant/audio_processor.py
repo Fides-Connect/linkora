@@ -345,6 +345,8 @@ class AudioProcessor:
                 pass
 
         self.debug_recorder.save()
+        # Release per-session LLM memory before closing the HTTP client.
+        self.ai_assistant.llm_service.close_session(self.connection_id)
         await self.ai_assistant.aclose()
         logger.info("Audio processor stopped for connection %s", self.connection_id)
 

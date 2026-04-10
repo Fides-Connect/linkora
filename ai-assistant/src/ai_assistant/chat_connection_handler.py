@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from aiohttp import web
 
@@ -207,7 +208,8 @@ class ChatConnectionHandler:
 
     async def _idle_timeout_task(self) -> None:
         try:
-            await asyncio.sleep(600)  # 10 minutes
+            _timeout_minutes = int(os.getenv("SESSION_IDLE_TIMEOUT_MINUTES", "10"))
+            await asyncio.sleep(_timeout_minutes * 60)
             logger.info("Idle timeout for connection %s — closing", self.connection_id)
             await self.close()
         except asyncio.CancelledError:

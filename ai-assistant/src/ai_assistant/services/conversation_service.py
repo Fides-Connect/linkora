@@ -454,6 +454,9 @@ class ConversationService:
         search_providers_for_request().
         """
         self.context["user_problem"].append(user_input)
+        # Prevent unbounded growth in very long TRIAGE sessions.
+        if len(self.context["user_problem"]) > 20:
+            self.context["user_problem"].pop(0)
 
     def reset_request_context(self) -> None:
         """Clear per-request fields so a new scoping conversation starts clean.
@@ -518,6 +521,9 @@ class ConversationService:
         """
         if text.strip():
             self.context["ai_responses"].append(text)
+            # Keep only the last 10 responses to bound memory.
+            if len(self.context["ai_responses"]) > 10:
+                self.context["ai_responses"].pop(0)
 
     def get_problem_summary(self) -> str:
         """Return the most recent AI response as the job summary.

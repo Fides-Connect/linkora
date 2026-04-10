@@ -254,3 +254,28 @@ class CrossEncoderService:
             [f"{c['rerank_score']:.3f}" for c in above_threshold[:top_k]],
         )
         return above_threshold[:top_k]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module-level singleton — one model loaded per process, shared across all
+# connections.  The model is 87 MB; loading it once saves (N-1) × 87 MB for
+# N concurrent connections.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SINGLETON: CrossEncoderService | None = None
+
+
+def get_shared_cross_encoder(
+    model_name: str = _DEFAULT_MODEL,
+    min_score: float | None = None,
+) -> CrossEncoderService:
+    """Return the process-wide CrossEncoderService instance.
+
+    Creates it on the first call; subsequent calls return the cached instance.
+    Passing different ``model_name`` / ``min_score`` on the second call has no
+    effect — the first caller's arguments win.
+    """
+    global _SINGLETON
+    if _SINGLETON is None:
+        _SINGLETON = CrossEncoderService(model_name=model_name, min_score=min_score)
+    return _SINGLETON

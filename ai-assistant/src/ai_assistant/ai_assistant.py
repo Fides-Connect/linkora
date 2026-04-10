@@ -19,7 +19,7 @@ from .services import (
 from .services.agent_profile import get_profile
 from .services.response_orchestrator import ResponseOrchestrator
 from .services.competence_enricher import CompetenceEnricher
-from .services.cross_encoder_service import CrossEncoderService
+from .services.cross_encoder_service import get_shared_cross_encoder
 from .services.google_places_service import GooglePlacesService
 from .data_provider import get_data_provider
 
@@ -96,9 +96,10 @@ class AIAssistant:
             language=self.language,
         )
 
-        # Cross-encoder reranker: lazy-loading sentence-transformers model.
-        # Initialized before ConversationService so it can be injected.
-        self.cross_encoder_service = CrossEncoderService()
+        # Cross-encoder reranker: process-wide singleton — one 87 MB model load
+        # shared by all connections.  Initialized before ConversationService so
+        # it can be injected.
+        self.cross_encoder_service = get_shared_cross_encoder()
 
         # Google Places enrichment — active only in lite mode (profile.google_places_always_active=True).
         # In full mode this is always None; Google Places is never queried.
@@ -143,6 +144,10 @@ class AIAssistant:
     async def aclose(self) -> None:
         """Close all underlying Google API connections for graceful shutdown."""
         await self.llm_service.aclose()
+        if self.google_places_service is not None:
+            http_session = self.google_places_service._http_session
+            if http_session is not None and not http_session.closed:
+                await http_session.close()
         # Google Cloud gapic-generated async clients (SpeechAsyncClient,
         # TextToSpeechAsyncClient) don't expose close() on the client itself —
         # it lives on client.transport.  We use getattr chains so this stays
