@@ -124,8 +124,9 @@ class StartPage extends StatelessWidget {
 /// Compact segmented language toggle used on the start screen AppBar.
 ///
 /// Shows two pill-shaped buttons side by side.  The currently active language
-/// is highlighted with a white fill and dark text; the inactive one is
-/// transparent with white text.
+/// is highlighted with the primary app color as background and contrasting text
+/// (dark on dark themes, light on light themes); the inactive one is
+/// transparent with primary-color text.
 class _LanguageToggle extends StatelessWidget {
   final Locale currentLocale;
   final ValueChanged<Locale> onSelect;

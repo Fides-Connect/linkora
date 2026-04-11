@@ -194,9 +194,10 @@ class LiteChatService {
     } else {
       _send({'type': 'auth', 'token': token});
     }
-    // Server will respond with {"type": "auth-ok"} or close; we treat the
-    // connection as ready immediately for local dev (no close received).
-    // For full auth validation the server sends "auth-ok" then "chat" frames.
+    // Server sends {"type": "auth-ok"} after verifying the token (token-based
+    // auth path only). We mark the session ready immediately so pending messages
+    // can be flushed without waiting; the auth-ok frame is acknowledged in
+    // _onMessage as a no-op since readiness is already established.
     _markSessionReady();
   }
 
@@ -246,6 +247,7 @@ class LiteChatService {
         final isUser = msg['isUser'] as bool? ?? false;
         final isChunk = msg['isChunk'] as bool? ?? false;
         onChatMessage?.call(text, isUser, isChunk);
+        break;
 
       case 'runtime-state':
         final rawState = msg['runtimeState'] as String?;
@@ -253,16 +255,19 @@ class LiteChatService {
           final state = AgentRuntimeState.tryParse(rawState);
           if (state != null) onRuntimeState?.call(state);
         }
+        break;
 
       case 'provider-cards':
         final cards = (msg['cards'] as List<dynamic>?)
             ?.whereType<Map<String, dynamic>>()
             .toList();
         if (cards != null) onProviderCards?.call(cards);
+        break;
 
       case 'tool-status':
         final label = msg['label'] as String?;
         if (label != null && label.isNotEmpty) onToolStatus?.call(label);
+        break;
 
       default:
         debugPrint('LiteChatService: unknown message type: $type');

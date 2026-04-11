@@ -117,7 +117,15 @@ class ProviderCard extends StatelessWidget {
                       _ContactChip(
                         icon: Icons.phone_rounded,
                         label: card.phone!,
-                        onTap: () => _launch('tel:${card.phone}'),
+                        onTap: () {
+                          // Normalize the phone string to a dialable URI path:
+                          // strip whitespace, parens, and dashes so characters
+                          // that are valid in display strings but not in tel: URIs
+                          // don't produce an un-parseable URI on any platform.
+                          final normalized = card.phone!
+                              .replaceAll(RegExp(r'[\s\-\(\)]'), '');
+                          _launch(Uri(scheme: 'tel', path: normalized).toString());
+                        },
                       ),
                     if (card.website != null && card.website!.isNotEmpty)
                       _ContactChip(

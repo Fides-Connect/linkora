@@ -338,10 +338,29 @@ class TestLiteModeGpSourceFilter:
         # data_provider.search_providers must NOT be called
         mock_data_provider.search_providers.assert_not_called()
 
-    async def test_lite_mode_gp_error_routes_to_recovery(
+    async def test_lite_mode_gp_error_falls_back_to_data_provider(
         self, mock_llm_service, mock_data_provider
     ):
-        """When GP fails, search_error is set and data_provider is never called."""
+        """When GP fails, the fallback attempts data_provider; if that also fails, search_error is set."""
+        from ai_assistant.services.conversation_service import GpResult
+        from ai_assistant.data_provider import SearchUnavailableError
+
+        service, gp_service = self._make_lite_service(mock_llm_service, mock_data_provider)
+        gp_service.fetch_as_providers = AsyncMock(
+            return_value=([], GpResult(providers_written=0, error=True, error_code="timeout"))
+        )
+        mock_data_provider.search_providers.side_effect = SearchUnavailableError("index down")
+        service.context["user_problem"] = ["Ich brauche einen Klempner"]
+
+        await service.search_providers_for_request()
+
+        assert service.context.get("search_error") == "unavailable"
+        mock_data_provider.search_providers.assert_called_once()
+
+    async def test_lite_mode_gp_error_uses_fallback_results_when_available(
+        self, mock_llm_service, mock_data_provider
+    ):
+        """When GP fails but data_provider succeeds, fallback results are stored."""
         from ai_assistant.services.conversation_service import GpResult
 
         service, gp_service = self._make_lite_service(mock_llm_service, mock_data_provider)
@@ -352,8 +371,11 @@ class TestLiteModeGpSourceFilter:
 
         await service.search_providers_for_request()
 
-        assert service.context.get("search_error") == "unavailable"
-        mock_data_provider.search_providers.assert_not_called()
+        # data_provider returns 2 mock providers; no search_error should be set
+        assert service.context.get("search_error") is None
+        assert len(service.context.get("providers_found", [])) > 0
+        assert service.context.get("google_places_used") is False
+        mock_data_provider.search_providers.assert_called_once()
 
     async def test_full_mode_does_not_filter_by_source(
         self, conversation_service, mock_data_provider

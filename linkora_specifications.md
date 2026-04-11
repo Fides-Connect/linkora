@@ -977,13 +977,13 @@ In lite mode, the AI assistant session uses a direct WebSocket connection (`/ws/
 - The client sends `{"type": "text-input", "text": "…"}` frames.
 - The server sends `{"type": "chat", …}`, `{"type": "runtime-state", …}`, `{"type": "provider-cards", …}`, and `{"type": "tool-status", …}` frames.
 - On `wss://` connections from non-web clients, the Firebase ID token is conveyed as an `Authorization: Bearer` header at connection time.
-- On `ws://` connections or web clients, the Firebase ID token is sent as the first message: `{"type": "auth", "token": "…"}`.
+- On `ws://` connections or web clients, the Firebase ID token is sent as the first message: `{"type": "auth", "token": "…"}`. After verifying the token the server sends `{"type": "auth-ok"}` to acknowledge. The client may treat the session as ready immediately after sending the token and flush pending messages without waiting for the acknowledgement, but must handle the `auth-ok` frame gracefully when it arrives.
 - Both client and server enforce a 10-minute idle timeout. If no message is exchanged within 10 minutes, the session is torn down and the client is notified via the disconnect path.
 - Messages sent by the client before the session is fully established (auth confirmed) are queued client-side and flushed immediately once the session becomes active.
 
 #### Chat Message Persistence
 
-Lite mode does not persist any data to Firestore. The entire conversation session is in-memory only. No conversation history, user context, or settings are read from or written to Firestore during a lite-mode session. The auth sync REST endpoint returns a minimal success response without creating or updating any user document. The settings endpoint returns default values without reading from Firestore.
+Lite mode does not persist any data to Firestore. The entire conversation session is in-memory only. No conversation history, user context, or settings are read from or written to Firestore during a lite-mode session. The auth sync REST endpoint returns a minimal success response without creating or updating any user document. The user profile and settings REST endpoints (`/api/v1/me`, `/api/v1/me/settings`) are not registered in lite mode; clients receive a standard 404 response for those paths. Clients operating in lite mode must not require these endpoints and must use hard-coded or local defaults for any profile or settings data.
 
 The AI conversation history REST endpoints (`/api/v1/ai-conversations`) always require Firestore. These endpoints must not be registered in lite mode. Any client request to these paths in lite mode must receive a standard 404 response. This applies regardless of whether the client requests history for voice or text sessions.
 

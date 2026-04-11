@@ -29,14 +29,14 @@ def register_v1_routes(app: web.Application) -> None:
     app.router.add_post('/api/v1/auth/sync', auth.user_sync)
     app.router.add_post('/api/v1/auth/logout', auth.user_logout)
 
-    # Current user — basic profile and settings
+    if is_lite:
+        return
+
+    # Current user — basic profile and settings (Firestore-dependent; full mode only)
     app.router.add_get('/api/v1/me', me.get_me)
     app.router.add_patch('/api/v1/me', me.update_me)
     app.router.add_get('/api/v1/me/settings', me.get_settings)
     app.router.add_patch('/api/v1/me/settings', me.update_settings)
-
-    if is_lite:
-        return
 
     # AI conversation history (30-day TTL, full mode only — requires Firestore)
     app.router.add_get('/api/v1/ai-conversations', ai_conversations.list_ai_conversations)

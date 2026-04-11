@@ -363,6 +363,9 @@ class SignalingServer:
                 decoded_token = firebase_auth.verify_id_token(token, check_revoked=True)
                 user_id = decoded_token['uid']
                 logger.info("Chat WS web-auth from %s for uid: %s", client_ip, user_id)
+                # Acknowledge successful auth so the client knows the token
+                # was accepted before the first chat frames arrive.
+                await ws.send_str(json.dumps({"type": "auth-ok"}))
             except Exception as exc:
                 logger.warning("Chat WS auth failed from %s: %s", client_ip, exc)
                 await ws.close(code=4401, message=b'Unauthorized')

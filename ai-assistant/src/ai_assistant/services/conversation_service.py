@@ -685,10 +685,36 @@ class ConversationService:
             self.context["google_places_error"] = gp_result.error
             if gp_result.error:
                 logger.warning(
-                    "GP pipeline error (%s) — no fallback available in lite mode.",
+                    "GP pipeline error (%s) — attempting internal provider search fallback.",
                     gp_result.error_code,
                 )
-                self.context["search_error"] = "unavailable"
+                try:
+                    providers = await self.data_provider.search_providers(
+                        query_text=query_text,
+                        limit=self.max_providers,
+                        hyde_text=hyde_text,
+                    )
+                except SearchUnavailableError as fallback_exc:
+                    logger.warning(
+                        "Internal provider search fallback also unavailable after GP failure: %s",
+                        fallback_exc,
+                    )
+                    self.context["search_error"] = "unavailable"
+                    return
+                self.context["google_places_used"] = False
+                if self.cross_encoder_service and providers:
+                    providers = await self.cross_encoder_service.rerank(
+                        query=hyde_text,
+                        candidates=providers,
+                        top_k=self.max_providers,
+                    )
+                else:
+                    providers = providers[: self.max_providers]
+                self.context["providers_found"] = providers
+                logger.info(
+                    "GP fallback search complete — %d results from internal index",
+                    len(providers),
+                )
                 return
 
             # Stage 4 (lite): rerank GP results via cross-encoder.
