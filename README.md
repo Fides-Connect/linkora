@@ -140,7 +140,7 @@ flutter run
 
 ### 3. Start Weaviate (full mode only)
 
-The default **full mode** requires Weaviate for provider vector search. Skip this step if running in [lite mode](#-deployment-modes).
+The default **full mode** requires Weaviate for provider vector search. Skip this step if running in [lite mode](#deployment-modes).
 
 ```bash
 # Start Weaviate

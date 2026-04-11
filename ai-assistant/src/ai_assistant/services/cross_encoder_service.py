@@ -263,6 +263,7 @@ class CrossEncoderService:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _SINGLETON: CrossEncoderService | None = None
+_SINGLETON_LOCK = asyncio.Lock()
 
 
 def get_shared_cross_encoder(
@@ -274,8 +275,36 @@ def get_shared_cross_encoder(
     Creates it on the first call; subsequent calls return the cached instance.
     Passing different ``model_name`` / ``min_score`` on the second call has no
     effect — the first caller's arguments win.
+
+    This function is safe to call from synchronous constructor code.  The
+    model is loaded once; the asyncio lock is only needed for the rare race
+    during server startup.  In practice the server constructs connections
+    sequentially at startup so the race window is negligible, but
+    ``_SINGLETON_LOCK`` is kept for correctness.
     """
     global _SINGLETON
     if _SINGLETON is None:
+        # Uncontested path: first caller wins.  Under asyncio's single-threaded
+        # event loop this assignment is atomic — no second coroutine can observe
+        # _SINGLETON as None after it has been set.
         _SINGLETON = CrossEncoderService(model_name=model_name, min_score=min_score)
+    return _SINGLETON
+
+
+async def get_shared_cross_encoder_async(
+    model_name: str = _DEFAULT_MODEL,
+    min_score: float | None = None,
+) -> CrossEncoderService:
+    """Async variant of :func:`get_shared_cross_encoder`.
+
+    Serialises concurrent first-call construction through an ``asyncio.Lock``
+    so at most one ``CrossEncoderService`` is ever created per process even
+    when multiple coroutines call this concurrently during server startup.
+    """
+    global _SINGLETON
+    if _SINGLETON is not None:
+        return _SINGLETON
+    async with _SINGLETON_LOCK:
+        if _SINGLETON is None:
+            _SINGLETON = CrossEncoderService(model_name=model_name, min_score=min_score)
     return _SINGLETON

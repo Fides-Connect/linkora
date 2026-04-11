@@ -146,17 +146,22 @@ class ProviderCard extends StatelessWidget {
                           _launch(url);
                         },
                       ),
-                    // Email enquiry — always shown so the user can send a
-                    // pre-filled request even when no email address is known.
+                    // Email enquiry — shown whenever a pre-filled body is
+                    // available.  For Google Places providers the email
+                    // address may be null; the mailto is still opened so the
+                    // user can edit the recipient before sending.
                     if (card.emailBody.isNotEmpty)
                       _ContactChip(
                         icon: Icons.mail_outline_rounded,
                         label: card.language == 'de' ? 'Anfrage senden' : 'Send request',
                         onTap: () {
-                          final to = Uri.encodeComponent(card.email ?? '');
-                          final subject = Uri.encodeComponent(card.emailSubject);
-                          final body = Uri.encodeComponent(card.emailBody);
-                          _launch('mailto:$to?subject=$subject&body=$body');
+                          final uri = Uri(
+                            scheme: 'mailto',
+                            path: card.email ?? '',
+                            query: 'subject=${Uri.encodeComponent(card.emailSubject)}'
+                                '&body=${Uri.encodeComponent(card.emailBody)}',
+                          );
+                          _launch(uri.toString());
                         },
                       ),
                   ],
@@ -170,7 +175,16 @@ class ProviderCard extends StatelessWidget {
   }
 
   Future<void> _launch(String url) async {
-    final uri = Uri.tryParse(url);
+    // Normalize bare URLs (e.g. "example.com") that lack a scheme so they
+    // can be opened as HTTPS URLs.  Scheme-bearing URLs (tel:, mailto:,
+    // https:, maps-deep-link, etc.) are passed through unchanged.
+    final normalized = (url.isNotEmpty &&
+            !url.contains('://') &&
+            !url.startsWith('mailto:') &&
+            !url.startsWith('tel:'))
+        ? 'https://$url'
+        : url;
+    final uri = Uri.tryParse(normalized);
     if (uri == null) return;
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);

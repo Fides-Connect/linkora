@@ -176,23 +176,31 @@ class _ToggleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: selected ? null : onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? context.appPrimaryColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected
-                ? (Theme.of(context).brightness == Brightness.dark ? Colors.black87 : Colors.white)
-                : context.appPrimaryColor,
-            fontWeight: selected ? FontWeight.bold : FontWeight.normal,
-            fontSize: 13,
+    final isSelected = selected;
+    return Semantics(
+      button: true,
+      enabled: !isSelected,
+      label: label,
+      selected: isSelected,
+      child: InkWell(
+        onTap: isSelected ? null : onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: isSelected ? context.appPrimaryColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected
+                  ? (Theme.of(context).brightness == Brightness.dark ? Colors.black87 : Colors.white)
+                  : context.appPrimaryColor,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              fontSize: 13,
+            ),
           ),
         ),
       ),

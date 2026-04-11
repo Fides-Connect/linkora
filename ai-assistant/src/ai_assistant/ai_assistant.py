@@ -145,9 +145,7 @@ class AIAssistant:
         """Close all underlying Google API connections for graceful shutdown."""
         await self.llm_service.aclose()
         if self.google_places_service is not None:
-            http_session = self.google_places_service._http_session
-            if http_session is not None and not http_session.closed:
-                await http_session.close()
+            await self.google_places_service.aclose()
         # Google Cloud gapic-generated async clients (SpeechAsyncClient,
         # TextToSpeechAsyncClient) don't expose close() on the client itself —
         # it lives on client.transport.  We use getattr chains so this stays

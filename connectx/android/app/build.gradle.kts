@@ -33,10 +33,18 @@ android {
     signingConfigs {
         if (keyPropertiesFile.exists()) {
             create("release") {
-                keyAlias = keyProperties["keyAlias"] as String
-                keyPassword = keyProperties["keyPassword"] as String
-                storeFile = file(keyProperties["storeFile"] as String)
-                storePassword = keyProperties["storePassword"] as String
+                val alias = keyProperties.getProperty("keyAlias")
+                    ?: throw GradleException("key.properties is missing required property 'keyAlias'")
+                val keyPass = keyProperties.getProperty("keyPassword")
+                    ?: throw GradleException("key.properties is missing required property 'keyPassword'")
+                val storeFilePath = keyProperties.getProperty("storeFile")
+                    ?: throw GradleException("key.properties is missing required property 'storeFile'")
+                val storePass = keyProperties.getProperty("storePassword")
+                    ?: throw GradleException("key.properties is missing required property 'storePassword'")
+                keyAlias = alias
+                keyPassword = keyPass
+                storeFile = file(storeFilePath)
+                storePassword = storePass
             }
         }
     }

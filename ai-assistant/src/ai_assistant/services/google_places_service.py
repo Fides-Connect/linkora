@@ -105,6 +105,12 @@ class GooglePlacesService:
             )
         return self._http_session
 
+    async def aclose(self) -> None:
+        """Close the underlying HTTP session for graceful shutdown."""
+        if self._http_session is not None and not self._http_session.closed:
+            await self._http_session.close()
+        self._http_session = None
+
     # ──────────────────────────────────────────────────────────────────────────
     # Public API
     # ──────────────────────────────────────────────────────────────────────────
