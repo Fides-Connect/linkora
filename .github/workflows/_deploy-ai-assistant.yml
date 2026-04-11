@@ -1,0 +1,201 @@
+name: Deploy AI-Assistant (Reusable)
+
+# Reusable workflow — called by deploy-ai-assistant-dev.yml and deploy-ai-assistant-prod.yml.
+# Do not trigger this workflow directly.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Display name for the environment (e.g. Dev, Prod)'
+        type: string
+        required: true
+      service_name:
+        description: 'Cloud Run service name (e.g. ai-assistant-dev)'
+        type: string
+        required: true
+      ar_repo:
+        description: 'Artifact Registry repository name (e.g. ai-assistant-dev)'
+        type: string
+        required: true
+      sm_secret_suffix:
+        description: 'Suffix appended to Secret Manager secret names ("" for dev, "-prod" for prod)'
+        type: string
+        required: false
+        default: ''
+      region:
+        description: 'GCP region'
+        type: string
+        required: false
+        default: europe-west3
+      min_instances:
+        type: number
+        required: false
+        default: 0
+      max_instances:
+        type: number
+        required: false
+        default: 1
+      concurrency:
+        type: number
+        required: false
+        default: 10
+      sha:
+        description: 'Commit SHA to build and deploy'
+        type: string
+        required: true
+    secrets:
+      gcp_project_id:
+        required: true
+      wif_provider:
+        required: true
+      wif_ci_service_account:
+        required: true
+      wif_rt_service_account:
+        required: true
+      agent_mode:
+        description: '"lite" or "full"'
+        required: true
+      gemini_api_key:
+        required: true
+      admin_secret_key:
+        required: true
+      google_places_api_key:
+        required: true
+      # Full mode only:
+      metered_api_key:
+        required: false
+      metered_app_name:
+        required: false
+      weaviate_vm_ip:
+        required: false
+      weaviate_vm_port:
+        required: false
+      weaviate_vpc_connector:
+        required: false
+
+jobs:
+  deploy:
+    name: Deploy to Cloud Run (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          lfs: true
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.wif_provider }}
+          service_account: ${{ secrets.wif_ci_service_account }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.gcp_project_id }}
+
+      - name: Sync secrets to Secret Manager
+        run: |
+          SUFFIX="${{ inputs.sm_secret_suffix }}"
+          sync_secret() {
+            local NAME=$1
+            local VALUE=$2
+            if gcloud secrets describe "$NAME" --project="${{ secrets.gcp_project_id }}" &>/dev/null; then
+              echo -n "$VALUE" | gcloud secrets versions add "$NAME" --data-file=- --quiet
+            else
+              echo -n "$VALUE" | gcloud secrets create "$NAME" --data-file=- --quiet
+            fi
+          }
+          sync_secret "gemini-api-key${SUFFIX}"        "${{ secrets.gemini_api_key }}"
+          sync_secret "admin-secret-key${SUFFIX}"      "${{ secrets.admin_secret_key }}"
+          sync_secret "google-places-api-key${SUFFIX}" "${{ secrets.google_places_api_key }}"
+          # Full mode only: Metered.ca TURN credentials
+          if [[ "${{ secrets.agent_mode }}" == "full" ]]; then
+            sync_secret "metered-api-key${SUFFIX}"  "${{ secrets.metered_api_key }}"
+            sync_secret "metered-app-name${SUFFIX}" "${{ secrets.metered_app_name }}"
+          fi
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ inputs.region }}-docker.pkg.dev --quiet
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE="${{ inputs.region }}-docker.pkg.dev/${{ secrets.gcp_project_id }}/${{ inputs.ar_repo }}/ai-assistant:${{ inputs.sha }}"
+          IMAGE_LATEST="${{ inputs.region }}-docker.pkg.dev/${{ secrets.gcp_project_id }}/${{ inputs.ar_repo }}/ai-assistant:latest"
+
+          docker build \
+            -f ai-assistant/Dockerfile \
+            -t "$IMAGE" \
+            -t "$IMAGE_LATEST" \
+            ai-assistant/
+
+          docker push "$IMAGE"
+          docker push "$IMAGE_LATEST"
+
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Deploy to Cloud Run
+        run: |
+          MODE="${{ secrets.agent_mode }}"
+          SUFFIX="${{ inputs.sm_secret_suffix }}"
+
+          DEPLOY_FLAGS=(
+            --image "${{ env.IMAGE }}"
+            --region "${{ inputs.region }}"
+            --platform managed
+            --allow-unauthenticated
+            --service-account "${{ secrets.wif_rt_service_account }}"
+            --update-env-vars "AGENT_MODE=${MODE}"
+            --update-env-vars "GEMINI_MODEL=gemini-2.5-flash"
+            --update-env-vars "HOST=0.0.0.0"
+            --update-env-vars "LOG_LEVEL=INFO"
+            --update-env-vars "FIRESTORE_DATABASE_NAME=(default)"
+            --update-env-vars "DEBUG_RECORD_AUDIO=false"
+            --min-instances ${{ inputs.min_instances }}
+            --max-instances ${{ inputs.max_instances }}
+            --concurrency ${{ inputs.concurrency }}
+            --memory 2Gi
+            --cpu 2
+            --port 8080
+            --timeout 3600
+            --quiet
+          )
+
+          if [[ "$MODE" == "full" ]]; then
+            DEPLOY_FLAGS+=(
+              --update-env-vars "WEAVIATE_URL=http://${{ secrets.weaviate_vm_ip }}:${{ secrets.weaviate_vm_port }}"
+              --update-env-vars "WEAVIATE_SYNC_ON_STARTUP=true"
+              --update-env-vars "LANGUAGE_CODE_DE=de-DE"
+              --update-env-vars "VOICE_NAME_DE=de-DE-Chirp3-HD-Sulafat"
+              --update-env-vars "LANGUAGE_CODE_EN=en-US"
+              --update-env-vars "VOICE_NAME_EN=en-US-Chirp3-HD-Sulafat"
+              --update-env-vars "GOOGLE_TTS_API_CONCURRENCY=5"
+              --set-secrets "GEMINI_API_KEY=gemini-api-key${SUFFIX}:latest,ADMIN_SECRET_KEY=admin-secret-key${SUFFIX}:latest,METERED_API_KEY=metered-api-key${SUFFIX}:latest,METERED_APP_NAME=metered-app-name${SUFFIX}:latest,GOOGLE_PLACES_API_KEY=google-places-api-key${SUFFIX}:latest"
+              --vpc-connector "${{ secrets.weaviate_vpc_connector }}"
+              --vpc-egress private-ranges-only
+            )
+          else
+            DEPLOY_FLAGS+=(
+              --set-secrets "GEMINI_API_KEY=gemini-api-key${SUFFIX}:latest,ADMIN_SECRET_KEY=admin-secret-key${SUFFIX}:latest,GOOGLE_PLACES_API_KEY=google-places-api-key${SUFFIX}:latest"
+              --clear-vpc-connector
+            )
+          fi
+
+          gcloud run deploy ${{ inputs.service_name }} "${DEPLOY_FLAGS[@]}"
+
+      - name: Print Cloud Run URL
+        run: |
+          URL=$(gcloud run services describe ${{ inputs.service_name }} \
+            --region ${{ inputs.region }} \
+            --format "value(status.url)")
+          echo "## AI-Assistant (${{ inputs.environment }}) Deployed"  >> $GITHUB_STEP_SUMMARY
+          echo ""                                                        >> $GITHUB_STEP_SUMMARY
+          echo "- **Mode**: ${{ secrets.agent_mode }}"                  >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: $URL"                                         >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ env.IMAGE }}"                          >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ inputs.sha }}"                        >> $GITHUB_STEP_SUMMARY

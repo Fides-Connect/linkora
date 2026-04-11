@@ -138,9 +138,9 @@ flutter run
 
 **See**: [ConnectX Documentation](docs/connectx.md) for detailed setup including Firebase configuration.
 
-### 3. Start Weaviate
+### 3. Start Weaviate (full mode only)
 
-The AI Assistant requires Weaviate for provider search and data persistence:
+The default **full mode** requires Weaviate for provider vector search. Skip this step if running in [lite mode](#deployment-modes).
 
 ```bash
 # Start Weaviate
@@ -200,6 +200,29 @@ All documentation is organized in the [`/docs`](docs/) directory with a consiste
 ```
 
 **Read more**: [Architecture Overview](docs/architecture.md)
+
+## 🚀 Deployment Modes
+
+Linkora ships two deployment profiles, selected via the `AGENT_MODE` environment
+variable:
+
+| | Full mode (`AGENT_MODE=full`, default) | Lite mode (`AGENT_MODE=lite`) |
+|---|---|---|
+| **Provider search** | Weaviate vector / hybrid search | Google Places API → cross-encoder |
+| **Voice** | Yes (WebRTC audio) | Text-only |
+| **Firestore** | Full read/write | Not used |
+| **Provider onboarding** | Full flow | Not available |
+| **Infrastructure** | Cloud Run + Weaviate VM | Cloud Run only |
+| **Key env vars** | `WEAVIATE_URL` | `GOOGLE_PLACES_API_KEY` |
+
+**Lite mode** is ideal for prototypes, demos, or regions where you don't yet have
+providers registered in Weaviate.  The assistant fetches live results from the
+Google Places API, enriches them with web crawling (skills, email, portfolio),
+reranks them with a local cross-encoder model, and presents them to the user —
+all without any Weaviate dependency.
+
+See [Deployment Documentation](docs/deployment.md) for provisioning instructions
+for both modes.
 
 ## 🧪 Testing
 

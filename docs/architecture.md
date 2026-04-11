@@ -13,36 +13,39 @@ This document describes the architecture, design decisions, and technical implem
 │                                                             │
 │   ┌───────────────┐         ┌──────────────────┐            │
 │   │   ConnectX    │◄───────►│  AI-Assistant    │            │
-│   │  (Flutter)    │  WebRTC │  (Python)        │            │
-│   │               │  Audio  │                  │            │
-│   │  - iOS/Android│  Stream │  - STT           │            │
-│   │  - UI/UX      │         │  - LLM (Gemini)  │            │
-│   │  - WebRTC     │         │  - TTS           │            │
-│   │  - Auth       │         │  - WebRTC Server │            │
-│   └───────────────┘         └─────────┬────────┘            │
-│                                       │                     │
-│                                       ▼                     │
-│                            ┌──────────────────┐             │
-│                            │    Weaviate      │             │
-│                            │  (Vector DB)     │             │
-│                            │                  │             │
-│                            │  - Provider Data │             │
-│                            │  - Embeddings    │             │
-│                            │  - Hybrid Search │             │
-│                            └──────────────────┘             │
+│   │  (Flutter)    │ WebRTC  │  (Python/aiohttp)│            │
+│   │               │ (full)  │                  │            │
+│   │  - iOS/Android│◄───────►│  - STT / TTS     │            │
+│   │  - UI/UX      │  WSS    │  - LLM (Gemini)  │            │
+│   │  - WebRTC     │ (lite)  │  - Stage FSM     │            │
+│   │  - Auth       │         │  - Tool registry │            │
+│   └───────────────┘         └────┬─────────────┘            │
+│                                  │                          │
+│               ┌──────────────────┴──────────────┐           │
+│               │ Full mode          Lite mode     │           │
+│               ▼                   ▼              │           │
+│   ┌──────────────────┐  ┌──────────────────┐    │           │
+│   │    Weaviate      │  │ Google Places API│    │           │
+│   │  (Vector DB)     │  │ + WebCrawler     │    │           │
+│   │  - Provider Data │  │ + CrossEncoder   │    │           │
+│   │  - Embeddings    │  │  (ephemeral)     │    │           │
+│   │  - Hybrid Search │  └──────────────────┘    │           │
+│   └──────────────────┘                          │           │
 │                                                             │
 ├─────────────────────────────────────────────────────────────┤
 │               External Services                             │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │   ┌────────────┐  ┌────────────┐  ┌──────────────┐          │
-│   │ Google STT │  │ Google TTS │  │ Google Gemini│          │
+│   │ Google STT │  │ Google TTS │  │Google Gemini │          │
+│   │ (full mode)│  │ (full mode)│  │ 2.5 Flash    │          │
 │   └────────────┘  └────────────┘  └──────────────┘          │
 │                                                             │
-│   ┌────────────────┐  ┌────────────────────────────────┐    │
-│   │ Firebase       │  │ Firebase Cloud Messaging (FCM) │    │
-│   │ Auth/Firestore │  │ Push notifications (localised) │    │
-│   └────────────────┘  └────────────────────────────────┘    │
+│   ┌────────────────┐  ┌──────────────┐  ┌──────────────┐   │
+│   │ Firebase       │  │ Google Places│  │ Firebase     │   │
+│   │ Auth/Firestore │  │ Text Search  │  │ Cloud Msg.   │   │
+│   │ (full mode)    │  │ (lite mode)  │  │ (full mode)  │   │
+│   └────────────────┘  └──────────────┘  └──────────────┘   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -158,8 +161,9 @@ Server → Network → RTC DataChannel → AudioTrack → Speaker
 - **Language**: Python 3.14+
 - **Framework**: aiohttp (async, WebSocket + HTTP)
 - **WebRTC**: aiortc library
-- **APIs**: Google Cloud STT/TTS, Gemini
-- **Database**: Weaviate (vector search)
+- **LLM**: Google Gemini 2.5 Flash (streaming)
+- **External APIs**: Google Cloud STT/TTS (full mode), Google Places API (lite mode)
+- **Database**: Weaviate vector DB (full mode only)
 - **Container**: Docker
 
 ### Architecture Layers
@@ -194,12 +198,17 @@ ResponseOrchestrator
 
 #### 4. Conversation Management Layer
 ```python
-# Multi-stage conversation flow
+# Multi-stage conversation FSM
 ConversationService
-├── GREETING     # Initial user greeting
-├── TRIAGE       # Information gathering
-├── FINALIZE     # Provider presentation
-└── COMPLETED    # Session wrap-up
+├── TRIAGE            # Intent gathering + scoping questions
+├── CLARIFY           # Follow-up when intent is ambiguous
+├── CONFIRMATION      # Confirm request before provider search
+├── TOOL_EXECUTION    # Running tools (search, favorites, etc.)
+├── FINALIZE          # Present matched providers / results
+├── RECOVERY          # Handle errors or unavailable services
+├── COMPLETED         # Session wrap-up
+├── PROVIDER_PITCH    # Invite user to join as provider
+└── PROVIDER_ONBOARDING  # Guided skill collection for new providers
 ```
 
 #### 5. Data Layer
@@ -215,25 +224,36 @@ DataProvider
 
 ```
 ┌──────────┐
-│ GREETING │  "Hello [Name], how can I help you?"
+│  TRIAGE  │  Intent gathering — LLM clarifies need & scope
 └────┬─────┘
-     │ User describes need
+     │ intent clear
+     ▼
+┌──────────────┐
+│ CONFIRMATION │  Confirm request details before search
+└────┬─────────┘
+     │ confirmed                      │ needs more info
+     ▼                                ▼
+┌──────────┐                     ┌─────────┐
+│ FINALIZE │  Provider results   │ CLARIFY │  Follow-up questions
+└────┬─────┘  + email cards      └────┬────┘
+     │                               │ → back to TRIAGE
      ▼
 ┌──────────┐
-│ TRIAGE   │  Asks scoping questions (size, timing, etc.)
+│COMPLETED │  Wrap-up; if eligible → PROVIDER_PITCH
 └────┬─────┘
-     │ User provides details
-     │ Agent says "search database"
+     │ if user not yet a provider
      ▼
-┌──────────┐
-│ FINALIZE │  Presents matched providers, handles feedback
-└────┬─────┘
-     │ User accepts/rejects
+┌────────────────┐
+│ PROVIDER_PITCH │  Invite user to list their services
+└────┬───────────┘
+     │ accepted
      ▼
-┌──────────┐
-│COMPLETED │  Confirms and ends session
-└──────────┘
+┌─────────────────────┐
+│ PROVIDER_ONBOARDING │  Skill collection (multi-turn)
+└─────────────────────┘
 ```
+
+Error transitions: any stage may move to `RECOVERY` on failure; `RECOVERY → TRIAGE`.
 
 ### Streaming Pipeline
 
@@ -260,30 +280,31 @@ Semantic search for service provider matching using:
 - Hybrid search (vector + BM25)
 - Automatic embedding generation
 
-### Schema
+### Schema (full mode — hub-spoke model)
 
-**ServiceProvider Collection:**
+**User hub** (one per provider):
 ```python
 {
-    "name": str,              # Provider name
-    "description": str,       # Service description (vectorized)
-    "category": str,          # Service category
-    "phone": str,             # Contact phone
-    "email": str,             # Contact email
-    "city": str,              # Location
-    "relevance_score": float  # Search relevance (0-1)
+    "uid": str,              # Firebase UID
+    "name": str,             # Display name
+    "email": str,            # Contact email
+    "city": str,             # Location
+    "is_service_provider": bool,
+    "search_optimized_summary": str,  # vectorized for semantic search
 }
 ```
 
-**User Collection:**
+**Competence spoke** (one per skill/service):
 ```python
 {
-    "uid": str,               # Firebase UID
-    "email": str,             # User email
-    "name": str,              # Display name
-    "created_at": datetime    # Account creation
+    "skill_name": str,       # Service name
+    "skill_description": str,# Detailed description (vectorized)
+    "skill_category": str,   # Category
+    "owned_by": [User],      # Cross-reference to hub
 }
 ```
+
+Search targets `Competence` nodes and traverses to `User` to retrieve the full provider profile. This hub-spoke design enables per-skill semantic ranking while returning a unified provider card to the user.
 
 ### Search Algorithm
 
@@ -350,18 +371,29 @@ search_providers(query, filters)
 ### Development Environment
 ```
 localhost:8080    → AI-Assistant
-localhost:8090    → Weaviate
+localhost:8090    → Weaviate (full mode only)
 localhost:60099   → ConnectX Web (optional)
 ```
 
-### Production (Cloud Run + Compute Engine)
+### Production — Full mode (Cloud Run + Compute Engine)
 ```
 Cloud Run: ai-assistant (europe-west3, 1–3 instances)
+├── AGENT_MODE=full
 ├── Secrets via Secret Manager (gemini-api-key, admin-secret-key)
+├── VPC connector → Weaviate VM
 └── Workload Identity → Speech, TTS, Firebase, Firestore
 
 Compute Engine VM: weaviate-vm (e2-medium, europe-west3-a)
 └── Docker Compose: Weaviate + text2vec-model2vec
+```
+
+### Production — Lite mode (Cloud Run only)
+```
+Cloud Run: ai-assistant (europe-west3, 1–3 instances)
+├── AGENT_MODE=lite
+├── Secrets via Secret Manager (gemini-api-key, google-places-api-key)
+├── No VPC connector
+└── Workload Identity (Firebase Auth only)
 ```
 
 ### CI/CD Pipeline
@@ -425,7 +457,7 @@ Session authenticated
 - Native performance
 - Hot reload for rapid iteration
 
-### Why Python + FastAPI?
+### Why Python + aiohttp?
 - Excellent async support
 - Rich AI/ML ecosystem
 - aiortc for WebRTC

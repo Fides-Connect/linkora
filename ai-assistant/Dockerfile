@@ -41,7 +41,8 @@ EXPOSE 8080
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     HF_HUB_OFFLINE=1 \
-    TRANSFORMERS_OFFLINE=1
+    TRANSFORMERS_OFFLINE=1 \
+    CROSS_ENCODER_MODEL_DIR=/app/models/cross-encoder/ms-marco-MiniLM-L-6-v2
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

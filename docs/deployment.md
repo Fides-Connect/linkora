@@ -34,6 +34,80 @@ Flutter App (ConnectX)
 
 ---
 
+## Lite Mode (Cloud Run only)
+
+Set `AGENT_MODE=lite` to run without Weaviate.  The assistant fetches providers
+directly from the Google Places API at query time, enriches them via web
+crawling, and reranks with a local cross-encoder model.
+
+```
+Flutter App (ConnectX)
+        │ WSS — Firebase ID token auth
+        ▼
+┌─────────────────────────────────┐
+│  Cloud Run: ai-assistant-dev    │  europe-west3  ~$10-20/mo
+│  AGENT_MODE=lite                │
+│  • Scales 1–3 instances         │
+│  • Min 1 instance (no cold start)│
+│  • Workload Identity (no keys)  │
+│  • Secrets via Secret Manager   │
+│  NO VPC connector needed        │
+└─────────────────────────────────┘
+         │
+         │ HTTPS — at query time
+         ▼
+  Google Places API
+```
+
+**Estimated monthly cost**: ~$10–20 (Cloud Run only, no VM).
+
+### Required secrets / env vars
+
+| Secret / env var | Required |
+|---|---|
+| `GEMINI_API_KEY` | Yes |
+| `GOOGLE_PLACES_API_KEY` | Yes |
+| `AGENT_MODE` | Set to `lite` |
+| Firebase / Firestore credentials | Not needed |
+| `WEAVIATE_URL` | Not needed |
+
+### Deploying lite mode to Cloud Run
+
+No Weaviate VM and no VPC connector are required. Steps 6, 7, and 8 from the
+one-time setup can be skipped entirely.
+
+```bash
+gcloud run deploy ai-assistant-dev \
+  --image europe-west3-docker.pkg.dev/<PROJECT_ID>/ai-assistant/ai-assistant:latest \
+  --region europe-west3 \
+  --service-account linkora-rt-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com \
+  --set-env-vars "AGENT_MODE=lite,PORT=8080" \
+  --set-secrets "GEMINI_API_KEY=GEMINI_API_KEY:latest,GOOGLE_PLACES_API_KEY=GOOGLE_PLACES_API_KEY:latest" \
+  --min-instances 1 \
+  --max-instances 3 \
+  --memory 1Gi \
+  --cpu 1
+```
+
+The `GOOGLE_PLACES_API_KEY` secret must be created in Secret Manager before
+the first deploy:
+
+```bash
+echo -n "your_places_key" | gcloud secrets create GOOGLE_PLACES_API_KEY \
+  --data-file=- --replication-policy=automatic
+```
+
+Grant the Runtime SA access to it:
+
+```bash
+RT_SA="linkora-rt-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com"
+gcloud secrets add-iam-policy-binding GOOGLE_PLACES_API_KEY \
+  --member="serviceAccount:${RT_SA}" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+---
+
 ## Prerequisites
 
 ```bash
@@ -107,14 +181,12 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${CI_SA}" \
   --role="roles/compute.instanceAdmin.v1"
 
-<<<<<<< HEAD
-=======
+
 # Open IAP TCP tunnel to the VM (required for --tunnel-through-iap)
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${CI_SA}" \
   --role="roles/iap.tunnelResourceAccessor"
 
->>>>>>> origin/main
 # Allow CI SA to impersonate the default Compute Engine SA
 # (required so gcloud compute ssh can inject ephemeral SSH keys)
 gcloud iam service-accounts add-iam-policy-binding \
@@ -128,13 +200,6 @@ gcloud iam service-accounts add-iam-policy-binding \
   --member="serviceAccount:${CI_SA}" \
   --role="roles/iam.serviceAccountUser"
 
-<<<<<<< HEAD
-# Add new Secret Manager versions on every deploy
-# (secrets must already exist — create them manually first, see step 4)
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-  --member="serviceAccount:${CI_SA}" \
-  --role="roles/secretmanager.secretVersionAdder"
-=======
 # Create secrets and add new versions on every deploy.
 # No predefined role covers both — use a custom role created once below.
 gcloud iam roles create secretManagerCiRole \
@@ -147,7 +212,6 @@ gcloud iam roles create secretManagerCiRole \
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${CI_SA}" \
   --role="projects/${PROJECT_ID}/roles/secretManagerCiRole"
->>>>>>> origin/main
 ```
 
 **Runtime service account** (`linkora-rt-service-account-dev`) — attached to Cloud Run; used at runtime.
@@ -357,23 +421,36 @@ gcloud run services add-iam-policy-binding ai-assistant-dev \
 
 Add these in **Settings → Secrets and variables → Actions**:
 
+**Secrets required for both modes:**
+
 | Secret | Value / where to get it |
 |---|---|
 | `GCP_PROJECT_ID` | `gcloud config get-value project` |
 | `WIF_PROVIDER` | Output of WIF provider describe command in step 3 |
 | `WIF_CI_SERVICE_ACCOUNT` | `linkora-ci-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com` |
 | `WIF_RT_SERVICE_ACCOUNT` | `linkora-rt-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com` |
+| `GEMINI_API_KEY` | Your Gemini API key — synced to Secret Manager by the workflow |
+| `ADMIN_SECRET_KEY` | Your admin API secret — synced to Secret Manager by the workflow |
+
+**Additional secrets for full mode (`AGENT_MODE=full`):**
+
+| Secret | Value / where to get it |
+|---|---|
 | `WEAVIATE_VM_NAME` | `weaviate-vm-dev` |
 | `WEAVIATE_VM_ZONE` | `europe-west3-a` |
 | `WEAVIATE_VM_IP` | Internal IP from step 6 (e.g. `10.156.0.6`) |
 | `WEAVIATE_VM_PORT` | `8090` (host port mapped in docker-compose.yml) |
 | `WEAVIATE_VPC_CONNECTOR` | `ai-assistant-connect-dev` |
-| `GEMINI_API_KEY` | Your Gemini API key — synced to Secret Manager by the workflow |
-| `ADMIN_SECRET_KEY` | Your admin API secret — synced to Secret Manager by the workflow |
 | `METERED_APP_NAME` | Your Metered.ca application name (subdomain of `metered.live`) — synced to Secret Manager by the workflow |
 | `METERED_API_KEY` | Your Metered.ca API key — synced to Secret Manager by the workflow |
 
-The workflow syncs `GEMINI_API_KEY`, `ADMIN_SECRET_KEY`, `METERED_API_KEY`, and `METERED_APP_NAME` into Secret Manager on every deploy. Cloud Run injects them at runtime via `--set-secrets` (never in plain environment variables).
+**Additional secrets for lite mode (`AGENT_MODE=lite`):**
+
+| Secret | Value / where to get it |
+|---|---|
+| `GOOGLE_PLACES_API_KEY` | Your Google Places API key — synced to Secret Manager by the workflow |
+
+The workflow syncs secrets into Secret Manager on every deploy. Cloud Run injects them at runtime via `--set-secrets` (never in plain environment variables).
 
 ---
 
@@ -391,9 +468,12 @@ Push to main branch
         │       ▼
         │  [cloud-deploy.yml] deploy-ai-assistant
         │  build image → push to Artifact Registry
-        │  gcloud run deploy --vpc-connector=ai-assistant-connect-dev
+        │  if AGENT_MODE=full:
+        │    gcloud run deploy --vpc-connector=ai-assistant-connect-dev
+        │  if AGENT_MODE=lite:
+        │    gcloud run deploy (no VPC connector)
         │
-        └── weaviate/** changed?
+        └── weaviate/** changed? (full mode only)
                 │
                 ▼
            [cloud-deploy.yml] deploy-weaviate
@@ -407,13 +487,20 @@ Push to main branch
 
 ### Redeploy AI-Assistant without a code change
 
+**Full mode** (with VPC connector for Weaviate):
 ```bash
-# Trigger a new Cloud Run revision with the latest image
 gcloud run deploy ai-assistant-dev \
   --image europe-west3-docker.pkg.dev/<PROJECT_ID>/ai-assistant/ai-assistant:latest \
   --region europe-west3 \
   --vpc-connector=ai-assistant-connect-dev \
   --vpc-egress=private-ranges-only
+```
+
+**Lite mode** (no VPC connector):
+```bash
+gcloud run deploy ai-assistant-dev \
+  --image europe-west3-docker.pkg.dev/<PROJECT_ID>/ai-assistant/ai-assistant:latest \
+  --region europe-west3
 ```
 
 ### SSH into Weaviate VM

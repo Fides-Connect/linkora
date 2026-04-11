@@ -116,7 +116,7 @@ def init_weaviate_schema() -> bool | None:
         return True
 
     except Exception as e:
-        logger.error("Error initializing Hub and Spoke schema: %s", e)
+        logger.error("Error initializing schema: %s", e)
         raise
 
 

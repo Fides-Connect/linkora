@@ -58,7 +58,7 @@ class TranscriptProcessor:
                 if transcript:
                     if is_final:
                         self._current_transcript = transcript
-                        logger.info("Final transcript: %s", transcript)
+                        logger.debug("Final transcript: %s", transcript)
                         yield transcript, True
                     else:
                         logger.debug("Interim transcript: %s", transcript)

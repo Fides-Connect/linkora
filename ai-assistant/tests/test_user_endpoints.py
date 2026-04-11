@@ -235,6 +235,51 @@ class TestSettingsEndpoints:
         body = json.loads(response.body)
         assert body['notifications_enabled'] is False
 
+    async def test_lite_mode_get_returns_defaults(self):
+        """In lite mode GET returns default settings without touching Firestore."""
+        import json
+        from ai_assistant.api.v1.endpoints.me import get_settings
+        request = Mock(spec=Request)
+        with patch('ai_assistant.api.v1.endpoints.me.get_current_user_id', new=AsyncMock(return_value='user1')), \
+             patch('ai_assistant.api.v1.endpoints.me._IS_LITE_MODE', True), \
+             patch('ai_assistant.api.v1.endpoints.me.firestore_service') as mock_fs:
+            response = await get_settings(request)
+        assert response.status == 200
+        body = json.loads(response.body)
+        assert body['language'] == 'en'
+        assert body['notifications_enabled'] is False
+        mock_fs.get_user.assert_not_called()
+
+    async def test_lite_mode_patch_echoes_body_without_firestore(self):
+        """In lite mode PATCH echoes back validated language and notifications_enabled without persisting."""
+        import json
+        from ai_assistant.api.v1.endpoints.me import update_settings
+        request = Mock(spec=Request)
+        request.json = AsyncMock(return_value={'language': 'de', 'notifications_enabled': True})
+        with patch('ai_assistant.api.v1.endpoints.me.get_current_user_id', new=AsyncMock(return_value='user1')), \
+             patch('ai_assistant.api.v1.endpoints.me._IS_LITE_MODE', True), \
+             patch('ai_assistant.api.v1.endpoints.me.firestore_service') as mock_fs:
+            response = await update_settings(request)
+        assert response.status == 200
+        body = json.loads(response.body)
+        assert body['language'] == 'de'
+        assert body['notifications_enabled'] is True
+        mock_fs.get_user.assert_not_called()
+        mock_fs.update_user.assert_not_called()
+
+    async def test_lite_mode_patch_rejects_invalid_language(self):
+        """In lite mode PATCH falls back to default language for unsupported values."""
+        import json
+        from ai_assistant.api.v1.endpoints.me import update_settings
+        request = Mock(spec=Request)
+        request.json = AsyncMock(return_value={'language': 'fr'})
+        with patch('ai_assistant.api.v1.endpoints.me.get_current_user_id', new=AsyncMock(return_value='user1')), \
+             patch('ai_assistant.api.v1.endpoints.me._IS_LITE_MODE', True):
+            response = await update_settings(request)
+        assert response.status == 200
+        body = json.loads(response.body)
+        assert body['language'] == 'en'  # falls back to default
+
 
 class TestSignInGoogleEndpoint:
     """Tests for sign_in_google endpoint."""

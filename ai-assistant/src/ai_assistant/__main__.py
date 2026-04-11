@@ -26,14 +26,20 @@ warnings.filterwarnings(
     category=DeprecationWarning,
 )
 
-from aiohttp import web  # noqa: E402
+# Load .env before any application imports so that module-level constants
+# (e.g. _IS_LITE_MODE in endpoint modules) are evaluated with the correct values.
 from dotenv import load_dotenv  # noqa: E402
+load_dotenv()
+
+from aiohttp import web  # noqa: E402
 import firebase_admin  # noqa: E402
 
 from .signaling_server import SignalingServer  # noqa: E402
 from .common_endpoints import setup_cors  # noqa: E402
 from .services.admin_service import AdminService  # noqa: E402
+from .services.agent_profile import get_profile  # noqa: E402
 from .api.v1.router import register_v1_routes  # noqa: E402
+from .api.deps import COMPETENCE_ENRICHER_KEY  # noqa: E402
 from .weaviate_sync import run_startup_sync  # noqa: E402
 from .services.llm_service import LLMService  # noqa: E402
 from .hub_spoke_schema import HubSpokeConnection  # noqa: E402
@@ -48,9 +54,6 @@ logger = logging.getLogger(__name__)
 
 async def main() -> None:
     """Main application entry point."""
-    # Load environment variables
-    load_dotenv()
-
     # Set log level from environment
     logging.getLogger().setLevel(os.getenv('LOG_LEVEL', 'INFO').upper())
 
@@ -83,6 +86,7 @@ async def main() -> None:
 
     # Log configuration
     logger.info("Configuration:")
+    logger.info("  Agent Mode: %s", os.getenv('AGENT_MODE', 'full'))
     logger.info("  Firestore Database: %s", os.getenv('FIRESTORE_DATABASE_NAME', '(default)'))
     logger.info("  Language DE: %s", os.getenv('LANGUAGE_CODE_DE', 'de-DE'))
     logger.info("  Voice DE: %s", os.getenv('VOICE_NAME_DE', 'de-DE-Chirp3-HD-Sulafat'))
@@ -95,12 +99,18 @@ async def main() -> None:
     logger.info("  Debug Audio Record: %s", os.getenv('DEBUG_RECORD_AUDIO', 'false'))
     logger.info("  LLM Model: %s", os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'))
 
-    # Sync Firestore → Weaviate (opt-in via WEAVIATE_SYNC_ON_STARTUP=true)
-    await run_startup_sync()
+    _is_lite_mode = os.getenv("AGENT_MODE", "full").lower().strip() == "lite"
+
+    # Sync Firestore → Weaviate (opt-in via WEAVIATE_SYNC_ON_STARTUP=true).
+    # Skipped entirely in lite mode — no Weaviate instance is expected.
+    if not _is_lite_mode:
+        await run_startup_sync()
 
     # Initialize signaling server
     logger.info("Initializing signaling server...")
-    signaling_server = SignalingServer()
+    _agent_mode = os.getenv("AGENT_MODE", "full").lower().strip()
+    logger.info("  Agent mode: %s", _agent_mode)
+    signaling_server = SignalingServer(profile=get_profile(_agent_mode))
 
     # Initialize admin service
     logger.info("Initializing admin service...")
@@ -109,6 +119,7 @@ async def main() -> None:
     # Create web application
     app = web.Application()
     app.router.add_get('/ws', signaling_server.handle_websocket)
+    app.router.add_get('/ws/chat', signaling_server.handle_chat_websocket)
     app.router.add_get('/health', signaling_server.health_check)
 
     # Register v1 API routes
@@ -125,7 +136,7 @@ async def main() -> None:
             model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             max_output_tokens=2048,
         )
-        app["competence_enricher"] = _CompetenceEnricher(llm=_rest_llm.llm)  # type: ignore[arg-type]
+        app[COMPETENCE_ENRICHER_KEY] = _CompetenceEnricher(llm=_rest_llm.llm)  # type: ignore[arg-type]
         logger.info("CompetenceEnricher wired to REST app for /me/competencies endpoints")
     else:
         logger.warning("GEMINI_API_KEY not set — competence enrichment disabled for REST endpoints")
@@ -139,6 +150,7 @@ async def main() -> None:
 
     logger.info("Starting AI Assistant server on %s:%s", host, port)
     logger.info("WebSocket endpoint: ws://%s:%s/ws", host, port)
+    logger.info("Chat WebSocket endpoint: ws://%s:%s/ws/chat", host, port)
     logger.info("Health check: http://%s:%s/health", host, port)
     logger.info("API v1: http://%s:%s/api/v1/", host, port)
     logger.info("Sign-In: http://%s:%s/api/v1/auth/sign-in-google", host, port)

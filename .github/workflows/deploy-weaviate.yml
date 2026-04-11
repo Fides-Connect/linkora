@@ -8,7 +8,7 @@ on:
       - 'weaviate/**'
 
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID_DEV }}
 
 jobs:
   deploy-weaviate:
@@ -25,8 +25,8 @@ jobs:
       - name: Validate required secrets
         run: |
           MISSING=""
-          [[ -z "${{ secrets.WEAVIATE_VM_NAME }}" ]] && MISSING="$MISSING WEAVIATE_VM_NAME"
-          [[ -z "${{ secrets.WEAVIATE_VM_ZONE }}" ]] && MISSING="$MISSING WEAVIATE_VM_ZONE"
+          [[ -z "${{ secrets.WEAVIATE_VM_NAME_DEV }}" ]] && MISSING="$MISSING WEAVIATE_VM_NAME_DEV"
+          [[ -z "${{ secrets.WEAVIATE_VM_ZONE_DEV }}" ]] && MISSING="$MISSING WEAVIATE_VM_ZONE_DEV"
           if [[ -n "$MISSING" ]]; then
             echo "::error::Missing required GitHub secrets:$MISSING"
             echo "See docs/deployment.md for setup instructions."
@@ -36,8 +36,8 @@ jobs:
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-          service_account: ${{ secrets.WIF_CI_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER_DEV }}
+          service_account: ${{ secrets.WIF_CI_SERVICE_ACCOUNT_DEV }}
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
@@ -48,8 +48,8 @@ jobs:
         run: |
           # scp to home dir (no root permissions needed), then sudo mv into place
           gcloud compute scp weaviate/docker-compose.yml \
-            ${{ secrets.WEAVIATE_VM_NAME }}:~/docker-compose.yml \
-            --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
+            ${{ secrets.WEAVIATE_VM_NAME_DEV }}:~/docker-compose.yml \
+            --zone=${{ secrets.WEAVIATE_VM_ZONE_DEV }} \
             --tunnel-through-iap \
             --quiet
           gcloud compute ssh ${{ secrets.WEAVIATE_VM_NAME }} \
@@ -60,8 +60,8 @@ jobs:
 
       - name: Restart Weaviate on VM
         run: |
-          gcloud compute ssh ${{ secrets.WEAVIATE_VM_NAME }} \
-            --zone=${{ secrets.WEAVIATE_VM_ZONE }} \
+          gcloud compute ssh ${{ secrets.WEAVIATE_VM_NAME_DEV }} \
+            --zone=${{ secrets.WEAVIATE_VM_ZONE_DEV }} \
             --tunnel-through-iap \
             --quiet \
             --command="cd /opt/weaviate && sudo docker compose pull && sudo docker compose up -d"
@@ -70,6 +70,6 @@ jobs:
         run: |
           echo "## Weaviate Deployed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **VM**: ${{ secrets.WEAVIATE_VM_NAME }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Zone**: ${{ secrets.WEAVIATE_VM_ZONE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **VM**: ${{ secrets.WEAVIATE_VM_NAME_DEV }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Zone**: ${{ secrets.WEAVIATE_VM_ZONE_DEV }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

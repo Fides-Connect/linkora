@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // Add the Google services Gradle plugin
@@ -5,6 +7,12 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val keyPropertiesFile = rootProject.file("key.properties")
+val keyProperties = Properties()
+if (keyPropertiesFile.exists()) {
+    keyProperties.load(keyPropertiesFile.inputStream())
 }
 
 android {
@@ -22,6 +30,25 @@ android {
         jvmTarget = JavaVersion.VERSION_21.toString()
     }
 
+    signingConfigs {
+        if (keyPropertiesFile.exists()) {
+            create("release") {
+                val alias = keyProperties.getProperty("keyAlias")
+                    ?: throw GradleException("key.properties is missing required property 'keyAlias'")
+                val keyPass = keyProperties.getProperty("keyPassword")
+                    ?: throw GradleException("key.properties is missing required property 'keyPassword'")
+                val storeFilePath = keyProperties.getProperty("storeFile")
+                    ?: throw GradleException("key.properties is missing required property 'storeFile'")
+                val storePass = keyProperties.getProperty("storePassword")
+                    ?: throw GradleException("key.properties is missing required property 'storePassword'")
+                keyAlias = alias
+                keyPassword = keyPass
+                storeFile = file(storeFilePath)
+                storePassword = storePass
+            }
+        }
+    }
+
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.fides.connectx"
@@ -36,9 +63,21 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keyPropertiesFile.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
+    }
+
+    flavorDimensions += "mode"
+    productFlavors {
+        create("full") {
+            dimension = "mode"
+        }
+        create("lite") {
+            dimension = "mode"
         }
     }
 }

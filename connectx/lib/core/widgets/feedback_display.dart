@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme_colors.dart';
 
 class FeedbackDisplay extends StatelessWidget {
   final String title;
@@ -43,7 +44,7 @@ class FeedbackDisplay extends StatelessWidget {
                   return Chip(
                     label: Text(item),
                     backgroundColor: chipColor,
-                    labelStyle: const TextStyle(color: Colors.white),
+                    labelStyle: TextStyle(color: context.appPrimaryColor),
                   );
                 }).toList(),
               ),

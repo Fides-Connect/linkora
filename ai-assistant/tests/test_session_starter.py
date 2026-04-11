@@ -259,7 +259,7 @@ class TestVoiceSessionStarterInitialize:
     async def test_clears_first_message_flag_after_greeting(self):
         starter, deps = _voice_starter()
         await starter.initialize()
-        assert deps["conversation_service"].context.get("is_first_message") is False
+        deps["orchestrator"].handle_signal_transition.assert_called_once_with("triage")
         deps["orchestrator"].handle_signal_transition_async.assert_not_called()
 
     async def test_calls_on_speaking_change_true_then_false(self):
@@ -306,9 +306,8 @@ class TestVoiceSessionStarterInitialize:
             side_effect=RuntimeError("LLM error")
         )
         await starter.initialize()
-        # Flag is cleared even on error; no stage transition is needed
-        assert deps["conversation_service"].context.get("is_first_message") is False
-        deps["orchestrator"].handle_signal_transition.assert_not_called()
+        # GREETING → TRIAGE transition happens even on error
+        deps["orchestrator"].handle_signal_transition.assert_called_once_with("triage")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -359,8 +358,7 @@ class TestTextSessionStarterInitialize:
     async def test_clears_first_message_flag_after_greeting(self):
         starter, deps = _text_starter()
         await starter.initialize()
-        assert deps["conversation_service"].context.get("is_first_message") is False
-        deps["orchestrator"].handle_signal_transition.assert_not_called()
+        deps["orchestrator"].handle_signal_transition.assert_called_once_with("triage")
 
     async def test_does_not_call_tts(self):
         """TextSessionStarter must never touch TTS — no audio at session start."""
@@ -383,8 +381,8 @@ class TestTextSessionStarterInitialize:
         )
         await starter.initialize()  # must not raise
         assert starter.initialized_event.is_set()
-        assert deps["conversation_service"].context.get("is_first_message") is False
-        deps["orchestrator"].handle_signal_transition.assert_not_called()
+        # GREETING → TRIAGE transition happens even on error
+        deps["orchestrator"].handle_signal_transition.assert_called_once_with("triage")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -430,13 +428,12 @@ class TestTextSessionStarterWithBufferedMessage:
         conv.generate_greeting_text.assert_not_called()
 
     async def test_preserves_first_message_flag_when_buffered(self):
-        """When a buffered message is set, is_first_message must stay True so
-        the TRIAGE LLM call greets the user and handles their intent together."""
+        """When a buffered message is set, the session must advance GREETING → TRIAGE
+        immediately so the buffered message is processed as a normal TRIAGE turn."""
         starter, conv, orch, dc = self._buffered_starter()
         await starter.initialize()
-        # Flag left True — orchestrator will clear it after first LLM chunk
-        assert conv.context.get("is_first_message") is not False
-        orch.handle_signal_transition.assert_not_called()
+        # GREETING → TRIAGE must be called even on the buffered path
+        orch.handle_signal_transition.assert_called_once_with("triage")
 
     async def test_initialized_event_set_when_buffered_message_set(self):
         starter, conv, orch, dc = self._buffered_starter()
@@ -489,8 +486,8 @@ class TestTextSessionStarterLateMessage:
 
     async def test_skips_greeting_when_message_arrives_within_300ms(self):
         """If a message is signalled before the 300 ms window expires, the
-        autonomous greeting must be skipped; is_first_message stays True so TRIAGE
-        greets the user and handles their intent in a single LLM call."""
+        autonomous greeting must be skipped; GREETING → TRIAGE must still be
+        called so the user message is processed as a normal TRIAGE turn."""
         event = asyncio.Event()
 
         async def _fire_soon():
@@ -502,7 +499,7 @@ class TestTextSessionStarterLateMessage:
         await starter.initialize()
 
         conv.generate_greeting_text.assert_not_called()
-        orch.handle_signal_transition.assert_not_called()
+        orch.handle_signal_transition.assert_called_once_with("triage")
 
     async def test_no_dc_bubble_when_late_message_detected(self):
         """No standalone greeting bubble must be sent when the late-message
@@ -535,15 +532,14 @@ class TestTextSessionStarterLateMessage:
 
     async def test_generates_greeting_when_no_message_within_300ms(self):
         """If no message arrives within 300 ms, the autonomous greeting must
-        be generated and sent normally."""
+        be generated, sent, and the stage must advance GREETING → TRIAGE."""
         event = asyncio.Event()  # never set during this test
         starter, conv, orch, dc = self._late_starter(event)
         await starter.initialize()
 
         conv.generate_greeting_text.assert_called_once()
         dc.send_chat.assert_called_once()
-        orch.handle_signal_transition.assert_not_called()
-        assert conv.context.get("is_first_message") is False
+        orch.handle_signal_transition.assert_called_once_with("triage")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -6,8 +6,8 @@ class AppConstants {
   AppConstants._();
 
   // Colors
-  static const Color primaryCyan = Color(0xFF00D4FF);
-  static const Color primaryPurple = Color(0xFF6C63FF);
+  static const Color primaryCyan = Color(0xFF22D3EE);
+  static const Color primaryPurple = Color(0xFF6366F1);
   static const Color accentPurple = Color(0xFF818CF8);
 
   // Sizes

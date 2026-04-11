@@ -86,6 +86,24 @@ class LLMService:
         self.language: str = language
         logger.info("LLM service initialized with model: %s", model)
 
+    def close_session(self, session_id: str) -> None:
+        """Release all per-session memory (chat history + function schemas).
+
+        Must be called when a connection closes so the session's LLM chat
+        history and registered function schemas are freed.  Without this, both
+        dicts grow indefinitely for the lifetime of the process.
+        """
+        dropped_messages = 0
+        history = self.session_store.pop(session_id, None)
+        if history is not None:
+            dropped_messages = len(getattr(history, 'messages', []))
+        self._session_functions.pop(session_id, None)
+        logger.debug(
+            "LLM session %s released (freed %d messages from history).",
+            session_id,
+            dropped_messages,
+        )
+
     async def aclose(self) -> None:
         """Close the underlying google-genai async HTTP client (connection pool).
 
@@ -143,6 +161,11 @@ class LLMService:
         """
         history = self.get_session_history(session_id)
         history.add_message(message)
+        # Keep per-session history bounded to prevent unbounded RAM growth.
+        _MAX_HISTORY = 50
+        msgs = getattr(history, 'messages', None)
+        if msgs is not None and len(msgs) > _MAX_HISTORY:
+            del msgs[:len(msgs) - _MAX_HISTORY]
         logger.debug("Added message to session %s: %s", session_id, type(message).__name__)
 
     def pop_trailing_human_message(self, session_id: str) -> str | None:
