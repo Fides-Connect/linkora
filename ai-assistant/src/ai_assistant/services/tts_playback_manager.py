@@ -303,7 +303,7 @@ class TTSPlaybackManager:
             text: Text to synthesize
             order: Playback order
         """
-        logger.info("Synthesizing sentence %s: %s...", order, text[:50])
+        logger.debug("Synthesizing sentence %s: %s...", order, text[:50])
 
         # Register chunk and start synthesis task
         chunk = SentenceChunk(order=order, text=text)

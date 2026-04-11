@@ -31,7 +31,7 @@ from ai_assistant.services.ai_conversation_service import AIConversationService
 from langchain_core.messages import AIMessage
 
 from .conversation_service import ConversationStage
-from .data_channel_bridge import DataChannelBridge
+from .chat_bridge import ChatBridge
 from .greeting_cache import get_greeting_cache
 from .session_mode import SessionMode
 
@@ -125,7 +125,7 @@ class VoiceSessionStarter(SessionStarter):
         data_provider: DataProvider,
         tts_service: TextToSpeechService,
         llm_service: LLMService,
-        dc_bridge: DataChannelBridge,
+        dc_bridge: ChatBridge,
         output_track: AudioOutputTrack,
         user_id: str | None,
         connection_id: str,
@@ -227,9 +227,9 @@ class VoiceSessionStarter(SessionStarter):
             # Push greeting bubble to Flutter.
             self._dc.send_chat(greeting_text, is_user=False, is_chunk=False)
 
-            # Greeting delivered — clear the first-message flag so subsequent
-            # TRIAGE turns don't re-greet.  TRIAGE is already the initial stage.
-            self._conv.context["is_first_message"] = False
+            # Greeting delivered — advance GREETING → TRIAGE so subsequent voice
+            # turns use the scoping prompt without any re-greeting.
+            self._orchestrator.handle_signal_transition("triage")
             self.initialized_event.set()
 
             # Play audio.
@@ -263,9 +263,8 @@ class VoiceSessionStarter(SessionStarter):
                 exc,
                 exc_info=True,
             )
-            # Clear first-message flag so the next user turn doesn't attempt to
-            # re-greet.  Stage stays at TRIAGE (already the initial stage).
-            self._conv.context["is_first_message"] = False
+            # Advance to TRIAGE so the next user turn can be processed normally.
+            self._orchestrator.handle_signal_transition("triage")
         finally:
             # Keep is_ai_speaking=True until the audio queue actually drains.
             # Clearing it here while audio is still buffered in the output
@@ -282,16 +281,15 @@ class VoiceSessionStarter(SessionStarter):
 
 
 class TextSessionStarter(SessionStarter):
-    """Text-mode initializer: greeting bubble → seed history → TRIAGE ready.
+    """Text-mode initializer: greeting bubble → GREETING→TRIAGE transition → TRIAGE ready.
 
     For non-buffered sessions: generates a personalised greeting text, pushes it
     as a DataChannel chat bubble, seeds LLM history for coherent follow-up turns,
-    then clears the is_first_message flag so subsequent TRIAGE turns don't re-greet.
+    then transitions GREETING → TRIAGE so subsequent turns use the scoping prompt.
 
     For buffered sessions (a user message arrived before the session was ready):
-    skips the standalone greeting.  is_first_message stays True so the first
-    generate_response_stream() call greets the user and processes their intent
-    simultaneously in a single TRIAGE turn.
+    skips the standalone greeting and immediately advances to TRIAGE so the
+    buffered message is processed as a normal scoping turn.
 
     TTS is skipped (text-only session).
     """
@@ -303,7 +301,7 @@ class TextSessionStarter(SessionStarter):
         response_orchestrator: ResponseOrchestrator,
         data_provider: DataProvider,
         llm_service: LLMService,
-        dc_bridge: DataChannelBridge,
+        dc_bridge: ChatBridge,
         user_id: str | None,
         connection_id: str,
         firestore_service: FirestoreService | None = None,
@@ -326,6 +324,10 @@ class TextSessionStarter(SessionStarter):
 
     async def initialize(self) -> None:
         try:
+            # Record start time so the DataChannel-race guard budget is measured
+            # from session creation, not from after user-data I/O completes.
+            _t0 = asyncio.get_event_loop().time()
+
             user_name, has_open_request = await _fetch_user_data(
                 self._data_provider,
                 self._user_id,
@@ -365,28 +367,33 @@ class TextSessionStarter(SessionStarter):
 
             if self._buffered_message:
                 # A first user message arrived before the session was ready.
-                # Skip the standalone greeting so the LLM greets the user AND
-                # handles their intent together in the first TRIAGE turn.
-                # is_first_message stays True — ResponseOrchestrator will clear it
-                # after the first successful LLM chunk.
+                # Skip the standalone greeting and advance to TRIAGE immediately
+                # so the buffered message is processed as a normal scoping turn.
+                self._orchestrator.handle_signal_transition("triage")
                 logger.info(
                     "TextSessionStarter: skipped standalone greeting (buffered message) for %s",
                     self._connection_id,
                 )
                 return
 
-            # Wait up to 300 ms for a DataChannel message that arrives after the
-            # WebRTC handshake but before initialize() has committed to sending a
-            # standalone greeting.  This closes the race between the LLM call and
-            # a buffered client message delivered when the DataChannel first opens.
+            # Wait for a DataChannel message that may arrive after the WebRTC
+            # handshake.  The budget is measured from session creation (_t0), not
+            # from after user-data I/O completes, so slow Firestore/Weaviate
+            # fetches cannot exhaust the window before the DataChannel opens.
+            # Total window: 1.0 s from initialize() start; remaining budget after
+            # I/O = max(0, 1.0 - elapsed).  This adds at most ~400 ms to greeting
+            # latency for sessions with no pending message (vs the old fixed 300 ms).
             if self._first_message_event is not None:
                 try:
+                    elapsed = asyncio.get_event_loop().time() - _t0
+                    remaining_budget = max(0.0, 1.0 - elapsed)
                     await asyncio.wait_for(
-                        self._first_message_event.wait(), timeout=0.3
+                        self._first_message_event.wait(), timeout=remaining_budget
                     )
                     # A real message arrived in the window — skip the autonomous
-                    # greeting; is_first_message stays True so TRIAGE greets the
-                    # user while responding to their intent in one turn.
+                    # Advance from GREETING to TRIAGE so the user's buffered
+                    # message is processed as a normal TRIAGE turn.
+                    self._orchestrator.handle_signal_transition("triage")
                     logger.info(
                         "TextSessionStarter: skipped standalone greeting (late DC message) for %s",
                         self._connection_id,
@@ -408,9 +415,9 @@ class TextSessionStarter(SessionStarter):
             history = self._llm.get_session_history(self._connection_id)
             history.add_message(AIMessage(content=greeting_text))
 
-            # Greeting delivered — clear the first-message flag so subsequent
-            # TRIAGE turns don't re-greet.  TRIAGE is already the initial stage.
-            self._conv.context["is_first_message"] = False
+            # Greeting delivered — advance GREETING → TRIAGE so subsequent turns
+            # use the scoping prompt without any re-greeting.
+            self._orchestrator.handle_signal_transition("triage")
             logger.info(
                 "TextSessionStarter: TRIAGE ready for %s (user=%r)",
                 self._connection_id,
@@ -423,9 +430,8 @@ class TextSessionStarter(SessionStarter):
                 exc,
                 exc_info=True,
             )
-            # Clear first-message flag so the next user turn doesn't attempt
-            # to re-greet.  Stage stays at TRIAGE (already the initial stage).
-            self._conv.context["is_first_message"] = False
+            # Advance to TRIAGE so the next user turn can be processed normally.
+            self._orchestrator.handle_signal_transition("triage")
         finally:
             self.initialized_event.set()
 
@@ -442,7 +448,7 @@ class SessionStarterFactory:
         data_provider: DataProvider,
         tts_service: TextToSpeechService | None = None,
         llm_service: LLMService | None = None,
-        dc_bridge: DataChannelBridge | None = None,
+        dc_bridge: ChatBridge | None = None,
         output_track: AudioOutputTrack | None = None,
         user_id: str | None = None,
         connection_id: str = "",

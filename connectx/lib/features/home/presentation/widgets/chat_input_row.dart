@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../models/app_types.dart';
 import '../../../../utils/constants.dart';
 
@@ -10,6 +11,8 @@ import '../../../../utils/constants.dart';
 class ChatInputRow extends StatefulWidget {
   final ConversationState state;
   final bool isVoiceMode;
+  final bool showMicButton;
+  final bool enabled;
   final VoidCallback onMicTap;
   final Function(String) onTextSubmit;
   final Function(bool)? onFocusChanged;
@@ -19,6 +22,8 @@ class ChatInputRow extends StatefulWidget {
     super.key,
     required this.state,
     required this.isVoiceMode,
+    this.showMicButton = true,
+    this.enabled = true,
     required this.onMicTap,
     required this.onTextSubmit,
     this.onFocusChanged,
@@ -86,8 +91,8 @@ class _ChatInputRowState extends State<ChatInputRow> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.start,
             children: [
-              // Microphone button - animates size and position
-              AnimatedContainer(
+              // Microphone button - animates size and position (hidden in text-only/lite mode)
+              if (widget.showMicButton) AnimatedContainer(
                 duration: AppConstants.defaultTransitionDuration,
                 curve: Curves.easeInOut,
                 width: micSize,
@@ -155,7 +160,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                 ),
               ),
 
-              AnimatedContainer(
+              if (widget.showMicButton) AnimatedContainer(
                 duration: AppConstants.defaultTransitionDuration,
                 curve: Curves.easeInOut,
                 width: _isTextFieldFocused ? 12.0 : 20.0,
@@ -163,23 +168,26 @@ class _ChatInputRowState extends State<ChatInputRow> {
 
               // Text field - expands via maxLines, no wrapping AnimatedContainer
               Expanded(
-                child: TextField(
+                child: Opacity(
+                  opacity: widget.enabled ? 1.0 : 0.4,
+                  child: TextField(
                   controller: _textController,
                   focusNode: _focusNode,
+                  enabled: widget.enabled,
                   onTap: () {
                     _focusNode.requestFocus();
                   },
                   maxLines: _isTextFieldFocused ? 5 : 1,
                   minLines: 1,
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  style: TextStyle(color: context.appPrimaryColor, fontSize: 16),
                   decoration: InputDecoration(
                     hintText: widget.hintText,
                     hintStyle: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.5),
+                      color: context.appHintColor,
                       fontSize: 16,
                     ),
                     filled: true,
-                    fillColor: Colors.white.withValues(alpha: 0.1),
+                    fillColor: context.appSurface1,
                     contentPadding: EdgeInsets.symmetric(
                       horizontal: _isTextFieldFocused ? 16.0 : 12.0,
                       vertical: _isTextFieldFocused ? 12.0 : 14.0,
@@ -191,7 +199,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),
                       borderSide: BorderSide(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: context.appSurface3,
                         width: 1,
                       ),
                     ),
@@ -215,6 +223,7 @@ class _ChatInputRowState extends State<ChatInputRow> {
                   ),
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => _handleTextSubmit(),
+                ),
                 ),
               ),
             ],

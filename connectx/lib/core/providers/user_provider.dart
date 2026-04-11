@@ -69,6 +69,14 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> deleteAccount() async {
+    _isLoading = true;
+    notifyListeners();
+    await _authService.deleteAccount();
+    _isLoading = false;
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _authSubscription?.cancel();

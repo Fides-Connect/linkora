@@ -22,7 +22,7 @@ from collections.abc import AsyncIterator
 from collections.abc import Callable
 from collections.abc import Awaitable
 
-from .data_channel_bridge import DataChannelBridge
+from .chat_bridge import ChatBridge
 from .session_mode import SessionMode
 from .tts_playback_manager import TTSPlaybackManager
 
@@ -48,7 +48,7 @@ class VoiceResponseDelivery(ResponseDelivery):
         self,
         *,
         tts_manager: TTSPlaybackManager,
-        dc_bridge: DataChannelBridge,
+        dc_bridge: ChatBridge,
         on_speaking_change: Callable[[bool], None],
         monitor_playback_fn: Callable[[int, float], Awaitable[None]],
     ) -> None:
@@ -92,7 +92,7 @@ class ResponseDeliveryFactory:
         mode: SessionMode,
         *,
         tts_manager: TTSPlaybackManager,
-        dc_bridge: DataChannelBridge,
+        dc_bridge: ChatBridge,
         on_speaking_change: Callable[[bool], None],
         monitor_playback_fn: Callable[[int, float], Awaitable[None]],
     ) -> ResponseDelivery:

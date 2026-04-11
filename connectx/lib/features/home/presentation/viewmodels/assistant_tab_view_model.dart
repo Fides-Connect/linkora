@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:connectx/services/speech_service.dart';
 import 'package:connectx/models/chat_message.dart';
 import 'package:connectx/models/app_types.dart';
+import 'package:connectx/models/provider_card_data.dart';
 
 
 class AssistantTabViewModel extends ChangeNotifier {
@@ -17,6 +18,9 @@ class AssistantTabViewModel extends ChangeNotifier {
   final List<ChatMessage> _chatMessages = [];
   String _currentMessage = '';
   String _statusText = '';
+  String _toolStatusLabel = '';
+  // Maps English label key → localized label; set on each initialize() call.
+  Map<String, String> _aiStatusLabels = {};
   bool _lastMessageWasUser = false;
   bool _areCallbacksSetup = false;
   String? _error;
@@ -32,6 +36,10 @@ class AssistantTabViewModel extends ChangeNotifier {
   /// true once the data channel is confirmed open (safe to send text)
   bool _dataChannelReady = false;
 
+  /// true once the first AI message has been received.
+  /// Prevents the input field from being enabled before the greeting arrives.
+  bool _greetingReceived = false;
+
   /// Text message queued before the data channel was ready
   String? _pendingTextMessage;
 
@@ -42,6 +50,9 @@ class AssistantTabViewModel extends ChangeNotifier {
   // ── Idle timer ───────────────────────────────────────────────────────────
   Timer? _idleTimer;
   static const _idleTimeout = Duration(minutes: 10);
+
+  /// True after the idle timer fires so the UI can offer a "New Session" button.
+  bool _sessionEnded = false;
 
   /// Deduplication guard: tracks the language for which warmup was last
   /// triggered.  Prevents re-firing warmup on every [initialize] call (which
@@ -57,11 +68,26 @@ class AssistantTabViewModel extends ChangeNotifier {
   List<ChatMessage> get chatMessages => List.unmodifiable(_chatMessages);
   String get currentMessage => _currentMessage;
   String get statusText => _statusText;
+  String get toolStatusLabel => _toolStatusLabel;
   String? get error => _error;
   bool get isVoiceMode => _isVoiceMode;
+  bool get voiceEnabled => _speechService.voiceEnabled;
+  /// True once the data channel is open and the backend can receive messages.
+  bool get isSessionReady => _dataChannelReady;
+  /// True once the channel is open AND the first AI message has been received.
+  /// Use this to gate the chat input field so users cannot type before the
+  /// greeting arrives.
+  bool get isInputEnabled => _dataChannelReady && _greetingReceived;
+  /// True when the session ended (timeout or explicit stop) and chat history is preserved.
+  bool get sessionEnded => _sessionEnded;
 
   // ── Initialisation ───────────────────────────────────────────────────────
-  void initialize(String localStatusText, String languageCode) {
+  /// Translates an English status label to the session language.
+  /// Falls back to the original [englishLabel] when no translation is found.
+  String _t(String englishLabel) => _aiStatusLabels[englishLabel] ?? englishLabel;
+
+  void initialize(String localStatusText, String languageCode, {Map<String, String> aiStatusLabels = const {}}) {
+    _aiStatusLabels = aiStatusLabels;
     _resetStatusText = localStatusText;
     if (_statusText.isEmpty ||
         (_chatMessages.isEmpty &&
@@ -82,9 +108,30 @@ class AssistantTabViewModel extends ChangeNotifier {
     // the mic button.
     if (_warmupLanguage != languageCode) {
       _warmupLanguage = languageCode;
-      unawaited(_speechService.preWarmConnection());
-      unawaited(_speechService.warmUpGreeting());
+      if (_conversationState != ConversationState.idle) {
+        // A session is currently active.  The server has already locked that
+        // session to the old language (STT config, LLM prompts, TTS voice).
+        // Restart immediately so the new language takes effect right away.
+        final wasVoiceMode = _isVoiceMode;
+        unawaited(_restartForLanguageChange(localStatusText, wasVoiceMode));
+      } else {
+        // No active session — skip voice-only warmups when the deployment
+        // does not support voice (e.g. lite mode).
+        if (_speechService.voiceEnabled) {
+          unawaited(_speechService.preWarmConnection());
+          unawaited(_speechService.warmUpGreeting());
+        }
+      }
     }
+  }
+
+  /// Stops the current session and starts a fresh one in the new language.
+  /// Called fire-and-forget from [initialize] when the language changes
+  /// while a session is active.
+  Future<void> _restartForLanguageChange(
+      String statusText, bool voiceMode) async {
+    await stopChat(statusText);
+    await startChat(voiceMode: voiceMode);
   }
 
   // ── Callback wiring ───────────────────────────────────────────────────────
@@ -143,12 +190,22 @@ class AssistantTabViewModel extends ChangeNotifier {
         // the authoritative source of truth but arrives slightly after the echo.
         _conversationState = ConversationState.processing;
       } else {
-        if (!isChunk ||
+        // Mark that the AI has sent at least one message so the input field
+      // becomes available (guarded by isInputEnabled).
+      if (!_greetingReceived) {
+          _greetingReceived = true;
+        }
+
+      if (!isChunk ||
             _lastMessageWasUser ||
             _chatMessages.isEmpty ||
             _chatMessages.last.isUser) {
-          // New AI response starting — let onRuntimeState drive _conversationState;
-          // only manage chat messages and mic state here.
+          // New AI response starting — clear processing state immediately so the
+          // typing indicator disappears as soon as the first text arrives,
+          // without waiting for the onRuntimeState(speaking) backend event.
+          if (_conversationState == ConversationState.processing) {
+            _conversationState = ConversationState.listening;
+          }
           _currentMessage = text;
           _chatMessages.add(ChatMessage(text: text, isUser: false));
           _lastMessageWasUser = false;
@@ -173,6 +230,43 @@ class AssistantTabViewModel extends ChangeNotifier {
     _speechService.onRuntimeState = (AgentRuntimeState state) {
       _resetIdleTimer();
       _conversationState = _runtimeStateToConversationState(state);
+      // Provide a contextual label for each processing state so the user
+      // can see what the assistant is currently doing instead of plain dots.
+      switch (state) {
+        case AgentRuntimeState.thinking:
+          _toolStatusLabel = _t('Thinking...');
+        case AgentRuntimeState.llmStreaming:
+          _toolStatusLabel = _t('Composing response...');
+        case AgentRuntimeState.toolExecuting:
+          // The backend emits a specific label via onToolStatus before this
+          // state fires. Only fall back to a generic label if no specific one
+          // arrived (e.g. for internal signal_transition calls).
+          if (_toolStatusLabel.isEmpty ||
+              _toolStatusLabel == _t('Thinking...') ||
+              _toolStatusLabel == _t('Composing response...')) {
+            _toolStatusLabel = _t('Working...');
+          }
+        default:
+          _toolStatusLabel = '';
+      }
+      notifyListeners();
+    };
+
+    _speechService.onProviderCards = (List<Map<String, dynamic>> rawCards) {
+      _resetIdleTimer();
+      final cards = rawCards
+          .map((m) => ProviderCardData.fromJson(m))
+          .toList();
+      if (cards.isNotEmpty) {
+        _chatMessages.add(
+          ChatMessage(text: '', isUser: false, cards: cards),
+        );
+        notifyListeners();
+      }
+    };
+
+    _speechService.onToolStatus = (String label) {
+      _toolStatusLabel = _t(label);
       notifyListeners();
     };
 
@@ -246,13 +340,14 @@ class AssistantTabViewModel extends ChangeNotifier {
     }
     _conversationState = ConversationState.idle;
     _currentMessage = '';
-    _chatMessages.clear();
     _statusText = _resetStatusText;
     _isVoiceMode = false;
     _dataChannelReady = false;
+    _greetingReceived = false;
     _pendingTextMessage = null;
     _pendingEchoTexts.clear();
     _isStarting = false;
+    _sessionEnded = _chatMessages.isNotEmpty;
     notifyListeners();
   }
 
@@ -265,12 +360,24 @@ class AssistantTabViewModel extends ChangeNotifier {
   Future<void> startChat({bool voiceMode = false, String? pendingText}) async {
     if (_isStarting || _conversationState != ConversationState.idle) return;
     _isStarting = true;
+    if (voiceMode && !_speechService.voiceEnabled) voiceMode = false;
     _isVoiceMode = voiceMode;
     if (pendingText == null || pendingText.trim().isEmpty) {
       _pendingTextMessage = null;
     }
-    // _pendingTextMessage set above in the optimistic block when pendingText is non-null
+    // Clear history from any prior session so each new session begins with a
+    // clean slate and previous greetings / messages are not shown again.
+    _sessionEnded = false;
+    _chatMessages.clear();
+    _pendingEchoTexts.clear();
+    _currentMessage = '';
+    _lastMessageWasUser = false;
     _dataChannelReady = false;
+    _greetingReceived = false;
+    // Always enter connecting immediately so the loading spinner is shown even
+    // when there is no pending text (e.g. the auto-started greeting session).
+    _conversationState = ConversationState.connecting;
+    notifyListeners();
 
     // Optimistic update: show the user's first message immediately so the UI
     // responds before the server echo arrives (which may take a few seconds
@@ -281,7 +388,6 @@ class AssistantTabViewModel extends ChangeNotifier {
       _pendingTextMessage = pendingText.trim();
       _chatMessages.add(optimisticMsg);
       _lastMessageWasUser = true;
-      _conversationState = ConversationState.connecting;
       notifyListeners();
     }
 
@@ -299,7 +405,8 @@ class AssistantTabViewModel extends ChangeNotifier {
     }
   }
 
-  /// Stop the session and clear history.
+  /// Stop the session. Chat history is preserved so the user can review it
+  /// and tap "New Session" to start fresh.
   Future<void> stopChat(String resetStatusText) async {
     _resetStatusText = resetStatusText;
     _idleTimer?.cancel();
@@ -313,13 +420,14 @@ class AssistantTabViewModel extends ChangeNotifier {
 
     _conversationState = ConversationState.idle;
     _currentMessage = '';
-    _chatMessages.clear();
     _statusText = resetStatusText;
     _isVoiceMode = false;
     _dataChannelReady = false;
+    _greetingReceived = false;
     _pendingTextMessage = null;
     _pendingEchoTexts.clear();
     _isStarting = false;
+    _sessionEnded = _chatMessages.isNotEmpty;
     notifyListeners();
   }
 
@@ -338,7 +446,7 @@ class AssistantTabViewModel extends ChangeNotifier {
   /// Switch to voice mode: acquire microphone and renegotiate the WebRTC
   /// connection so the server activates the STT + TTS pipeline.
   Future<void> switchToVoiceMode() async {
-    if (_isVoiceMode) return;
+    if (_isVoiceMode || !_speechService.voiceEnabled) return;
     _isVoiceMode = true;
     notifyListeners();
     try {
@@ -395,6 +503,10 @@ class AssistantTabViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Test helpers ─────────────────────────────────────────────────────────
+  @visibleForTesting
+  void triggerIdleTimeoutForTest() => _handleIdleTimeout();
+
   // ── Dispose ───────────────────────────────────────────────────────────────
   @override
   void dispose() {
@@ -406,6 +518,7 @@ class AssistantTabViewModel extends ChangeNotifier {
     _speechService.onSpeechEnd = null;
     _speechService.onDisconnected = null;
     _speechService.onChatMessage = null;
+    _speechService.onProviderCards = null;
     super.dispose();
   }
 }

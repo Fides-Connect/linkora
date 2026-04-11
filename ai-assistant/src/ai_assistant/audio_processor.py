@@ -156,13 +156,17 @@ class AudioProcessor:
             session_id=self.connection_id
         )
 
-        # Wire AIConversationService so every session is persisted to Firestore.
-        ai_conv_service = AIConversationService(firestore_service=_firestore_service)
+        # Wire AIConversationService — Firestore is disabled in lite mode so no
+        # conversation history is persisted and no user context is read.
+        firestore_for_session = (
+            _firestore_service if assistant._profile.firestore_enabled else None
+        )
+        ai_conv_service = AIConversationService(firestore_service=firestore_for_session)
         assistant.response_orchestrator.ai_conversation_service = ai_conv_service
 
-        # Inject the same FirestoreService so the tool-context has a live client.
-        # Without this, all Firestore-dependent tools receive None and crash.
-        assistant.firestore_service = _firestore_service  # type: ignore[attr-defined, assignment]
+        # Inject FirestoreService into the tool context. None disables all
+        # Firestore-dependent operations (user context, provider pitch, tools).
+        assistant.firestore_service = firestore_for_session  # type: ignore[attr-defined, assignment]
 
         logger.info(
             "AI Assistant created with language '%s': %s, %s",
@@ -191,6 +195,22 @@ class AudioProcessor:
         except Exception as exc:  # pragma: no cover
             logger.warning("Could not re-emit FSM state on DC attach: %s", exc)
 
+    def set_chat_bridge(self, bridge: object) -> None:
+        """Replace the outbound message bridge (e.g. WebSocketBridge for lite mode).
+
+        Must be called BEFORE :meth:`start` so that the session starter and
+        delivery strategy references are both updated to the new bridge.
+        """
+        self._dc_bridge = bridge  # type: ignore[assignment]
+        # Recreate strategies so they hold a reference to the new bridge,
+        # not the DataChannelBridge created in __init__.
+        self._delivery = self._make_delivery(self.session_mode)
+        self._session_starter = self._make_session_starter(self.session_mode)
+        logger.info(
+            "Chat bridge replaced with %s for connection %s",
+            type(bridge).__name__, self.connection_id,
+        )
+
     # ── Strategy factories ────────────────────────────────────────────────────
 
     def _make_delivery(self, mode: SessionMode) -> ResponseDelivery:
@@ -205,6 +225,11 @@ class AudioProcessor:
 
     def _make_session_starter(self, mode: SessionMode) -> SessionStarter:
         """Create a SessionStarter strategy for the given mode."""
+        # Gate on firestore_enabled (same as _create_language_specific_assistant)
+        # so that lite mode never touches Firestore for the user-name lookup.
+        name_lookup_fs = (
+            _firestore_service if self.ai_assistant._profile.firestore_enabled else None
+        )
         return SessionStarterFactory.create(
             mode,
             conversation_service=self.ai_assistant.conversation_service,
@@ -218,7 +243,7 @@ class AudioProcessor:
             connection_id=self.connection_id,
             interrupt_event=self.interrupt_event,
             on_speaking_change=lambda speaking: setattr(self, "is_ai_speaking", speaking),
-            firestore_service=self.ai_assistant.firestore_service,
+            firestore_service=name_lookup_fs,
             buffered_message=self._buffered_message,
             first_message_event=self._first_message_received,
             monitor_playback_fn=self._monitor_playback_completion,
@@ -320,6 +345,8 @@ class AudioProcessor:
                 pass
 
         self.debug_recorder.save()
+        # Release per-session LLM memory before closing the HTTP client.
+        self.ai_assistant.llm_service.close_session(self.connection_id)
         await self.ai_assistant.aclose()
         logger.info("Audio processor stopped for connection %s", self.connection_id)
 
@@ -498,7 +525,7 @@ class AudioProcessor:
             self._make_audio_chunks()
         ):
             if transcript and self.is_ai_speaking and len(transcript.strip()) > 0:
-                logger.info("Interrupt detected: '%s'", transcript)
+                logger.debug("Interrupt detected: '%s'", transcript)
                 await self._trigger_interrupt()
                 if is_final:
                     # The triggering transcript was the AI's own TTS echo —
@@ -681,7 +708,7 @@ class AudioProcessor:
     async def _process_final_transcript(self, transcript: str) -> None:
         """Process a final transcript through LLM -> TTS pipeline."""
         try:
-            logger.info("Processing final transcript: '%s'", transcript)
+            logger.debug("Processing final transcript: '%s'", transcript)
 
             # Notify the connection handler of activity (resets idle timer).
             # Guard: empty/noise transcripts must not reset the idle timer (§9).
@@ -704,10 +731,13 @@ class AudioProcessor:
 
             start_time = asyncio.get_event_loop().time()
 
-            # Reset interrupt event and set speaking flag
+            # Reset interrupt event; set speaking flag only in voice mode —
+            # in text mode there is no TTS playback so the flag stays False.
+            # process_text_input's _response_task guard handles re-entrant text.
             self.interrupt_event.clear()
-            logger.info("🔊 is_ai_speaking → True (response started)")
-            self.is_ai_speaking = True
+            if self.session_mode == SessionMode.VOICE:
+                logger.info("🔊 is_ai_speaking → True (response started)")
+                self.is_ai_speaking = True
 
             # Performance tracking
             perf_times = {
@@ -736,6 +766,22 @@ class AudioProcessor:
                         first_chunk = True
                         continue
 
+                    # Provider cards: forward over the DataChannel before the
+                    # follow-up narrative so Flutter shows them first.
+                    if isinstance(chunk, dict) and chunk.get("type") == "provider-cards":
+                        cards = chunk.get("cards")
+                        if cards:
+                            self._dc_bridge.send_provider_cards(cards)
+                        continue
+
+                    # Tool status: forward the human-readable label so the UI
+                    # can show what the assistant is currently doing.
+                    if isinstance(chunk, dict) and chunk.get("type") == "tool-status":
+                        label = chunk.get("label", "")
+                        if label:
+                            self._dc_bridge.send_tool_status(label)
+                        continue
+
                     if not isinstance(chunk, str):
                         continue
 
@@ -759,7 +805,7 @@ class AudioProcessor:
 
         except asyncio.CancelledError:
             # User interrupted — reset state and let the task exit cleanly.
-            logger.info(f"Response generation interrupted for: '{transcript}'")
+            logger.debug("Response generation interrupted for: '%s'", transcript)
             logger.info("🔇 is_ai_speaking → False (task cancelled)")
             self.is_ai_speaking = False
             raise

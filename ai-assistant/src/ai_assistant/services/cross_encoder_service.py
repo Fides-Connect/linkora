@@ -53,10 +53,24 @@ _DEFAULT_MIN_SCORE = -8.0
 
 
 def _resolve_model_name() -> str:
-    """Return the local bundled path if it exists, else the HF identifier."""
-    if (_BUNDLED_MODEL_DIR / "config.json").exists():
-        logger.debug("Using bundled cross-encoder model at %s", _BUNDLED_MODEL_DIR)
-        return str(_BUNDLED_MODEL_DIR)
+    """Return the local bundled path if it exists, else the HF identifier.
+
+    Checks (in order):
+    1. ``CROSS_ENCODER_MODEL_DIR`` env var — set in Docker so the installed
+       package can locate the model weights at their deployment path
+       (``/app/models/...``) even though ``__file__`` resolves into the
+       site-packages tree after ``pip install``.
+    2. The sibling ``models/`` directory relative to the source tree root.
+    3. Falls back to the HF Hub identifier (requires network access).
+    """
+    candidates = [_BUNDLED_MODEL_DIR]
+    env_dir = os.environ.get("CROSS_ENCODER_MODEL_DIR")
+    if env_dir:
+        candidates.insert(0, Path(env_dir))
+    for path in candidates:
+        if (path / "config.json").exists():
+            logger.debug("Using bundled cross-encoder model at %s", path)
+            return str(path)
     logger.warning(
         "Bundled model not found at %s — will download from HF Hub",
         _BUNDLED_MODEL_DIR,
@@ -68,10 +82,20 @@ def _candidate_to_text(candidate: dict[str, Any]) -> str:
     """Build a single string representing a provider candidate for the cross-encoder.
 
     We concatenate the most semantically rich fields so the model can judge
-    relevance holistically:
+    relevance holistically.
+
+    Registered platform providers:
       - title          — what they do (most important)
       - search_optimized_summary — LLM-refined bio (primary vector source in Weaviate)
       - skills_list    — enumerated keywords
+
+    Google Places providers (no skills_list):
+      - title          — business name
+      - primary_type   — exact GP type label (e.g. "Wedding Photographer")
+      - search_optimized_summary — LLM-synthesised English summary
+      - category       — GP broad category (e.g. "Wedding service")
+      - description    — editorial summary in its original language
+      - review_snippets — raw customer review fragments (up to 5)
     """
     parts = []
     title = candidate.get("title") or candidate.get("category") or ""
@@ -82,9 +106,27 @@ def _candidate_to_text(candidate: dict[str, Any]) -> str:
     if summary:
         parts.append(summary)
 
+    # Registered-provider skills
     skills = candidate.get("skills_list") or []
     if skills:
         parts.append("Skills: " + ", ".join(skills))
+
+    # GP-provider fields (only populated for Google Places records)
+    primary_type = candidate.get("primary_type") or ""
+    if primary_type and primary_type not in title:
+        parts.append(primary_type)
+
+    category = candidate.get("category") or ""
+    if category and category not in title and category not in primary_type:
+        parts.append(category)
+
+    description = candidate.get("description") or ""
+    if description and description not in summary:
+        parts.append(description)
+
+    review_snippets = (candidate.get("review_snippets") or [])[:5]
+    if review_snippets:
+        parts.append("Customer reviews: " + ". ".join(review_snippets))
 
     return ". ".join(filter(None, parts)) or "No description available."
 
@@ -189,7 +231,14 @@ class CrossEncoderService:
         # (e.g. a software developer returned for an electrician query) from surfacing
         # when the candidate pool is sparse. Configurable via CROSS_ENCODER_MIN_SCORE
         # env var (default -5.0 on the ms-marco model scale, range roughly -10 to +10).
-        above_threshold = [c for c in scored if c["rerank_score"] >= self._min_score]
+        # NOTE: Google Places providers are exempt — their relevance was already validated
+        # by the Places API query, and the cross-encoder (trained on passage retrieval)
+        # systematically underscores short business-listing descriptions.
+        above_threshold = [
+            c for c in scored
+            if c["rerank_score"] >= self._min_score
+            or c.get("user", {}).get("source") == "google_places"
+        ]
         if len(above_threshold) < len(scored):
             logger.info(
                 "min_score=%.1f filtered out %d/%d candidates below relevance threshold",
@@ -205,3 +254,57 @@ class CrossEncoderService:
             [f"{c['rerank_score']:.3f}" for c in above_threshold[:top_k]],
         )
         return above_threshold[:top_k]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Module-level singleton — one model loaded per process, shared across all
+# connections.  The model is 87 MB; loading it once saves (N-1) × 87 MB for
+# N concurrent connections.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SINGLETON: CrossEncoderService | None = None
+_SINGLETON_LOCK = asyncio.Lock()
+
+
+def get_shared_cross_encoder(
+    model_name: str = _DEFAULT_MODEL,
+    min_score: float | None = None,
+) -> CrossEncoderService:
+    """Return the process-wide CrossEncoderService instance.
+
+    Creates it on the first call; subsequent calls return the cached instance.
+    Passing different ``model_name`` / ``min_score`` on the second call has no
+    effect — the first caller's arguments win.
+
+    This function is safe to call from synchronous constructor code.  The
+    model is loaded once; the asyncio lock is only needed for the rare race
+    during server startup.  In practice the server constructs connections
+    sequentially at startup so the race window is negligible, but
+    ``_SINGLETON_LOCK`` is kept for correctness.
+    """
+    global _SINGLETON
+    if _SINGLETON is None:
+        # Uncontested path: first caller wins.  Under asyncio's single-threaded
+        # event loop this assignment is atomic — no second coroutine can observe
+        # _SINGLETON as None after it has been set.
+        _SINGLETON = CrossEncoderService(model_name=model_name, min_score=min_score)
+    return _SINGLETON
+
+
+async def get_shared_cross_encoder_async(
+    model_name: str = _DEFAULT_MODEL,
+    min_score: float | None = None,
+) -> CrossEncoderService:
+    """Async variant of :func:`get_shared_cross_encoder`.
+
+    Serialises concurrent first-call construction through an ``asyncio.Lock``
+    so at most one ``CrossEncoderService`` is ever created per process even
+    when multiple coroutines call this concurrently during server startup.
+    """
+    global _SINGLETON
+    if _SINGLETON is not None:
+        return _SINGLETON
+    async with _SINGLETON_LOCK:
+        if _SINGLETON is None:
+            _SINGLETON = CrossEncoderService(model_name=model_name, min_score=min_score)
+    return _SINGLETON

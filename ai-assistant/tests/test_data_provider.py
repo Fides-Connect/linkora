@@ -7,6 +7,7 @@ from unittest.mock import Mock, AsyncMock, patch
 
 from ai_assistant.data_provider import (
     DataProvider,
+    NullDataProvider,
     WeaviateDataProvider,
     get_data_provider
 )
@@ -74,21 +75,43 @@ class TestWeaviateDataProvider:
 class TestDataProviderFactory:
     """Test data provider factory function."""
     
-    def test_get_data_provider_returns_weaviate(self):
-        """Test that Weaviate provider is returned by default."""
-        with patch.dict('os.environ', {'WEAVIATE_URL': 'http://localhost:8090'}):
+    def test_get_data_provider_returns_weaviate_in_full_mode(self):
+        """Test that WeaviateDataProvider is returned in full mode."""
+        with patch.dict('os.environ', {'AGENT_MODE': 'full', 'WEAVIATE_URL': 'http://localhost:8090'}):
             with patch('ai_assistant.data_provider.WeaviateDataProvider') as mock_weaviate:
                 mock_instance = Mock()
                 mock_weaviate.return_value = mock_instance
                 provider = get_data_provider()
                 assert isinstance(provider, type(mock_instance))
-    
+
+    def test_get_data_provider_returns_null_in_lite_mode(self):
+        """Test that NullDataProvider is returned in lite mode (no Weaviate connection)."""
+        with patch.dict('os.environ', {'AGENT_MODE': 'lite'}):
+            provider = get_data_provider()
+            assert isinstance(provider, NullDataProvider)
+
     def test_get_data_provider_uses_default_url(self):
         """Test that default URL is used when not specified."""
-        with patch.dict('os.environ', {}, clear=True):
+        with patch.dict('os.environ', {'AGENT_MODE': 'full'}, clear=False):
             with patch('ai_assistant.data_provider.WeaviateDataProvider') as mock_weaviate:
                 mock_instance = Mock()
                 mock_weaviate.return_value = mock_instance
                 provider = get_data_provider()
                 # Should use default http://localhost:8090
                 assert isinstance(provider, type(mock_instance))
+
+
+class TestNullDataProvider:
+    """Test NullDataProvider — lite mode no-op provider."""
+
+    async def test_get_user_by_id_returns_none(self):
+        provider = NullDataProvider()
+        assert await provider.get_user_by_id("any_id") is None
+
+    async def test_search_providers_returns_empty(self):
+        provider = NullDataProvider()
+        assert await provider.search_providers("plumber") == []
+
+    async def test_get_provider_by_id_returns_none(self):
+        provider = NullDataProvider()
+        assert await provider.get_provider_by_id("any_id") is None

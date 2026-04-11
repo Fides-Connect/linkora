@@ -5,6 +5,7 @@ import 'package:flutter_signin_button/flutter_signin_button.dart';
 import 'package:provider/provider.dart';
 
 import '../../../../core/providers/user_provider.dart';
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../theme.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
@@ -36,22 +37,12 @@ class StartPage extends StatelessWidget {
           backgroundColor: Colors.transparent,
           elevation: 0,
           actions: [
-            PopupMenuButton<Locale>(
-              icon: const Icon(Icons.language),
-              tooltip: localizations?.selectLanguage ?? 'Select Language',
-              onSelected: (Locale locale) {
-                ConnectXApp.setLocale(context, locale);
-              },
-              itemBuilder: (BuildContext context) => [
-                const PopupMenuItem<Locale>(
-                  value: Locale('en', ''),
-                  child: Text('English'),
-                ),
-                const PopupMenuItem<Locale>(
-                  value: Locale('de', ''),
-                  child: Text('Deutsch'),
-                ),
-              ],
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: _LanguageToggle(
+                currentLocale: Localizations.localeOf(context),
+                onSelect: (locale) => ConnectXApp.setLocale(context, locale),
+              ),
             ),
           ],
         ),
@@ -124,6 +115,93 @@ class StartPage extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact segmented language toggle used on the start screen AppBar.
+///
+/// Shows two pill-shaped buttons side by side.  The currently active language
+/// is highlighted with the primary app color as background and contrasting text
+/// (dark on dark themes, light on light themes); the inactive one is
+/// transparent with primary-color text.
+class _LanguageToggle extends StatelessWidget {
+  final Locale currentLocale;
+  final ValueChanged<Locale> onSelect;
+
+  const _LanguageToggle({
+    required this.currentLocale,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 34,
+      decoration: BoxDecoration(
+        color: context.appSurface2,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ToggleButton(
+            label: 'EN',
+            selected: currentLocale.languageCode == 'en',
+            onTap: () => onSelect(const Locale('en', '')),
+          ),
+          _ToggleButton(
+            label: 'DE',
+            selected: currentLocale.languageCode == 'de',
+            onTap: () => onSelect(const Locale('de', '')),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ToggleButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ToggleButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = selected;
+    return Semantics(
+      button: true,
+      enabled: !isSelected,
+      label: label,
+      selected: isSelected,
+      child: InkWell(
+        onTap: isSelected ? null : onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: isSelected ? context.appPrimaryColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected
+                  ? (Theme.of(context).brightness == Brightness.dark ? Colors.black87 : Colors.white)
+                  : context.appPrimaryColor,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              fontSize: 13,
+            ),
+          ),
         ),
       ),
     );

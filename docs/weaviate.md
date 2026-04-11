@@ -16,6 +16,8 @@ Weaviate is the vector database infrastructure for the Linkora AI-Assistant, pro
 
 ## 🎯 Overview
 
+> **Full mode only.** Weaviate is used exclusively when `AGENT_MODE=full`. In lite mode (`AGENT_MODE=lite`), provider search is handled by the Google Places API and no Weaviate connection is required.
+
 Weaviate provides:
 - **Semantic Search**: Vector-based similarity search using embeddings
 - **Hybrid Search**: Combined vector and keyword (BM25) search
@@ -45,26 +47,29 @@ Weaviate provides:
 
 ### Data Schema
 
-**ServiceProvider Collection:**
-```json
-{
-  "name": "Provider Name",
-  "description": "Service description (vectorized field)",
-  "category": "Service category",
-  "phone": "+49 30 1234567",
-  "email": "contact@provider.com",
-  "city": "Berlin",
-  "relevance_score": 0.92
-}
-```
+**Hub-Spoke Model:**
 
-**User Collection:**
+The platform uses a hub-spoke schema where each provider (`User` hub) owns one or more skills (`Competence` spokes). Search targets `Competence` nodes and traverses cross-references to return the full provider profile.
+
+**User (hub):**
 ```json
 {
   "uid": "firebase-uid",
-  "email": "user@example.com",
-  "name": "User Name",
-  "created_at": "2026-01-21T10:30:00Z"
+  "name": "Provider Name",
+  "email": "contact@provider.com",
+  "city": "Berlin",
+  "is_service_provider": true,
+  "search_optimized_summary": "Compact vectorized summary (vectorized)"
+}
+```
+
+**Competence (spoke):**
+```json
+{
+  "skill_name": "Bathroom renovation",
+  "skill_description": "Full bathroom tile and plumbing (vectorized)",
+  "skill_category": "Handwerk",
+  "owned_by": ["<User UUID>"]
 }
 ```
 
@@ -221,15 +226,29 @@ volumes:
 
 ### Vectorization Settings
 
-**ServiceProvider Collection Config:**
+The platform uses a hub-spoke schema. Vectorization is applied to the `Competence` spoke (skill description) and to the `User` hub (`search_optimized_summary`):
+
 ```python
+# Competence spoke — vectorize skill_description for semantic search
 {
-    "class": "ServiceProvider",
+    "class": "Competence",
     "vectorizer": "text2vec-model2vec",
     "moduleConfig": {
         "text2vec-model2vec": {
             "vectorizeClassName": False,
-            "properties": ["description"]  # Only vectorize description
+            "properties": ["skill_description"]
+        }
+    }
+}
+
+# User hub — vectorize search_optimized_summary
+{
+    "class": "User",
+    "vectorizer": "text2vec-model2vec",
+    "moduleConfig": {
+        "text2vec-model2vec": {
+            "vectorizeClassName": False,
+            "properties": ["search_optimized_summary"]
         }
     }
 }
@@ -649,14 +668,14 @@ For isolating data per tenant:
 ```python
 # Create tenant
 client.schema.create_class_tenant(
-    class_name="ServiceProvider",
+    class_name="User",
     tenants=[{"name": "tenant1"}]
 )
 
 # Query with tenant
 results = client.query.get(
-    "ServiceProvider",
-    ["name", "description"]
+    "User",
+    ["uid", "name"]
 ).with_tenant("tenant1").do()
 ```
 

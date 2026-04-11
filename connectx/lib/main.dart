@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/providers/user_provider.dart';
 import 'features/auth/presentation/pages/start_page.dart';
@@ -18,7 +19,7 @@ import 'firebase_options.dart';
 import 'localization/app_localizations.dart';
 import 'services/notification_service.dart';
 import 'services/user_service.dart';
-import 'theme.dart';
+import 'theme.dart' show appTheme, darkAppTheme, lightAppTheme;
 
 /// Global navigator key — used to push routes from outside the widget tree
 /// (e.g. when a push notification is tapped).
@@ -80,47 +81,51 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Set up background message handler
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  final isLiteMode = dotenv.env['APP_MODE']?.toLowerCase() == 'lite';
 
-  // Show a local notification when the app is in the foreground and a
-  // service-request status-change push arrives (FCM does not auto-display
-  // notification-payload messages while the app is active).
-  // Tapping the local notification calls _openServiceRequestDetail.
-  final notificationService = NotificationService();
-  await notificationService.initialize(
-    onNotificationTap: (payload) {
-      // payload format: "<type>:<service_request_id>"
-      final colonIndex = payload.indexOf(':');
-      if (colonIndex != -1) {
-        final id = payload.substring(colonIndex + 1);
-        _openServiceRequestDetail(id);
+  if (!isLiteMode) {
+    // Set up background message handler
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    // Show a local notification when the app is in the foreground and a
+    // service-request status-change push arrives (FCM does not auto-display
+    // notification-payload messages while the app is active).
+    // Tapping the local notification calls _openServiceRequestDetail.
+    final notificationService = NotificationService();
+    await notificationService.initialize(
+      onNotificationTap: (payload) {
+        // payload format: "<type>:<service_request_id>"
+        final colonIndex = payload.indexOf(':');
+        if (colonIndex != -1) {
+          final id = payload.substring(colonIndex + 1);
+          _openServiceRequestDetail(id);
+        }
+      },
+    );
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      final type = message.data['type'];
+      if (type == 'service_request_status_change' ||
+          type == 'new_service_request') {
+        final title = message.notification?.title ?? 'Service Request Update';
+        final body = message.notification?.body ?? 'You have a new service request update.';
+        notificationService.showNotification(
+          id: DateTime.now().millisecondsSinceEpoch,
+          title: title,
+          body: body,
+          payload: '$type:${message.data['service_request_id'] ?? ''}',
+        );
       }
-    },
-  );
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    final type = message.data['type'];
-    if (type == 'service_request_status_change' ||
-        type == 'new_service_request') {
-      final title = message.notification?.title ?? 'Service Request Update';
-      final body = message.notification?.body ?? 'You have a new service request update.';
-      notificationService.showNotification(
-        id: DateTime.now().millisecondsSinceEpoch,
-        title: title,
-        body: body,
-        payload: '$type:${message.data['service_request_id'] ?? ''}',
-      );
-    }
-  });
+    });
 
-  // Navigate to detail page when the app is opened via a notification tap
-  // while the app was in the background.
-  FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationOpen);
+    // Navigate to detail page when the app is opened via a notification tap
+    // while the app was in the background.
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationOpen);
 
-  // Navigate when the app was fully terminated and launched via notification.
-  _handleNotificationOpen(
-    await FirebaseMessaging.instance.getInitialMessage(),
-  );
+    // Navigate when the app was fully terminated and launched via notification.
+    _handleNotificationOpen(
+      await FirebaseMessaging.instance.getInitialMessage(),
+    );
+  }
 
   final userProvider = UserProvider();
   await userProvider.init();
@@ -142,26 +147,62 @@ class ConnectXApp extends StatefulWidget {
   State<ConnectXApp> createState() => _ConnectXAppState();
 
   static void setLocale(BuildContext context, Locale newLocale) {
-    _ConnectXAppState? state =
-        context.findAncestorStateOfType<_ConnectXAppState>();
-    state?.setLocale(newLocale);
+    context.findAncestorStateOfType<_ConnectXAppState>()?.setLocale(newLocale);
+  }
+
+  static void setThemeMode(BuildContext context, ThemeMode mode) {
+    context.findAncestorStateOfType<_ConnectXAppState>()?.setThemeMode(mode);
   }
 }
 
 class _ConnectXAppState extends State<ConnectXApp> {
   Locale? _locale;
+  ThemeMode _themeMode = ThemeMode.system;
 
   UserProvider? _userProvider;
   bool? _prevAuthenticated;
 
+  static const _kLanguageKey = 'lite_language';
+  static const _kThemeModeKey = 'theme_mode';
+  static final bool _isLiteMode =
+      dotenv.env['APP_MODE']?.toLowerCase() == 'lite';
+
   @override
   void initState() {
     super.initState();
+    _restoreThemeMode();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _userProvider = context.read<UserProvider>();
       _userProvider!.addListener(_onAuthChanged);
-      if (_userProvider!.isAuthenticated) _applyBackendSettings();
+      if (_isLiteMode) {
+        _restoreLocalLanguage();
+      } else if (_userProvider!.isAuthenticated) {
+        _applyBackendSettings();
+      }
     });
+  }
+
+  Future<void> _restoreThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kThemeModeKey);
+    ThemeMode mode = ThemeMode.system;
+    if (raw == 'dark') mode = ThemeMode.dark;
+    if (raw == 'light') mode = ThemeMode.light;
+    if (mounted) setState(() => _themeMode = mode);
+  }
+
+  void setThemeMode(ThemeMode mode) {
+    setState(() => _themeMode = mode);
+    SharedPreferences.getInstance().then(
+      (prefs) => prefs.setString(
+        _kThemeModeKey,
+        mode == ThemeMode.dark
+            ? 'dark'
+            : mode == ThemeMode.light
+                ? 'light'
+                : 'system',
+      ),
+    );
   }
 
   @override
@@ -172,12 +213,15 @@ class _ConnectXAppState extends State<ConnectXApp> {
 
   void _onAuthChanged() {
     final isAuth = _userProvider?.isAuthenticated ?? false;
-    if (isAuth && _prevAuthenticated != true) _applyBackendSettings();
+    if (isAuth && _prevAuthenticated != true && !_isLiteMode) _applyBackendSettings();
     _prevAuthenticated = isAuth;
   }
 
   /// Fetches language + notifications_enabled from the backend and applies
   /// them locally. Runs once after login and on each fresh authentication.
+  ///
+  /// Only used in full mode. In lite mode, [_restoreLocalLanguage] is used
+  /// instead because the server has no persistent settings state.
   Future<void> _applyBackendSettings() async {
     final settings = await UserService().getSettings();
     if (settings == null || !mounted) return;
@@ -194,10 +238,28 @@ class _ConnectXAppState extends State<ConnectXApp> {
     }
   }
 
+  /// Restores the user's last-chosen language from local storage in lite mode.
+  /// Falls back to the system locale (i.e. [_locale] stays null) if no
+  /// preference has been saved yet.
+  Future<void> _restoreLocalLanguage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_kLanguageKey);
+    if (saved != null && (saved == 'en' || saved == 'de') && mounted) {
+      setState(() => _locale = Locale(saved, ''));
+    }
+  }
+
   void setLocale(Locale locale) {
     setState(() {
       _locale = locale;
     });
+    if (_isLiteMode) {
+      // Persist the choice locally — in lite mode there is no Firestore to
+      // back this up, so shared_preferences is the source of truth.
+      SharedPreferences.getInstance().then(
+        (prefs) => prefs.setString(_kLanguageKey, locale.languageCode),
+      );
+    }
   }
 
   @override
@@ -205,7 +267,9 @@ class _ConnectXAppState extends State<ConnectXApp> {
     return MaterialApp(
       title: 'ConnectX',
       navigatorKey: _navigatorKey,
-      theme: appTheme,
+      theme: lightAppTheme,
+      darkTheme: darkAppTheme,
+      themeMode: _themeMode,
       locale: _locale,
       localizationsDelegates: const [
         AppLocalizations.delegate,

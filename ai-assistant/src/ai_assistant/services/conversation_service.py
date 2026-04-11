@@ -5,31 +5,38 @@ Handles conversation flow, stage management, and orchestration.
 import logging
 import json
 import asyncio
+from dataclasses import dataclass
 from enum import StrEnum
 from datetime import datetime
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_core.messages import HumanMessage
 
+if TYPE_CHECKING:
+    from .google_places_service import GooglePlacesService
+    from .agent_profile import AgentProfile
+
 from ..data_provider import DataProvider, SearchUnavailableError
 from ..prompts_templates import (
-    GREETING_AND_TRIAGE_PROMPT,
-    TRIAGE_CONVERSATION_PROMPT,
-    FINALIZE_SERVICE_REQUEST_PROMPT,
-    CLARIFY_PROMPT,
-    CONFIRMATION_PROMPT,
-    RECOVERY_PROMPT,
-    LOOP_BACK_PROMPT,
-    PROVIDER_PITCH_PROMPT,
-    PROVIDER_ONBOARDING_PROMPT,
     get_language_instruction,
     get_greeting_fallback,
+    get_prompt,
 )
 from .cross_encoder_service import CrossEncoderService
 from .llm_service import LLMService
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GpResult:
+    """Outcome of a single GP pipeline run inside search_providers_for_request."""
+    providers_written: int = 0   # number of GP nodes written to Weaviate
+    error: bool = False          # True when GP tried but failed
+    query: str = ""              # Places query string used (empty on LLM skip)
+    duration_ms: int = 0         # wall-clock time for fetch_and_ingest()
+    error_code: str = ""         # e.g. "rate_limited", "timeout", "llm_skip"
 
 
 def json_serializer(obj: object) -> str:
@@ -41,11 +48,13 @@ def json_serializer(obj: object) -> str:
 
 class ConversationStage(StrEnum):
     """External conversation stage — owned exclusively by ResponseOrchestrator."""
+    GREETING      = "greeting"
     TRIAGE        = "triage"
     CLARIFY       = "clarify"
     TOOL_EXECUTION = "tool_execution"
     CONFIRMATION  = "confirmation"
     FINALIZE      = "finalize"
+    BROWSE        = "browse"
     RECOVERY      = "recovery"
     COMPLETED     = "completed"
     PROVIDER_PITCH      = "provider_pitch"
@@ -54,6 +63,7 @@ class ConversationStage(StrEnum):
 
 # Legal stage transitions: { from_stage: { allowed_to_stages } }
 _LEGAL_TRANSITIONS: dict[ConversationStage, list[ConversationStage]] = {
+    ConversationStage.GREETING:       [ConversationStage.TRIAGE],
     ConversationStage.TRIAGE:         [ConversationStage.CONFIRMATION, ConversationStage.CLARIFY,
                                        ConversationStage.TOOL_EXECUTION, ConversationStage.RECOVERY,
                                        ConversationStage.PROVIDER_ONBOARDING],
@@ -84,7 +94,9 @@ class ConversationService:
     def __init__(self, llm_service: LLMService, data_provider: DataProvider,
                  agent_name: str = "Elin", company_name: str = "Linkora",
                  max_providers: int = 5, language: str = 'de',
-                 cross_encoder_service: CrossEncoderService | None = None) -> None:
+                 cross_encoder_service: CrossEncoderService | None = None,
+                 google_places_service: GooglePlacesService | None = None,
+                 profile: AgentProfile | None = None) -> None:
         """
         Initialize Conversation service.
 
@@ -98,7 +110,14 @@ class ConversationService:
             cross_encoder_service: Optional cross-encoder reranker.  When
                 provided, providers returned by Weaviate are reranked before
                 being stored in ``context["providers_found"]``.
+            google_places_service: Optional Google Places service.  When
+                provided and the profile has ``google_places_always_active=True``,
+                GP results are fetched and upserted before the Weaviate search.
+            profile: Agent capability profile.  Defaults to ``FULL_PROFILE`` when
+                ``None``.
         """
+        from .agent_profile import FULL_PROFILE
+
         self.llm_service = llm_service
         self.data_provider = data_provider
         self.agent_name = agent_name
@@ -106,8 +125,10 @@ class ConversationService:
         self.max_providers = max_providers
         self.language = language
         self.cross_encoder_service = cross_encoder_service
+        self.google_places_service = google_places_service
+        self._profile = profile if profile is not None else FULL_PROFILE
 
-        self.current_stage: ConversationStage = ConversationStage.TRIAGE
+        self.current_stage: ConversationStage = ConversationStage.GREETING
         self.context: dict[str, Any] = {
             "user_problem": [],
             "ai_responses": [],
@@ -126,11 +147,10 @@ class ConversationService:
             # Mirrored from user_context by ResponseOrchestrator on every
             # PROVIDER_ONBOARDING turn so the prompt can render STEP 0 correctly.
             "is_service_provider": False,
-            # Set True on session creation; cleared by ResponseOrchestrator after
-            # the first successful LLM response in TRIAGE.  When True the TRIAGE
-            # prompt greets the user instead of scoping immediately.  .get() must
-            # be used (not .pop()) so LLM retries preserve the greeting intent.
-            "is_first_message": True,
+            # Google Places integration flags (reset per FINALIZE session)
+            "google_places_used": False,
+            "google_places_error": False,
+            "google_places_announced": False,
         }
 
         logger.info("Conversation service initialized: agent=%s, company=%s", agent_name, company_name)
@@ -166,46 +186,43 @@ class ConversationService:
             # B2: Pass any unsupported-language fallback note on the first turn only,
             # then clear it so subsequent prompts don't repeat it.
             fallback_from = self.context.pop("language_fallback_from", "")
-            language_instruction = get_language_instruction(self.language, fallback_from=fallback_from)
+            language_instruction = get_language_instruction(self.language, fallback_from=fallback_from, prompt_key=self._profile.prompt_key)
             user_name = self.context.get("user_name", "")
-            # Use .get() (not .pop()) so the flag survives LLM retries on the same
-            # turn.  ResponseOrchestrator clears it after the first successful chunk.
-            is_first_message = self.context.get("is_first_message", False)
-            if is_first_message:
-                name_clause = (
-                    f"Greet **{user_name}** warmly by name."
-                    if user_name
-                    else "Use a warm, generic greeting (e.g., 'Hello, welcome back!')."
-                )
-                has_open_request = "Yes" if self.context.get("has_open_request", False) else "No"
-                if has_open_request == "Yes":
-                    request_clause = (
-                        "Then acknowledge their active request: 'I see you have an open request with us.' "
-                        "Ask whether they'd like to check on it or if they have something new to discuss."
-                    )
-                else:
-                    request_clause = "Then ask an open, friendly question: 'How can I help you today?'"
-                greeting_instruction = (
-                    "**This is the very first message of the session — greet the user AND begin triage simultaneously:**\n"
-                    f"1. {name_clause}\n"
-                    f"2. {request_clause}\n"
-                    "Keep the greeting and opening question to 2–3 sentences total, then proceed directly to scoping as needed."
-                )
-            else:
-                greeting_instruction = (
-                    "**Never re-greet or re-echo:** The user has already been welcomed. "
-                    "Do NOT start your response with \"Hello\", \"Hi\", \"Welcome\", \"Good day\", "
-                    "or any greeting phrase. Do NOT paraphrase the user's request back to them as a "
-                    "preamble (e.g., \"No problem at all, I can help you find an electrician!\") before "
-                    "asking a scoping question. Jump directly to the first question or, if the request "
-                    "is already complete, to `signal_transition`."
-                )
+            # Greeting was already delivered by GREETING stage — never re-greet in TRIAGE.
+            greeting_instruction = (
+                "**Never re-greet or re-echo:** The user has already been welcomed. "
+                "Do NOT start your response with \"Hello\", \"Hi\", \"Welcome\", \"Good day\", "
+                "or any greeting phrase. Do NOT paraphrase the user's request back to them as a "
+                "preamble (e.g., \"No problem at all, I can help you find an electrician!\") before "
+                "asking a scoping question. Jump directly to the first question or, if the request "
+                "is already complete, to `signal_transition`."
+            )
+            # GP enabled: location becomes mandatory — inject the MRI instruction.
+            gp_active = (
+                self._profile.google_places_always_active
+                and self.google_places_service is not None
+            )
+            location_mri_instruction = (
+                "\n**⚠ LOCATION — MANDATORY 4th MRI ELEMENT (OVERRIDES ALL EARLIER RULES):**\n"
+                "For this session, the MRI Gate has FOUR required elements, not three:\n"
+                "  1. Core Intent  2. ≥3 Contextual Details  3. Availability/Urgency  "
+                "4. **Location** (city or area where the service is needed)\n"
+                "- The brief is NOT complete until the user has provided a location.\n"
+                "- Do NOT call `signal_transition(target_stage=\"confirmation\")` until location "
+                "is also collected — even when Core Intent + 3 Details + Urgency are all satisfied.\n"
+                "- This rule overrides the DOUBLE-CONFIRMATION TRAP: asking 'Where is the work "
+                "needed — which city or area?' is a legitimate scoping question, not a confirmation.\n"
+                "- If the user explicitly dismisses the location question (Respect Dismissals rule), "
+                "accept the dismissal and proceed with empty location.\n"
+                if gp_active else ""
+            )
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(TRIAGE_CONVERSATION_PROMPT).format(
+                SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
                     user_name=user_name,
                     language_instruction=language_instruction,
                     greeting_instruction=greeting_instruction,
+                    location_mri_instruction=location_mri_instruction,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
@@ -216,12 +233,61 @@ class ConversationService:
             idx = self.context.get("current_provider_index", 0)
             current_provider = providers[idx] if providers and idx < len(providers) else {}
             provider_json = json.dumps(current_provider, ensure_ascii=False, default=json_serializer)
-            language_instruction = get_language_instruction(self.language)
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
+            language_name = "German" if self.language == "de" else "English"
+
+            # GP announcement — controls first-entry vs. already-announced behaviour
+            gp_active = (
+                self._profile.google_places_always_active
+                and self.google_places_service is not None
+            )
+            gp_used = self.context.get("google_places_used", False)
+            gp_error = self.context.get("google_places_error", False)
+
+            # Provider cards make the GP search self-evident — suppress the
+            # announcement in all success cases. Only surface a note on error.
+            if gp_error:
+                google_places_announcement = (
+                    f"The Google Maps search was temporarily unavailable. "
+                    f"Briefly inform the user (once only) in {language_name} that results "
+                    f"are sourced from registered providers only."
+                )
+            else:
+                google_places_announcement = ""
+
+            contact_template_instruction = (
+                f"CONTACT TEMPLATE:\n"
+                f"If the user explicitly asks you to write a contact message or email "
+                f"template for the currently presented provider, call "
+                f"generate_contact_template() immediately.\n"
+                f"Never generate a contact template unprompted.\n"
+                f"Do NOT narrate the tool call or announce that you are generating a "
+                f"template — the tool execution is silent. Your next response after the "
+                f"tool result IS the template itself, written directly in {language_name}."
+            )
+
+            if gp_used:
+                provider_cards_note = (
+                    "IMPORTANT — CARDS ALREADY SHOWN: Rich provider cards with full details "
+                    "(name, photo, rating, phone, website, address, and opening hours) have "
+                    "already been sent to the user as interactive tap-to-call/tap-to-visit "
+                    "cards displayed above this message. "
+                    "Do NOT list, mention, or repeat any provider names, addresses, phone "
+                    "numbers, websites, ratings, or hours in your text response. "
+                    "Write only the short warm intro sentence from step 1, then immediately "
+                    "call signal_transition(target_stage=\"completed\")."
+                )
+            else:
+                provider_cards_note = ""
+
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(FINALIZE_SERVICE_REQUEST_PROMPT).format(
+                SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
                     provider_json=provider_json,
-                    language_instruction=language_instruction
+                    language_instruction=language_instruction,
+                    google_places_announcement=google_places_announcement,
+                    contact_template_instruction=contact_template_instruction,
+                    provider_cards_note=provider_cards_note,
                 ),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{input}")
@@ -233,19 +299,46 @@ class ConversationService:
             ConversationStage.CONFIRMATION,
             ConversationStage.RECOVERY,
         ):
-            # Map each stage to its dedicated prompt template
-            stage_prompt_map = {
-                ConversationStage.CLARIFY: CLARIFY_PROMPT,
-                ConversationStage.CONFIRMATION: CONFIRMATION_PROMPT,
-                ConversationStage.RECOVERY: RECOVERY_PROMPT,
-                # TOOL_EXECUTION: reuse triage until a dedicated template is needed
-                ConversationStage.TOOL_EXECUTION: TRIAGE_CONVERSATION_PROMPT,
+            # Resolve prompt template string via profile key.
+            # TOOL_EXECUTION falls back to "triage" when not in the profile's prompt set.
+            _stage_key = str(stage)
+            try:
+                template_str = get_prompt(self._profile.prompt_key, _stage_key)
+            except KeyError:
+                # Lite profile has no tool_execution entry — fall back to triage
+                template_str = get_prompt(self._profile.prompt_key, "triage")
+
+            # Determine whether this template needs TRIAGE-level format args.
+            # We detect this by checking whether the template string references
+            # {location_mri_instruction} which only triage-style templates use.
+            _is_triage_template = "{location_mri_instruction}" in template_str
+            fmt_kwargs: dict = {
+                "agent_name": self.agent_name,
+                # Always inject language so every stage (CLARIFY, CONFIRMATION,
+                # RECOVERY, …) responds in the session language, not just TRIAGE.
+                "language_instruction": get_language_instruction(self.language, prompt_key=self._profile.prompt_key),
             }
-            template = stage_prompt_map.get(stage, TRIAGE_CONVERSATION_PROMPT)
-            # TRIAGE_CONVERSATION_PROMPT requires user_name; others only need agent_name
-            fmt_kwargs: dict = {"agent_name": self.agent_name}
-            if template is TRIAGE_CONVERSATION_PROMPT:
+            if _is_triage_template:
                 fmt_kwargs["user_name"] = self.context.get("user_name", "")
+                # Non-first-message greeting instruction for TOOL_EXECUTION (reuses TRIAGE template).
+                fmt_kwargs["greeting_instruction"] = (
+                    "**Never re-greet or re-echo:** The user has already been welcomed. "
+                    "Do NOT start your response with \"Hello\", \"Hi\", \"Welcome\", \"Good day\", "
+                    "or any greeting phrase. Jump directly to the required response."
+                )
+                # GP flag: pass empty or active MRI instruction
+                gp_active = (
+                    self._profile.google_places_always_active
+                    and self.google_places_service is not None
+                )
+                fmt_kwargs["location_mri_instruction"] = (
+                    "IMPORTANT: Location is a MANDATORY requirement before you may proceed to "
+                    "CONFIRMATION. You MUST ask for a city or region before any other "
+                    "extended-context field. Do not call "
+                    'signal_transition(target_stage="confirmation") until the user has '
+                    "provided a location."
+                    if gp_active else ""
+                )
             if stage == ConversationStage.RECOVERY:
                 outage_pending = self.context.get("search_outage_pending", False)
                 failure_count = self.context.get("search_failure_count", 0)
@@ -272,7 +365,7 @@ class ConversationService:
                 else:
                     fmt_kwargs["recovery_context"] = ""
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(template).format(
+                SystemMessagePromptTemplate.from_template(template_str).format(
                     **fmt_kwargs
                 ),
                 MessagesPlaceholder(variable_name="history"),
@@ -280,9 +373,9 @@ class ConversationService:
             ])
 
         elif stage == ConversationStage.PROVIDER_PITCH:
-            language_instruction = get_language_instruction(self.language)
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(PROVIDER_PITCH_PROMPT).format(
+                SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
                     language_instruction=language_instruction,
                 ),
@@ -291,7 +384,7 @@ class ConversationService:
             ])
 
         elif stage == ConversationStage.PROVIDER_ONBOARDING:
-            language_instruction = get_language_instruction(self.language)
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
             current_competencies_json = json.dumps(
                 self.context.get("current_competencies", []),
                 ensure_ascii=False,
@@ -307,7 +400,7 @@ class ConversationService:
                 else ""
             )
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(PROVIDER_ONBOARDING_PROMPT).format(
+                SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
                     language_instruction=language_instruction,
                     current_competencies_json=current_competencies_json,
@@ -318,10 +411,31 @@ class ConversationService:
                 ("human", "{input}")
             ])
 
-        elif stage == ConversationStage.COMPLETED:
-            language_instruction = get_language_instruction(self.language)
+        elif stage == ConversationStage.BROWSE:
+            providers = self.context.get("providers_found", [])
+            browse_offset = self.context.get("browse_offset", 3)
+            total_count = len(providers)
+            remaining_count = max(0, total_count - browse_offset)
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
             return ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(LOOP_BACK_PROMPT).format(
+                SystemMessagePromptTemplate.from_template(
+                    get_prompt(self._profile.prompt_key, "browse")
+                ).format(
+                    agent_name=self.agent_name,
+                    total_count=total_count,
+                    shown_count=browse_offset,
+                    remaining_count=remaining_count,
+                    has_more="yes" if remaining_count > 0 else "no",
+                    language_instruction=language_instruction,
+                ),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{input}")
+            ])
+
+        elif stage == ConversationStage.COMPLETED:
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
+            return ChatPromptTemplate.from_messages([
+                SystemMessagePromptTemplate.from_template(get_prompt(self._profile.prompt_key, stage)).format(
                     agent_name=self.agent_name,
                     language_instruction=language_instruction,
                 ),
@@ -340,6 +454,9 @@ class ConversationService:
         search_providers_for_request().
         """
         self.context["user_problem"].append(user_input)
+        # Prevent unbounded growth in very long TRIAGE sessions.
+        if len(self.context["user_problem"]) > 20:
+            self.context["user_problem"].pop(0)
 
     def reset_request_context(self) -> None:
         """Clear per-request fields so a new scoping conversation starts clean.
@@ -353,6 +470,10 @@ class ConversationService:
         self.context["request_summary"] = ""
         self.context["providers_found"] = []
         self.context["current_provider_index"] = 0
+        self.context["browse_offset"] = 3
+        self.context["google_places_used"] = False
+        self.context["google_places_error"] = False
+        self.context["google_places_announced"] = False
         # onboarding_draft and current_competencies are preserved across request
         # resets so a PROVIDER_ONBOARDING session isn't interrupted mid-flow.
         logger.info("Request context reset for new TRIAGE scoping session")
@@ -400,6 +521,9 @@ class ConversationService:
         """
         if text.strip():
             self.context["ai_responses"].append(text)
+            # Keep only the last 10 responses to bound memory.
+            if len(self.context["ai_responses"]) > 10:
+                self.context["ai_responses"].pop(0)
 
     def get_problem_summary(self) -> str:
         """Return the most recent AI response as the job summary.
@@ -437,11 +561,14 @@ class ConversationService:
         """
         from ..prompts_templates import STRUCTURED_QUERY_EXTRACTION_PROMPT
 
-        # Build conversation excerpt — last 3 messages from LLM history.
+        # Build conversation excerpt — last 6 messages from LLM history.
+        # Using 6 instead of 3 ensures early-conversation context (e.g. a
+        # location mentioned by the user several turns ago) is not lost when
+        # extraction fires late in the flow at FINALIZE.
         history_excerpt = ""
         if session_id:
             messages = self.llm_service.get_session_history(session_id).messages
-            recent = messages[-3:] if len(messages) >= 3 else messages
+            recent = messages[-6:] if len(messages) >= 6 else messages
             if recent:
                 lines = []
                 for msg in recent:
@@ -449,7 +576,7 @@ class ConversationService:
                     lines.append(f"{role}: {msg.content}")
                 history_excerpt = "\n".join(lines)
 
-        language_instruction = get_language_instruction(self.language)
+        language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
         extraction_prompt = STRUCTURED_QUERY_EXTRACTION_PROMPT.format(
             problem_summary=problem_summary,
             history_excerpt=history_excerpt,
@@ -462,7 +589,7 @@ class ConversationService:
             )
             json_str = self._clean_json_response(json_response)
             structured_query = json.loads(json_str)
-            logger.info(
+            logger.debug(
                 "Generated structured query: %s",
                 json.dumps(structured_query, ensure_ascii=False),
             )
@@ -494,7 +621,8 @@ class ConversationService:
                 [HumanMessage(content=hyde_prompt)]
             )
             hyde_text = hyde_text.strip()
-            logger.info("Generated HyDE profile (%d chars): '%s...'" , len(hyde_text), hyde_text[:80])
+            logger.info("Generated HyDE profile (%d chars)", len(hyde_text))
+            logger.debug("HyDE profile content: '%s...'", hyde_text[:80])
             return hyde_text
         except Exception as exc:
             logger.error("Error generating HyDE text: %s", exc, exc_info=True)
@@ -523,12 +651,12 @@ class ConversationService:
                         included in the extraction prompt for richer context.
         """
         problem_summary = self.get_problem_summary()
-        logger.info(
+        logger.debug(
             "Starting multi-stage provider search from summary: '%s...'",
             problem_summary[:100],
         )
 
-        # Stages 1 + 2 run independently — fire both LLM calls concurrently.
+        # Stage 1+2: structured query extraction and HyDE run concurrently.
         structured_query_task = asyncio.create_task(
             self._generate_structured_query(problem_summary, session_id)
         )
@@ -539,9 +667,77 @@ class ConversationService:
 
         self.context["request_summary"] = query_text
 
-        # Stage 3: wide-net retrieval. Pass max_providers directly;
-        # HubSpokeSearch.hybrid_search_providers applies its own min(limit * 5, 30)
-        # expansion internally, so pre-multiplying here causes double expansion.
+        # Stage 2 (GP): In lite mode, GP results are fetched and normalised
+        # directly — no Weaviate write. In full mode, shared hub-spoke index.
+        gp_active = (
+            self._profile.google_places_always_active
+            and self.google_places_service is not None
+        )
+        if gp_active:
+            # Weaviate-free lite path: GP API → normalise → cross-encoder → done.
+            location = self._extract_location(query_text)
+            providers, gp_result = await self.google_places_service.fetch_as_providers(  # type: ignore[union-attr]
+                structured_query=query_text,
+                hyde_text=hyde_text,
+                location=location,
+            )
+            self.context["google_places_used"] = len(providers) > 0
+            self.context["google_places_error"] = gp_result.error
+            if gp_result.error:
+                logger.warning(
+                    "GP pipeline error (%s) — attempting internal provider search fallback.",
+                    gp_result.error_code,
+                )
+                try:
+                    providers = await self.data_provider.search_providers(
+                        query_text=query_text,
+                        limit=self.max_providers,
+                        hyde_text=hyde_text,
+                    )
+                except SearchUnavailableError as fallback_exc:
+                    logger.warning(
+                        "Internal provider search fallback also unavailable after GP failure: %s",
+                        fallback_exc,
+                    )
+                    self.context["search_error"] = "unavailable"
+                    return
+                self.context["google_places_used"] = False
+                if self.cross_encoder_service and providers:
+                    providers = await self.cross_encoder_service.rerank(
+                        query=hyde_text,
+                        candidates=providers,
+                        top_k=self.max_providers,
+                    )
+                else:
+                    providers = providers[: self.max_providers]
+                self.context["providers_found"] = providers
+                logger.info(
+                    "GP fallback search complete — %d results from internal index",
+                    len(providers),
+                )
+                return
+
+            # Stage 4 (lite): rerank GP results via cross-encoder.
+            if self.cross_encoder_service and providers:
+                logger.info(
+                    "Reranking %d lite candidates with cross-encoder (top %d)...",
+                    len(providers),
+                    self.max_providers,
+                )
+                providers = await self.cross_encoder_service.rerank(
+                    query=hyde_text,
+                    candidates=providers,
+                    top_k=self.max_providers,
+                )
+            else:
+                providers = providers[: self.max_providers]
+
+            self.context["providers_found"] = providers
+            logger.info("Lite provider search complete — %d results", len(providers))
+            return
+
+        # ── Full mode ────────────────────────────────────────────────────────
+        # Stage 3: wide-net retrieval from the shared hub-spoke index.
         try:
             providers = await self.data_provider.search_providers(
                 query_text=query_text,
@@ -563,7 +759,7 @@ class ConversationService:
                 self.max_providers,
             )
             providers = await self.cross_encoder_service.rerank(
-                query=problem_summary,
+                query=hyde_text,
                 candidates=providers,
                 top_k=self.max_providers,
             )
@@ -571,7 +767,64 @@ class ConversationService:
             providers = providers[: self.max_providers]
 
         self.context["providers_found"] = providers
-        logger.info("Provider search complete — %d results", len(providers))
+        logger.info("Full mode provider search complete — %d results", len(providers))
+
+    # ------------------------------------------------------------------
+    # GP pipeline helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_location(query_text: str) -> str:
+        """Return the ``location`` field from a structured-query JSON string.
+
+        ``query_text`` is either the raw JSON produced by
+        ``_generate_structured_query`` or a plain-text fallback.  Returns an
+        empty string when missing or when parsing fails.
+        """
+        import json as _json
+        try:
+            data = _json.loads(query_text)
+            return str(data.get("location", "") or "")
+        except Exception:
+            return ""
+
+    async def _run_gp_pipeline(
+        self,
+        gp_service: GooglePlacesService,
+        query_text: str,
+        hyde_text: str,
+    ) -> GpResult:
+        """Drive the Google Places enrichment phase (Stage 2).
+
+        1. Generates a Places search phrase via the LLM.
+        2. Fetches up to 5 places from the Places API.
+        3. Upserts each place as a User+Competence node in Weaviate.
+
+        Returns a :class:`GpResult` describing what happened.
+        """
+        location = self._extract_location(query_text)
+        try:
+            query = await gp_service.generate_query(
+                structured_query=query_text,
+                hyde_text=hyde_text,
+                location=location,
+            )
+            if not query:
+                logger.info("GP pipeline skipped: generate_query returned None.")
+                return GpResult(providers_written=0, error=False, error_code="llm_skip")
+            gp_result = await gp_service.fetch_and_ingest(query)
+            # fetch_and_ingest returns a GpResult from google_places_service;
+            # re-wrap into the local GpResult to keep types consistent.
+            return GpResult(
+                providers_written=gp_result.providers_written,
+                error=bool(gp_result.error),
+                query=gp_result.query,
+                duration_ms=gp_result.duration_ms,
+                error_code=gp_result.error_code,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.error("Unexpected GP pipeline error: %s", exc, exc_info=True)
+            return GpResult(providers_written=0, error=True, error_code="unexpected")
 
     async def generate_greeting_text(
         self,
@@ -591,12 +844,13 @@ class ConversationService:
             Greeting text
         """
         try:
-            logger.info("🤖 generate_greeting_text called with user_name='%s', has_open_request=%s", user_name, has_open_request)
-            language_instruction = get_language_instruction(self.language)
+            logger.debug("🤖 generate_greeting_text called with user_name='%s', has_open_request=%s", user_name, has_open_request)
+            language_instruction = get_language_instruction(self.language, prompt_key=self._profile.prompt_key)
             resume_ctx = self.context.get("session_resume_context", "")
             system_prefix = f"{resume_ctx}\n\n" if resume_ctx else ""
+            greeting_prompt = get_prompt(self._profile.prompt_key, "greeting")
             prompt_template = ChatPromptTemplate.from_messages([
-                SystemMessagePromptTemplate.from_template(system_prefix + GREETING_AND_TRIAGE_PROMPT),
+                SystemMessagePromptTemplate.from_template(system_prefix + greeting_prompt),
                 HumanMessage(content=" ")
             ])
 
@@ -608,12 +862,14 @@ class ConversationService:
                 language_instruction=language_instruction
             )
 
-            logger.info("📨 Formatted prompt with user_name='%s' for LLM", user_name)
+            logger.debug("📨 Formatted prompt with user_name='%s' for LLM", user_name)
 
             greeting = await self.llm_service.generate(greeting_messages)
-            logger.info("Generated greeting: '%s'", greeting)
+            logger.debug("Generated greeting: '%s'", greeting)
             return greeting
 
         except Exception as e:
             logger.error("Error generating greeting text: %s", e, exc_info=True)
             return get_greeting_fallback(self.language)
+
+

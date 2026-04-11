@@ -109,14 +109,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Setup Firebase config
-        env:
-          GOOGLE_SERVICES_JSON_CONTENT: ${{ secrets.GOOGLE_SERVICES_JSON }}
-        run: |
-          cd connectx
-          chmod +x ./scripts/setup_firebase_for_ci.sh
-          ./scripts/setup_firebase_for_ci.sh
-      
       - name: Run tests in pre-built container
         run: |
           docker pull ${{ needs.build-container.outputs.image-tag }}

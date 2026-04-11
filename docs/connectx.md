@@ -429,16 +429,52 @@ testWidgets('MicButton shows recording state', (WidgetTester tester) async {
 
 ## 📦 Building for Production
 
+### App Flavors
+
+The app uses two Android product flavors that control which permissions are declared:
+
+| Flavor | `RECORD_AUDIO` permission | Use case |
+|--------|--------------------------|----------|
+| `lite` | ✗ Not included | Text-only deployment (lite-mode server) |
+| `full` | ✓ Included | Full voice + text deployment |
+
+Set `APP_MODE` in `connectx/.env` to match the flavor before building:
+```properties
+# For lite builds
+APP_MODE=lite
+AI_ASSISTANT_SERVER_URL=https://your-lite-cloud-run-url.run.app
+
+# For full builds
+APP_MODE=full
+AI_ASSISTANT_SERVER_URL=https://your-full-cloud-run-url.run.app
+```
+
+### Android Release Signing
+
+Create `android/key.properties` (gitignored — never commit this file):
+```properties
+storePassword=YOUR_KEYSTORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=YOUR_KEY_ALIAS
+storeFile=../app/release.keystore
+```
+
+Place `release.keystore` at `android/app/release.keystore`.
+
 ### Android Release Build
 
 ```bash
-# Build APK
-flutter build apk --release
+# Lite mode — no microphone permission (text-only, Google Play)
+flutter build appbundle --flavor lite --release
+# Output: build/app/outputs/bundle/liteRelease/app-lite-release.aab
 
-# Build App Bundle (recommended for Play Store)
-flutter build appbundle --release
+# Full mode — microphone permission included (voice + text, Google Play)
+flutter build appbundle --flavor full --release
+# Output: build/app/outputs/bundle/fullRelease/app-full-release.aab
 
-# Output: build/app/outputs/bundle/release/app-release.aab
+# APK variants (for direct installation / testing)
+flutter build apk --flavor lite --release
+flutter build apk --flavor full --release
 ```
 
 ### iOS Release Build
@@ -450,23 +486,6 @@ flutter build ios --release
 # Archive in Xcode
 open ios/Runner.xcworkspace
 # Product → Archive → Distribute App
-```
-
-### Configuration for Production
-
-**Update Environment:**
-```properties
-AI_ASSISTANT_SERVER_URL=production-server.com:8080
-```
-
-**Android Signing:**
-
-Create `android/key.properties`:
-```properties
-storePassword=<keystore-password>
-keyPassword=<key-password>
-keyAlias=upload
-storeFile=<path-to-keystore>
 ```
 
 **iOS Signing:**

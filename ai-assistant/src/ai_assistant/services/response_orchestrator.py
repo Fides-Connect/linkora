@@ -10,21 +10,31 @@ import math
 import logging
 from datetime import datetime, timedelta, UTC
 from typing import Any, TYPE_CHECKING, cast
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 
 if TYPE_CHECKING:
     from .ai_conversation_service import AIConversationService
+    from .agent_profile import AgentProfile
 
 from langchain_core.messages import AIMessage
 
-from .conversation_service import ConversationService, ConversationStage, is_legal_transition
+from .conversation_service import ConversationService, ConversationStage
 from .llm_service import LLMService, SIGNAL_TRANSITION_SCHEMA
 from .agent_runtime_fsm import AgentRuntimeFSM
-from .agent_tools import AgentToolRegistry, ToolContext, ToolPermissionError, FINALIZE_TOOL_SCHEMAS
+from .agent_tools import AgentToolRegistry, ToolContext, ToolPermissionError, FINALIZE_TOOL_SCHEMAS, BROWSE_TOOL_SCHEMAS
 from ..prompts_templates import get_fallback_error_message
 from ..data_provider import SearchUnavailableError  # noqa: F401 (used below)
 
 logger = logging.getLogger(__name__)
+
+
+def is_legal_transition(
+    current: ConversationStage,
+    target: ConversationStage,
+    legal_transitions: dict,
+) -> bool:
+    """Return True when *target* is in the allowed transitions from *current*."""
+    return target in legal_transitions.get(current, [])
 
 
 def _extract_user_text_from_system_event(raw_text: str) -> str:
@@ -44,7 +54,8 @@ _KNOWN_TOOL_NAMES_RE = re.compile(
     r'\b(?:signal_transition|search_providers|get_favorites|get_open_requests'
     r'|create_service_request|cancel_service_request|record_provider_interest|get_my_competencies'
     r'|save_competence_batch|delete_competences'
-    r'|accept_provider|reject_and_fetch_next|cancel_search|retry_search)\s*\([^)]*\)'
+    r'|accept_provider|reject_and_fetch_next|cancel_search|retry_search|generate_contact_template'
+    r'|show_next_providers)\s*\([^)]*\)'
 )
 
 def _strip_tool_call_text(text: str) -> str:
@@ -55,6 +66,26 @@ def _strip_tool_call_text(text: str) -> str:
     Does NOT strip surrounding whitespace so inter-word spaces remain intact.
     """
     return _KNOWN_TOOL_NAMES_RE.sub("", text)
+
+
+# Human-readable status labels sent to the client while a tool is executing.
+_TOOL_STATUS_LABELS: dict[str, str] = {
+    "search_providers": "Searching for providers",
+    "get_favorites": "Loading your favorites",
+    "get_open_requests": "Loading your requests",
+    "create_service_request": "Submitting your request",
+    "cancel_service_request": "Cancelling your request",
+    "record_provider_interest": "Saving your preferences",
+    "get_my_competencies": "Loading your skills",
+    "save_competence_batch": "Saving your skills",
+    "delete_competences": "Removing skills",
+    "accept_provider": "Confirming your choice",
+    "reject_and_fetch_next": "Finding the next match",
+    "cancel_search": "Cancelling search",
+    "retry_search": "Searching again",
+    "generate_contact_template": "Preparing contact details",
+    "show_next_providers": "Finding more results",
+}
 
 
 class ResponseOrchestrator:
@@ -71,18 +102,25 @@ class ResponseOrchestrator:
         runtime_fsm: AgentRuntimeFSM | None = None,
         tool_registry: AgentToolRegistry | None = None,
         ai_conversation_service: AIConversationService | None = None,
+        profile: AgentProfile | None = None,
     ) -> None:
+        from .agent_profile import FULL_PROFILE
+
         self.llm_service = llm_service
         self.conversation_service = conversation_service
         self.runtime_fsm: AgentRuntimeFSM = runtime_fsm or AgentRuntimeFSM()
         self.tool_registry = tool_registry
         self.ai_conversation_service = ai_conversation_service
+        self._profile = profile if profile is not None else FULL_PROFILE
 
     # ── Stage helpers ──────────────────────────────────────────────────────────
 
     def handle_signal_transition(self, target_str: str) -> bool:
         """
         Validate and apply a stage transition requested by the LLM (sync).
+
+        Uses the profile's ``legal_transitions`` table for validation so lite-mode
+        restrictions are enforced even if the LLM requests a forbidden stage.
 
         Returns True if the transition was legal and applied, False otherwise.
         Illegal or unknown targets are logged and silently ignored — the FSM
@@ -95,7 +133,7 @@ class ResponseOrchestrator:
             return False
 
         current = self.conversation_service.get_current_stage()
-        if not is_legal_transition(current, target):
+        if not is_legal_transition(current, target, self._profile.legal_transitions):
             logger.warning(
                 "handle_signal_transition: illegal %s → %s — ignored", current, target
             )
@@ -203,9 +241,12 @@ class ResponseOrchestrator:
                 }))
                 return True
             current_provider = providers[0]
+            gp_context = self.conversation_service.context
             pending.append(("signal_transition", {
                 "stage": "finalize",
                 "current_provider": current_provider,
+                "google_places_used": gp_context.get("google_places_used", False),
+                "google_places_error": gp_context.get("google_places_error", False),
             }))
 
         elif target_stage == ConversationStage.PROVIDER_ONBOARDING:
@@ -241,7 +282,10 @@ class ResponseOrchestrator:
             if previous_stage == ConversationStage.PROVIDER_ONBOARDING:
                 self.conversation_service.reset_request_context()
                 logger.info("Request context cleared after PROVIDER_ONBOARDING → COMPLETED")
-            pitch_eligible = await self._should_pitch_provider_async(context)
+            pitch_eligible = (
+                self._profile.provider_pitch_enabled
+                and await self._should_pitch_provider_async(context)
+            )
             if pitch_eligible:
                 pitch_applied = self.handle_signal_transition("provider_pitch")
                 if not pitch_applied:
@@ -257,6 +301,7 @@ class ResponseOrchestrator:
         elif target_stage == ConversationStage.TRIAGE:
             if previous_stage in (
                 ConversationStage.COMPLETED, ConversationStage.FINALIZE,
+                ConversationStage.BROWSE,
                 ConversationStage.PROVIDER_ONBOARDING, ConversationStage.PROVIDER_PITCH,
             ):
                 # B9: preserve the triggering utterance BEFORE wiping context so it
@@ -265,7 +310,7 @@ class ResponseOrchestrator:
                 self.conversation_service.reset_request_context()
                 if triggering_utterance:
                     self.conversation_service.context["user_problem"].append(triggering_utterance)
-                    logger.info(
+                    logger.debug(
                         "Preserved triggering utterance '%s...' for new TRIAGE session",
                         triggering_utterance[:50],
                     )
@@ -283,10 +328,315 @@ class ResponseOrchestrator:
                 logger.info("RECOVERY → CONFIRMATION: outage retry path, draft preserved.")
             pending.append(("signal_transition", {"stage": "confirmation"}))
 
+        elif target_stage == ConversationStage.BROWSE:
+            # Reset browse_offset to 3 so the first show_next_providers call
+            # starts from the 4th provider (first 3 were shown in FINALIZE).
+            self.conversation_service.context["browse_offset"] = 3
+            providers = self.conversation_service.context.get("providers_found", [])
+            total_count = len(providers)
+            remaining_count = max(0, total_count - 3)
+            pending.append(("signal_transition", {
+                "stage": "browse",
+                "total_count": total_count,
+                "shown_count": 3,
+                "remaining_count": remaining_count,
+                "has_more": remaining_count > 0,
+            }))
+
         else:
             pending.append(("signal_transition", {"stage": target}))
 
         return True
+
+    # ── Provider card helpers ─────────────────────────────────────────────────
+
+    async def _localise_card_descriptions(
+        self,
+        gp_results: list[dict[str, Any]],
+        user_query: str,
+        language: str,
+    ) -> list[str]:
+        """Generate localised one-sentence descriptions for each GP card.
+
+        Uses a single batched LLM call for efficiency.  Falls back to the stored
+        description on any error so card display is never blocked.
+
+        Only called for non-English sessions — English sessions display the
+        stored description as-is.
+        """
+        from langchain_core.messages import HumanMessage
+        from ..prompts_templates import PROVIDER_CARD_DESCRIPTION_LOCALISE_PROMPT
+
+        language_name = "German" if language == "de" else language.capitalize()
+
+        def _name(p: dict) -> str:
+            return str((p.get("user") or {}).get("name") or p.get("title", ""))
+
+        provider_items = "\n".join(
+            f"{i + 1}. {_name(p)}: {p.get('search_optimized_summary') or p.get('description', '')[:200]}"
+            for i, p in enumerate(gp_results)
+        )
+        prompt = PROVIDER_CARD_DESCRIPTION_LOCALISE_PROMPT.format(
+            language_name=language_name,
+            user_request=user_query or "service request",
+            providers=provider_items,
+            count=len(gp_results),
+        )
+        try:
+            raw = await self.llm_service.generate([HumanMessage(content=prompt)])
+            items = re.findall(r"(?m)^\s*\d+\.\s*(.+?)\s*$", raw)
+            if len(items) == len(gp_results):
+                return items
+        except Exception as exc:
+            logger.warning("Provider card description localisation failed: %s", exc)
+        return [p.get("description", "") for p in gp_results]
+
+    async def _generate_card_reasoning(
+        self,
+        gp_results: list[dict[str, Any]],
+        user_query: str = "",
+        language: str = "en",
+    ) -> list[str]:
+        """Generate a 1-sentence match justification for each GP result.
+
+        Single LLM call returning a JSON array.  Falls back to empty strings on
+        any error so card display is never blocked.
+        """
+        from langchain_core.messages import HumanMessage
+        from ..prompts_templates import PROVIDER_CARD_REASONING_PROMPT
+
+        def _provider_entry(idx: int, p: dict) -> str:
+            name = (p.get("user") or {}).get("name") or p.get("title", "")
+            primary_type = p.get("primary_type") or p.get("category") or ""
+            address = p.get("address") or (p.get("user") or {}).get("address") or ""
+            description = p.get("description", "")[:300]
+            snippets = (p.get("review_snippets") or [])[:5]
+
+            type_str = f" ({primary_type})" if primary_type else ""
+            lines = [f"{idx + 1}. {name}{type_str}"]
+            if address:
+                lines.append(f"   Location: {address}")
+            if description:
+                lines.append(f"   Description: {description}")
+            if snippets:
+                lines.append("   Customer reviews: " + "; ".join(snippets))
+            return "\n".join(lines)
+
+        provider_items = "\n\n".join(
+            _provider_entry(i, p) for i, p in enumerate(gp_results)
+        )
+        language_name = "German" if language == "de" else language.capitalize()
+        prompt = PROVIDER_CARD_REASONING_PROMPT.format(
+            query=user_query or "service request",
+            providers=provider_items,
+            count=len(gp_results),
+            language_name=language_name,
+        )
+        try:
+            raw = await self.llm_service.generate([HumanMessage(content=prompt)])
+            items = re.findall(r"(?m)^\s*\d+\.\s*(.+?)\s*$", raw)
+            if len(items) == len(gp_results):
+                return items
+        except Exception as exc:
+            logger.warning("Provider card reasoning failed: %s", exc)
+        return [""] * len(gp_results)
+
+    async def _build_provider_cards(
+        self,
+        gp_results: list[dict[str, Any]],
+        user_query: str = "",
+    ) -> list[dict[str, Any]]:
+        """Build card payloads for GP results with LLM-generated reasoning."""
+        language = self.conversation_service.language
+        reasoning = await self._generate_card_reasoning(gp_results, user_query, language)
+        request_summary = self.conversation_service.context.get("request_summary", "") or user_query
+        user_name = self.conversation_service.context.get("user_name", "")
+
+        # Pre-compute per-card params.
+        card_params = []
+        for p in gp_results:
+            user = p.get("user") or {}
+            provider_name = user.get("name") or p.get("title", "")
+            provider_address = p.get("address") or user.get("address") or ""
+            card_params.append((provider_name, provider_address))
+
+        # Generate email templates and localise card descriptions concurrently.
+        email_tasks = [
+            self._build_email_template(name, request_summary, language, user_name, addr)
+            for name, addr in card_params
+        ]
+        if language != "en":
+            localise_task = self._localise_card_descriptions(gp_results, user_query, language)
+            *email_results_list, localised_descs = await asyncio.gather(*email_tasks, localise_task)
+            email_results = list(email_results_list)
+        else:
+            email_results = list(await asyncio.gather(*email_tasks))
+            localised_descs = [p.get("description", "") for p in gp_results]
+
+        cards: list[dict[str, Any]] = []
+        for i, p in enumerate(gp_results):
+            user = p.get("user") or {}
+            provider_name, provider_address = card_params[i]
+            email_subject, email_body = email_results[i]
+            card: dict[str, Any] = {
+                "name": provider_name,
+                "description": localised_descs[i] if i < len(localised_descs) else p.get("description", ""),
+                "reasoning": reasoning[i] if i < len(reasoning) else "",
+                "rating": user.get("average_rating"),
+                "rating_count": user.get("rating_count"),
+                "website": p.get("website") or user.get("website") or None,
+                "phone": p.get("phone") or user.get("phone") or None,
+                "address": provider_address or None,
+                "email": p.get("email") or user.get("email") or None,
+                "photo_url": p.get("photo_url") or None,
+                "opening_hours": p.get("opening_hours") or None,
+                "maps_url": p.get("maps_url") or None,
+                "email_subject": email_subject,
+                "email_body": email_body,
+                "language": language,
+                "source": user.get("source", "google_places"),
+            }
+            # Normalise empty strings to None for optional fields
+            for field in ("website", "phone", "address", "email", "photo_url", "opening_hours", "maps_url"):
+                if card[field] == "":
+                    card[field] = None
+            cards.append(card)
+        return cards
+
+    async def _build_email_template(
+        self,
+        provider_name: str,
+        request_summary: str,
+        language: str,
+        user_name: str = "",
+        provider_address: str = "",
+    ) -> tuple[str, str]:
+        """Return (subject, body) for a pre-filled enquiry email to a GP provider.
+
+        Uses an LLM call to produce natural prose from the structured
+        request_summary.  Falls back to a static template on any error.
+        """
+        from langchain_core.messages import HumanMessage
+        from ..prompts_templates import PROVIDER_ENQUIRY_EMAIL_PROMPT
+
+        prompt = PROVIDER_ENQUIRY_EMAIL_PROMPT.format(
+            language="German" if language == "de" else "English",
+            provider_name=provider_name,
+            provider_address=provider_address or "—",
+            user_name=user_name or "",
+            request_summary=request_summary or "—",
+        )
+        try:
+            raw = await self.llm_service.generate([HumanMessage(content=prompt)])
+            # Strip optional markdown code fences
+            raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw.strip())
+            raw = re.sub(r"\n?```$", "", raw.strip())
+            parsed = json.loads(raw)
+            subject = str(parsed.get("subject", "")).strip()
+            body = str(parsed.get("body", "")).strip()
+            if subject and body:
+                return subject, body
+        except Exception as exc:
+            logger.warning("Email template LLM generation failed: %s", exc)
+
+        # ── Static fallback ────────────────────────────────────────────────────
+        return self._build_email_template_static(
+            provider_name, request_summary, language, user_name, provider_address
+        )
+
+    @staticmethod
+    @staticmethod
+    def _format_request_summary(request_summary: str, language: str) -> str:
+        """
+        Convert a structured-query JSON string into a human-readable paragraph.
+
+        If ``request_summary`` is a JSON object with ``category``, ``location``,
+        ``criterions``, and/or ``available_time`` keys (as generated by the
+        structured-query extractor), it is rendered as natural prose.  Plain
+        strings are returned unchanged.
+        """
+        import json as _json
+
+        try:
+            data = _json.loads(request_summary)
+        except Exception:
+            return request_summary  # already plain text
+
+        if not isinstance(data, dict):
+            return request_summary
+
+        category = str(data.get("category") or "").strip()
+        location = str(data.get("location") or "").strip()
+        criterions: list[str] = [str(c).strip() for c in (data.get("criterions") or []) if c]
+        available_time = str(data.get("available_time") or "").strip()
+
+        if language == "de":
+            parts: list[str] = []
+            if category and location:
+                parts.append(f"Ich suche {category} in {location}.")
+            elif category:
+                parts.append(f"Ich suche {category}.")
+            elif location:
+                parts.append(f"Ich suche jemanden in {location}.")
+            if criterions:
+                parts.append(f"Anforderungen: {', '.join(criterions)}.")
+            if available_time and available_time.lower() not in ("flexible", "flexibel", ""):
+                parts.append(f"Verfügbarkeit: {available_time}.")
+            elif available_time.lower() in ("flexible", "flexibel"):
+                parts.append("Ich bin zeitlich flexibel.")
+            return " ".join(parts) if parts else request_summary
+        else:
+            parts = []
+            if category and location:
+                parts.append(f"I am looking for {category} in {location}.")
+            elif category:
+                parts.append(f"I am looking for {category}.")
+            elif location:
+                parts.append(f"I am looking for someone in {location}.")
+            if criterions:
+                parts.append(f"Requirements: {', '.join(criterions)}.")
+            if available_time and available_time.lower() not in ("flexible", ""):
+                parts.append(f"Availability: {available_time}.")
+            elif available_time.lower() == "flexible":
+                parts.append("I am flexible regarding timing.")
+            return " ".join(parts) if parts else request_summary
+
+    @staticmethod
+    def _build_email_template_static(
+        provider_name: str,
+        request_summary: str,
+        language: str,
+        user_name: str = "",
+        provider_address: str = "",
+    ) -> tuple[str, str]:
+        """Static template with human-readable request prose."""
+        formatted_request = ResponseOrchestrator._format_request_summary(
+            request_summary, language
+        )
+        location_note = f" ({provider_address})" if provider_address else ""
+        if language == "de":
+            subject = f"Kontaktanfrage: {provider_name}"
+            greeting = f"Sehr geehrte Damen und Herren von {provider_name}{location_note},"
+            intro = "ich möchte gerne eine Anfrage bei Ihnen stellen."
+            details_label = "Mein Anliegen"
+            closing = "Ich freue mich über Ihre Rückmeldung und bin gespannt, von Ihnen zu hören."
+            salutation = f"Mit freundlichen Grüßen,\n{user_name}" if user_name else "Mit freundlichen Grüßen"
+        else:
+            subject = f"Request: {provider_name}"
+            greeting = f"Dear {provider_name}{location_note} team,"
+            intro = "I would like to get in touch regarding a request."
+            details_label = "My request"
+            closing = "I look forward to hearing from you and discussing this further."
+            salutation = f"Kind regards,\n{user_name}" if user_name else "Kind regards"
+
+        body = (
+            f"{greeting}\n\n"
+            f"{intro}\n\n"
+            f"{details_label}:\n{formatted_request}\n\n"
+            f"{closing}\n\n"
+            f"{salutation}"
+        )
+        return subject, body
 
     # ── Tool dispatch ──────────────────────────────────────────────────────────
 
@@ -428,6 +778,22 @@ class ResponseOrchestrator:
             yield {"type": "new_bubble"}
 
         follow_up_stage = self.conversation_service.get_current_stage()
+
+        # In lite mode (finalize_auto_advance_stage set) the FINALIZE stage is
+        # purely mechanical: cards have already been sent and the auto-advance
+        # guard will immediately transition to BROWSE, which generates the single
+        # acknowledgement text.  Skip the FINALIZE LLM call entirely so only
+        # one bubble reaches the user.
+        if (
+            follow_up_stage == ConversationStage.FINALIZE
+            and self._profile.finalize_auto_advance_stage is not None
+        ):
+            logger.debug(
+                "Skipping FINALIZE LLM call in lite mode — "
+                "finalize_auto_advance_stage will handle the BROWSE transition."
+            )
+            return
+
         follow_up_template = self.conversation_service.create_prompt_for_stage(follow_up_stage)
         # Use the real user input when a stage transition is present to avoid
         # storing a blank HumanMessage that would upset Gemini on the next turn.
@@ -444,6 +810,10 @@ class ResponseOrchestrator:
         # In FINALIZE, restrict the LLM to only the three FINALIZE tools.
         if follow_up_stage == ConversationStage.FINALIZE:
             self.llm_service.register_functions(session_id, list(FINALIZE_TOOL_SCHEMAS))
+        elif follow_up_stage == ConversationStage.BROWSE:
+            self.llm_service.register_functions(
+                session_id, [SIGNAL_TRANSITION_SCHEMA] + list(BROWSE_TOOL_SCHEMAS)
+            )
 
         # ── Accumulate problem description on CONFIRMATION → TRIAGE bounce-back ──
         # When the user sends a correction from CONFIRMATION (e.g. "change the
@@ -492,10 +862,16 @@ class ResponseOrchestrator:
                     )
                 else:
                     # FINALIZE-stage tools are intercepted here.
-                    if fu_name in ("accept_provider", "reject_and_fetch_next", "cancel_search", "retry_search"):
+                    if fu_name in ("accept_provider", "reject_and_fetch_next", "cancel_search", "retry_search", "generate_contact_template"):
                         await self._handle_finalize_tool(
                             fu_name, fu_args, session_id, context, new_pending
                         )
+                    elif fu_name == "show_next_providers":
+                        # BROWSE-stage tool in follow-up stream.
+                        async for browse_chunk in self._handle_show_next_providers(
+                            session_id, context, new_pending
+                        ):
+                            yield browse_chunk
                     else:
                     # Guard: search_providers is redundant in FINALIZE when the
                     # auto-search already ran and returned results on stage entry.
@@ -535,6 +911,44 @@ class ResponseOrchestrator:
                     ai_response_parts.append(filtered)
                     yield filtered
 
+    async def _handle_show_next_providers(
+        self,
+        session_id: str,
+        context: dict[str, Any] | None,
+        pending: list[tuple[str, Any]],
+    ) -> AsyncGenerator[dict[str, Any]]:
+        """Handle the BROWSE-stage ``show_next_providers`` tool call.
+
+        Reads the next batch of 3 providers from ``providers_found`` starting
+        at ``browse_offset``, yields a ``provider-cards`` message, advances
+        the offset, and appends a follow-up payload to *pending* so the LLM
+        can generate a brief narrative response.
+        """
+        providers: list[dict] = self.conversation_service.context.get("providers_found", [])
+        offset: int = self.conversation_service.context.get("browse_offset", 3)
+        batch = providers[offset:offset + 3]
+
+        if not batch:
+            pending.append(("show_next_providers", {
+                "has_more": False,
+                "batch_size": 0,
+                "message": "No more providers available.",
+            }))
+            return
+
+        cards = await self._build_provider_cards(batch, "")
+        yield {"type": "provider-cards", "cards": cards}
+
+        new_offset = offset + len(batch)
+        self.conversation_service.context["browse_offset"] = new_offset
+        remaining = max(0, len(providers) - new_offset)
+        pending.append(("show_next_providers", {
+            "has_more": remaining > 0,
+            "batch_size": len(batch),
+            "shown_count": new_offset,
+            "total_count": len(providers),
+        }))
+
     async def _handle_finalize_tool(
         self,
         fn_name: str,
@@ -562,6 +976,28 @@ class ResponseOrchestrator:
                 logger.warning("accept_provider called with no location — asking user before creating request.")
                 pending.append(("accept_provider", {"error": "location_required", "message": "Please provide the city or address where the service is needed."}))
                 return
+
+            # GP guard: providers sourced from Google Maps do not have a
+            # Linkora account — a service request cannot be created for them.
+            # Instead, surface their contact details so the user can reach out
+            # directly.
+            accepted_provider_for_gp = next(
+                (p for p in providers if p.get("user", {}).get("user_id") == provider_id),
+                None,
+            )
+            if accepted_provider_for_gp is not None and accepted_provider_for_gp.get("source") == "google_places":
+                contact_info: dict[str, str] = {}
+                for _field in ("phone", "website", "address"):
+                    _val = accepted_provider_for_gp.get(_field, "")
+                    if _val:
+                        contact_info[_field] = _val
+                pending.append(("accept_provider", {
+                    "error": "google_places_provider",
+                    "message": "This provider is listed on Google Maps but is not registered on Linkora. They cannot be booked directly here, but you can contact them using the details below.",
+                    "contact_info": contact_info,
+                }))
+                return
+
             csr_args: dict = {"selected_provider_user_id": provider_id}
             for field in (
                 "title", "description", "location", "category",
@@ -658,6 +1094,29 @@ class ResponseOrchestrator:
                 ),
             }))
 
+        elif fn_name == "generate_contact_template":
+            provider_name = fn_args.get("provider_name", "")
+            request_summary = fn_args.get("request_summary", "")
+            phone = fn_args.get("phone", "")
+            website = fn_args.get("website", "")
+            address = fn_args.get("address", "")
+            logger.info(
+                "generate_contact_template called for '%s' — injecting context for follow-up LLM.",
+                provider_name,
+            )
+            template_context: dict[str, Any] = {
+                "status": "contact_template_requested",
+                "provider_name": provider_name,
+                "request_summary": request_summary,
+            }
+            if phone:
+                template_context["phone"] = phone
+            if website:
+                template_context["website"] = website
+            if address:
+                template_context["address"] = address
+            pending.append(("generate_contact_template", template_context))
+
         elif fn_name == "retry_search":
             logger.info("retry_search called — clearing provider cache and re-running search.")
             # Clear the cached result set so the orchestrator performs a fresh query.
@@ -731,10 +1190,13 @@ class ResponseOrchestrator:
             current_stage = self.conversation_service.get_current_stage()
 
             # ── Register tools ─────────────────────────────────────────────────
-            # In FINALIZE, restrict the LLM to only the three FINALIZE tools so it
+            # In FINALIZE, restrict the LLM to only the FINALIZE tools so it
             # cannot call signal_transition, create_service_request, etc.
+            # In BROWSE, offer signal_transition + show_next_providers only.
             if current_stage == ConversationStage.FINALIZE:
                 tool_schemas = list(FINALIZE_TOOL_SCHEMAS)
+            elif current_stage == ConversationStage.BROWSE:
+                tool_schemas = [SIGNAL_TRANSITION_SCHEMA] + list(BROWSE_TOOL_SCHEMAS)
             else:
                 tool_schemas = [SIGNAL_TRANSITION_SCHEMA]
                 if self.tool_registry:
@@ -831,6 +1293,13 @@ class ResponseOrchestrator:
             ai_response_parts: list[str] = []
             pending_tool_results: list[tuple[str, object]] = []
             tool_calls_seen = False  # True when ≥1 tool/signal was dispatched
+            # In TRIAGE, the LLM may emit preamble text before calling
+            # signal_transition — violating the single-acknowledgement rule.
+            # Buffer text chunks while in TRIAGE and only flush them after the
+            # main stream ends without a transition.  If a signal_transition fires,
+            # discard the buffer so only the follow-up stage (CONFIRMATION) speaks.
+            _triage_text_buffer: list[str] = []
+            _triage_transition_fired = False
 
             async for chunk in self.llm_service.generate_stream(
                 user_input, prompt_template, session_id
@@ -869,8 +1338,28 @@ class ResponseOrchestrator:
                             user_input=user_input,
                         )
                         self.runtime_fsm.transition("tool_done")
+                        # If TRIAGE generated preamble text before this transition,
+                        # discard it — the follow-up stage will speak for itself.
+                        if current_stage == ConversationStage.TRIAGE and _triage_text_buffer:
+                            logger.debug(
+                                "Suppressing %d TRIAGE text chunk(s) — "
+                                "signal_transition fired in same turn.",
+                                len(_triage_text_buffer),
+                            )
+                            for discarded in _triage_text_buffer:
+                                # Remove from response parts so history is accurate.
+                                try:
+                                    ai_response_parts.remove(discarded)
+                                except ValueError:
+                                    pass
+                            _triage_text_buffer.clear()
+                            _triage_transition_fired = True
 
                     else:
+                        # Notify the client which tool is running so the UI can
+                        # show a descriptive status label instead of just "...".
+                        yield {"type": "tool-status", "label": _TOOL_STATUS_LABELS.get(fn_name, "Working")}
+
                         # FINALIZE-stage tools are intercepted here and never
                         # dispatched through the registry.
                         tool_result = None
@@ -880,6 +1369,16 @@ class ResponseOrchestrator:
                             await self._handle_finalize_tool(
                                 fn_name, fn_args, session_id, context, pending_tool_results
                             )
+                            self.runtime_fsm.transition("tool_done")
+
+                        elif fn_name == "show_next_providers":
+                            # BROWSE-stage tool: yield the next batch of provider cards.
+                            self.runtime_fsm.transition("tool_call")
+                            tool_calls_seen = True
+                            async for browse_chunk in self._handle_show_next_providers(
+                                session_id, context, pending_tool_results
+                            ):
+                                yield browse_chunk
                             self.runtime_fsm.transition("tool_done")
 
                         else:
@@ -944,6 +1443,14 @@ class ResponseOrchestrator:
                                 # Surface provider list for stage-context use
                                 if fn_name == "search_providers" and isinstance(tool_result, list):
                                     self.conversation_service.context["providers_found"] = tool_result
+                                    # Yield provider cards for GP results before the follow-up narrative
+                                    _gp = [
+                                        p for p in tool_result
+                                        if (p.get("user") or {}).get("source") == "google_places"
+                                    ][:3]  # cap at top 3
+                                    if _gp:
+                                        _cards = await self._build_provider_cards(_gp, user_input)
+                                        yield {"type": "provider-cards", "cards": _cards}
                                 # Sync in-memory user_context after provider pitch response so
                                 # _should_pitch_provider won't re-fire when stage hits COMPLETED.
                                 if fn_name == "record_provider_interest" and isinstance(tool_result, dict):
@@ -1001,12 +1508,23 @@ class ResponseOrchestrator:
                     filtered = _strip_tool_call_text(chunk) if isinstance(chunk, str) else chunk
                     if filtered.strip() if isinstance(filtered, str) else filtered:
                         ai_response_parts.append(filtered)
-                        yield filtered
+                        # In TRIAGE, buffer text rather than yielding immediately.
+                        # If a signal_transition fires in this same turn the buffer
+                        # is discarded above, suppressing the preamble.
+                        if current_stage == ConversationStage.TRIAGE and not _triage_transition_fired:
+                            _triage_text_buffer.append(filtered)
+                        else:
+                            yield filtered
                     elif isinstance(chunk, str) and chunk.strip() and not (filtered.strip() if isinstance(filtered, str) else filtered):
                         # The chunk had content but was entirely stripped (leaked
                         # tool-call text).  Count it as intentional signal so the
                         # empty-response fallback is not triggered.
                         tool_calls_seen = True
+
+            # Flush any buffered TRIAGE text — only reached when no transition fired.
+            for buffered_chunk in _triage_text_buffer:
+                yield buffered_chunk
+            _triage_text_buffer.clear()
 
             # ── Follow-up streams (bounded loop) ───────────────────────────────
             # Each iteration handles one batch of pending tool/transition results.
@@ -1025,6 +1543,30 @@ class ResponseOrchestrator:
                 next_pending: list[tuple[str, Any]] = []
                 # Only the first follow-up stream sees the real user utterance.
                 follow_up_user_input = user_input if follow_up_iter == 0 else " "
+                # Yield provider cards before the follow-up narrative whenever a
+                # finalize transition is pending.  The guard is NOT limited to
+                # follow_up_iter==0 because in the TRIAGE→CONFIRMATION→FINALIZE
+                # path the finalize transition arrives at iter 1 (TRIAGE→CONFIRMATION
+                # happens in the main stream; CONFIRMATION→FINALIZE happens inside
+                # the first follow-up stream and lands in next_pending, which
+                # becomes current_pending at iter 1).
+                _has_finalize_transition = any(
+                    name == "signal_transition"
+                    and isinstance(res, dict)
+                    and res.get("stage") == "finalize"
+                    for name, res in current_pending
+                )
+                if _has_finalize_transition:
+                    _providers = self.conversation_service.context.get("providers_found", [])
+                    _gp_for_finalize = [
+                        p for p in _providers
+                        if (p.get("user") or {}).get("source") == "google_places"
+                    ][:3]  # cap at top 3
+                    if _gp_for_finalize:
+                        _finalize_cards = await self._build_provider_cards(
+                            _gp_for_finalize, user_input
+                        )
+                        yield {"type": "provider-cards", "cards": _finalize_cards}
                 async for chunk in self._run_follow_up_stream(
                     current_pending, follow_up_user_input, session_id, context,
                     ai_response_parts, next_pending
@@ -1051,10 +1593,8 @@ class ResponseOrchestrator:
             ):
                 logger.warning(
                     "CONFIRMATION stuck-stage: turn %d produced text without a "
-                    "signal_transition — LLM likely ignored the Decision Gate "
-                    "(user_input=%r).",
+                    "signal_transition — LLM likely ignored the Decision Gate.",
                     _conf_turns,
-                    user_input[:80],
                 )
 
             # ── Safety fallback: stuck-in-FINALIZE guard ─────────────────────────
@@ -1063,6 +1603,28 @@ class ResponseOrchestrator:
             # provider presentation mid-flow.  The fallback is therefore disabled:
             # the stage will persist until the next user utterance triggers one of
             # the three FINALIZE tools.  (§3.2)
+            #
+            # Exception: lite mode (finalize_auto_advance_stage is not None).  After
+            # presenting the initial provider cards the orchestrator auto-transitions
+            # to the configured target stage (BROWSE) without waiting for user input.  (§14.3)
+            if (
+                self._profile.finalize_auto_advance_stage is not None
+                and self.conversation_service.get_current_stage() == ConversationStage.FINALIZE
+            ):
+                _auto_target = self._profile.finalize_auto_advance_stage
+                logger.info(
+                    "finalize_auto_advance_stage: auto-advancing FINALIZE → %s",
+                    _auto_target.value,
+                )
+                auto_pending: list[tuple[str, Any]] = []
+                await self._apply_signal_transition_with_payload(
+                    _auto_target.value, session_id, context, auto_pending, user_input=""
+                )
+                if auto_pending:
+                    async for chunk in self._run_follow_up_stream(
+                        auto_pending, " ", session_id, context, ai_response_parts, []
+                    ):
+                        yield chunk
 
             # ── Stream complete ──────────────────────────────────────────────────
             ai_text = "".join(ai_response_parts)
