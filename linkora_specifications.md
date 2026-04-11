@@ -18,6 +18,8 @@
   - **Text mode**: the user types; the AI responds with text only. No audio greeting is synthesized or played on connection, but an initial text response is still dispatched.
 - All AI responses and prompts are language-aware. The language is set per session by the client and must be respected throughout the entire conversation. It must never be hardcoded.
 - **Demo / Seeding Mode**: In development and demo environments, the system may pre-populate the search index with synthetic provider profiles to enable end-to-end testing of the provider-search flow. This is a demo-only behavior; production environments must never seed synthetic data.
+- **External Provider Search (Google Places)**: The platform supports an external provider search mode backed by the Google Places API. This integration is exclusive to lite mode (`AGENT_MODE=lite`) and is always active when that mode is in use. In full mode, provider discovery uses only the internal search index (Weaviate); Google Places is never queried.
+- **Configurable Agent Mode**: The platform supports two named agent modes that control the active conversation stage machine, the prompts used in each stage, and the tools available during a session. The mode is selected by a server-side configuration parameter; it applies to the entire server process and cannot be changed per-session or mid-session. The low-level transport and audio state machine is shared and unchanged across all modes. If an unknown mode is configured, the system must log a warning and fall back to the default mode.
 
 ---
 
@@ -60,6 +62,7 @@
 
 - If Weaviate is entirely unreachable during login or search, the system must not fail the entire user session. It must degrade gracefully: login succeeds with a logged warning, and searches return a standardized "Search temporarily unavailable" error to the AI to handle via `RECOVERY`.
 - When the provider search backend is unreachable specifically during the `FINALIZE` stage, the system must immediately transition to `RECOVERY` rather than presenting zero results as a genuine empty-match outcome. The `RECOVERY` message must indicate that the search was temporarily unavailable, not that no matching provider was found.
+- *(Lite mode only — see §14.4)* When the Google Places API is unreachable or returns an error during a lite-mode `FINALIZE` stage, the system must not fail. It must inform the user that the external search is temporarily unavailable, then proceed using only the internal search index results. The degradation must be transparent to the user (e.g. "I was unable to reach Google Maps right now, so I am searching our registered providers instead.").
 
 ---
 
@@ -67,14 +70,15 @@
 
 ### 3.1 Session Start & Dynamic Initialization
 
-- **Voice mode**: the AI greets the user by his name immediately upon connection.
-- **Text mode (LLM-Driven Initialization)**: The AI starts directly in the `TRIAGE` stage. The system uses an LLM-driven initialization to provide a natural, dynamic greeting while simultaneously scoping the request. 
-  - **Conversation State Context:** The system always injects a context flag into the `TRIAGE` prompt explicitly stating whether this is the very first message of the session or if the communication is already ongoing.
-  - If the session is initiated with a buffered user message (e.g., from a dormant UI waking up), the system wraps the message in a silent system tag (e.g., `[System Event: User reconnected and sent the following message]`) and passes it directly to the LLM in `TRIAGE`. The LLM processes the greeting and the user's intent simultaneously. When accumulating the problem description from a system-event-tagged input, the system must strip the tag and accumulate only the quoted user message content extracted from within it — the full tag is forwarded to the LLM for context only.
-  - If no message is buffered (a completely fresh start), the system prompts the LLM in `TRIAGE` to generate a fresh, context-aware greeting to initiate the chat and invite the user to share their need.
-- **Language Enforcement**: If the WebSocket connection lacks a `language` parameter or provides an invalid one, the system defaults to the user's REST-stored settings language, or `"en"` if none exists. The language parameter provided by the client strictly overrides the REST-stored user setting for the duration of that session. The conversation language cannot be changed mid-session.
+- Both **voice mode** and **text mode** start in the `GREETING` stage. The AI generates a personalised greeting (addressing the user by name and acknowledging any open service request) before transitioning to `TRIAGE`.
+- **Voice mode**: the greeting is synthesised via TTS and played as audio. The stage advances to `TRIAGE` after playback begins.
+- **Text mode**: the greeting is dispatched as a text bubble over the DataChannel. The stage advances to `TRIAGE` immediately after dispatch.
+- **Race guard (text and lite modes)**: If the user sends a message within the 1-second window measured from the start of session initialization (the moment `initialize()` is called, before any I/O), the system skips the standalone greeting and advances `GREETING → TRIAGE` immediately, so the user's message is handled as a normal `TRIAGE` turn. The remaining budget after user-data I/O completes is computed as the full 1-second window minus elapsed I/O time (minimum 0 ms). Slow Firestore or Weaviate I/O must not exhaust the race-guard window before the DataChannel opens.
+- **Language Enforcement**: If the WebSocket connection lacks a `language` parameter or provides an invalid one, the system defaults to the user's REST-stored settings language (read from Firestore when Firestore is enabled for the deployment mode), or `"en"` if none exists. In lite mode (Firestore disabled), the Firestore language lookup is skipped entirely; the system falls back directly to `"en"` when the query parameter is absent or invalid. The language parameter provided by the client strictly overrides the REST-stored user setting for the duration of that session. The conversation language cannot be changed mid-session.
 - **Unsupported Client Language**: If the client requests a language via WebSocket that the LLM is not localized or tested for (e.g., passing a rare dialect code), the system must fallback to English (`"en"`) and inform the user of the fallback in the first turn.
 - **Cross-Lingual Handling**: The AI prompt must strictly enforce that all responses remain in the session-defined language. If the user speaks in a different language, the AI must explicitly translate or acknowledge the input in the configured system language (e.g., "I see you're speaking German, but I am configured for English right now. How can I help?").
+- **Language Instruction Scope**: Every stage prompt (GREETING, TRIAGE, CLARIFY, CONFIRMATION, RECOVERY, FINALIZE, PROVIDER_PITCH, PROVIDER_ONBOARDING, and their lite-mode equivalents) must carry a `language_instruction` placeholder. The service layer must inject the language instruction into every prompt regardless of the stage, so no stage can silently revert to a default language mid-conversation. The single exception is the Google Places Query prompt, which always generates English search phrases to maximise API recall; this English query is internal and is never shown to users.
+- **German Formality in Lite Mode**: When the session language is German and the agent is operating in Lite mode, all AI responses must address the user using the informal "du" form. The AI must never use the formal "Sie" in Lite mode German sessions. In Full mode, and in all non-German sessions, this constraint does not apply.
 
 ### 3.2 Conversation Stages
 
@@ -82,7 +86,8 @@ The conversation progresses through a finite set of named stages. Each stage rep
 
 | Stage                 | Purpose                                                                                                                                                       |
 |-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `TRIAGE`              | **Welcome & Scoping.** If flagged as the first message, the AI greets the user by name, checks for open service requests, and invites them to share their need. Otherwise, it acts strictly as a service coordinator. It must collect a strict minimum set of requirements (defined in Section 3.4) before it is permitted to transition to CONFIRMATION. It also detects provider-management intent and routes accordingly. |
+| `GREETING`            | **Welcome.** The AI greets the user by name, acknowledges any open service requests, and invites them to share their need. Transitions immediately to `TRIAGE`. |
+| `TRIAGE`              | **Scoping.** Acts as a service coordinator. Collects the strict minimum set of requirements (defined in §3.4) before transitioning to `CONFIRMATION`. Also detects provider-management intent and routes accordingly. |
 | `CLARIFY`             | **Disambiguation.** Used when the request is too ambiguous to scope. The AI asks exactly one targeted question and immediately returns to `TRIAGE`.            |
 | `TOOL_EXECUTION`      | **Data retrieval.** An intermediate stage while a data operation runs (e.g. fetching open requests or favorites). Control returns to `TRIAGE`, `CONFIRMATION`, or `FINALIZE` once the tool completes. |
 | `CONFIRMATION`        | **Pre-commit check.** The AI summarises the scoped request in 2–3 sentences and asks the user to confirm before proceeding to provider matching.               |
@@ -96,6 +101,7 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 
 | Current Stage         | Allowed Next Stages                                                                         |
 |-----------------------|---------------------------------------------------------------------------------------------|
+| `GREETING`            | `TRIAGE`                                                                                    |
 | `TRIAGE`              | `CONFIRMATION`, `CLARIFY`, `TOOL_EXECUTION`, `RECOVERY`, `PROVIDER_ONBOARDING`              |
 | `CLARIFY`             | `TRIAGE`                                                                                    |
 | `TOOL_EXECUTION`      | `TRIAGE`, `CONFIRMATION`, `FINALIZE`                                                        |
@@ -131,12 +137,12 @@ The system must enforce legal transitions only. Illegal stage transitions must b
 - If the LLM output contains verbatim tool-call invocations as text (e.g. `signal_transition(target_stage="finalize")`), those patterns must be stripped from the streamed text before delivery to the client. Only text matching a registered tool name is stripped.
 - When the `FINALIZE` provider-search is actively running, any new user input (voice or text) must be rejected. The system sends a bilingual acknowledgement (German and English) informing the user that the search is still in progress, and does not interrupt the search.
 - If the user disconnects or the session is intentionally terminated while a `FINALIZE` search is actively running, the background search tasks must be aborted to free system resources.
-- **Silent Tool Execution**: The LLM must never narrate or announce internal state transitions, database searches, or tool executions in natural language (e.g., 'Let me search the database'). If a transition or search is required, the LLM must emit the transition signal silently. Status updates regarding searches are handled exclusively by the client UI interpreting the `runtime-state`.
+- **Silent Tool Execution**: The LLM must never narrate or announce internal state transitions, database searches, or tool executions in natural language (e.g., 'Let me search the database'). If a transition or search is required, the LLM must emit the transition signal silently. The server communicates tool progress to the client exclusively via the `tool-status` DataChannel message; the client displays a contextual label (e.g. "Searching for providers", "Submitting your request") below the typing indicator while the tool executes. The label is cleared as soon as the tool finishes.
 - **Cascading Transitions Within a Single Turn**: When a stage transition triggers an autonomous follow-up LLM call that itself emits another transition (e.g., `TRIAGE → CONFIRMATION → TRIAGE → CONFIRMATION`), the system must continue processing each subsequent stage until no pending transitions remain or a safety depth limit is reached. No pending stage transition result shall be silently discarded mid-turn. The user must always receive a natural-language response from the final resolved stage, never silence.
 
 ### 3.4 Clarification & Minimum Required Information (MRI)
 
-The AI must not transition from TRIAGE (or CLARIFY) to CONFIRMATION until the user's request contains sufficient detail.
+The AI must not transition from TRIAGE (or CLARIFY) to CONFIRMATION until the user's request contains sufficient detail. **MRI requirements differ by agent mode** — see §14.3 for the lite-mode definition. The rules below apply to `full` mode.
 
 Sufficient detail is strictly defined as successfully collecting ALL of the following:
 
@@ -151,7 +157,7 @@ Sufficient detail is strictly defined as successfully collecting ALL of the foll
 
 **Extended Context (soft-ask — collected after MRI is satisfied):**
 Once the three MRI elements are gathered, the AI opportunistically collects the following extras with at most one natural question each. None of these block the flow; the AI must not re-ask if the user dismisses or skips them.
-- **Location**: For in-person services (plumbing, cleaning, electrical work, etc.), the AI asks once: "Where is the work needed — which city or area?" Skipped entirely for remote/digital work.
+- **Location** *(full mode)*: Location is a soft-ask for in-person services (plumbing, cleaning, electrical work, etc.): the AI asks once "Where is the work needed — which city or area?" and skips it entirely for remote/digital work. In full mode, location is never a hard MRI gate. For the lite-mode location rule (hard MRI requirement), see §14.4.
 - **Budget**: The AI asks once if clearly relevant: "Do you have a rough budget in mind?" Any answer — including "no idea" or silence — is accepted without follow-up.
 - **Exact dates**: If the user stated a relative timeframe (e.g. "next Tuesday"), the AI resolves it to a concrete calendar date internally. The user is not asked to re-state it as an ISO date.
 
@@ -185,6 +191,10 @@ For ambiguity resolution, the AI may enter CLARIFY to ask one targeted question 
 
 - **Single Acknowledgement Rule**: The AI must acknowledge the user's request or intent at most once per conversational turn, across all stage sub-streams. Redundant re-phrasings of the same intent within the same turn are strictly forbidden.
 - **Direct Action**: The AI must not use repetitive conversational filler (e.g., "No problem at all, I can help! Alright, I can certainly help..."). After a single, brief acknowledgement (if any), the AI must proceed immediately to the required stage action — summarising, asking a clarifying question, or executing a tool.
+<<<<<<< HEAD
+- **Pre-Commit Summary Consolidation**: The `CONFIRMATION` stage is the single owner of the request summary and confirmation ask. Regardless of how many TRIAGE turns preceded it, `CONFIRMATION` must generate a cohesive summary and ask the user to confirm. It must not open with a fresh greeting-like preamble before the summary.
+- **Silent TRIAGE→CONFIRMATION Transitions**: Regardless of whether `TRIAGE` reached the MRI gate on the very first message or after multiple turns, once all MRI criteria are satisfied the `TRIAGE` LLM call must emit the `signal_transition` signal only and produce no natural-language output — no summary, no "does that look right?" question. The `CONFIRMATION` stage owns all confirmation text.
+=======
 - **Pre-Commit Summary Consolidation**: During the `CONFIRMATION` stage, if the stage was reached via a fast-path transition from `TRIAGE`, the AI must combine any acknowledgement and the confirmation summary into a single cohesive statement. It must not open with a fresh greeting-like preamble before the summary.
 - **Silent Fast-Path Transitions**: When `TRIAGE` determines that the user's request is already complete and transitions immediately to `CONFIRMATION`, the `TRIAGE` LLM call must emit the `signal_transition` signal only and produce no natural-language output. The `CONFIRMATION` stage owns all user-visible text for that turn.
 - **CONFIRMATION Routing Contract**: The `CONFIRMATION` stage AI must evaluate the user's most recent message for confirmation intent before generating any text. If the user affirms the summary (e.g. "yes", "right", "correct", "looks good"), the AI must transition to `FINALIZE` immediately with no preceding natural-language text. If the user wishes to change something, the AI must transition to `TRIAGE` immediately with no preceding natural-language text. Re-summarising the request after the user has already confirmed is strictly forbidden. The AI may EITHER generate natural-language text (when no decision has yet been made) OR call `signal_transition` — never both in the same response.
@@ -424,8 +434,9 @@ Step 2 of the provider search pipeline generates a short hypothetical provider p
 ### 6.8 Hybrid Retrieval Parameters
 
 - The search index uses a **hub-spoke schema**: `User` nodes (hub) linked bidirectionally to `Competence` nodes (spokes). The hybrid search targets the `Competence` collection and resolves owning-user properties via the `owned_by` cross-reference.
+- When a GP provider already exists in the index and is being refreshed (e.g. on a repeated search for the same query), the system must update both the `User` and `Competence` objects using a property-level patch operation. A full object replacement must not be used, because it silently removes the `owned_by` cross-reference on the Competence node, which causes the provider-flag filter to exclude the provider from all subsequent searches.
 - Search mode: **hybrid** with `alpha = 0.5` (equal weight for vector similarity and BM25 keyword matching).
-- **Boosted query properties**: `title` carries a 2× BM25 boost. The `category`, `description`, `search_optimized_summary`, and `availability_text` fields are searched at standard weight. The `search_optimized_summary` field is the primary source for the vector component.
+- **Boosted query properties**: `title` carries a 2× BM25 boost. `primary_type` carries a 1.5× boost. The `category`, `description`, `search_optimized_summary`, `availability_text`, `skills_list`, and `review_snippets` fields are searched at standard BM25 weight. The `search_optimized_summary` field is the primary source for the vector component.
 - **Wide-net fetch**: `min(max_providers × 5, 30)` candidates are retrieved from the index before reranking. This oversampling gives the cross-encoder a diverse pool to score.
 - **Ghost filter**: providers inactive for more than 180 days (measured by `last_sign_in`) are excluded from all results. Providers whose `last_sign_in` is null (recorded before activity tracking was introduced) are treated as active and included.
 - **Provider flag filter**: only competencies whose owning user has `is_service_provider = True` in the search index are returned.
@@ -467,6 +478,81 @@ Step 4 of the provider search pipeline re-scores the wide-net candidates using a
 - Because the service request is only created on acceptance, a `FINALIZE → TRIAGE` back-transition (zero results or user cancellation) requires no cancellation step — no document exists at that point.
 - The `CONFIRMATION` stage summary must include location, timeframe, and budget **only when the user provided them**; it must not invent or approximate values that were not stated.
 
+### 6.12 Google Places External Provider Search
+
+> **This section applies exclusively to lite mode (`AGENT_MODE=lite`).** In full mode, Google Places is never queried and none of the behaviours below are active.
+
+This section defines the behaviour of the external provider search mode backed by the Google Places API. In lite mode, this integration is always active.
+
+#### 6.12.1 Configuration
+
+- In lite mode, Google Places external search is always active. There is no per-instance flag to toggle it; enabling or disabling it is done by switching the agent mode.
+- The Google Places API key is provided via a server-side secret and must never be exposed to the client.
+
+#### 6.12.2 Query Construction
+
+- Immediately after the user confirms the scoped request in `CONFIRMATION`, the system constructs a single Google Places search query derived from the confirmed MRI fields.
+- The LLM automatically derives this query: it analyses the confirmed service requirements and generates one natural-language search phrase that captures the core intent and the user's location (e.g. `"DJ for wedding Munich"`, `"wedding photographer Munich"`).
+- The user's confirmed location (which is a hard MRI requirement when Google Places is enabled) is appended to the query as a geographic anchor.
+- The user is not asked to review or confirm the generated query. The LLM derives it autonomously from the MRI context.
+- Multi-category requests (e.g. a wedding requiring DJ, photographer, and venue) are expressed as a single broad query in the current version. Support for multiple sub-queries per service category is deferred to a future iteration.
+
+#### 6.12.3 Transparency
+
+- When the Google Places search is initiated, the system must inform the user transparently that an external Google Maps search is being performed in addition to the internal search (e.g. "I am also searching Google Maps for providers near you — this may take a moment.").
+- This announcement is made once per `FINALIZE` entry, before the first results are presented. It must not be repeated for subsequent turns within the same `FINALIZE` session.
+
+#### 6.12.4 Fetching and Storage
+
+- Google Places queries are executed concurrently. The system does not cache Google Places results between sessions: every `FINALIZE` entry triggers a fresh fetch from the Google Places API.
+- In lite mode, each search uses a fully isolated, per-search storage partition. Google Places results written for one user's search must never be visible to another concurrent user's search. The partition is created just before writing and deleted atomically after the search is complete. On server startup, any orphaned partitions from prior crashes are deleted automatically.
+- Each result returned from Google Places is normalised into the platform's canonical provider record format. The normalised record must include at minimum: name, address, phone number (if available), website (if available), Google rating (if available), geographic coordinates, and a source tag identifying the record as originating from Google Places.
+- When a Google Places result includes an editorial summary, it is stored as the provider's description (in its original language). For the vector search index and cross-encoder scoring, the system must always generate a dedicated English-language summary using an LLM call, regardless of whether an editorial summary exists. This English summary is stored separately from the user-facing description. When an editorial summary is available, it is passed as context to the LLM so that the generated summary captures real specialties. When no editorial summary is present, the LLM synthesises the summary from the business name, primary type, location, and any available customer review snippets.
+- Customer review snippets (up to five, where available from the Places API) are passed to the LLM as context during English summary generation; they must not be directly appended to the stored description or search summary — the LLM incorporates them into natural prose. Up to five review snippets are also stored directly on each provider's search index record so they can be referenced independently at card reasoning time.
+- Immediately after fetching and normalisation, all Google Places results are written to the internal search index (Weaviate) using the same schema as registered platform providers, so they participate in the unified vector and hybrid ranking pipeline.
+- Because Google Places providers are not registered platform users, they must be written to the search index with a distinct source flag (e.g. `source: "google_places"`) and must never be assigned a platform user ID or trigger any user-account-related operations (e.g. provider pitch eligibility checks).
+
+#### 6.12.5 Unified Ranking
+
+- Once both the Google Places results and the internal Weaviate results have been fetched (or one source has failed gracefully), all candidates are merged into a single pool.
+- The existing ranking pipeline (HyDE + hybrid retrieval + cross-encoder reranking, §6.7–§6.9) is applied to the unified pool. The final ranked list is a single unified list ordered by relevance score; results are not grouped or separated by source.
+- The maximum number of providers presented to the user (`max_providers`) applies to the unified list.
+
+#### 6.12.6 Failure and Degradation
+
+- If the Google Places API is unreachable, returns an HTTP error, or times out, the system must log the error and proceed using only the internal search index results.
+- In this case, the system must inform the user once that the external search was unavailable and that results are sourced from the internal index only.
+- A Google Places API failure must never trigger a transition to `RECOVERY`; it is a recoverable partial failure, not a total search failure.
+- If both the Google Places API and the internal search index return zero results, the standard zero-result handling applies (§6.11 Phase 1: `FINALIZE` is bypassed and the FSM transitions back to `TRIAGE`).
+
+#### 6.12.7 Contact Template Generation
+
+- For each provider presented in `FINALIZE` (whether sourced from Google Places or the internal index), the system must be capable of generating a ready-to-send contact email or message template on explicit user request (e.g. "Can you write me a message to send to them?").
+- The template must be personalised to the user's confirmed scoped request and addressed to the specific provider by name.
+- Template generation is never triggered automatically; it only fires when the user explicitly requests it. The LLM calls the `generate_contact_template()` tool to signal this intent; the orchestrator injects the provider's contact details and request summary so the LLM generates the template in the follow-up turn.
+- The template is delivered as a text message in the conversation, formatted for easy copy-paste.
+- The LLM must not announce or narrate the tool call before generating the template — the follow-up response is the template itself.
+
+#### 6.12.8 Provider Pitch Eligibility
+
+- The standard `PROVIDER_PITCH` / `PROVIDER_ONBOARDING` flow (§4) applies unchanged in sessions that use Google Places. The presence of externally sourced results does not suppress or modify the pitch eligibility check.
+- Google Places provider records written to the search index must not be counted as registered platform providers for the purposes of any pitch-eligibility or provider-count logic.
+
+#### 6.12.9 Provider Cards (Rich Structured UI)
+
+- When a provider search returns one or more Google Places results, the system must deliver structured provider cards to the client as a distinct message type, separate from and **before** the AI narrative summary.
+- Each card must include: provider name, a short AI-generated reasoning sentence (≤15 words) explaining why this result matches the user's request, description (where available), star rating (where available), phone number (where available), website URL (where available), street address (where available), a cover photo URL (where available), and weekly opening hours (where available).
+- The AI-generated reasoning is produced by a single dedicated LLM call covering all Google Places results at once; if reasoning generation fails, cards must still be delivered with an empty reasoning field rather than being suppressed.
+- The AI-generated reasoning sentence must be written in the session language. If customer review snippets are available for a provider, the reasoning sentence must incorporate at least one concrete positive aspect drawn from those reviews. When no review snippets are available, the reasoning focuses on a concrete specialty or standout fact from the provider's description.
+- The **description** field in each provider card must be in the session language. For non-English sessions, the system produces a localised description from the stored English summary via a single batched LLM call; if that call fails, the stored description is used as fallback. English sessions use the stored description as-is.
+- Provider cards are scoped exclusively to Google Places results. Internal search index results (registered platform providers) are not rendered as cards.
+- The client must render cards with tappable contact chips: phone opens the native dialler, website opens the browser, address opens the native maps application (deep-linking directly to the provider's place listing when a place identifier is available).
+- Each card must include a pre-filled email enquiry action. Tapping it opens the device's native mail client with a subject and body generated by an LLM call, producing natural prose from the user's structured request summary. The LLM uses the user's name, the user's request, and the provider's name and location as inputs. If LLM email generation fails, the system must fall back to a static template that still includes the request details. The email language must match the session language. If an email address is associated with the provider, it is pre-filled in the `to` field; otherwise the `to` field is blank. The email is always editable before sending.
+- When a provider search result has a known place identifier, the address chip must link directly to that place's listing in the maps application rather than performing a generic address search.
+- At most 3 provider cards are delivered per search, regardless of how many results are returned.
+
+---
+
 ### 6.11 FINALIZE Stage Multi-Turn Interaction (Smart Backend & Tool-Driven FSM)
 
 To prevent the LLM from drifting or failing to emit generic stage transitions, the `FINALIZE` loop relies on **Backend Pre-Routing** and **State-Mutating Tools**. The LLM inside `FINALIZE` does not possess the `signal_transition` tool; the stage transitions are side-effects of concrete tool execution managed by the orchestrator.
@@ -480,7 +566,7 @@ When the provider search completes, the Backend Orchestrator intercepts the payl
   The Backend caches the full result list, sets the FSM to `FINALIZE`, and passes *only* the top result (`results[0]`) into the LLM prompt with instructions to present this provider and wait for the user's decision.
 
 #### Phase 2: Tool-Driven Interaction (The Loop)
-The `FINALIZE` LLM is equipped with exactly four functional tools: `accept_provider(provider_id)`, `reject_and_fetch_next()`, `cancel_search()`, and `retry_search()`.
+The `FINALIZE` LLM is equipped with five functional tools: `accept_provider(provider_id)`, `reject_and_fetch_next()`, `cancel_search()`, `retry_search()`, and `generate_contact_template()`.
 
 - **User Response A: Decline current, ask for another**:
   - The user rejects the suggestion ("No, someone else", "Too expensive").
@@ -495,7 +581,8 @@ The `FINALIZE` LLM is equipped with exactly four functional tools: `accept_provi
 - **User Response C: Accept current result**:
   - The user explicitly accepts the current provider ("Yes, let's go with him").
   - The LLM evaluates the intent and calls `accept_provider(provider_id)`.
-  - *Orchestrator Action*: The backend executes the tool, creates the service request document (see §6.10), records the accepted provider as a `provider_candidate` sub-document with their normalised ranking score, and **automatically forces the state transition** to `COMPLETED`. No service request or candidate document is written for any provider the user did not accept.
+  - *Orchestrator Action*: If the selected provider is sourced from Google Places (i.e. not a registered platform user), the backend must not create a service request. Instead, it returns an error payload with the provider's contact details (phone, website, address) and the LLM must explain that the provider cannot be booked directly on Linkora but provides their contact information for the user to reach out independently.
+  - If the provider is a registered platform user, the backend executes the tool, creates the service request document (see §6.10), records the accepted provider as a `provider_candidate` sub-document with their normalised ranking score, and **automatically forces the state transition** to `COMPLETED`. No service request or candidate document is written for any provider the user did not accept.
 
 - **User Response D: Cancel the request**:
   - The user abandons the flow entirely and wants to start a different request ("Nevermind", "Cancel the search", "I changed my mind", "I want to start over").
@@ -527,6 +614,8 @@ The `FINALIZE` LLM is equipped with exactly four functional tools: `accept_provi
 | Client → Server | `{"type": "mode-switch", "mode": "text" | "voice"}`                                        |
 | Server → Client | `{"type": "chat", "text": "…", "isUser": bool, "isChunk": bool}`                           |
 | Server → Client | `{"type": "runtime-state", "runtimeState": "<state>"}` — current agent runtime FSM state  |
+| Server → Client | `{"type": "tool-status", "label": "<human-readable label>"}` — emitted once before each tool execution |
+| Server → Client | `{"type": "provider-cards", "cards": […]}` — provider result cards |
 
 - `isChunk: true` means the message is a streaming fragment. The client must accumulate all fragments before treating the message as complete and displaying it.
 - The server emits a `runtime-state` message both when the DataChannel is first attached and again when it is confirmed open, so the client receives the correct state even if it connects after the FSM has already advanced.
@@ -552,10 +641,11 @@ The `FINALIZE` LLM is equipped with exactly four functional tools: `accept_provi
 - The client automatically terminates an active WebRTC/WebSocket connection after 10 consecutive minutes of inactivity (no incoming messages of any type) to save device resources and server connections. 
 - On timeout, the network session is torn down, **and the visual chat history is cleared.** The UI returns to its default idle/start state.
 - If the user interacts again, it initiates a completely new session connection.
+- When the user manually starts a new session (e.g. by tapping the start button after an explicit stop), the client must clear any existing chat history before establishing the new connection. This prevents messages from a prior session from appearing alongside the new session's greeting.
 
 ### 7.5 Optimistic Message Display
 
-- When a user submits a text message, the client adds it to the chat view immediately, before the server confirms receipt. If the server subsequently echoes the same message, the client must detect and discard the duplicate by maintaining a FIFO queue of pending optimistic message texts. The first queue entry whose text matches the incoming echo is dequeued and the echo is suppressed; if no queue entry matches, the message is displayed normally. This FIFO approach correctly handles rapid-succession sends where the same text could be sent twice, ensuring genuine repetitions (e.g., 'Hello?') are not falsely deduplicated. Additionally, the server FSM must ensure that if the user's first message contains a standard greeting, the LLM does not double-greet if an autonomous system greeting was already dispatched (or vice versa, as greetings are now dynamically driven by the LLM in the `TRIAGE` stage).
+- When a user submits a text message, the client adds it to the chat view immediately, before the server confirms receipt. If the server subsequently echoes the same message, the client must detect and discard the duplicate by maintaining a FIFO queue of pending optimistic message texts. The first queue entry whose text matches the incoming echo is dequeued and the echo is suppressed; if no queue entry matches, the message is displayed normally. This FIFO approach correctly handles rapid-succession sends where the same text could be sent twice, ensuring genuine repetitions (e.g., 'Hello?') are not falsely deduplicated. Additionally, the server FSM must ensure that if the user's first message contains a standard greeting, the LLM does not double-greet if an autonomous system greeting was already dispatched from the `GREETING` stage.
 
 ### 7.6 Microphone Mute Lifecycle
 
@@ -571,9 +661,23 @@ The `FINALIZE` LLM is equipped with exactly four functional tools: `accept_provi
 - If a session start is already in progress, any subsequent start request must be silently ignored until the in-flight start completes or fails.
 - The WebSocket connection URL must include the authenticated user's identifier as a query parameter. If no authenticated user is present, the connection attempt must fail immediately before any network call is made.
 
-### 7.8 Audio Device Change During Voice Session
+### 7.8 Background Pre-Warm Isolation
+
+- The client may begin establishing a background ("hollow") WebRTC connection before the user explicitly starts a session, in order to reduce perceived latency when the session actually begins.
+- If a hollow pre-warm is in progress or has completed when the user starts a session in a different mode (e.g. pre-warm was for voice, session requested as text), the pre-warm must be discarded cleanly. The resources it created must be released without affecting the new session.
+- If a hollow pre-warm fails asynchronously (after its internal timeout expires), its cleanup must release only the peer connection and signaling channel that the pre-warm itself created.  It must not close or nullify any peer connection or signaling channel that belongs to an already-active non-prewarm session that started while the pre-warm was still running.  Violating this invariant would silently kill the active session and cause the server to dispatch a duplicate greeting when the user next sends a message.
+- When `APP_MODE=lite` is configured on the client, the client must skip all background pre-warm and greeting warm-up calls entirely. No voice WebSocket connection attempt must be made, preventing the late-cleanup race that would otherwise kill the active text session and produce a duplicate greeting. The client `APP_MODE` value must match the server-side `AGENT_MODE` value.
+
+### 7.9 Audio Device Change During Voice Session
 
 - When an audio input device change is detected during a live voice session, the client must automatically recreate the audio track from the new device and renegotiate the peer connection, preserving the previous mute state. If a renegotiation is already in progress when the device change fires, the device change is deferred until the current renegotiation completes.
+
+### 7.10 Theme Selection and Persistence
+
+- The client app supports three theme modes: **System default** (follows the OS-level brightness), **Light**, and **Dark**.
+- The default theme mode on first launch is System default — the app must not default to a hardcoded dark or light theme.
+- The user's selected theme mode must be persisted locally and restored automatically on the next app launch.
+- The theme toggle control must be accessible from the menu/settings screen, immediately after the language selector.
 
 ---
 
@@ -646,7 +750,7 @@ The `FINALIZE` LLM is equipped with exactly four functional tools: `accept_provi
 - The FSM advances to `DATA_CHANNEL_WAIT` as soon as the WebRTC peer connection is negotiated and the data channel attachment is confirmed.
 - Once the data channel is confirmed open, the FSM invokes the **Session Resumption (State-Aware Hydration)** check (see §9.2) to determine whether to restore previous context or start fresh, and then transitions to the appropriate state (e.g., `LISTENING` or `TRIAGE`).
 - The current FSM state is emitted as a `runtime-state` message on both the initial data-channel attachment and again when the channel open event fires, ensuring the client always receives the correct state even if it connects after the FSM has already advanced past `BOOTSTRAP`.
-- **Text-mode initialization race guard**: After the FSM advances to `LISTENING`, a text-mode session applies a brief wait (up to 300 ms) before committing to an autonomous text response. If the client delivers a text message within this window (e.g., a buffered message sent immediately after the DataChannel opens), the system skips the standalone response and transitions directly to `TRIAGE`, allowing the LLM to process the dynamic greeting and user intent in a single combined turn. If no message arrives within 300 ms, the autonomous initial response is generated and dispatched normally by `TRIAGE`.
+- **Text-mode initialization race guard**: After the FSM advances to `LISTENING`, a text-mode session in the `GREETING` stage applies a brief wait (up to 300 ms) before committing to an autonomous greeting. If the client delivers a text message within this window (e.g., a buffered message sent immediately after the DataChannel opens), the system skips the standalone greeting, advances `GREETING → TRIAGE` immediately, and processes the user's message as a normal `TRIAGE` turn. If no message arrives within 300 ms, the greeting is generated, dispatched, and the stage advances to `TRIAGE` normally.
 - **FSM stuck-state prevention**: The `stream_complete_text` event must be emitted unconditionally at the end of every LLM response pipeline turn — whether the stream yielded text, yielded only tool-calls (no text), or raised an exception. The FSM must accept `stream_complete_text` from both `THINKING` and `TOOL_EXECUTING` states (in addition to `LLM_STREAMING`) and transition to `LISTENING`. This ensures the FSM is never permanently stuck when the LLM produces a pure function-call response with no accompanying text fragments.
 
 ### 9.2 Session Resumption (State-Aware Hydration)
@@ -701,3 +805,197 @@ When a new connection is established, the server must check Firestore for the us
 - **Android Echo Cancellation (AEC)**: On Android, hardware echo cancellation requires the audio subsystem to be in communication mode. This mode must be set every time audio is routed to a speaker or Bluetooth device — both at session start and on every routing change. It must be active regardless of build configuration (development, staging, production) and must not be conditionally skipped for any reason such as debug mode.
 - **Speaking-flag lifetime**: The AI speaking state must remain active until the buffered audio output has finished playing — not merely until audio data has been queued. If the speaking state is cleared while audio is still buffered, subsequent voice input will be misclassified as user speech.
 - **Post-interrupt echo suppression**: When voice input arrives while the AI is speaking and triggers an interruption, the final transcript of that triggering utterance must be discarded and must not be forwarded to the AI as user input. Only voice input that arrives after the interruption has completed may be treated as a new user turn.
+
+---
+
+## 14. Agent Mode Configuration
+
+### 14.1 Mode Selection
+
+- The active agent mode is set by the server-side configuration parameter `AGENT_MODE`.
+- Valid values: `full` (default) and `lite`.
+- The mode applies for the lifetime of the server process and cannot be changed per-session.
+- If `AGENT_MODE` is set to an unrecognised value, the system must log a warning and operate in `full` mode.
+- At startup, the server must log the active agent mode before accepting any connections (e.g. `AGENT_MODE=lite active`).
+
+### 14.2 Feature Comparison
+
+The table below provides a complete at-a-glance overview of which features are active in each mode. Detailed rules follow in the per-mode sections.
+
+| Feature | `full` | `lite` |
+|---|---|---|
+| Active conversation stages | GREETING, TRIAGE, CLARIFY, CONFIRMATION, TOOL_EXECUTION, FINALIZE, RECOVERY, COMPLETED, PROVIDER_PITCH, PROVIDER_ONBOARDING | GREETING, TRIAGE, CLARIFY, CONFIRMATION, FINALIZE, RECOVERY, COMPLETED |
+| Voice (STT / TTS / WebRTC audio) | Yes | No — text only |
+| Google Places external search | Not used — internal search index only | Always active |
+| FINALIZE: user selects a provider | Yes — multi-turn, user accepts or rejects | No — results presented as list, auto-advance to COMPLETED |
+| Service request creation | Yes | No |
+| Favorites retrieval | Yes | No |
+| Open service request retrieval | Yes | No |
+| Provider pitch (30-day cycle) | Yes | No |
+| Provider onboarding | Yes | No |
+| MRI: contextual details (min. 3) | Required | Required |
+| MRI: location | Required when GP enabled; soft-ask otherwise | Always required |
+| Soft-asks (budget, etc.) | Yes | Yes |
+| Firestore reads and writes | Yes (user context, conversation history, settings) | No — all Firestore activity disabled |
+| Push notifications | Yes | No |
+| Chat message persistence | Yes (30-day TTL) | No — session is purely in-memory |
+
+### 14.3 Full Mode
+
+- `full` is the default mode. It corresponds to the complete conversation behaviour described in all other sections of this specification.
+- No behaviour from any section is skipped or modified in `full` mode.
+- Google Places is never instantiated, queried, or referenced in full mode, regardless of whether a `GOOGLE_PLACES_API_KEY` is present in the environment. Provider discovery uses only the internal search index.
+
+### 14.4 Lite Mode
+
+Lite mode provides a simplified conversation experience optimised for fast, Google Places-backed provider discovery with minimal friction.
+
+#### Stages and Transitions
+
+The TRIAGE, CLARIFY, CONFIRMATION, FINALIZE, BROWSE, COMPLETED, and RECOVERY stages are active. The TOOL_EXECUTION, PROVIDER_PITCH, and PROVIDER_ONBOARDING stages are not accessible in lite mode; any transition targeting them is treated as an illegal transition and silently ignored.
+
+| Current Stage | Allowed Next Stages |
+|---|---|
+| `GREETING` | `TRIAGE` |
+| `TRIAGE` | `CONFIRMATION`, `CLARIFY`, `RECOVERY` |
+| `CLARIFY` | `TRIAGE` |
+| `CONFIRMATION` | `FINALIZE`, `TRIAGE` |
+| `FINALIZE` | `BROWSE`, `TRIAGE`, `RECOVERY` |
+| `BROWSE` | `BROWSE`, `CONFIRMATION`, `TRIAGE`, `COMPLETED` |
+| `COMPLETED` | `TRIAGE` |
+| `RECOVERY` | `TRIAGE`, `CONFIRMATION` |
+
+#### Minimum Required Information (MRI)
+
+In lite mode, the AI must collect the same MRI as in full mode before it is permitted to advance to CONFIRMATION:
+
+- **Core intent** — the primary service required.
+- **Contextual details (minimum 3)** — at least three specific details defining the scope.
+- **Availability or urgency** — preferred time slot or urgency level.
+
+In addition, **location is always a hard MRI requirement** in lite mode (not a soft-ask), because the Google Places pipeline requires a geographic anchor for every search.
+
+Soft-asks (budget, exact date resolution) apply exactly as in full mode. The User Override Exception from §3.4 still applies: if the user explicitly refuses further detail, the AI proceeds immediately.
+
+The table below compares MRI requirements across modes:
+
+| MRI Element | Full Mode | Lite Mode |
+|---|---|---|
+| Core intent (service type) | Required | Required |
+| Contextual details (minimum 3) | Required | Required |
+| Availability or urgency | Required | Required |
+| Location | Required when GP enabled; soft-ask for in-person services otherwise | Always required |
+| Budget (soft-ask) | Asked once if clearly relevant | Asked once if clearly relevant |
+| Exact dates | Resolved internally; user not asked to re-state as ISO date | Same |
+| Soft-asks in general | Yes | Yes |
+
+#### FINALIZE Behaviour
+
+- The GP-backed provider search runs on entry to FINALIZE (identical pipeline to full mode: GP query generation → GP fetch → Weaviate upsert → Weaviate hybrid search). Up to 15 providers are fetched (5 batches of 3).
+- The first 3 providers are presented to the user as provider cards immediately. The system then automatically and silently transitions to the BROWSE stage without waiting for user input.
+- If the search returns zero results, the system transitions to TRIAGE (not BROWSE), informing the user that no match was found and inviting them to refine their request.
+- No service request is created in Firestore. The user is not asked to accept or reject a specific provider.
+
+#### BROWSE Behaviour
+
+- BROWSE is the post-FINALIZE browsing stage in lite mode. The user can explore additional provider results, refine the search criteria, or start a new search.
+- On entry to BROWSE, the system has already shown the first 3 providers from the fetched result set. The remaining providers (up to 12) are available for the user to browse in batches of 3 on request.
+- The `show_next_providers` tool is the only BROWSE-specific tool. When called by the LLM, the orchestrator sends the next 3 provider cards to the client and advances the internal offset. No natural-language text is generated before the tool call; the LLM responds only in the follow-up prompt.
+- While in BROWSE, the LLM may also offer to:
+  - Refine the search criteria for the **same service type** (different location or time): transitions to CONFIRMATION.
+  - Search for a **different or entirely new service**: transitions to TRIAGE immediately — the system preserves the user's triggering utterance and carries it into the new TRIAGE session automatically.
+  - End the session: transitions to COMPLETED.
+- **The system must never collect requirements while in BROWSE.** If the user expresses a new service need, the system must transition to TRIAGE immediately without asking any clarifying questions first. Clarification is the responsibility of the TRIAGE stage.
+- When transitioning from BROWSE to TRIAGE, the current request context (accumulated problem description, provider results, browse offset) is cleared so the new search starts fresh.
+- The `show_next_providers` tool must not be offered when there are no more results to show.
+
+#### Provider Pitch
+
+The provider pitch eligibility check that normally fires when COMPLETED is reached does not apply in lite mode. COMPLETED always transitions to TRIAGE if the user indicates a new need, and to session end otherwise.
+
+#### Available Tools
+
+The table below lists all registered tools and their availability per mode. Tools marked as unavailable in lite mode must not be dispatched; any LLM attempt to call them must be rejected with a permission error, identical to an insufficient `ToolCapability` error.
+
+| Tool | Full Mode | Lite Mode | Notes |
+|---|---|---|---|
+| `search_providers` | ✓ | ✓ | GP-backed in lite (always active) |
+| `show_next_providers` | ✗ | ✓ (BROWSE only) | Advances browse offset by 3; sends next provider card batch |
+| `get_favorites` | ✓ | ✗ | Not applicable in lite |
+| `get_open_requests` | ✓ | ✗ | Not applicable in lite |
+| `create_service_request` | ✓ | ✗ | No service requests in lite |
+| `record_provider_interest` | ✓ | ✗ | No provider pitch/onboarding in lite |
+| `get_my_competencies` | ✓ | ✗ | No provider onboarding in lite |
+| `save_competence_batch` | ✓ | ✗ | No provider onboarding in lite |
+| `delete_competences` | ✓ | ✗ | No provider onboarding in lite |
+
+#### Stage Behaviour Summary
+
+The table below describes how each active stage behaves differently in lite mode compared to full mode. Stages not listed behave identically in both modes.
+
+| Stage | Full Mode | Lite Mode |
+|---|---|---|
+| `TRIAGE` | Collects core intent + minimum 3 contextual details + availability + location (when GP enabled) + optional soft-asks | Identical to full mode, with location always a hard MRI requirement (not a soft-ask). |
+| `CONFIRMATION` | 2–3 sentence summary of the fully scoped request including all MRI fields | Identical to full mode. |
+| `FINALIZE` | Multi-turn: presents providers, waits for user to accept or reject; user can cancel search; service request written to Firestore on acceptance | Single-turn: presents first 3 GP results as provider cards, then immediately and automatically transitions to BROWSE; no user acceptance step; no Firestore write |
+| `BROWSE` | Not active | Post-FINALIZE browsing: user can view more results in batches of 3, refine search criteria (→ CONFIRMATION), start over (→ TRIAGE), or end session (→ COMPLETED) |
+| `COMPLETED` | Triggers provider pitch when user is eligible; asks if user needs anything else | No provider pitch; simply asks if the user needs anything else |
+
+#### Google Places
+
+Google Places external search is always active in lite mode, regardless of any GP-specific flag. If the Google Places API key is absent or the service is unreachable, lite mode degrades gracefully: the user is informed, and the search falls back to the internal Weaviate index only.
+
+In lite mode, the final provider result set that is presented to the user must contain **only** providers sourced from the Google Places API (identified by their `source` attribute). Providers registered on the platform (internal Weaviate users) must not appear in the results. This source restriction is applied after the unified Weaviate retrieval and reranking pass, immediately before the results are presented to the LLM and user.
+
+The one exception to this source restriction is the degradation path: when the Google Places pipeline fails (the API is unreachable, times out, or returns an error), the source filter is bypassed and the full internal Weaviate result set is used instead. In this case the user must be informed that the external search was temporarily unavailable and that results come from registered providers only.
+
+**Website enrichment**: For each Google Places result that carries a `websiteUri`, the system must attempt to fetch and crawl the provider's website concurrently with the LLM summary-generation step. The crawl is strictly read-only (HTTPS only; private IP ranges are blocked). If the crawl succeeds, the structured information extracted from the page must be merged into the provider's Weaviate record to improve cross-encoder relevance and provider card content as follows:
+- The specialty sentence (`specialities`) must be appended to `search_optimized_summary` so it is included in the vector embedding.
+- The specific offered services list (`services`) must also be appended to `search_optimized_summary` (as a comma-joined string, capped at 10 entries) so that both the vector and BM25 components can match against specific service names.
+- Portfolio highlights and coverage area must be appended to the `description` field.
+- All extracted service names are also stored in the `skills_list` array for retrieval and cross-encoder scoring.
+
+Additionally, the crawl must attempt to extract a contact email address from the page using a deterministic regex pass (not LLM inference), preferring `mailto:` anchors over plain-text occurrences; if found, the email is stored alongside the provider record and surfaced in the provider card for pre-filled email enquiries. If the crawl fails for any reason (timeout, non-HTML response, LLM extraction failure, missing URL), the provider record is stored with the data available from the Places API alone — website enrichment failure is non-fatal and must never cause the overall search to fail or degrade. The `webpage_crawled` flag on each provider record must accurately reflect whether enrichment was attempted and succeeded.
+
+#### Text-Only Constraint
+
+Lite mode is strictly text-based. The following are prohibited in lite mode:
+
+- Accepting microphone audio or WebRTC voice tracks from clients.
+- Running the speech-to-text pipeline (STT / gRPC audio stream).
+- Synthesising or streaming text-to-speech audio output (TTS).
+- Playing or queuing any audio in the output pipeline.
+
+If a client attempts to establish a lite-mode session with `?mode=voice`, the server must reject the combination, log a warning, and either refuse the connection or silently downgrade to text mode. A lite-mode server must not accept voice sessions under any circumstance.
+
+Because audio is absent, the lite-mode session always behaves as a text session: no spoken greeting is synthesised, and the initial text greeting is dispatched over the transport channel from the `GREETING` stage and then transitions to `TRIAGE`, exactly as described in §3.1 for text mode.
+
+#### Lite-Mode Transport
+
+In lite mode, the AI assistant session uses a direct WebSocket connection (`/ws/chat`) instead of WebRTC. The WebSocket carries the same JSON message protocol as the DataChannel in full mode. Specifically:
+
+- The client sends `{"type": "text-input", "text": "…"}` frames.
+- The server sends `{"type": "chat", …}`, `{"type": "runtime-state", …}`, `{"type": "provider-cards", …}`, and `{"type": "tool-status", …}` frames.
+- On `wss://` connections from non-web clients, the Firebase ID token is conveyed as an `Authorization: Bearer` header at connection time.
+- On `ws://` connections or web clients, the Firebase ID token is sent as the first message: `{"type": "auth", "token": "…"}`. After verifying the token the server sends `{"type": "auth-ok"}` to acknowledge. The client may treat the session as ready immediately after sending the token and flush pending messages without waiting for the acknowledgement, but must handle the `auth-ok` frame gracefully when it arrives.
+- Both client and server enforce a 10-minute idle timeout. If no message is exchanged within 10 minutes, the session is torn down and the client is notified via the disconnect path.
+- Messages sent by the client before the session is fully established (auth confirmed) are queued client-side and flushed immediately once the session becomes active.
+
+#### Chat Message Persistence
+
+Lite mode does not persist any data to Firestore. The entire conversation session is in-memory only. No conversation history, user context, or settings are read from or written to Firestore during a lite-mode session. The auth sync REST endpoint returns a minimal success response without creating or updating any user document. The user profile and settings REST endpoints (`/api/v1/me`, `/api/v1/me/settings`) are not registered in lite mode; clients receive a standard 404 response for those paths. Clients operating in lite mode must not require these endpoints and must use hard-coded or local defaults for any profile or settings data.
+
+The AI conversation history REST endpoints (`/api/v1/ai-conversations`) always require Firestore. These endpoints must not be registered in lite mode. Any client request to these paths in lite mode must receive a standard 404 response. This applies regardless of whether the client requests history for voice or text sessions.
+
+#### Push Notifications
+
+Push notifications are disabled in lite mode. The client must not request FCM permissions, must not register an FCM token, and must not listen for or display any push or local notifications. The notification toggle control must not appear in the settings menu when in lite mode.
+
+### 14.5 Invariants Shared Across Both Modes
+
+- The low-level transport and audio state machine (BOOTSTRAP → DATA_CHANNEL_WAIT → LISTENING → THINKING → LLM_STREAMING → TOOL_EXECUTING → SPEAKING → INTERRUPTING → MODE_SWITCH → ERROR_RETRYABLE → TERMINATED) operates identically in both modes. In lite mode, the states SPEAKING and INTERRUPTING are not reachable in practice because no audio output is produced.
+- Lite mode supports text session sub-mode only. Full mode supports both voice and text sub-modes.
+- Streaming delivery and the DataChannel protocol behave identically in both modes.
+- Interrupt handling for text input (arriving while the LLM is streaming) applies in both modes. Voice interrupt handling is not applicable in lite mode.
+- Language enforcement (§3.1) applies in both modes without exception.
+- The single-acknowledgement rule and silent fast-path transition rules (§3.7, §3.8) apply in both modes.

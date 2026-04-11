@@ -5,6 +5,7 @@ Manages individual WebRTC connections and media streams.
 import asyncio
 import json
 import logging
+import os
 from aiohttp import web
 from aiortc import (
     RTCConfiguration,
@@ -21,6 +22,7 @@ from aiortc.sdp import candidate_from_sdp, candidate_to_sdp
 from .audio_processor import AudioProcessor
 from .services.data_channel_message_router import DataChannelMessageRouter
 from .services.session_mode import SessionMode
+from .services.agent_profile import FULL_PROFILE, AgentProfile
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,7 @@ class PeerConnectionHandler:
         ice_servers: list[dict] | None = None,
         hold_start: bool = False,
         language_fallback_from: str = "",
+        profile: AgentProfile | None = None,
     ) -> None:
         self.connection_id = connection_id
         self.websocket = websocket
@@ -46,6 +49,7 @@ class PeerConnectionHandler:
         self.language_fallback_from = language_fallback_from
         # Store as SessionMode enum; backward-compat: == "voice" still works.
         self.session_mode = SessionMode(session_mode)
+        self._profile: AgentProfile = profile if profile is not None else FULL_PROFILE
         self.pc = RTCPeerConnection(
             configuration=self._build_rtc_config(ice_servers)
         )
@@ -118,9 +122,10 @@ class PeerConnectionHandler:
             )
 
     async def _idle_timeout_task(self) -> None:
-        """Close the connection after 10 minutes of inactivity."""
+        """Close the connection after SESSION_IDLE_TIMEOUT_MINUTES of inactivity."""
         try:
-            await asyncio.sleep(600)  # 10 minutes
+            _timeout_minutes = int(os.getenv("SESSION_IDLE_TIMEOUT_MINUTES", "10"))
+            await asyncio.sleep(_timeout_minutes * 60)
             logger.info("Idle timeout reached for connection %s — closing", self.connection_id)
             await self.close()
         except asyncio.CancelledError:

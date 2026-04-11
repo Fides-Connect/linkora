@@ -44,7 +44,11 @@ class AuthService {
     if (_initialized) return;
 
     // Initialize FCM in the background — do not block app startup on a network call.
-    unawaited(_userService.initializeFCM());
+    // In lite mode notifications are disabled, so FCM is not initialized.
+    final isLiteMode = dotenv.env['APP_MODE']?.toLowerCase() == 'lite';
+    if (!isLiteMode) {
+      unawaited(_userService.initializeFCM());
+    }
 
     // Initialize GoogleSignIn with proper configuration
     final bool isAndroid =
@@ -123,6 +127,17 @@ class AuthService {
 
     await _googleSignIn?.signOut();
     await _firebaseAuth.signOut();
+    _photoUrl = null;
+  }
+
+  /// Permanently delete the current Firebase account.
+  /// Throws [FirebaseAuthException] with code 'requires-recent-login' if the
+  /// credential is stale — the caller must re-authenticate and retry.
+  Future<void> deleteAccount() async {
+    final user = _firebaseAuth.currentUser;
+    if (user == null) return;
+    await user.delete();
+    await _googleSignIn?.signOut();
     _photoUrl = null;
   }
 

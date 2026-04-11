@@ -1,11 +1,17 @@
 """API dependencies and utilities."""
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 from firebase_admin import auth
 
+if TYPE_CHECKING:
+    from ai_assistant.services.competence_enricher import CompetenceEnricher
+
 logger = logging.getLogger(__name__)
+
+# Typed application key for the CompetenceEnricher instance shared across REST endpoints.
+COMPETENCE_ENRICHER_KEY: web.AppKey[CompetenceEnricher] = web.AppKey("competence_enricher")
 
 
 async def get_current_user_id(request: web.Request) -> str:

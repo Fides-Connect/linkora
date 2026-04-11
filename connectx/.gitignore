@@ -50,6 +50,6 @@ app.*.map.json
 
 # Firebase and sensitive configuration files
 lib/firebase_options.dart
-android/app/google-services.json
+google-services.json
 ios/Runner/GoogleService-Info.plist
 .env

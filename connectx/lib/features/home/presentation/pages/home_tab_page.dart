@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../models/service_request.dart';
@@ -37,8 +38,8 @@ class HomeTabPage extends StatelessWidget {
                   // Incoming Requests Section
                   Text(
                     localizations?.incomingRequestsTitle ?? 'Incoming Requests',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: context.appPrimaryColor,
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
@@ -48,7 +49,7 @@ class HomeTabPage extends StatelessWidget {
                     Text(
                       'No incoming requests',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: context.appHintColor,
                       ),
                     )
                   else
@@ -66,8 +67,8 @@ class HomeTabPage extends StatelessWidget {
                   Text(
                     localizations?.yourLastRequestsTitle ??
                         'Your Last Requests',
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: context.appPrimaryColor,
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                     ),
@@ -77,7 +78,7 @@ class HomeTabPage extends StatelessWidget {
                     Text(
                       'No requests yet',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: context.appHintColor,
                       ),
                     )
                   else
@@ -175,7 +176,7 @@ class HomeTabPage extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
+          color: context.appSurface1,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
@@ -196,8 +197,8 @@ class HomeTabPage extends StatelessWidget {
                 Expanded(
                   child: Text(
                     request.title,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: context.appPrimaryColor,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
@@ -208,17 +209,17 @@ class HomeTabPage extends StatelessWidget {
                   children: [
                     CircleAvatar(
                       radius: 20,
-                      backgroundColor: Colors.white.withValues(alpha: 0.2),
+                      backgroundColor: context.appSurface3,
                       child: Text(
                         request.seekerUserInitials,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: context.appPrimaryColor),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       request.seekerUserName,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: context.appSecondaryColor,
                         fontSize: 12,
                       ),
                     ),
@@ -233,7 +234,7 @@ class HomeTabPage extends StatelessWidget {
                 final currentUserId = viewModel.user?.id ?? '';
                 return Text(
                   request.getAmount(currentUserId),
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  style: TextStyle(color: context.appPrimaryColor, fontSize: 16),
                 );
               },
             ),
@@ -244,7 +245,7 @@ class HomeTabPage extends StatelessWidget {
                 Text(
                   request.getDate(localizations),
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.5),
+                    color: context.appHintColor,
                     fontSize: 14,
                   ),
                 ),
@@ -280,7 +281,7 @@ class HomeTabPage extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
+          color: context.appSurface1,
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
@@ -304,8 +305,8 @@ class HomeTabPage extends StatelessWidget {
                     children: [
                       Text(
                         request.title,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: context.appPrimaryColor,
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
@@ -314,7 +315,7 @@ class HomeTabPage extends StatelessWidget {
                         Text(
                           request.updateText!,
                           style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.5),
+                            color: context.appHintColor,
                             fontSize: 12,
                           ),
                         ),
@@ -325,17 +326,17 @@ class HomeTabPage extends StatelessWidget {
                   children: [
                     CircleAvatar(
                       radius: 20,
-                      backgroundColor: Colors.white.withValues(alpha: 0.2),
+                      backgroundColor: context.appSurface3,
                       child: Text(
                         request.selectedProviderUserInitials,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(color: context.appPrimaryColor),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       request.selectedProviderUserName,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
+                        color: context.appSecondaryColor,
                         fontSize: 12,
                       ),
                     ),
@@ -350,7 +351,7 @@ class HomeTabPage extends StatelessWidget {
                 final currentUserId = viewModel.user?.id ?? '';
                 return Text(
                   request.getAmount(currentUserId),
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  style: TextStyle(color: context.appPrimaryColor, fontSize: 16),
                 );
               },
             ),
@@ -364,7 +365,7 @@ class HomeTabPage extends StatelessWidget {
                     Text(
                       request.getDate(localizations),
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
+                        color: context.appHintColor,
                         fontSize: 14,
                       ),
                     ),
@@ -372,7 +373,7 @@ class HomeTabPage extends StatelessWidget {
                       Text(
                         request.getSecondDateLine(localizations)!,
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.5),
+                          color: context.appHintColor,
                           fontSize: 14,
                         ),
                       ),

@@ -3,6 +3,7 @@
 Authentication and user session management endpoints.
 """
 import logging
+import os
 from datetime import datetime, timedelta, UTC
 from typing import Any, cast
 from aiohttp import web
@@ -13,10 +14,13 @@ from ai_assistant.firestore_service import FirestoreService
 from ai_assistant.hub_spoke_ingestion import HubSpokeIngestion
 from ai_assistant.weaviate_models import UserModelWeaviate
 from ai_assistant.services.user_seeding_service import UserSeedingService
+from ...deps import COMPETENCE_ENRICHER_KEY
 
 logger = logging.getLogger(__name__)
 firestore_service = FirestoreService()
 seeding_service = UserSeedingService(firestore_service)
+
+_IS_LITE_MODE = os.getenv("AGENT_MODE", "full").lower().strip() == "lite"
 
 
 async def sign_in_google(request: web.Request) -> web.Response:
@@ -83,6 +87,22 @@ async def user_sync(request: web.Request) -> web.Response:
         user_id = body.get("user_id")
         if not user_id:
             return web.json_response({"error": "Missing user_id"}, status=400)
+
+        # In lite mode all Firestore and Weaviate operations are disabled.
+        # Return a minimal success response so the client can proceed.
+        if _IS_LITE_MODE:
+            logger.debug("user_sync: lite mode — skipping Firestore/Weaviate for %s", user_id)
+            return web.json_response({
+                "status": "ok",
+                "onboarding_incomplete": False,
+                "user": {
+                    "user_id": user_id,
+                    "name": body.get("name", ""),
+                    "email": body.get("email", ""),
+                    "photo_url": body.get("photo_url", ""),
+                    "fcm_token": "",
+                },
+            })
 
         user_data = {
             "user_id": user_id,
@@ -230,7 +250,7 @@ async def user_sync(request: web.Request) -> web.Response:
                     name=user_data["name"],
                     email=user_data["email"],
                     photo_url=user_data["photo_url"],
-                    enricher=request.app.get("competence_enricher"),
+                    enricher=request.app.get(COMPETENCE_ENRICHER_KEY),
                 )
 
                 # Only update FCM token and last_sign_in after seeding

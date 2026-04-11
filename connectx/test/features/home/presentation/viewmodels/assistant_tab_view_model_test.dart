@@ -12,6 +12,11 @@ void main() {
 
   setUp(() {
     mockSpeech = MockSpeechService();
+    // voiceEnabled defaults to false in the generated mock; most voice-mode
+    // tests require it to be true so the ViewModel's guard does not suppress
+    // the voice path.  Tests that explicitly require voiceEnabled=false stub
+    // it locally.
+    when(mockSpeech.voiceEnabled).thenReturn(true);
     vm = AssistantTabViewModel(speechService: mockSpeech);
   });
 
@@ -101,9 +106,62 @@ void main() {
       expect(vm.conversationState, ConversationState.connecting);
     });
 
+    test('sets state to connecting even without pendingText (loading spinner)', () async {
+      await vm.startChat(voiceMode: false);
+      expect(vm.conversationState, ConversationState.connecting);
+    });
+
     test('trims pendingText before adding', () async {
       await vm.startChat(voiceMode: false, pendingText: '  trimmed  ');
       expect(vm.chatMessages.first.text, 'trimmed');
+    });
+
+    test('clears prior history before adding pending text', () async {
+      final cbs = init();
+      // Simulate a previous session that ended without explicit stopChat
+      // (e.g. server disconnect → onDisconnected → state=idle, no clear).
+      (cbs['chat'] as OnChatMessageCallback)('Hello from old session', false, false);
+      expect(vm.chatMessages.length, 1);
+
+      // New session start with a pending message must clear the old greeting.
+      await vm.startChat(voiceMode: false, pendingText: 'I need a plumber');
+      expect(vm.chatMessages.length, 1);
+      expect(vm.chatMessages.first.text, 'I need a plumber');
+    });
+  });
+
+  group('startChat() history clearing', () {
+    setUp(() {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+    });
+
+    test('clears prior chat history so new greeting is not doubled', () async {
+      final cbs = init();
+      // Simulate leftover greeting from a previous session (ended via
+      // disconnect without an explicit stopChat).
+      (cbs['chat'] as OnChatMessageCallback)('Hello from old session!', false, false);
+      expect(vm.chatMessages.length, 1);
+
+      // Start a fresh session.
+      await vm.startChat(voiceMode: false);
+      expect(vm.chatMessages, isEmpty,
+          reason: 'Old messages must be cleared so the new greeting '
+              'is not shown alongside the previous one.');
+    });
+
+    test('clears prior messages and immediately notifies listeners', () async {
+      final cbs = init();
+      (cbs['chat'] as OnChatMessageCallback)('Old greeting', false, false);
+      int notifyCount = 0;
+      vm.addListener(() => notifyCount++);
+
+      await vm.startChat(voiceMode: false);
+
+      // At least one notification must have fired during/before startChat
+      // so the UI can show the cleared state while connecting.
+      expect(notifyCount, greaterThanOrEqualTo(1));
+      expect(vm.chatMessages, isEmpty);
     });
   });
 
@@ -219,6 +277,66 @@ void main() {
       clearInteractions(mockSpeech);
       (cbs['dataChannelOpen'] as Function())();
       verifyNever(mockSpeech.setMicrophoneMuted(false));
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // isInputEnabled — gated on first AI message
+  // ══════════════════════════════════════════════════════════════════════════
+
+  group('isInputEnabled', () {
+    setUp(() {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+    });
+
+    test('is false before startChat()', () {
+      expect(vm.isInputEnabled, isFalse);
+    });
+
+    test('is false after channel opens but before first AI message', () async {
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      expect(vm.isInputEnabled, isFalse);
+    });
+
+    test('becomes true after first AI message (complete)', () async {
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      (cbs['chat'] as OnChatMessageCallback)('Hello!', false, false);
+      expect(vm.isInputEnabled, isTrue);
+    });
+
+    test('becomes true on first AI chunk (streaming starts)', () async {
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      (cbs['chat'] as OnChatMessageCallback)('Hel', false, true);
+      expect(vm.isInputEnabled, isTrue);
+    });
+
+    test('stays false if only user messages arrive (no AI reply yet)', () async {
+      when(mockSpeech.sendTextMessage(any, messageId: anyNamed('messageId')))
+          .thenReturn(true);
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      (cbs['chat'] as OnChatMessageCallback)('user echo', true, false);
+      expect(vm.isInputEnabled, isFalse);
+    });
+
+    test('resets to false on startChat() after a session with AI messages', () async {
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      (cbs['chat'] as OnChatMessageCallback)('Hi!', false, false);
+      expect(vm.isInputEnabled, isTrue);
+
+      await vm.stopChat('Done');
+      await vm.startChat(voiceMode: false);
+      expect(vm.isInputEnabled, isFalse);
     });
   });
 
@@ -435,8 +553,8 @@ void main() {
   });
 
   // ══════════════════════════════════════════════════════════════════════════
-  // stopChat() — resets new fields
-  // ══════════════════════════════════════════════════════════════════════════
+  // stopChat() — resets fields, preserves history
+  // ════════════════════════════════════════════════════════════════════════════
 
   group('stopChat() new-field reset', () {
     test('resets isVoiceMode and dataChannelReady', () async {
@@ -452,6 +570,85 @@ void main() {
       // After stop a new call to sendTextMessage should set error (not ready)
       vm.sendTextMessage('should fail');
       expect(vm.error, isNotNull);
+    });
+
+    test('preserves chat history after stop', () async {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['chat'] as OnChatMessageCallback)('Hello!', false, false);
+      expect(vm.chatMessages.length, 1);
+
+      await vm.stopChat('Done');
+
+      expect(vm.chatMessages.length, 1,
+          reason: 'History must be preserved after stop so user can review it');
+    });
+
+    test('sets sessionEnded=true when messages exist after stop', () async {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['chat'] as OnChatMessageCallback)('Hello!', false, false);
+
+      await vm.stopChat('Done');
+
+      expect(vm.sessionEnded, isTrue);
+    });
+
+    test('sets sessionEnded=false when no messages exist after stop', () async {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      init();
+      await vm.startChat(voiceMode: false);
+      // No messages added
+
+      await vm.stopChat('Done');
+
+      expect(vm.sessionEnded, isFalse);
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // sessionEnded — idle timeout preserves history
+  // ════════════════════════════════════════════════════════════════════════════
+
+  group('sessionEnded after idle timeout', () {
+    test('chat history is preserved after idle timeout fires', () async {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['dataChannelOpen'] as Function())();
+      (cbs['chat'] as OnChatMessageCallback)('Hi from AI', false, false);
+      expect(vm.chatMessages.length, 1);
+
+      // Fire the idle timeout handler directly
+      // ignore: invalid_use_of_protected_member
+      vm.triggerIdleTimeoutForTest();
+
+      expect(vm.chatMessages.length, 1,
+          reason: 'Messages must survive the timeout so user can review them');
+      expect(vm.sessionEnded, isTrue);
+      expect(vm.conversationState, ConversationState.idle);
+    });
+
+    test('sessionEnded is cleared when new session starts', () async {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      final cbs = init();
+      await vm.startChat(voiceMode: false);
+      (cbs['chat'] as OnChatMessageCallback)('hello', false, false);
+      vm.triggerIdleTimeoutForTest();
+      expect(vm.sessionEnded, isTrue);
+
+      await vm.startChat(voiceMode: false);
+
+      expect(vm.sessionEnded, isFalse);
+      expect(vm.chatMessages, isEmpty,
+          reason: 'New session must clear previous messages');
     });
   });
 
@@ -532,6 +729,64 @@ void main() {
       rsCb(AgentRuntimeState.thinking);
       rsCb(AgentRuntimeState.speaking);
       expect(notifyCount, 2);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Language change — session restart
+  // ══════════════════════════════════════════════════════════════════════════
+
+  group('initialize() language change', () {
+    setUp(() {
+      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .thenAnswer((_) async {});
+      when(mockSpeech.stopSpeech()).thenReturn(null);
+    });
+
+    test('restarts active session when language changes', () async {
+      final cbs = init(lang: 'de');
+      // Simulate an active session (data channel open → connecting → ready)
+      (cbs['speechStart'] as OnSpeechStartCallback)();
+      (cbs['dataChannelOpen'] as Function())();
+      expect(vm.conversationState, isNot(ConversationState.idle));
+
+      // Switch language — should stop the current session and start a fresh one
+      vm.initialize('Ready', 'en');
+      // Let the unawaited futures run
+      await Future.microtask(() {});
+      await Future.microtask(() {});
+
+      verify(mockSpeech.stopSpeech()).called(greaterThanOrEqualTo(1));
+      verify(mockSpeech.startSpeech(mode: anyNamed('mode')))
+          .called(greaterThanOrEqualTo(1));
+    });
+
+    test('does not restart when language is unchanged', () async {
+      final cbs = init(lang: 'de');
+      (cbs['speechStart'] as OnSpeechStartCallback)();
+      (cbs['dataChannelOpen'] as Function())();
+      clearInteractions(mockSpeech);
+
+      // Same language — no restart
+      vm.initialize('Ready', 'de');
+      await Future.microtask(() {});
+
+      verifyNever(mockSpeech.stopSpeech());
+      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode')));
+    });
+
+    test('does not restart when session is idle', () async {
+      init(lang: 'de');
+      // Session is idle (never started)
+      expect(vm.conversationState, ConversationState.idle);
+
+      vm.initialize('Ready', 'en');
+      await Future.microtask(() {});
+
+      verifyNever(mockSpeech.stopSpeech());
+      // startSpeech should not be called from initialize() itself — only from
+      // startChat() which is called by the page's initState, not here.
+      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode')));
     });
   });
 }

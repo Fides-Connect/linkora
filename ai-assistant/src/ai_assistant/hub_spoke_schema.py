@@ -138,9 +138,22 @@ def init_hub_spoke_schema() -> bool | None:
                             vectorize_property_name=True,
                             skip_vectorization=False,
                         ),
+                        # primary_type: Google Places primaryTypeDisplayName (e.g. "Wedding
+                        # Photographer"). Vectorized so nearText queries benefit; also
+                        # BM25-searchable for exact-type keyword matching.
+                        Property(
+                            name="primary_type",
+                            data_type=DataType.TEXT,
+                            skip_vectorization=False,
+                            index_searchable=True,
+                        ),
                         # skills_list: explicit + implicit skills, stored for retrieval.
                         # NOT vectorized individually — the summary already captures them.
                         Property(name="skills_list", data_type=DataType.TEXT_ARRAY,
+                                 skip_vectorization=True),
+                        # review_snippets: positive review sentences from Google Places.
+                        # Stored for card reasoning display — NOT vectorized.
+                        Property(name="review_snippets", data_type=DataType.TEXT_ARRAY,
                                  skip_vectorization=True),
                     ],
                 )
@@ -175,6 +188,12 @@ def init_hub_spoke_schema() -> bool | None:
                         Property(name="feedback_negative", data_type=DataType.TEXT_ARRAY),
                         Property(name="average_rating", data_type=DataType.NUMBER),
                         Property(name="review_count", data_type=DataType.INT),
+                        Property(name="rating_count", data_type=DataType.INT, skip_vectorization=True),
+                        # External-source metadata (Google Places integration)
+                        Property(name="source", data_type=DataType.TEXT, skip_vectorization=True),
+                        Property(name="phone", data_type=DataType.TEXT, skip_vectorization=True),
+                        Property(name="website", data_type=DataType.TEXT, skip_vectorization=True),
+                        Property(name="address", data_type=DataType.TEXT, skip_vectorization=True),
                     ],
                     references=[
                         ReferenceProperty(
@@ -210,6 +229,49 @@ def init_hub_spoke_schema() -> bool | None:
                 logger.warning("'owned_by' reference in %s already exists — skipping", COMPETENCE_COLLECTION)
         else:
             logger.info("'owned_by' reference already exists in %s", COMPETENCE_COLLECTION)
+
+        # Step 4: Add new User properties if they don't exist yet (migration guard)
+        _new_user_properties = [
+            ("source", DataType.TEXT, True),
+            ("phone", DataType.TEXT, True),
+            ("website", DataType.TEXT, True),
+            ("address", DataType.TEXT, True),
+            ("opening_hours", DataType.TEXT, True),
+            ("maps_url", DataType.TEXT, True),
+            ("rating_count", DataType.INT, True),
+        ]
+        user_collection = client.collections.get(USER_COLLECTION)
+        user_config = user_collection.config.get()
+        existing_prop_names = {p.name for p in (user_config.properties or [])}
+        for prop_name, prop_dtype, skip_vec in _new_user_properties:
+            if prop_name not in existing_prop_names:
+                try:
+                    user_collection.config.add_property(
+                        Property(name=prop_name, data_type=prop_dtype, skip_vectorization=skip_vec)
+                    )
+                    logger.info("Added '%s' property to %s", prop_name, USER_COLLECTION)
+                except weaviate.exceptions.ObjectAlreadyExistsError:
+                    logger.warning("'%s' property in %s already exists — skipping", prop_name, USER_COLLECTION)
+
+        # Step 5: Add new Competence properties if they don't exist yet (migration guard)
+        # review_snippets: positive review sentences stored for card reasoning display.
+        # NOT vectorized — the search_optimized_summary already captures review context.
+        _new_competence_properties = [
+            ("review_snippets", DataType.TEXT_ARRAY, True),
+            # primary_type: GP primaryTypeDisplayName — vectorized for richer semantic matching.
+            ("primary_type", DataType.TEXT, False),
+        ]
+        competence_config = competence_collection.config.get()
+        existing_comp_prop_names = {p.name for p in (competence_config.properties or [])}
+        for prop_name, prop_dtype, skip_vec in _new_competence_properties:
+            if prop_name not in existing_comp_prop_names:
+                try:
+                    competence_collection.config.add_property(
+                        Property(name=prop_name, data_type=prop_dtype, skip_vectorization=skip_vec)
+                    )
+                    logger.info("Added '%s' property to %s", prop_name, COMPETENCE_COLLECTION)
+                except weaviate.exceptions.ObjectAlreadyExistsError:
+                    logger.warning("'%s' property in %s already exists — skipping", prop_name, COMPETENCE_COLLECTION)
 
         logger.info("Hub and Spoke schema initialization complete")
         return True
@@ -256,3 +318,6 @@ def cleanup_hub_spoke_schema() -> bool | None:
     except Exception as e:
         logger.error("Error cleaning up Hub and Spoke schema: %s", e)
         raise
+
+
+

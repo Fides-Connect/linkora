@@ -95,7 +95,9 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["user_id", "name", "email", "is_service_provider", "last_sign_in"]
+                        return_properties=["user_id", "name", "email", "is_service_provider",
+                                           "last_sign_in", "source", "phone", "website", "address",
+                                           "average_rating", "rating_count"]
                     )
                 )
 
@@ -120,7 +122,16 @@ class HubSpokeSearch:
                                 'email': user.get('email'),
                                 'is_service_provider': user.get('is_service_provider', False),
                                 'last_sign_in': user.get('last_sign_in'),
+                                'source': user.get('source', ''),
                             }
+                            # Surface GP-specific contact fields at top level
+                            for _f in ('phone', 'website', 'address'):
+                                if user.get(_f):
+                                    competence[_f] = user[_f]
+                            if user.get('average_rating'):
+                                competence['rating'] = user['average_rating']
+                            if user.get('rating_count') is not None:
+                                competence['rating_count'] = user['rating_count']
 
                     # Keep only the best-scoring competence per user
                     if user_uuid:
@@ -129,7 +140,7 @@ class HubSpokeSearch:
 
                 results = list(seen_users.values())[:limit]  # Limit to requested number
 
-                logger.info("Grouped search found %s unique users for: '%s...'", len(results), query[:50])
+                logger.info("Grouped search found %s unique users", len(results))
                 return results
 
             else:
@@ -142,7 +153,9 @@ class HubSpokeSearch:
                     return_metadata=MetadataQuery(score=True),
                     return_references=QueryReference(
                         link_on="owned_by",
-                        return_properties=["user_id", "name", "email", "is_service_provider", "last_sign_in"]
+                        return_properties=["user_id", "name", "email", "is_service_provider",
+                                           "last_sign_in", "source", "phone", "website",
+                                           "address", "average_rating", "rating_count"]
                     )
                 )
 
@@ -163,11 +176,19 @@ class HubSpokeSearch:
                                 'name': user.get('name'),
                                 'email': user.get('email'),
                                 'last_sign_in': user.get('last_sign_in'),
+                                'source': user.get('source', ''),
                             }
+                            for _f in ('phone', 'website', 'address'):
+                                if user.get(_f):
+                                    competence[_f] = user[_f]
+                            if user.get('average_rating'):
+                                competence['rating'] = user['average_rating']
+                            if user.get('rating_count') is not None:
+                                competence['rating_count'] = user['rating_count']
 
                     results.append(competence)
 
-                logger.info("Ungrouped search found %s competencies for: '%s...'", len(results), query[:50])
+                logger.info("Ungrouped search found %s competencies", len(results))
                 return results
 
         except Exception as e:
@@ -254,12 +275,18 @@ class HubSpokeSearch:
         # The LLM may produce a free-form string (e.g. "nächste Woche", "Monday morning"),
         # so we intersect with the known token vocabulary before filtering. This prevents
         # the raw string from never matching stored tags and silently returning zero results.
+        # NOTE: Google Places providers never have availability_tags (they are real businesses
+        # with dynamic opening hours, not registered-user availability schedules).  We always
+        # let them pass the filter so GP results are never silently eliminated.
         availability_filter_applied = False
         if available_time and available_time.lower() not in ("flexibel", "flexible", "any", "anytime", ""):
             raw_words = set(re.findall(r'[a-z]+', available_time.lower()))
             matched_tokens = sorted(raw_words & _AVAILABILITY_TOKENS)
             if matched_tokens:
-                filter_clause = filter_clause & Filter.by_property("availability_tags").contains_any(matched_tokens)
+                filter_clause = filter_clause & (
+                    Filter.by_property("availability_tags").contains_any(matched_tokens)
+                    | Filter.by_ref("owned_by").by_property("source").equal("google_places")
+                )
                 availability_filter_applied = True
                 logger.info("Added availability filter: %r → tokens: %s", available_time, matched_tokens)
             else:
@@ -326,8 +353,22 @@ class HubSpokeSearch:
                         'email': user.get('email'),
                         'is_service_provider': user.get('is_service_provider', False),
                         'last_sign_in': user.get('last_sign_in'),
+                        'source': user.get('source', ''),
                     }
-
+                    # Surface GP-specific contact fields at top level
+                    for _f in ('phone', 'website', 'address'):
+                        if user.get(_f):
+                            competence[_f] = user[_f]
+                    if user.get('average_rating'):
+                        competence['rating'] = user['average_rating']
+                    if user.get('rating_count') is not None:
+                        competence['rating_count'] = user['rating_count']
+                    if user.get('photo_url'):
+                        competence['photo_url'] = user['photo_url']
+                    if user.get('opening_hours'):
+                        competence['opening_hours'] = user['opening_hours']
+                    if user.get('maps_url'):
+                        competence['maps_url'] = user['maps_url']
             # Keep only the best-scoring competence per user
             if user_uuid:
                 if user_uuid not in seen_users or competence['score'] > seen_users[user_uuid]['score']:
@@ -417,7 +458,7 @@ class HubSpokeSearch:
                 query_text[:200],
             )
 
-            logger.info("Hybrid search query (%s): '%s...'", 'HyDE' if hyde_text else 'structured', query_text[:120])
+            logger.debug("Hybrid search query (%s): '%s...'", 'HyDE' if hyde_text else 'structured', query_text[:120])
             if availability_filter_applied:
                 logger.info("Availability filter applied: %r → filtering on availability_tags", available_time)
             else:
@@ -433,7 +474,7 @@ class HubSpokeSearch:
                     query=query_text,
                     limit=5,
                     alpha=alpha,
-                    query_properties=["title^2", "category", "description", "search_optimized_summary", "availability_text"],
+                    query_properties=["title^2", "primary_type^1.5", "category", "description", "search_optimized_summary", "availability_text", "skills_list", "review_snippets"],
                     return_metadata=MetadataQuery(score=True),
                 )
                 logger.debug(
@@ -452,15 +493,20 @@ class HubSpokeSearch:
                 limit=fetch_limit * 10,  # Fetch more for client-side grouping
                 filters=filter_clause,
                 alpha=alpha,
-                # Boost title (2×) to prioritize exact service name matches. category, description,
+                # Boost title (2×) to prioritize exact service name matches. primary_type (1.5×)
+                # handles precise GP type labels like "Wedding Photographer". category, description,
                 # search_optimized_summary, and availability_text are searched at standard weight.
                 # search_optimized_summary is the primary vector source and also benefits BM25 recall
                 # for niche skills well-described in the summary but not literally in the title.
-                query_properties=["title^2", "category", "description", "search_optimized_summary", "availability_text"],
+                # skills_list and review_snippets are BM25-indexed and catch keyword matches that
+                # may not appear in the vectorized summary (e.g. specific service names from the crawler).
+                query_properties=["title^2", "primary_type^1.5", "category", "description", "search_optimized_summary", "availability_text", "skills_list", "review_snippets"],
                 return_metadata=MetadataQuery(score=True),
                 return_references=QueryReference(
                     link_on="owned_by",
-                    return_properties=["user_id", "name", "email", "is_service_provider", "last_sign_in"]
+                    return_properties=["user_id", "name", "email", "is_service_provider",
+                                       "last_sign_in", "source", "phone", "website", "address",
+                                       "average_rating", "rating_count", "photo_url", "opening_hours", "maps_url"]
                 )
             )
 
@@ -522,3 +568,4 @@ class HubSpokeSearch:
                 from .data_provider import SearchUnavailableError
                 raise SearchUnavailableError(str(e)) from e
             return []
+

@@ -155,6 +155,48 @@ class AppLocalizations {
     return MessagesEN.typeMessageHint;
   }
 
+  String get sessionEndedBanner {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.sessionEndedBanner;
+    }
+    return MessagesEN.sessionEndedBanner;
+  }
+
+  String get newSessionButton {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.newSessionButton;
+    }
+    return MessagesEN.newSessionButton;
+  }
+
+  String get deleteAccount {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.deleteAccount;
+    }
+    return MessagesEN.deleteAccount;
+  }
+
+  String get deleteAccountConfirmTitle {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.deleteAccountConfirmTitle;
+    }
+    return MessagesEN.deleteAccountConfirmTitle;
+  }
+
+  String get deleteAccountConfirmMessage {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.deleteAccountConfirmMessage;
+    }
+    return MessagesEN.deleteAccountConfirmMessage;
+  }
+
+  String get deleteAccountError {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.deleteAccountError;
+    }
+    return MessagesEN.deleteAccountError;
+  }
+
   String get connecting {
     if (locale.languageCode == 'de') {
       return MessagesDE.connecting;
@@ -310,6 +352,59 @@ class AppLocalizations {
       return MessagesDE.languageGerman;
     }
     return MessagesEN.languageGerman;
+  }
+
+  // Theme / Appearance
+  String get menuTheme {
+    if (locale.languageCode == 'de') return MessagesDE.menuTheme;
+    return MessagesEN.menuTheme;
+  }
+
+  String get themeDark {
+    if (locale.languageCode == 'de') return MessagesDE.themeDark;
+    return MessagesEN.themeDark;
+  }
+
+  String get themeLight {
+    if (locale.languageCode == 'de') return MessagesDE.themeLight;
+    return MessagesEN.themeLight;
+  }
+
+  String get themeSystem {
+    if (locale.languageCode == 'de') return MessagesDE.themeSystem;
+    return MessagesEN.themeSystem;
+  }
+
+  // Settings section headers
+  String get preferencesSection {
+    if (locale.languageCode == 'de') return MessagesDE.preferencesSection;
+    return MessagesEN.preferencesSection;
+  }
+
+  String get legalSection {
+    if (locale.languageCode == 'de') return MessagesDE.legalSection;
+    return MessagesEN.legalSection;
+  }
+
+  String get accountSection {
+    if (locale.languageCode == 'de') return MessagesDE.accountSection;
+    return MessagesEN.accountSection;
+  }
+
+  String get editProfile {
+    if (locale.languageCode == 'de') return MessagesDE.editProfile;
+    return MessagesEN.editProfile;
+  }
+
+  // Provider results note
+  String get providerCardNoteTitle {
+    if (locale.languageCode == 'de') return MessagesDE.providerCardNoteTitle;
+    return MessagesEN.providerCardNoteTitle;
+  }
+
+  String get providerCardNoteBody {
+    if (locale.languageCode == 'de') return MessagesDE.providerCardNoteBody;
+    return MessagesEN.providerCardNoteBody;
   }
 
   // Profile
@@ -602,6 +697,138 @@ class AppLocalizations {
       return MessagesDE.addToFavorites;
     }
     return MessagesEN.addToFavorites;
+  }
+
+  // ── Legal pages ──────────────────────────────────────────────────────────────
+  String get menuImpressum {
+    if (locale.languageCode == 'de') return MessagesDE.menuImpressum;
+    return MessagesEN.menuImpressum;
+  }
+
+  String get menuPrivacyPolicy {
+    if (locale.languageCode == 'de') return MessagesDE.menuPrivacyPolicy;
+    return MessagesEN.menuPrivacyPolicy;
+  }
+
+  String get menuTermsOfUse {
+    if (locale.languageCode == 'de') return MessagesDE.menuTermsOfUse;
+    return MessagesEN.menuTermsOfUse;
+  }
+
+  String get menuDisclaimer {
+    if (locale.languageCode == 'de') return MessagesDE.menuDisclaimer;
+    return MessagesEN.menuDisclaimer;
+  }
+
+  String get menuLicenses {
+    if (locale.languageCode == 'de') return MessagesDE.menuLicenses;
+    return MessagesEN.menuLicenses;
+  }
+
+  // Info / About page
+  String get menuInfo {
+    if (locale.languageCode == 'de') return MessagesDE.menuInfo;
+    return MessagesEN.menuInfo;
+  }
+
+  String get infoVersion {
+    if (locale.languageCode == 'de') return MessagesDE.infoVersion;
+    return MessagesEN.infoVersion;
+  }
+
+  String get infoBuild {
+    if (locale.languageCode == 'de') return MessagesDE.infoBuild;
+    return MessagesEN.infoBuild;
+  }
+
+  String get infoCreditsTitle {
+    if (locale.languageCode == 'de') return MessagesDE.infoCreditsTitle;
+    return MessagesEN.infoCreditsTitle;
+  }
+
+  String get infoLinksTitle {
+    if (locale.languageCode == 'de') return MessagesDE.infoLinksTitle;
+    return MessagesEN.infoLinksTitle;
+  }
+
+  String get infoGithubLabel {
+    if (locale.languageCode == 'de') return MessagesDE.infoGithubLabel;
+    return MessagesEN.infoGithubLabel;
+  }
+
+  String get impressumTitle {
+    if (locale.languageCode == 'de') return MessagesDE.impressumTitle;
+    return MessagesEN.impressumTitle;
+  }
+
+  String get impressumContent {
+    if (locale.languageCode == 'de') return MessagesDE.impressumContent;
+    return MessagesEN.impressumContent;
+  }
+
+  String get privacyPolicyTitle {
+    if (locale.languageCode == 'de') return MessagesDE.privacyPolicyTitle;
+    return MessagesEN.privacyPolicyTitle;
+  }
+
+  String get privacyPolicyContent {
+    if (locale.languageCode == 'de') return MessagesEN.privacyPolicyContent;
+    return MessagesEN.privacyPolicyContent;
+  }
+
+  String get termsOfUseTitle {
+    if (locale.languageCode == 'de') return MessagesDE.termsOfUseTitle;
+    return MessagesEN.termsOfUseTitle;
+  }
+
+  String get termsOfUseContent {
+    if (locale.languageCode == 'de') return MessagesEN.termsOfUseContent;
+    return MessagesEN.termsOfUseContent;
+  }
+
+  String get disclaimerTitle {
+    if (locale.languageCode == 'de') return MessagesDE.disclaimerTitle;
+    return MessagesEN.disclaimerTitle;
+  }
+
+  String get disclaimerContent {
+    if (locale.languageCode == 'de') return MessagesEN.disclaimerContent;
+    return MessagesEN.disclaimerContent;
+  }
+
+  String get licensesTitle {
+    if (locale.languageCode == 'de') return MessagesDE.licensesTitle;
+    return MessagesEN.licensesTitle;
+  }
+
+  /// Returns a map of English label key → localized label for all AI processing
+  /// status messages shown under the "..." animation.  The ViewModel uses this
+  /// to translate both client-generated runtime state labels and server-sent
+  /// tool-status strings without requiring a Flutter BuildContext.
+  Map<String, String> get aiStatusLabels {
+    if (locale.languageCode == 'de') {
+      return {
+        MessagesEN.aiStatusThinking: MessagesDE.aiStatusThinking,
+        MessagesEN.aiStatusComposing: MessagesDE.aiStatusComposing,
+        MessagesEN.aiStatusWorking: MessagesDE.aiStatusWorking,
+        MessagesEN.aiStatusSearchingProviders: MessagesDE.aiStatusSearchingProviders,
+        MessagesEN.aiStatusLoadingFavorites: MessagesDE.aiStatusLoadingFavorites,
+        MessagesEN.aiStatusLoadingRequests: MessagesDE.aiStatusLoadingRequests,
+        MessagesEN.aiStatusSubmittingRequest: MessagesDE.aiStatusSubmittingRequest,
+        MessagesEN.aiStatusCancellingRequest: MessagesDE.aiStatusCancellingRequest,
+        MessagesEN.aiStatusSavingPreferences: MessagesDE.aiStatusSavingPreferences,
+        MessagesEN.aiStatusLoadingSkills: MessagesDE.aiStatusLoadingSkills,
+        MessagesEN.aiStatusSavingSkills: MessagesDE.aiStatusSavingSkills,
+        MessagesEN.aiStatusRemovingSkills: MessagesDE.aiStatusRemovingSkills,
+        MessagesEN.aiStatusConfirmingChoice: MessagesDE.aiStatusConfirmingChoice,
+        MessagesEN.aiStatusFindingNextMatch: MessagesDE.aiStatusFindingNextMatch,
+        MessagesEN.aiStatusCancellingSearch: MessagesDE.aiStatusCancellingSearch,
+        MessagesEN.aiStatusSearchingAgain: MessagesDE.aiStatusSearchingAgain,
+        MessagesEN.aiStatusPreparingContact: MessagesDE.aiStatusPreparingContact,
+        MessagesEN.aiStatusFindingMoreResults: MessagesDE.aiStatusFindingMoreResults,
+      };
+    }
+    return {};
   }
 }
 

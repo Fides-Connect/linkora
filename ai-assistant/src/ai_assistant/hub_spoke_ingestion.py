@@ -170,9 +170,14 @@ class HubSpokeIngestion:
                     "feedback_negative": user_data.get("feedback_negative", []),
                     "average_rating": user_data.get("average_rating", 0.0),
                     "review_count": user_data.get("review_count", 0),
+                    "rating_count": user_data.get("rating_count", 0),
                     "created_at": user_data.get("created_at", datetime.now(UTC)),
                     "has_open_request": user_data.get("has_open_request", False),
                     "last_sign_in": last_active,
+                    "source": user_data.get("source", ""),
+                    "phone": user_data.get("phone", ""),
+                    "website": user_data.get("website", ""),
+                    "address": user_data.get("address", ""),
                 }
             )
 
@@ -181,6 +186,138 @@ class HubSpokeIngestion:
 
         except Exception as e:
             logger.error("Error creating user: %s", e)
+            return None
+
+    @staticmethod
+    def upsert_user(
+        user_data: dict[str, Any],
+        competence_data: dict[str, Any] | None = None,
+    ) -> str | None:
+        """
+        Insert or update a User (Hub) node using a deterministic UUID.
+
+        The UUID must be pre-computed by the caller (e.g.
+        ``weaviate.util.generate_uuid5(place_id)``).  If an object with that
+        UUID already exists it is replaced in-place; no duplicate is created.
+
+        Optionally creates / updates an associated Competence (Spoke) node using
+        a second deterministic UUID derived from the same place_id.
+
+        Args:
+            user_data: Must include ``"uuid"`` (string).  Other keys mirror
+                       ``create_user()`` with the addition of ``"source"``,
+                       ``"phone"``, ``"website"``, ``"address"``.
+            competence_data: When provided, the associated Competence node is
+                             upserted.  Must include ``"uuid"`` (string) and
+                             ``"search_optimized_summary"``.
+
+        Returns:
+            UUID of the user node (same as ``user_data["uuid"]``), or None on
+            error.
+        """
+        from weaviate.exceptions import UnexpectedStatusCodeError
+
+        user_uuid = user_data.get("uuid", "")
+        if not user_uuid:
+            logger.error("upsert_user: 'uuid' is required in user_data")
+            return None
+
+        user_props: dict[str, Any] = {
+            "name": user_data.get("name", ""),
+            "email": user_data.get("email") or "",
+            "location": user_data.get("location", ""),
+            "user_id": user_data.get("user_id") or None,
+            "self_introduction": user_data.get("self_introduction", ""),
+            "is_service_provider": user_data.get("is_service_provider", True),
+            "fcm_token": "",
+            "feedback_positive": [],
+            "feedback_negative": [],
+            "average_rating": float(user_data.get("average_rating") or 0.0),
+            "review_count": 0,
+            "rating_count": int(user_data.get("rating_count") or 0),
+            "created_at": user_data.get("created_at", datetime.now(UTC)),
+            "has_open_request": False,
+            # last_sign_in intentionally None so ghost-filter is_none() passes.
+            "last_sign_in": None,
+            "source": user_data.get("source", ""),
+            "phone": user_data.get("phone") or "",
+            "website": user_data.get("website") or "",
+            "address": user_data.get("address") or "",
+            "photo_url": user_data.get("photo_url") or "",
+            "opening_hours": user_data.get("opening_hours") or "",
+            "maps_url": user_data.get("maps_url") or "",
+        }
+
+        try:
+            user_collection = get_user_collection()
+            try:
+                user_collection.data.insert(properties=user_props, uuid=user_uuid)
+                logger.info("upsert_user: inserted GP User '%s' (UUID: %s)", user_data.get("name"), user_uuid)
+            except UnexpectedStatusCodeError:
+                # Object already exists — patch in-place (PATCH preserves cross-references).
+                user_collection.data.update(uuid=user_uuid, properties=user_props)
+                logger.info("upsert_user: updated GP User '%s' (UUID: %s)", user_data.get("name"), user_uuid)
+            except Exception as insert_exc:
+                err_str = str(insert_exc).lower()
+                if "already exist" in err_str or "conflict" in err_str or "422" in err_str:
+                    user_collection.data.update(uuid=user_uuid, properties=user_props)
+                    logger.info("upsert_user: replaced GP User '%s' (UUID: %s)", user_data.get("name"), user_uuid)
+                else:
+                    raise
+
+            if competence_data:
+                comp_uuid = competence_data.get("uuid", "")
+                if not comp_uuid:
+                    logger.error("upsert_user: 'uuid' is required in competence_data")
+                    return str(user_uuid)
+
+                comp_props: dict[str, Any] = {
+                    "competence_id": competence_data.get("competence_id", ""),
+                    "title": competence_data.get("title", ""),
+                    "description": competence_data.get("description", ""),
+                    "category": competence_data.get("category", ""),
+                    "search_optimized_summary": competence_data.get("search_optimized_summary", ""),
+                    "skills_list": competence_data.get("skills_list", []),
+                    "price_per_hour": competence_data.get("price_per_hour") or 0.0,
+                    "year_of_experience": 0,
+                    "availability_tags": [],
+                    "availability_text": "",
+                    "review_snippets": competence_data.get("review_snippets") or [],
+                    "primary_type": competence_data.get("primary_type", ""),
+                }
+                competence_collection = get_competence_collection()
+                try:
+                    competence_collection.data.insert(
+                        properties=comp_props,
+                        uuid=comp_uuid,
+                        references={"owned_by": user_uuid},
+                    )
+                    logger.info("upsert_user: inserted GP Competence (UUID: %s)", comp_uuid)
+                    # Bidirectional link: User → Competence
+                    user_collection.data.reference_add(
+                        from_uuid=user_uuid,
+                        from_property="has_competencies",
+                        to=comp_uuid,
+                    )
+                except UnexpectedStatusCodeError:
+                    # PATCH preserves the owned_by cross-reference — replace() (PUT) would wipe it.
+                    competence_collection.data.update(
+                        uuid=comp_uuid,
+                        properties=comp_props,
+                    )
+                    logger.info("upsert_user: updated GP Competence (UUID: %s)", comp_uuid)
+                except Exception as comp_exc:
+                    err_str = str(comp_exc).lower()
+                    if "already exist" in err_str or "conflict" in err_str or "422" in err_str:
+                        competence_collection.data.update(uuid=comp_uuid, properties=comp_props)
+                        logger.info("upsert_user: replaced GP Competence (UUID: %s)", comp_uuid)
+                    else:
+                        raise
+
+            return str(user_uuid)
+
+        except Exception as e:
+            logger.error("upsert_user: error upserting GP provider '%s': %s", user_data.get("name"), e)
             return None
 
     @staticmethod
