@@ -402,11 +402,7 @@ The connector name is referenced in `cloud-deploy.yml` via the `WEAVIATE_VPC_CON
 
 Cloud Run defaults to requiring Google OIDC IAM authentication, which mobile apps cannot satisfy. The application enforces its own Firebase ID token auth on every request — the Cloud Run IAM layer must be `allUsers`.
 
-**Step 9a — Lift the org policy restriction (one-time, already done for `allinked.org`)**
-
-The `allinked.org` organization has a "Domain restricted sharing" policy (`iam.allowedPolicyMemberDomains`). This was lifted under **IAM & Admin → Organization Policies → Domain restricted sharing → Allow All** for the `linkora-dev` project. For a new GCP organization, do the same.
-
-**Step 9b — Grant public invoker access**
+**Grant public invoker access:**
 
 Run once after the initial deployment (the CI workflow re-deploys but does not re-grant this):
 
