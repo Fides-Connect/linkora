@@ -100,11 +100,8 @@ class AuthService {
       // Mirror WebRTCService logic: skip backend validation for local endpoints.
       // Bare hosts (e.g. localhost:8080 and 10.0.2.2:8080 for the Android
       // emulator) and explicit http:// prefixes are all treated as local dev.
-      final bool isLocalHttp =
-          serverUrl.startsWith('http://localhost') ||
-          serverUrl.startsWith('http://10.0.2.2') ||
-          serverUrl.startsWith('localhost') ||
-          serverUrl.startsWith('10.0.2.2');
+      // Any URL without https:// is considered local (no token auth required).
+      final bool isLocalHttp = !serverUrl.startsWith('https://');
       if (!isLocalHttp) {
         final idToken = await user.getIdToken();
         if (idToken != null) {

@@ -279,11 +279,26 @@ connectx/
 
 ## 🛠️ Development
 
+### Build Flavors
+
+The app uses two Gradle flavor dimensions to form four variants:
+
+| Variant | Mode | Environment | Firebase project | Backend |
+|---|---|---|---|---|
+| `liteDev` ✦ | lite (text-only, Google Places) | dev | `linkora-dev` | dev Cloud Run |
+| `liteProd` | lite | prod | `linkora-prod-fc2af` | prod Cloud Run |
+| `fullDev` | full (voice + WebRTC) | dev | `linkora-dev` | dev Cloud Run |
+| `fullProd` | full | prod | `linkora-prod-fc2af` | prod Cloud Run |
+
+✦ Default — `flutter run` without `--flavor` resolves to `liteDev`.
+
+The `google-services.json` for each variant lives in `android/app/src/liteDev/`, `android/app/src/liteProd/`, `android/app/src/fullDev/`, and `android/app/src/fullProd/`. Gradle selects the correct one automatically based on the `--flavor` argument. The backend URL and `APP_MODE` are controlled independently via `.env`.
+
 ### Running the App
 
 **On Connected Device:**
 ```bash
-flutter run
+flutter run --flavor liteDev
 ```
 
 **On Specific Device:**
@@ -292,20 +307,22 @@ flutter run
 flutter devices
 
 # Run on specific device
-flutter run -d <device-id>
+flutter run --flavor liteDev -d <device-id>
 ```
 
 **Platform-Specific:**
 ```bash
 # iOS
-flutter run -d ios
+flutter run --flavor liteDev -d ios
 
 # Android
-flutter run -d android
+flutter run --flavor liteDev -d android
 
 # Web (for testing)
-flutter run -d chrome
+flutter run --flavor liteDev -d chrome
 ```
+
+Replace `liteDev` with `liteProd`, `fullDev`, or `fullProd` as needed.
 
 ### Hot Reload
 
@@ -575,7 +592,7 @@ void main() {
 
 ```bash
 # Run with performance overlay
-flutter run --profile
+flutter run --flavor liteDev --profile
 
 # Open DevTools
 flutter pub global activate devtools
