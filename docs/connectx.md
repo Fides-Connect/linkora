@@ -290,12 +290,12 @@ The app uses two Gradle flavor dimensions to form four variants:
 
 | Variant | Mode | Environment | Firebase project | Backend |
 |---|---|---|---|---|
-| `liteDev` ✦ | lite (text-only, Google Places) | dev | `linkora-dev` | dev Cloud Run |
+| `liteDev` | lite (text-only, Google Places) | dev | `linkora-dev` | dev Cloud Run |
 | `liteProd` | lite | prod | `linkora-prod` | prod Cloud Run |
 | `fullDev` | full (voice + WebRTC) | dev | `linkora-dev` | dev Cloud Run |
 | `fullProd` | full | prod | `linkora-prod` | prod Cloud Run |
 
-✦ Default — `flutter run` without `--flavor` resolves to `liteDev`.
+`--flavor` is always required — Flutter does not select a default variant automatically.
 
 The `google-services.json` for each variant lives in `android/app/src/liteDev/`, `android/app/src/liteProd/`, `android/app/src/fullDev/`, and `android/app/src/fullProd/`. Gradle selects the correct file automatically based on the `--flavor` argument. Because the dev and prod variants use different Firebase projects (`linkora-dev` and `linkora-prod`), do **not** use a single shared `android/app/google-services.json` — each flavor directory must contain its own file. Re-download the file from Firebase Console whenever SHA-1 fingerprints change. The backend URL and `APP_MODE` are controlled independently via `.env`.
 
@@ -487,16 +487,16 @@ Place `release.keystore` at `android/app/release.keystore`.
 
 ```bash
 # Lite mode — no microphone permission (text-only, Google Play)
-flutter build appbundle --flavor lite --release
-# Output: build/app/outputs/bundle/liteRelease/app-lite-release.aab
+flutter build appbundle --flavor liteProd --release
+# Output: build/app/outputs/bundle/liteProdRelease/app-liteProd-release.aab
 
 # Full mode — microphone permission included (voice + text, Google Play)
-flutter build appbundle --flavor full --release
-# Output: build/app/outputs/bundle/fullRelease/app-full-release.aab
+flutter build appbundle --flavor fullProd --release
+# Output: build/app/outputs/bundle/fullProdRelease/app-fullProd-release.aab
 
 # APK variants (for direct installation / testing)
-flutter build apk --flavor lite --release
-flutter build apk --flavor full --release
+flutter build apk --flavor liteProd --release
+flutter build apk --flavor fullProd --release
 ```
 
 ### iOS Release Build

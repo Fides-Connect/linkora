@@ -132,10 +132,12 @@ flutter pub get
 cp .env.template .env
 # Edit .env with server URL
 
-# Run on device — defaults to liteDev; use --flavor for other variants
-flutter run
-# or explicitly:
-flutter run --flavor liteProd
+# Run on device (liteDev = lite mode + dev Firebase + dev backend)
+flutter run --flavor liteDev
+# Other variants:
+# flutter run --flavor liteProd
+# flutter run --flavor fullDev
+# flutter run --flavor fullProd
 ```
 
 **See**: [ConnectX Documentation](docs/connectx.md) for detailed setup including Firebase configuration.
