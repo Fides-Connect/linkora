@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, UTC
 from aiohttp import web
 from pydantic import ValidationError
+from firebase_admin import auth as firebase_auth
 
 from ai_assistant.firestore_service import FirestoreService
 from ai_assistant.weaviate_models import UserModelWeaviate
@@ -96,6 +97,16 @@ async def delete_user(request: web.Request) -> web.Response:
                 UserModelWeaviate.delete_user(user_id)  # type: ignore[attr-defined]
             except Exception as e:
                 logger.error("Failed to delete user %s from Weaviate: %s", user_id, e)
+
+            # Revoke all refresh tokens and delete the Firebase Auth record so the
+            # user cannot sign back in with the same credentials.
+            try:
+                firebase_auth.revoke_refresh_tokens(user_id)
+                firebase_auth.delete_user(user_id)
+            except firebase_auth.UserNotFoundError:
+                pass  # already gone — treat as success
+            except Exception as e:
+                logger.error("Failed to delete Firebase Auth user %s: %s", user_id, e)
 
             return web.json_response({"status": "deleted"})
         else:
