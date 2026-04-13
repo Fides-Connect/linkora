@@ -175,9 +175,9 @@ Then:
 1. In Firebase Console → Project Settings → Your apps
 2. Find Android app (`com.fides.connectx`)
 3. Download `google-services.json`
-4. Place in the matching flavor directories:
-   - Dev: `connectx/android/app/src/liteDev/google-services.json` and `src/fullDev/`
-   - Prod: `connectx/android/app/src/liteProd/google-services.json` and `src/fullProd/`
+4. Place it once per environment:
+   - Dev: `connectx/android/app/src/dev/google-services.json`
+   - Prod: `connectx/android/app/src/prod/google-services.json`
 
 ### Step 3: Environment Configuration
 
@@ -263,10 +263,10 @@ connectx/
 │   ├── app/
 │   │   ├── build.gradle.kts
 │   │   └── src/
-│   │       ├── liteDev/google-services.json   # Firebase config — dev
-│   │       ├── liteProd/google-services.json  # Firebase config — prod
-│   │       ├── fullDev/google-services.json
-│   │       └── fullProd/google-services.json
+│   │       ├── dev/google-services.json       # Firebase config (dev)
+│   │       ├── prod/google-services.json      # Firebase config (prod)
+│   │       ├── lite/                          # Lite-mode manifest/resources
+│   │       └── full/                          # Full-mode manifest/resources
 │   └── build.gradle.kts
 │
 ├── ios/                               # iOS platform files
@@ -288,16 +288,20 @@ connectx/
 
 The app uses two Gradle flavor dimensions to form four variants:
 
-| Variant | Mode | Environment | Firebase project | Backend |
+| Variant | Mode | Environment | Firebase project | Recommended backend |
 |---|---|---|---|---|
 | `liteDev` | lite (text-only, Google Places) | dev | `linkora-dev` | dev Cloud Run |
 | `liteProd` | lite | prod | `linkora-prod` | prod Cloud Run |
 | `fullDev` | full (voice + WebRTC) | dev | `linkora-dev` | dev Cloud Run |
 | `fullProd` | full | prod | `linkora-prod` | prod Cloud Run |
 
-`--flavor` is always required — Flutter does not select a default variant automatically.
+> The flavor only selects the Firebase project (`google-services.json`). The backend URL and `APP_MODE` are always set independently via `.env` and can point to any server regardless of flavor.
 
-The `google-services.json` for each variant lives in `android/app/src/liteDev/`, `android/app/src/liteProd/`, `android/app/src/fullDev/`, and `android/app/src/fullProd/`. Gradle selects the correct file automatically based on the `--flavor` argument. Because the dev and prod variants use different Firebase projects (`linkora-dev` and `linkora-prod`), do **not** use a single shared `android/app/google-services.json` — each flavor directory must contain its own file. Re-download the file from Firebase Console whenever SHA-1 fingerprints change. The backend URL and `APP_MODE` are controlled independently via `.env`.
+The `google-services.json` is shared between `lite` and `full` variants of the same environment. Place one file per environment in the `environment` source set:
+- `android/app/src/dev/google-services.json` — used by both `liteDev` and `fullDev`
+- `android/app/src/prod/google-services.json` — used by both `liteProd` and `fullProd`
+
+Gradle resolves the environment source set (`src/dev/` or `src/prod/`) automatically based on the `--flavor` argument. Because dev and prod use different Firebase projects (`linkora-dev` and `linkora-prod`), do **not** place a single shared file at `android/app/google-services.json`. Re-download the file from Firebase Console whenever SHA-1 fingerprints change.
 
 ### Running the App
 

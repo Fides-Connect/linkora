@@ -113,8 +113,11 @@ async def delete_user(request: web.Request) -> web.Response:
             except Exception as e:
                 logger.error("Failed to delete Firebase Auth user %s: %s", user_id, e)
                 return web.json_response(
-                    {"error": "Account data deleted but Firebase Auth record could not be removed"},
-                    status=500,
+                    {
+                        "status": "deleted",
+                        "warning": "Account data deleted, but Firebase Auth record could not be removed",
+                    },
+                    status=200,
                 )
 
             return web.json_response({"status": "deleted"})

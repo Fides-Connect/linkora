@@ -132,7 +132,7 @@ flutter pub get
 cp .env.template .env
 # Edit .env with server URL
 
-# Run on device (liteDev = lite mode + dev Firebase + dev backend)
+# Run on device — --flavor selects Firebase project; backend is set in .env
 flutter run --flavor liteDev
 # Other variants:
 # flutter run --flavor liteProd
