@@ -2,6 +2,7 @@
 /api/v1/users/* endpoints
 User management endpoints.
 """
+import asyncio
 import logging
 from datetime import datetime, UTC
 from aiohttp import web
@@ -100,13 +101,21 @@ async def delete_user(request: web.Request) -> web.Response:
 
             # Revoke all refresh tokens and delete the Firebase Auth record so the
             # user cannot sign back in with the same credentials.
+            # Offloaded to a thread because the firebase_admin SDK is synchronous.
             try:
-                firebase_auth.revoke_refresh_tokens(user_id)
-                firebase_auth.delete_user(user_id)
+                def _delete_firebase_user() -> None:
+                    firebase_auth.revoke_refresh_tokens(user_id)
+                    firebase_auth.delete_user(user_id)
+
+                await asyncio.to_thread(_delete_firebase_user)
             except firebase_auth.UserNotFoundError:
                 pass  # already gone — treat as success
             except Exception as e:
                 logger.error("Failed to delete Firebase Auth user %s: %s", user_id, e)
+                return web.json_response(
+                    {"error": "Account data deleted but Firebase Auth record could not be removed"},
+                    status=500,
+                )
 
             return web.json_response({"status": "deleted"})
         else:

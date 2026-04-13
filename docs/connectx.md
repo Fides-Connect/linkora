@@ -175,7 +175,9 @@ Then:
 1. In Firebase Console → Project Settings → Your apps
 2. Find Android app (`com.fides.connectx`)
 3. Download `google-services.json`
-4. Place in: `connectx/android/app/google-services.json`
+4. Place in the matching flavor directories:
+   - Dev: `connectx/android/app/src/liteDev/google-services.json` and `src/fullDev/`
+   - Prod: `connectx/android/app/src/liteProd/google-services.json` and `src/fullProd/`
 
 ### Step 3: Environment Configuration
 
@@ -260,8 +262,11 @@ connectx/
 ├── android/                           # Android platform files
 │   ├── app/
 │   │   ├── build.gradle.kts
-│   │   ├── google-services.json       # Firebase config
 │   │   └── src/
+│   │       ├── liteDev/google-services.json   # Firebase config — dev
+│   │       ├── liteProd/google-services.json  # Firebase config — prod
+│   │       ├── fullDev/google-services.json
+│   │       └── fullProd/google-services.json
 │   └── build.gradle.kts
 │
 ├── ios/                               # iOS platform files
@@ -286,13 +291,13 @@ The app uses two Gradle flavor dimensions to form four variants:
 | Variant | Mode | Environment | Firebase project | Backend |
 |---|---|---|---|---|
 | `liteDev` ✦ | lite (text-only, Google Places) | dev | `linkora-dev` | dev Cloud Run |
-| `liteProd` | lite | prod | `linkora-prod-fc2af` | prod Cloud Run |
+| `liteProd` | lite | prod | `linkora-prod` | prod Cloud Run |
 | `fullDev` | full (voice + WebRTC) | dev | `linkora-dev` | dev Cloud Run |
-| `fullProd` | full | prod | `linkora-prod-fc2af` | prod Cloud Run |
+| `fullProd` | full | prod | `linkora-prod` | prod Cloud Run |
 
 ✦ Default — `flutter run` without `--flavor` resolves to `liteDev`.
 
-The `google-services.json` for each variant lives in `android/app/src/liteDev/`, `android/app/src/liteProd/`, `android/app/src/fullDev/`, and `android/app/src/fullProd/`. Gradle selects the correct one automatically based on the `--flavor` argument. The backend URL and `APP_MODE` are controlled independently via `.env`.
+The `google-services.json` for each variant lives in `android/app/src/liteDev/`, `android/app/src/liteProd/`, `android/app/src/fullDev/`, and `android/app/src/fullProd/`. Gradle selects the correct file automatically based on the `--flavor` argument. Because the dev and prod variants use different Firebase projects (`linkora-dev` and `linkora-prod`), do **not** use a single shared `android/app/google-services.json` — each flavor directory must contain its own file. Re-download the file from Firebase Console whenever SHA-1 fingerprints change. The backend URL and `APP_MODE` are controlled independently via `.env`.
 
 ### Running the App
 
@@ -312,14 +317,14 @@ flutter run --flavor liteDev -d <device-id>
 
 **Platform-Specific:**
 ```bash
-# iOS
-flutter run --flavor liteDev -d ios
-
-# Android
+# Android (flavors are Android/Gradle-only)
 flutter run --flavor liteDev -d android
 
-# Web (for testing)
-flutter run --flavor liteDev -d chrome
+# iOS (no flavor required — single Firebase project per scheme)
+flutter run -d ios
+
+# Web (flavors not supported on web)
+flutter run -d chrome
 ```
 
 Replace `liteDev` with `liteProd`, `fullDev`, or `fullProd` as needed.
