@@ -295,13 +295,17 @@ The app uses two Gradle flavor dimensions to form four variants:
 | `fullDev` | full (voice + WebRTC) | dev | `linkora-dev` | dev Cloud Run |
 | `fullProd` | full | prod | `linkora-prod` | prod Cloud Run |
 
-> The flavor only selects the Firebase project (`google-services.json`). The backend URL and `APP_MODE` are always set independently via `.env` and can point to any server regardless of flavor.
+> `--flavor` selects a full build variant combining both **mode** (`lite`/`full`) and **environment** (`dev`/`prod`):
+> - The **environment** dimension determines which Firebase project (`google-services.json`) is used.
+> - The **mode** dimension controls Android packaging — e.g. `full` includes the microphone permission; `lite` does not.
+>
+> `APP_MODE` and `AI_ASSISTANT_SERVER_URL` are still set via `.env` and can be changed for local development. For release builds, keep `APP_MODE` consistent with the selected mode flavor (`lite` or `full`) so runtime features match the permissions and resources bundled into the APK.
 
 The `google-services.json` is shared between `lite` and `full` variants of the same environment. Place one file per environment in the `environment` source set:
 - `android/app/src/dev/google-services.json` — used by both `liteDev` and `fullDev`
 - `android/app/src/prod/google-services.json` — used by both `liteProd` and `fullProd`
 
-Gradle resolves the environment source set (`src/dev/` or `src/prod/`) automatically based on the `--flavor` argument. Because dev and prod use different Firebase projects (`linkora-dev` and `linkora-prod`), do **not** place a single shared file at `android/app/google-services.json`. Re-download the file from Firebase Console whenever SHA-1 fingerprints change.
+Gradle resolves the environment source set (`src/dev/` or `src/prod/`) from the variant's environment dimension, and the mode source set (`src/lite/` or `src/full/`) from the mode dimension. Because dev and prod use different Firebase projects (`linkora-dev` and `linkora-prod`), do **not** place a single shared file at `android/app/google-services.json`. Re-download the file from Firebase Console whenever SHA-1 fingerprints change.
 
 ### Running the App
 
