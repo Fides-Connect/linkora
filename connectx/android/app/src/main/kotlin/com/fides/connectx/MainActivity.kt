@@ -1,4 +1,4 @@
-package com.fides.connectx
+package com.linkora.connectx
 
 import io.flutter.embedding.android.FlutterActivity
 

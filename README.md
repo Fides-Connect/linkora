@@ -38,7 +38,7 @@ Linkora is a modern AI voice assistant platform that enables natural voice conve
 ## 📁 Repository Structure
 
 ```
-Fides/
+Linkora/
 ├── docs/                 # 📖 Comprehensive documentation
 │   ├── README.md        # Documentation index
 │   ├── getting-started.md
@@ -305,7 +305,7 @@ git push
 
 **Option 3: Delete Cache via GitHub CLI**
 ```bash
-gh cache delete devcontainer-cache --repo Fides-Connect/Fides
+gh cache delete devcontainer-cache --repo Fides-Connect/Linkora
 ```
 
 **Option 4: GitHub UI**

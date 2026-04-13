@@ -3,7 +3,7 @@
 Initialize Database (Firestore + Weaviate)
 ==========================================
 
-This script initializes the Fides Platform databases with the Hub and Spoke schema.
+This script initializes the Linkora Platform databases with the Hub and Spoke schema.
 It handles:
 1. Firestore: Cleans collections and loads relational test data based on the defined schema.
 2. Weaviate: Cleans schema/data and loads vector test data.
@@ -463,7 +463,7 @@ async def sync_firestore_to_weaviate(force: bool = False) -> int:
 
 async def main():
     parser = argparse.ArgumentParser(
-        description='Initialize Fides Database (Firestore + Weaviate)'
+        description='Initialize Linkora Database (Firestore + Weaviate)'
     )
     parser.add_argument(
         '--load-test-data',
@@ -571,7 +571,7 @@ async def main():
     
     try:
         logger.info("=" * 80)
-        logger.info("Fides Database Initialization")
+        logger.info("Linkora Database Initialization")
         logger.info("=" * 80)
         
         # --- Weaviate Operations ---
