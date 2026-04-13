@@ -66,7 +66,13 @@ void _handleNotificationOpen(RemoteMessage? message) {
 /// Background message handler - must be top-level function
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  try {
+    final initOptions =
+        kIsWeb ? DefaultFirebaseOptions.currentPlatform : null;
+    await Firebase.initializeApp(options: initOptions);
+  } on FirebaseException catch (e) {
+    if (e.code != 'duplicate-app') rethrow;
+  }
   debugPrint('Background message received: ${message.messageId}');
   debugPrint('Title: ${message.notification?.title}');
   debugPrint('Body: ${message.notification?.body}');
@@ -76,10 +82,19 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(); // Load environment variables from .env file
 
-  // Initialize Firebase with generated options
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Initialize Firebase.
+  // On Android and iOS the native layer reads google-services.json / GoogleService-Info.plist
+  // selected by the build flavor, so we must NOT pass explicit options — doing so would
+  // override the flavor's Firebase project with the hardcoded Dart options.
+  // On web there is no native config file, so options are required.
+  // Guard against duplicate-app errors on hot-restart / process reuse.
+  try {
+    final initOptions =
+        kIsWeb ? DefaultFirebaseOptions.currentPlatform : null;
+    await Firebase.initializeApp(options: initOptions);
+  } on FirebaseException catch (e) {
+    if (e.code != 'duplicate-app') rethrow;
+  }
 
   final isLiteMode = dotenv.env['APP_MODE']?.toLowerCase() == 'lite';
 

@@ -2,10 +2,12 @@
 /api/v1/users/* endpoints
 User management endpoints.
 """
+import asyncio
 import logging
 from datetime import datetime, UTC
 from aiohttp import web
 from pydantic import ValidationError
+from firebase_admin import auth as firebase_auth
 
 from ai_assistant.firestore_service import FirestoreService
 from ai_assistant.weaviate_models import UserModelWeaviate
@@ -96,6 +98,34 @@ async def delete_user(request: web.Request) -> web.Response:
                 UserModelWeaviate.delete_user(user_id)  # type: ignore[attr-defined]
             except Exception as e:
                 logger.error("Failed to delete user %s from Weaviate: %s", user_id, e)
+
+            # Revoke all refresh tokens and delete the Firebase Auth record so the
+            # user cannot sign back in with the same credentials.
+            # Offloaded to a thread because the firebase_admin SDK is synchronous.
+            # Bounded by a 10-second timeout to prevent hanging aiohttp workers.
+            _FIREBASE_DELETE_TIMEOUT = 10.0
+            try:
+                def _delete_firebase_user() -> None:
+                    firebase_auth.revoke_refresh_tokens(user_id)
+                    firebase_auth.delete_user(user_id)
+
+                await asyncio.wait_for(
+                    asyncio.to_thread(_delete_firebase_user),
+                    timeout=_FIREBASE_DELETE_TIMEOUT,
+                )
+            except (TimeoutError, firebase_auth.UserNotFoundError) as e:
+                if isinstance(e, asyncio.TimeoutError):
+                    logger.error("Timed out deleting Firebase Auth user %s", user_id)
+                # UserNotFoundError: already gone — treat as success
+            except Exception as e:
+                logger.error("Failed to delete Firebase Auth user %s: %s", user_id, e)
+                return web.json_response(
+                    {
+                        "status": "deleted",
+                        "warning": "Account data deleted, but Firebase Auth record could not be removed",
+                    },
+                    status=200,
+                )
 
             return web.json_response({"status": "deleted"})
         else:

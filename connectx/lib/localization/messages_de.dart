@@ -197,7 +197,7 @@ Schweiggerweg 20
 13627 Berlin
 
 Kontakt
-E-Mail: thomas.bretthauer-weber@allinked.org
+E-Mail: twebe@outlook.de
 
 Umsatzsteuer-ID
 Umsatzsteuer-Identifikationsnummer gemäß § 27 a Umsatzsteuergesetz: DE460374834''';
