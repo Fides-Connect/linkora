@@ -175,7 +175,9 @@ Then:
 1. In Firebase Console → Project Settings → Your apps
 2. Find Android app (`com.fides.connectx`)
 3. Download `google-services.json`
-4. Place in: `connectx/android/app/google-services.json`
+4. Place it once per environment:
+   - Dev: `connectx/android/app/src/dev/google-services.json`
+   - Prod: `connectx/android/app/src/prod/google-services.json`
 
 ### Step 3: Environment Configuration
 
@@ -260,8 +262,11 @@ connectx/
 ├── android/                           # Android platform files
 │   ├── app/
 │   │   ├── build.gradle.kts
-│   │   ├── google-services.json       # Firebase config
 │   │   └── src/
+│   │       ├── dev/google-services.json       # Firebase config (dev)
+│   │       ├── prod/google-services.json      # Firebase config (prod)
+│   │       ├── lite/                          # Lite-mode manifest/resources
+│   │       └── full/                          # Full-mode manifest/resources
 │   └── build.gradle.kts
 │
 ├── ios/                               # iOS platform files
@@ -279,11 +284,34 @@ connectx/
 
 ## 🛠️ Development
 
+### Build Flavors
+
+The app uses two Gradle flavor dimensions to form four variants:
+
+| Variant | Mode | Environment | Firebase project | Recommended backend |
+|---|---|---|---|---|
+| `liteDev` | lite (text-only, Google Places) | dev | `linkora-dev` | dev Cloud Run |
+| `liteProd` | lite | prod | `linkora-prod` | prod Cloud Run |
+| `fullDev` | full (voice + WebRTC) | dev | `linkora-dev` | dev Cloud Run |
+| `fullProd` | full | prod | `linkora-prod` | prod Cloud Run |
+
+> `--flavor` selects a full build variant combining both **mode** (`lite`/`full`) and **environment** (`dev`/`prod`):
+> - The **environment** dimension determines which Firebase project (`google-services.json`) is used.
+> - The **mode** dimension controls Android packaging — e.g. `full` includes the microphone permission; `lite` does not.
+>
+> `APP_MODE` and `AI_ASSISTANT_SERVER_URL` are still set via `.env` and can be changed for local development. For release builds, keep `APP_MODE` consistent with the selected mode flavor (`lite` or `full`) so runtime features match the permissions and resources bundled into the APK.
+
+The `google-services.json` is shared between `lite` and `full` variants of the same environment. Place one file per environment in the `environment` source set:
+- `android/app/src/dev/google-services.json` — used by both `liteDev` and `fullDev`
+- `android/app/src/prod/google-services.json` — used by both `liteProd` and `fullProd`
+
+Gradle resolves the environment source set (`src/dev/` or `src/prod/`) from the variant's environment dimension, and the mode source set (`src/lite/` or `src/full/`) from the mode dimension. Because dev and prod use different Firebase projects (`linkora-dev` and `linkora-prod`), do **not** place a single shared file at `android/app/google-services.json`. Re-download the file from Firebase Console whenever SHA-1 fingerprints change.
+
 ### Running the App
 
 **On Connected Device:**
 ```bash
-flutter run
+flutter run --flavor liteDev
 ```
 
 **On Specific Device:**
@@ -292,20 +320,22 @@ flutter run
 flutter devices
 
 # Run on specific device
-flutter run -d <device-id>
+flutter run --flavor liteDev -d <device-id>
 ```
 
 **Platform-Specific:**
 ```bash
-# iOS
+# Android (flavors are Android/Gradle-only)
+flutter run --flavor liteDev -d android
+
+# iOS (no flavor required — single Firebase project per scheme)
 flutter run -d ios
 
-# Android
-flutter run -d android
-
-# Web (for testing)
+# Web (flavors not supported on web)
 flutter run -d chrome
 ```
+
+Replace `liteDev` with `liteProd`, `fullDev`, or `fullProd` as needed.
 
 ### Hot Reload
 
@@ -465,16 +495,16 @@ Place `release.keystore` at `android/app/release.keystore`.
 
 ```bash
 # Lite mode — no microphone permission (text-only, Google Play)
-flutter build appbundle --flavor lite --release
-# Output: build/app/outputs/bundle/liteRelease/app-lite-release.aab
+flutter build appbundle --flavor liteProd --release
+# Output: build/app/outputs/bundle/liteProdRelease/app-liteProd-release.aab
 
 # Full mode — microphone permission included (voice + text, Google Play)
-flutter build appbundle --flavor full --release
-# Output: build/app/outputs/bundle/fullRelease/app-full-release.aab
+flutter build appbundle --flavor fullProd --release
+# Output: build/app/outputs/bundle/fullProdRelease/app-fullProd-release.aab
 
 # APK variants (for direct installation / testing)
-flutter build apk --flavor lite --release
-flutter build apk --flavor full --release
+flutter build apk --flavor liteProd --release
+flutter build apk --flavor fullProd --release
 ```
 
 ### iOS Release Build
@@ -575,7 +605,7 @@ void main() {
 
 ```bash
 # Run with performance overlay
-flutter run --profile
+flutter run --flavor liteDev --profile
 
 # Open DevTools
 flutter pub global activate devtools

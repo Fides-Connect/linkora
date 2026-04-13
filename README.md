@@ -132,8 +132,15 @@ flutter pub get
 cp .env.template .env
 # Edit .env with server URL
 
-# Run on device
-flutter run
+# Android: --flavor selects the Firebase project (Gradle); backend is set in .env
+flutter run --flavor liteDev
+# Other Android variants:
+# flutter run --flavor liteProd
+# flutter run --flavor fullDev
+# flutter run --flavor fullProd
+
+# iOS: --flavor requires matching Xcode schemes; omit unless configured
+flutter run -d ios
 ```
 
 **See**: [ConnectX Documentation](docs/connectx.md) for detailed setup including Firebase configuration.
