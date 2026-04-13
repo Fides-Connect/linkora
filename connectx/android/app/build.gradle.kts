@@ -1,3 +1,4 @@
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -98,4 +99,25 @@ dependencies {
 
 flutter {
     source = "../.."
+}
+
+// Copy google-services.json from the environment source set (src/dev/ or src/prod/)
+// into the flavor-combination directory (e.g. src/liteDev/) just before the Google
+// Services plugin processes it.  Using doFirst avoids creating a separate Copy task
+// and therefore avoids Gradle 8 implicit-dependency validation errors.
+afterEvaluate {
+    android.applicationVariants.forEach { variant ->
+        val envFlavor = variant.productFlavors
+            .find { it.dimension == "environment" }?.name ?: return@forEach
+        val variantNameCap = variant.name.replaceFirstChar { it.uppercase() }
+
+        tasks.matching { it.name == "process${variantNameCap}GoogleServices" }.configureEach {
+            doFirst {
+                val src = layout.projectDirectory.file("src/$envFlavor/google-services.json").asFile
+                val destDir = layout.projectDirectory.dir("src/${variant.flavorName}").asFile
+                destDir.mkdirs()
+                src.copyTo(File(destDir, "google-services.json"), overwrite = true)
+            }
+        }
+    }
 }
