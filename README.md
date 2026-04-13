@@ -66,12 +66,16 @@ Fides/
 │
 ├── .github/              # 🔄 CI/CD workflows
 │   └── workflows/
-│       ├── cloud-deploy.yml
+│       ├── connectx-test.yml
 │       ├── ai-assistant-test.yml
-│       └── connectx-test.yml
+│       ├── deploy-ai-assistant-dev.yml
+│       ├── deploy-ai-assistant-prod.yml
+│       ├── deploy-weaviate.yml
+│       └── _deploy-ai-assistant.yml  # Reusable deploy workflow
 │
 └── .devcontainer/        # 🐳 VS Code Dev Container
     ├── devcontainer.json
+    ├── post-create.sh
     └── Dockerfile
 ```
 
@@ -241,6 +245,9 @@ pytest --cov=src tests/  # With coverage
 ```
 
 ### Frontend Tests
+
+> **Note**: Only the **Android** version of the Flutter app has been properly tested. iOS builds are configured but have not been fully validated.
+
 ```bash
 cd connectx
 flutter test
@@ -264,10 +271,14 @@ flutter test
 
 The project includes automated CI/CD pipelines:
 
-1. **ConnectX Test** - Builds and tests Flutter app in devcontainer
-2. **AI-Assistant Test** - Runs Python backend tests
-3. **Build DevContainer** - Pre-builds and caches the development container
-4. **Cloud Deploy** - Deploys to Cloud Run/Compute Engine on successful tests
+| File | Name | Purpose |
+|---|---|---|
+| `connectx-test.yml` | Flutter Tests | Builds devcontainer and runs Flutter tests |
+| `ai-assistant-test.yml` | AI Assistant Tests | Lints, type-checks, and runs Python backend tests |
+| `deploy-ai-assistant-dev.yml` | Deploy AI-Assistant (Dev) | Deploys to Cloud Run dev environment |
+| `deploy-ai-assistant-prod.yml` | Deploy AI-Assistant (Prod) | Deploys to Cloud Run prod environment |
+| `deploy-weaviate.yml` | Deploy Weaviate | Deploys Weaviate to Compute Engine VM |
+| `_deploy-ai-assistant.yml` | Deploy AI-Assistant (Reusable) | Shared reusable workflow called by dev/prod deployers |
 
 ### DevContainer Cache & Rebuild
 
