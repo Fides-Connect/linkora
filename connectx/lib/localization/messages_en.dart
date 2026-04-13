@@ -199,7 +199,7 @@ Schweiggerweg 20
 Germany
 
 Contact  
-Email: thomas.bretthauer-weber@allinked.org
+Email: twebe@outlook.de
 
 VAT ID  
 Value Added Tax Identification Number pursuant to Â§ 27a of the German Value Added Tax Act: DE460374834''';
@@ -213,7 +213,7 @@ This Privacy Notice for the Linkora application, operated by Thomas Bretthauerâ€
 - Use Linkora. Linkora is an AI-powered chat assistant that helps you find suitable service providers for everyday needs such as tradespeople, cleaners, tutors, or other local professionals. You describe your request in everyday language; the AI assistant, named Elin, guides you through a short conversation to understand your needs and then presents a list of matching providers sourced from Google Maps. All communication is text-based. No audio is recorded or processed. Conversation data is held in memory only for the duration of your session and is permanently discarded when the session ends. No conversation history is written to any database.
 - Engage with us in other related ways, including any marketing or events
 
-Questions or concerns? Reading this Privacy Notice will help you understand your privacy rights and choices. We are responsible for making decisions about how your personal information is processed. If you do not agree with our policies and practices, please do not use our Services. If you still have any questions or concerns, please contact us at thomas.bretthauer-weber@allinked.org.
+Questions or concerns? Reading this Privacy Notice will help you understand your privacy rights and choices. We are responsible for making decisions about how your personal information is processed. If you do not agree with our policies and practices, please do not use our Services. If you still have any questions or concerns, please contact us at twebe@outlook.de.
 
 
 SUMMARY OF KEY POINTS
@@ -389,7 +389,7 @@ We have implemented appropriate and reasonable technical and organizational secu
 
 In Short: We do not knowingly collect data from or market to children under 18 years of age.
 
-We do not knowingly collect, solicit data from, or market to children under 18 years of age, nor do we knowingly sell such personal information. By using the Services, you represent that you are at least 18 or that you are the parent or guardian of such a minor and consent to such minor dependent's use of the Services. If we learn that personal information from users less than 18 years of age has been collected, we will deactivate the account and take reasonable measures to promptly delete such data from our records. If you become aware of any data we may have collected from children under age 18, please contact us at thomas.bretthauer-weber@allinked.org.
+We do not knowingly collect, solicit data from, or market to children under 18 years of age, nor do we knowingly sell such personal information. By using the Services, you represent that you are at least 18 or that you are the parent or guardian of such a minor and consent to such minor dependent's use of the Services. If we learn that personal information from users less than 18 years of age has been collected, we will deactivate the account and take reasonable measures to promptly delete such data from our records. If you become aware of any data we may have collected from children under age 18, please contact us at twebe@outlook.de.
 
 
 12. WHAT ARE YOUR PRIVACY RIGHTS?
@@ -415,7 +415,7 @@ If you would at any time like to review or change the information in your accoun
 
 Upon your request to terminate your account, we will deactivate or delete your account and information from our active databases. However, we may retain some information in our files to prevent fraud, troubleshoot problems, assist with any investigations, enforce our legal terms and/or comply with applicable legal requirements.
 
-If you have questions or comments about your privacy rights, you may email us at thomas.bretthauer-weber@allinked.org.
+If you have questions or comments about your privacy rights, you may email us at twebe@outlook.de.
 
 
 13. CONTROLS FOR DO-NOT-TRACK FEATURES
@@ -432,7 +432,7 @@ We may update this Privacy Notice from time to time. The updated version will be
 
 15. HOW CAN YOU CONTACT US ABOUT THIS NOTICE?
 
-If you have questions or comments about this notice, you may email us at thomas.bretthauer-weber@allinked.org or contact us by post at:
+If you have questions or comments about this notice, you may email us at twebe@outlook.de or contact us by post at:
 
 Thomas Bretthauer-Weber
 Schweiggerweg 20
@@ -489,7 +489,7 @@ The consequences for violating our Policy will vary depending on the severity of
 We may, in some cases, give you a warning, however, if your breach is serious or if you continue to breach our Legal Terms and this Policy, we have the right to suspend or terminate your access to and use of our Services and, if applicable, disable your account. We may also notify law enforcement or issue legal proceedings against you when we believe that there is a genuine risk to an individual or a threat to public safety. We exclude our liability for all action we may take in response to any of your breaches of this Policy.
 
 HOW CAN YOU CONTACT US ABOUT THIS POLICY?
-If you have any further questions or comments, you may contact us by: thomas.bretthauer-weber@allinked.org
+If you have any further questions or comments, you may contact us by: twebe@outlook.de
 
 This Acceptable Use Policy was created using Termly's Use Policy Generator''';
 

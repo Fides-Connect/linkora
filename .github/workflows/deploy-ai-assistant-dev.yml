@@ -12,6 +12,10 @@ on:
     types: [completed]
     branches: [main]
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy:
     name: Deploy AI-Assistant (Dev)

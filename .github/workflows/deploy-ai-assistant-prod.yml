@@ -5,6 +5,10 @@ name: Deploy AI-Assistant (Prod)
 on:
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   deploy:
     name: Deploy AI-Assistant (Prod)
