@@ -136,7 +136,7 @@ class MenuTabPage extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
                           title: l10n?.impressumTitle ?? 'Legal Notice',
-                          content: l10n?.impressumContent ?? '',
+                          url: 'https://fides-connect.github.io/Fides/legal/legal-notice.html',
                         ),
                       ),
                     ),
@@ -150,7 +150,7 @@ class MenuTabPage extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
                           title: l10n?.privacyPolicyTitle ?? 'Privacy Policy',
-                          content: l10n?.privacyPolicyContent ?? '',
+                          url: 'https://fides-connect.github.io/Fides/legal/privacy-policy.html',
                         ),
                       ),
                     ),
@@ -164,7 +164,7 @@ class MenuTabPage extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
                           title: l10n?.termsOfUseTitle ?? 'Terms of Use',
-                          content: l10n?.termsOfUseContent ?? '',
+                          url: 'https://fides-connect.github.io/Fides/legal/terms-of-use.html',
                         ),
                       ),
                     ),
@@ -178,7 +178,7 @@ class MenuTabPage extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
                           title: l10n?.disclaimerTitle ?? 'Disclaimer',
-                          content: l10n?.disclaimerContent ?? '',
+                          url: 'https://fides-connect.github.io/Fides/legal/disclaimer.html',
                         ),
                       ),
                     ),

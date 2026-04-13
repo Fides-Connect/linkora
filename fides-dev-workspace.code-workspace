@@ -1,16 +1,17 @@
 {
     "folders": [
         {
-            "path": "."
+            "path": ".."
         }
     ],
     "extensions": {
         "recommendations": [
+            // Flutter & Dart
             "dart-code.dart-code",
             "dart-code.flutter",
-            "ms-vscode.vscode-json",
-            "usernamehw.errorlens",
-            "esbenp.prettier-vscode"
+            // Python (ai-assistant backend)
+            "ms-python.python",
+            "ms-python.pylance"
         ]
     }
 }
