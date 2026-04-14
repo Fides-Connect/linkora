@@ -153,10 +153,10 @@ Create the two service accounts (CI = deploys code, RT = runs code at runtime):
 
 ```bash
 gcloud iam service-accounts create linkora-ci-service-account-dev \
-  --display-name="Fides CI Service Account"
+  --display-name="Linkora CI Service Account"
 
 gcloud iam service-accounts create linkora-rt-service-account-dev \
-  --display-name="Fides Runtime Service Account"
+  --display-name="Linkora Runtime Service Account"
 ```
 
 **CI service account** (`linkora-ci-service-account-dev`) — used by GitHub Actions to deploy.
@@ -264,12 +264,12 @@ WIF lets GitHub Actions authenticate to GCP without storing a service account ke
 PROJECT_ID=$(gcloud config get-value project)
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
 GITHUB_ORG="Fides-Connect"   # your GitHub org or user
-REPO="Fides"
+REPO="Linkora"
 
 # Create the WIF pool
 gcloud iam workload-identity-pools create linkora-identity-pool-dev \
   --location="global" \
-  --display-name="Fides GitHub Actions Pool"
+  --display-name="Linkora GitHub Actions Pool"
 
 # Create the OIDC provider
 gcloud iam workload-identity-pools providers create-oidc linkora-github-provider-dev \

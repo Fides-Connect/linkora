@@ -19,7 +19,7 @@ jobs:
       ar_repo: ai-assistant-prod
       sm_secret_suffix: '-prod'
       min_instances: 1
-      max_instances: 10
+      max_instances: 2
       concurrency: 80
       sha: ${{ github.sha }}
     secrets:

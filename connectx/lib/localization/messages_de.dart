@@ -189,17 +189,4 @@ class MessagesDE {
   static const String disclaimerTitle = 'Haftungsausschluss';
   static const String licensesTitle = 'Lizenzen';
 
-  static const String impressumContent = '''
-Angaben gemäß § 5 DDG
-
-Thomas Bretthauer-Weber
-Schweiggerweg 20
-13627 Berlin
-
-Kontakt
-E-Mail: twebe@outlook.de
-
-Umsatzsteuer-ID
-Umsatzsteuer-Identifikationsnummer gemäß § 27 a Umsatzsteuergesetz: DE460374834''';
-
 }
