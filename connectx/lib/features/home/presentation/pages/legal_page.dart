@@ -24,6 +24,7 @@ class LegalPage extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open the document.')),
       );
+      return;
     }
     Navigator.pop(context);
   }
