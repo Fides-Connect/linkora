@@ -31,3 +31,5 @@ jobs:
       gemini_api_key: ${{ secrets.GEMINI_API_KEY_PROD }}
       admin_secret_key: ${{ secrets.ADMIN_SECRET_KEY_PROD }}
       google_places_api_key: ${{ secrets.GOOGLE_PLACES_API_KEY_PROD }}
+      gp_max_results: ${{ secrets.GP_MAX_RESULTS_PROD }}
+      gp_webpage_crawl_enabled: ${{ secrets.GP_WEBPAGE_CRAWL_ENABLED_PROD }}

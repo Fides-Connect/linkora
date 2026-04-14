@@ -184,10 +184,11 @@ class WebPageCrawler:
             )
             pages_crawled = 1 + successful_subs
             logger.info(
-                "Webpage crawl OK for %r: %d page(s), %d services, specialities=%r, email=%r",
-                provider_name, pages_crawled, len(result.services),
+                "Webpage crawl OK: %d page(s), %d services, specialities=%r, email=%r",
+                pages_crawled, len(result.services),
                 bool(result.specialities), bool(result.email),
             )
+            logger.debug("Webpage crawl OK for %r", provider_name)
         return result
 
     # ──────────────────────────────────────────────────────────────────────────
