@@ -72,6 +72,11 @@ on:
         required: false
       weaviate_vpc_connector:
         required: false
+      # Lite mode tuning (optional):
+      gp_max_results:
+        required: false
+      gp_webpage_crawl_enabled:
+        required: false
 
 jobs:
   deploy:
@@ -186,6 +191,12 @@ jobs:
               --set-secrets "GEMINI_API_KEY=gemini-api-key${SUFFIX}:latest,ADMIN_SECRET_KEY=admin-secret-key${SUFFIX}:latest,GOOGLE_PLACES_API_KEY=google-places-api-key${SUFFIX}:latest"
               --clear-vpc-connector
             )
+            if [[ -n "${{ secrets.gp_max_results }}" ]]; then
+              DEPLOY_FLAGS+=(--update-env-vars "GP_MAX_RESULTS=${{ secrets.gp_max_results }}")
+            fi
+            if [[ -n "${{ secrets.gp_webpage_crawl_enabled }}" ]]; then
+              DEPLOY_FLAGS+=(--update-env-vars "GP_WEBPAGE_CRAWL_ENABLED=${{ secrets.gp_webpage_crawl_enabled }}")
+            fi
           fi
 
           gcloud run deploy ${{ inputs.service_name }} "${DEPLOY_FLAGS[@]}"
