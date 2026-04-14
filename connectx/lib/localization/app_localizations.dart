@@ -761,19 +761,9 @@ class AppLocalizations {
     return MessagesEN.impressumTitle;
   }
 
-  String get impressumContent {
-    if (locale.languageCode == 'de') return MessagesDE.impressumContent;
-    return MessagesEN.impressumContent;
-  }
-
   String get privacyPolicyTitle {
     if (locale.languageCode == 'de') return MessagesDE.privacyPolicyTitle;
     return MessagesEN.privacyPolicyTitle;
-  }
-
-  String get privacyPolicyContent {
-    if (locale.languageCode == 'de') return MessagesEN.privacyPolicyContent;
-    return MessagesEN.privacyPolicyContent;
   }
 
   String get termsOfUseTitle {
@@ -781,19 +771,9 @@ class AppLocalizations {
     return MessagesEN.termsOfUseTitle;
   }
 
-  String get termsOfUseContent {
-    if (locale.languageCode == 'de') return MessagesEN.termsOfUseContent;
-    return MessagesEN.termsOfUseContent;
-  }
-
   String get disclaimerTitle {
     if (locale.languageCode == 'de') return MessagesDE.disclaimerTitle;
     return MessagesEN.disclaimerTitle;
-  }
-
-  String get disclaimerContent {
-    if (locale.languageCode == 'de') return MessagesEN.disclaimerContent;
-    return MessagesEN.disclaimerContent;
   }
 
   String get licensesTitle {

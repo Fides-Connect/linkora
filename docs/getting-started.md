@@ -49,7 +49,7 @@ Linkora is a complete voice-based AI assistant platform that enables natural voi
 
 ```bash
 git clone <repository-url>
-cd Fides
+cd Linkora
 ```
 
 ### Step 2: Start the AI-Assistant Server

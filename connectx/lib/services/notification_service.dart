@@ -59,7 +59,7 @@ class NotificationService {
           requestSoundPermission: true,
           notificationCategories: [
             DarwinNotificationCategory(
-              'fides_notification',
+              'linkora_notification',
               actions: <DarwinNotificationAction>[
                 DarwinNotificationAction.plain(
                   'view_action',
@@ -89,8 +89,8 @@ class NotificationService {
 
     // Create Android notification channel (required for Android 8.0+)
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'fides_notifications',
-      'Fides Notifications',
+      'linkora_notifications',
+      'linkora Notifications',
       description: 'Notifications from Linkora AI Assistant',
       importance: Importance.high,
     );
@@ -149,8 +149,8 @@ class NotificationService {
 
     const AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
-          'fides_notifications',
-          'Fides Notifications',
+          'linkora_notifications',
+          'linkora Notifications',
           channelDescription: 'Notifications from Linkora AI Assistant',
           importance: Importance.high,
           priority: Priority.high,
@@ -161,7 +161,7 @@ class NotificationService {
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
-      categoryIdentifier: 'fides_notification',
+      categoryIdentifier: 'linkora_notification',
     );
 
     const NotificationDetails notificationDetails = NotificationDetails(
