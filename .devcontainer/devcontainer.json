@@ -60,5 +60,5 @@
     "ANDROID_SDK_ROOT": "/usr/lib/android-sdk",
     "CHROME_EXECUTABLE": "/usr/bin/chromium-browser"
   },
-  "workspaceFolder": "/workspaces/Linkora"
+  "workspaceFolder": "/workspaces/linkora"
 }

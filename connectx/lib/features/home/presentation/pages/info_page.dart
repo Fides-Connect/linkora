@@ -22,7 +22,7 @@ class _InfoPageState extends State<InfoPage> {
   // ── Customise these ────────────────────────────────────────────────────────
 
   /// GitHub (or any public project) URL shown on the page.
-  static const String _githubUrl = 'https://github.com/Fides-Connect/Linkora';
+  static const String _githubUrl = 'https://github.com/Fides-Connect/linkora';
 
   /// People / teams to credit.  Add or remove entries freely.
   static const List<_CreditEntry> _credits = [

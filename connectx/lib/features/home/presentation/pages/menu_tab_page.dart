@@ -136,7 +136,7 @@ class MenuTabPage extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
                           title: l10n?.impressumTitle ?? 'Legal Notice',
-                          url: 'https://fides-connect.github.io/Linkora/legal/legal-notice.html',
+                          url: 'https://fides-connect.github.io/linkora/legal/legal-notice.html',
                         ),
                       ),
                     ),
@@ -150,7 +150,7 @@ class MenuTabPage extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
                           title: l10n?.privacyPolicyTitle ?? 'Privacy Policy',
-                          url: 'https://fides-connect.github.io/Linkora/legal/privacy-policy.html',
+                          url: 'https://fides-connect.github.io/linkora/legal/privacy-policy.html',
                         ),
                       ),
                     ),
@@ -164,7 +164,7 @@ class MenuTabPage extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
                           title: l10n?.termsOfUseTitle ?? 'Terms of Use',
-                          url: 'https://fides-connect.github.io/Linkora/legal/terms-of-use.html',
+                          url: 'https://fides-connect.github.io/linkora/legal/terms-of-use.html',
                         ),
                       ),
                     ),
@@ -178,7 +178,7 @@ class MenuTabPage extends StatelessWidget {
                       MaterialPageRoute(
                         builder: (_) => LegalPage(
                           title: l10n?.disclaimerTitle ?? 'Disclaimer',
-                          url: 'https://fides-connect.github.io/Linkora/legal/disclaimer.html',
+                          url: 'https://fides-connect.github.io/linkora/legal/disclaimer.html',
                         ),
                       ),
                     ),
