@@ -338,9 +338,10 @@ class GooglePlacesService:
         providers = [_normalised_to_provider(p) for p in normalised]
         self._reset_failures()
         logger.info(
-            "GP fetch_as_providers complete: query=%r providers=%d duration_ms=%d",
-            query, len(providers), duration_ms,
+            "GP fetch_as_providers complete: providers=%d duration_ms=%d",
+            len(providers), duration_ms,
         )
+        logger.debug("GP fetch_as_providers complete: query=%r", query)
         return providers, GpResult(providers_written=len(providers), error=False,
                                    query=query, duration_ms=duration_ms)
 
@@ -428,10 +429,8 @@ class GooglePlacesService:
             # Brief pause between pagination requests to stay within API rate limits.
             await asyncio.sleep(0.1)
 
-        logger.info(
-            "GP _fetch_places: query=%r requested=%d fetched=%d",
-            query, limit, len(all_places),
-        )
+        logger.info("GP _fetch_places: requested=%d fetched=%d", limit, len(all_places))
+        logger.debug("GP _fetch_places: query=%r", query)
         return all_places[:limit]
 
     async def _normalise_and_upsert(

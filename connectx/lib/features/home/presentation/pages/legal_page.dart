@@ -18,13 +18,15 @@ class LegalPage extends StatelessWidget {
 
   Future<void> _launch(BuildContext context) async {
     final uri = Uri.parse(url);
-    if (!await launchUrl(uri, mode: LaunchMode.inAppBrowserView)) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open the document.')),
-        );
-      }
+    final launched = await launchUrl(uri, mode: LaunchMode.inAppBrowserView);
+    if (!context.mounted) return;
+    if (!launched) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the document.')),
+      );
+      return;
     }
+    Navigator.pop(context);
   }
 
   @override
