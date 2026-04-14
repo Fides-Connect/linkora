@@ -16,6 +16,12 @@ Welcome to the Linkora platform documentation. This directory contains comprehen
 ### Infrastructure Documentation
 - [**Deployment**](deployment.md) - Cloud Run + Compute Engine setup
 
+### Legal
+- [**Privacy Policy**](legal/privacy-policy.html)
+- [**Terms of Use**](legal/terms-of-use.html)
+- [**Legal Notice**](legal/legal-notice.html)
+- [**Disclaimer**](legal/disclaimer.html)
+
 ## 🎯 Quick Links
 
 ### For New Developers

@@ -44,3 +44,5 @@ jobs:
       weaviate_vm_ip: ${{ secrets.WEAVIATE_VM_IP_DEV }}
       weaviate_vm_port: ${{ secrets.WEAVIATE_VM_PORT_DEV }}
       weaviate_vpc_connector: ${{ secrets.WEAVIATE_VPC_CONNECTOR_DEV }}
+      gp_max_results: ${{ secrets.GP_MAX_RESULTS_DEV }}
+      gp_webpage_crawl_enabled: ${{ secrets.GP_WEBPAGE_CRAWL_ENABLED_DEV }}

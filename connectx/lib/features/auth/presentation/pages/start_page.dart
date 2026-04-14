@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 
 import '../../../../core/providers/user_provider.dart';
 import '../../../../core/theme/app_theme_colors.dart';
-import '../../../../theme.dart';
 import '../../../../core/widgets/app_background.dart';
 import '../../../../localization/app_localizations.dart';
 import '../../../../main.dart';
@@ -29,10 +28,7 @@ class StartPage extends StatelessWidget {
     final screenHeight = MediaQuery.of(context).size.height;
     final logoTextGap = (screenHeight * 0.08).clamp(10.0, 80.0).toDouble();
 
-    return Theme(
-      data: appTheme,
-      child: Scaffold(
-        backgroundColor: appTheme.scaffoldBackgroundColor,
+    return Scaffold(
         appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -77,7 +73,9 @@ class StartPage extends StatelessWidget {
                                 width: 100,
                                 height: 100,
                                 child: Image.asset(
-                                  'assets/images/LinkoraLogo.png',
+                                  Theme.of(context).brightness == Brightness.dark
+                                      ? 'assets/images/LinkoraLogo.png'
+                                      : 'assets/images/LinkoraLogoDark.png',
                                   fit: BoxFit.contain,
                                   semanticLabel: 'Linkora Logo',
                                 ),
@@ -93,7 +91,9 @@ class StartPage extends StatelessWidget {
                               else ...[
                                 // Google Sign-In Button
                                 SignInButton(
-                                  Buttons.GoogleDark,
+                                  Theme.of(context).brightness == Brightness.dark
+                                      ? Buttons.GoogleDark
+                                      : Buttons.Google,
                                   onPressed: () => _onGoogleSignInPressed(context),
                                 ),
                               ],
@@ -116,7 +116,6 @@ class StartPage extends StatelessWidget {
             ),
           ],
         ),
-      ),
     );
   }
 }
