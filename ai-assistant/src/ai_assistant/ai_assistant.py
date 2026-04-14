@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Constants
 AGENT_NAME = "Elin"
-COMPANY_NAME = "LinkoraConnect"
+COMPANY_NAME = "Linkora"
 USER_NAME_PLACEHOLDER = ""
 
 

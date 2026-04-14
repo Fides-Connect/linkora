@@ -1,24 +1,38 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../core/theme/app_theme_colors.dart';
 import '../../../../core/widgets/app_background.dart';
 
-/// Generic legal/informational page.
-///
-/// To add or replace content, edit the corresponding `*Title` / `*Content`
-/// constants in [MessagesEN] and [MessagesDE].
+/// Opens a legal document hosted on GitHub Pages in the system's in-app browser
+/// (Chrome Custom Tab on Android, SFSafariViewController on iOS).
 class LegalPage extends StatelessWidget {
   final String title;
-  final String content;
+  final String url;
 
   const LegalPage({
     super.key,
     required this.title,
-    required this.content,
+    required this.url,
   });
+
+  Future<void> _launch(BuildContext context) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.inAppBrowserView)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the document.')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    // Immediately trigger the in-app browser and show a minimal loading screen
+    // while the browser opens.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _launch(context));
+
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
@@ -30,19 +44,7 @@ class LegalPage extends StatelessWidget {
       body: Stack(
         children: [
           const AppBackground(),
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Text(
-                content,
-                style: TextStyle(
-                  color: context.appPrimaryColor,
-                  fontSize: 14,
-                  height: 1.7,
-                ),
-              ),
-            ),
-          ),
+          const Center(child: CircularProgressIndicator()),
         ],
       ),
     );

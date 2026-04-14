@@ -35,7 +35,7 @@ Welcome to the Linkora platform documentation. This directory contains comprehen
 ## 🔗 Repository Structure
 
 ```
-Fides/
+Linkora/
 ├── docs/                 # 📖 This documentation directory
 ├── connectx/             # 📱 Flutter mobile application
 ├── ai-assistant/         # 🤖 Python WebRTC server

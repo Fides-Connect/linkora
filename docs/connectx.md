@@ -173,7 +173,7 @@ Then:
 **Download google-services.json:**
 
 1. In Firebase Console → Project Settings → Your apps
-2. Find Android app (`com.fides.connectx`)
+2. Find Android app (`com.linkora.connectx`)
 3. Download `google-services.json`
 4. Place it once per environment:
    - Dev: `connectx/android/app/src/dev/google-services.json`
