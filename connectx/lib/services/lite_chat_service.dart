@@ -108,10 +108,15 @@ class LiteChatService {
   ///
   /// If [_isSecure] → attaches ``Authorization: Bearer`` header.
   /// Otherwise → sends first-message auth.
-  Future<void> connect() async {
+  ///
+  /// Set [newSession] to ``true`` when the user explicitly starts a fresh
+  /// session (e.g. "New Session" button after idle timeout).  The server will
+  /// discard any parked session for this user and start fresh with a greeting.
+  Future<void> connect({bool newSession = false}) async {
     if (_isConnected) return;
 
-    final uri = Uri.parse('$_serverUrl?language=$_languageCode');
+    final queryParams = 'language=$_languageCode${newSession ? '&new_session=true' : ''}';
+    final uri = Uri.parse('$_serverUrl?$queryParams');
     debugPrint('LiteChatService: connecting to $uri');
 
     Map<String, dynamic> headers = {};

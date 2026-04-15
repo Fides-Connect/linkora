@@ -418,9 +418,20 @@ class SignalingServer:
             connection_id, client_ip, user_id, language,
         )
 
+        # If the client explicitly requests a new session (e.g. after idle
+        # timeout), close any parked session rather than resuming it so the
+        # user gets a clean start with a fresh greeting.
+        new_session = request.query.get('new_session', '').lower() in ('1', 'true')
+
         # Resume a parked session for this user if one exists, otherwise
         # create a fresh handler.
         parked = self._suspended_sessions.pop(user_id, None) if user_id else None
+        if parked is not None and new_session:
+            ttl_task = self._suspension_tasks.pop(user_id, None)
+            if ttl_task and not ttl_task.done():
+                ttl_task.cancel()
+            asyncio.create_task(parked.close())
+            parked = None
         if parked is not None:
             ttl_task = self._suspension_tasks.pop(user_id, None)
             if ttl_task and not ttl_task.done():

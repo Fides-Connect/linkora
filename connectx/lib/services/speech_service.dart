@@ -181,9 +181,12 @@ class SpeechService {
 
   /// Start speech session by connecting to AI-Assistant server via WebRTC
   /// The server will handle audio streaming, STT, LLM, and TTS processing
-  Future<void> startSpeech({String mode = 'voice'}) async {
+  ///
+  /// Set [newSession] to ``true`` when the user explicitly starts a fresh
+  /// session so the server discards any parked session and sends a greeting.
+  Future<void> startSpeech({String mode = 'voice', bool newSession = false}) async {
     if (!voiceEnabled) {
-      await _startLiteChat();
+      await _startLiteChat(newSession: newSession);
       return;
     }
 
@@ -203,11 +206,11 @@ class SpeechService {
     }
   }
 
-  Future<void> _startLiteChat() async {
+  Future<void> _startLiteChat({bool newSession = false}) async {
     onSpeechStart?.call();
     try {
       _initializeLiteChat();
-      await _liteChatService!.connect();
+      await _liteChatService!.connect(newSession: newSession);
       debugPrint('SpeechService: LiteChat connected to AI-Assistant server');
     } catch (e) {
       onSpeechEnd?.call();

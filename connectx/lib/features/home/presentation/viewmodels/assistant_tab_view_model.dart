@@ -327,11 +327,12 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
     // restore is needed.  Simply clear the reconnect flags and let the user
     // continue the conversation.
     _speechService.onSessionResumed = () {
-      if (!_suppressReconnectGreeting) return; // guard: only during reconnect
       _suppressReconnectGreeting = false;
       _greetingReceived = true;
       _sessionDroppedInBackground = false;
+      _sessionEnded = false;
       _conversationState = ConversationState.listening;
+      _resetIdleTimer();
       debugPrint(
         'AssistantTabViewModel: server session resumed — full state preserved, no greeting expected',
       );
@@ -551,7 +552,7 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     try {
-      await _speechService.startSpeech(mode: voiceMode ? 'voice' : 'text');
+      await _speechService.startSpeech(mode: voiceMode ? 'voice' : 'text', newSession: true);
     } catch (e) {
       _error = e.toString();
       _statusText = 'Error: $_error';
