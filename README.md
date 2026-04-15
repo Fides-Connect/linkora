@@ -1,38 +1,82 @@
-# Linkora - AI Voice Assistant Platform
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="connectx/assets/images/LinkoraLogo.png">
+    <img src="connectx/assets/images/LinkoraLogoDark.png" alt="Linkora" width="280">
+  </picture>
+</p>
 
-A complete voice-based AI assistant platform built with Flutter and Python, featuring real-time WebRTC audio streaming and AI-powered conversations.
+<p align="center">
+  <strong>AI-powered service marketplace assistant — voice &amp; chat, end-to-end open source.</strong>
+</p>
 
-## 🎯 Quick Links
+<p align="center">
+  <a href="docs/getting-started.md">Getting Started</a> ·
+  <a href="docs/architecture.md">Architecture</a> ·
+  <a href="docs/connectx.md">Mobile App</a> ·
+  <a href="docs/ai-assistant.md">Backend</a> ·
+  <a href="docs/deployment.md">Deployment</a>
+</p>
 
-### 📚 Documentation
-- **[Getting Started Guide](docs/getting-started.md)** - Start here for initial setup
-- **[Architecture Overview](docs/architecture.md)** - Understand the system design
+---
 
-### 🛠️ Component Documentation
-- **[ConnectX (Mobile App)](docs/connectx.md)** - Flutter application
-- **[AI-Assistant (Backend)](docs/ai-assistant.md)** - Python WebRTC server
-- **[Weaviate (Database)](docs/weaviate.md)** - Vector database
+Linkora is a production-ready platform that lets users find local service providers through a **natural conversation** — by voice or text. The AI assistant (named **Elin**) guides the user, collects requirements, and returns ranked, enriched provider results. Developers get a complete, deployable stack: a Flutter mobile app, a Python WebRTC server, and a vector database, all wired together and ready to customise.
 
-### 🚀 Infrastructure
-- **[Deployment](docs/deployment.md)** - Cloud Run + Compute Engine setup
+## 📱 App Screenshots
 
-## 🎯 What is Linkora?
+<table>
+  <tr>
+    <td align="center" width="25%">
+      <img src="docs/assets/Linkora-Full-Assistant.png" alt="Assistant – Full Mode" width="180"><br>
+      <sub><b>Assistant · Full Mode</b></sub><br>
+      <sub>Voice &amp; text conversation powered by Weaviate provider search</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="docs/assets/Linkora-Full-Settings.png" alt="Settings – Full Mode" width="180"><br>
+      <sub><b>Settings · Full Mode</b></sub><br>
+      <sub>Language, appearance &amp; notification preferences</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="docs/assets/Linkora-Lite-Assistant.png" alt="Assistant – Lite Mode" width="180"><br>
+      <sub><b>Assistant · Lite Mode</b></sub><br>
+      <sub>Text-only chat backed by the Google Places API</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="docs/assets/Linkora-Lite-Assistant-Results.png" alt="Search Results – Lite Mode" width="180"><br>
+      <sub><b>Results · Lite Mode</b></sub><br>
+      <sub>AI-curated provider cards with contact &amp; request actions</sub>
+    </td>
+  </tr>
+</table>
 
-Linkora is a modern AI voice assistant platform that enables natural voice conversations with AI. The platform consists of three main components:
+## ✨ What Makes Linkora Different
 
-1. **ConnectX** - Flutter mobile application (iOS/Android)
-2. **AI-Assistant** - Python WebRTC server for AI processing
-3. **Weaviate** - Vector database for semantic provider matching
+| | |
+|---|---|
+| 🎙️ **Voice-first UX** | Real-time WebRTC audio streaming with Google STT/TTS — sub-second round-trips |
+| 🤖 **Conversational search** | Elin asks the right questions, extracts structured intent, then fires a semantic search |
+| 🔀 **Two deployment modes** | **Full** (Weaviate vector DB, onboarded providers) or **Lite** (Google Places + web enrichment, zero infra) |
+| 🔒 **Secure by design** | All API keys stay server-side; clients authenticate via Firebase |
+| 📦 **Batteries included** | Docker Compose, Cloud Run deploy scripts, GitHub Actions CI/CD, dev container |
+| 🧪 **Well tested** | 60+ backend unit tests, Flutter widget tests, coverage reporting |
 
-### Key Features
+## 🏗️ Platform Overview
 
-- 🎙️ Real-time voice interaction with minimal latency
-- 🔒 Secure architecture (API keys stay on server)
-- ⚡ WebRTC streaming for low latency
-- 🤖 Powered by Google Gemini 3.0, Cloud Speech-to-Text, and TTS
-- 📱 Cross-platform (iOS and Android)
-- 🐳 Containerized for easy deployment
-- 🚀 Horizontally scalable stateless design
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Linkora Platform                        │
+├────────────────┬──────────────────────┬─────────────────────┤
+│  ConnectX      │   AI-Assistant       │  Weaviate           │
+│  Flutter app   │   Python / FastAPI   │  Vector DB          │
+│  iOS & Android │   WebRTC server      │  (Full mode only)   │
+│  Firebase Auth │   Gemini 3.0 LLM     │  Semantic search    │
+│                │   STT / TTS          │  Provider profiles  │
+└────────────────┴──────────┬───────────┴─────────────────────┘
+                            │ WebRTC audio stream
+                            ▼
+                     User's mobile device
+```
+
+**Read more**: [Architecture Overview](docs/architecture.md)
 
 
 ## 📁 Repository Structure
@@ -165,52 +209,6 @@ python scripts/init_database.py --load-test-data
 ```
 
 **See**: [Weaviate Documentation](docs/weaviate.md) for detailed configuration.
-
-## 📚 Documentation Overview
-
-All documentation is organized in the [`/docs`](docs/) directory with a consistent structure:
-
-### Getting Started
-- **[Getting Started Guide](docs/getting-started.md)** - Quick start for new developers
-- **[Architecture Overview](docs/architecture.md)** - System design and technical implementation
-
-### Components
-- **[ConnectX](docs/connectx.md)** - Mobile application (Flutter)
-- **[AI-Assistant](docs/ai-assistant.md)** - Backend server (Python)
-- **[Weaviate](docs/weaviate.md)** - Vector database
-
-### Infrastructure
-- **[Deployment](docs/deployment.md)** - Cloud Run + Compute Engine
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                  Linkora Platform                           │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   ┌───────────────┐         ┌──────────────────┐            │
-│   │   ConnectX    │◄───────►│  AI-Assistant    │            │
-│   │  (Flutter)    │  WebRTC │  (Python)        │            │
-│   │               │  Audio  │                  │            │
-│   │  - iOS        │  Stream │  - STT           │            │
-│   │  - Android    │         │  - LLM (Gemini)  │            │
-│   │  - WebRTC     │         │  - TTS           │            │
-│   │  - Firebase   │         │  - WebRTC Server │            │
-│   └───────────────┘         └─────────┬────────┘            │
-│                                       │                     │
-│                                       ▼                     │
-│                            ┌──────────────────┐             │
-│                            │    Weaviate      │             │
-│                            │  (Vector DB)     │             │
-│                            │  - Provider Data │             │
-│                            │  - Embeddings    │             │
-│                            │  - Hybrid Search │             │
-│                            └──────────────────┘             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Read more**: [Architecture Overview](docs/architecture.md)
 
 ## 🚀 Deployment Modes
 
