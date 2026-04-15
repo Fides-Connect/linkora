@@ -254,6 +254,11 @@ class SpeechService {
       debugPrint('SpeechService: LiteChat session ready');
       onDataChannelOpen?.call();
     };
+
+    _liteChatService!.onSessionResumed = () {
+      debugPrint('SpeechService: LiteChat session resumed on server');
+      onSessionResumed?.call();
+    };
   }
 
   Future<void> _initialize({String mode = 'voice'}) async {
@@ -394,6 +399,17 @@ class SpeechService {
     }
     _webrtcService!.sendTextMessage(text, messageId: messageId);
     return true;
+  }
+
+  /// Fires when the server confirms the client reconnected to a parked session.
+  Function()? onSessionResumed;
+
+  /// Send a raw JSON payload to the server (lite mode only).
+  ///
+  /// Used for control messages such as ``restore-history`` that are not
+  /// normal user text input and should not go through the text queue.
+  void sendRawMessage(Map<String, dynamic> payload) {
+    _liteChatService?.sendRaw(payload);
   }
 
   /// Notify the server of a mode switch over the data channel.

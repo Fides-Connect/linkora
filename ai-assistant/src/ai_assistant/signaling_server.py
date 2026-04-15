@@ -87,6 +87,11 @@ class SignalingServer:
         self.active_connections: dict[str, PeerConnectionHandler | ChatConnectionHandler] = {}
         self._firestore = FirestoreService()
         self._profile: AgentProfile = profile if profile is not None else FULL_PROFILE
+        # Parked sessions: user_id → handler preserved after WS disconnect.
+        # Kept alive for SESSION_SUSPENSION_TTL_MINUTES so the user can
+        # reconnect and continue the exact same LLM session.
+        self._suspended_sessions: dict[str, ChatConnectionHandler] = {}
+        self._suspension_tasks: dict[str, asyncio.Task] = {}
 
     async def close_all_connections(self) -> None:
         """Close all active WebRTC/WebSocket connections for graceful shutdown.
@@ -119,6 +124,13 @@ class SignalingServer:
         # The handle_websocket() finally blocks use pop(key, None) so they
         # are safe even if their entry has already been removed here.
         self.active_connections.clear()
+        # Tear down any parked sessions that survived shutdown.
+        for task in self._suspension_tasks.values():
+            task.cancel()
+        self._suspension_tasks.clear()
+        suspended = list(self._suspended_sessions.values())
+        self._suspended_sessions.clear()
+        await asyncio.gather(*(h.close() for h in suspended), return_exceptions=True)
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connection for signaling."""
         ws = web.WebSocketResponse()
@@ -406,18 +418,29 @@ class SignalingServer:
             connection_id, client_ip, user_id, language,
         )
 
-        handler = ChatConnectionHandler(
-            connection_id=connection_id,
-            websocket=ws,
-            user_id=user_id,
-            language=language,
-            language_fallback_from=language_fallback_from,
-            profile=self._profile,
-        )
+        # Resume a parked session for this user if one exists, otherwise
+        # create a fresh handler.
+        parked = self._suspended_sessions.pop(user_id, None) if user_id else None
+        if parked is not None:
+            ttl_task = self._suspension_tasks.pop(user_id, None)
+            if ttl_task and not ttl_task.done():
+                ttl_task.cancel()
+            handler = parked
+            await handler.resume(ws)
+        else:
+            handler = ChatConnectionHandler(
+                connection_id=connection_id,
+                websocket=ws,
+                user_id=user_id,
+                language=language,
+                language_fallback_from=language_fallback_from,
+                profile=self._profile,
+            )
         self.active_connections[connection_id] = handler
 
         try:
-            await handler.start()
+            if parked is None:
+                await handler.start()
 
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
@@ -426,6 +449,15 @@ class SignalingServer:
                         if data.get('type') == 'text-input':
                             text = data.get('text', '')
                             handler.handle_text_input(text)
+                        elif data.get('type') == 'restore-history':
+                            raw_messages = data.get('messages', [])
+                            if isinstance(raw_messages, list):
+                                handler.handle_restore_history(raw_messages)
+                            else:
+                                logger.warning(
+                                    "Chat WS: restore-history from %s has invalid 'messages' field",
+                                    connection_id,
+                                )
                         else:
                             logger.debug(
                                 "Chat WS: ignoring message type '%s' from %s",
@@ -441,9 +473,43 @@ class SignalingServer:
                     logger.info("Chat WS client %s initiated close", connection_id)
         finally:
             logger.info("Chat WS connection closed: %s", connection_id)
-            await handler.close()
             self.active_connections.pop(connection_id, None)
+            if user_id and not handler._closed:
+                # Park the session so the user can reconnect within the TTL.
+                await handler.suspend()
+                # Replace any previously parked session for this user.
+                old_parked = self._suspended_sessions.pop(user_id, None)
+                old_ttl = self._suspension_tasks.pop(user_id, None)
+                if old_ttl and not old_ttl.done():
+                    old_ttl.cancel()
+                if old_parked is not None:
+                    await old_parked.close()
+                self._suspended_sessions[user_id] = handler
+                self._suspension_tasks[user_id] = asyncio.create_task(
+                    self._suspend_ttl_task(user_id)
+                )
+            else:
+                await handler.close()
         return ws
+
+    async def _suspend_ttl_task(self, user_id: str) -> None:
+        """Tear down a parked session when the suspension TTL expires.
+
+        Cancelled automatically when the user reconnects within the window.
+        """
+        ttl_minutes = int(os.getenv("SESSION_SUSPENSION_TTL_MINUTES", "10"))
+        try:
+            await asyncio.sleep(ttl_minutes * 60)
+        except asyncio.CancelledError:
+            return  # User reconnected — session was resumed, nothing to do.
+        handler = self._suspended_sessions.pop(user_id, None)
+        self._suspension_tasks.pop(user_id, None)
+        if handler is not None:
+            logger.info(
+                "Suspension TTL expired for user %s — tearing down session %s",
+                user_id, handler.connection_id,
+            )
+            await handler.close()
 
     async def health_check(self, request: web.Request) -> web.Response:
         """Health check endpoint."""

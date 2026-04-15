@@ -55,6 +55,9 @@ class LiteChatService {
   /// Fires when the session is active and text messages can be sent.
   /// Mirrors [WebRTCService.onDataChannelOpen].
   Function()? onDataChannelOpen;
+  /// Fires when the server confirms the client reconnected to a parked session.
+  /// No greeting message will follow; the conversation continues immediately.
+  Function()? onSessionResumed;
   OnChatMessageCallback? onChatMessage;
   OnRuntimeStateCallback? onRuntimeState;
   OnProviderCardsCallback? onProviderCards;
@@ -185,6 +188,15 @@ class LiteChatService {
     _resetIdleTimer();
   }
 
+  /// Send a raw JSON payload to the server.
+  ///
+  /// Used internally by the ViewModel for control messages (e.g.
+  /// ``restore-history``) that bypass the normal text-input queue.
+  void sendRaw(Map<String, dynamic> payload) {
+    if (!_sessionReady) return;
+    _send(payload);
+  }
+
   // ── Private ────────────────────────────────────────────────────────────────
 
   Future<void> _sendFirstMessageAuth() async {
@@ -240,6 +252,14 @@ class LiteChatService {
       case 'auth-ok':
         debugPrint('LiteChatService: auth confirmed by server');
         // Session already marked ready in _sendFirstMessageAuth; no-op here.
+        break;
+
+      case 'session-resumed':
+        // Server has reconnected us to a parked session — full state preserved.
+        // Mark the channel ready and notify the ViewModel; no greeting follows.
+        debugPrint('LiteChatService: server resumed parked session');
+        _markSessionReady();
+        onSessionResumed?.call();
         break;
 
       case 'chat':

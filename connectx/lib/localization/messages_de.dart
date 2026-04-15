@@ -138,6 +138,10 @@ class MessagesDE {
   static const String sessionEndedBanner = 'Sitzung wegen Inaktivität beendet';
   static const String newSessionButton = 'Neue Sitzung';
 
+  // Reconnecting banner (shown when connection dropped while app was in background)
+  static const String reconnectingBanner = 'Verbindung zu Elin wird wiederhergestellt...';
+  static const String reconnectedBanner = 'Verbunden – Sie können das Gespräch fortsetzen';
+
   // KI-Verarbeitungsstatus-Labels — werden unter der "…"-Animation angezeigt.
   // Client-seitig generiert (Runtime-Zustände):
   static const String aiStatusThinking = 'Denke nach...';

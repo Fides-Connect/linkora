@@ -130,7 +130,109 @@ class ChatConnectionHandler:
 
         logger.info("ChatConnectionHandler closed: %s", self.connection_id)
 
+    async def suspend(self) -> None:
+        """Park the handler after a client disconnect, keeping AudioProcessor alive.
+
+        Called instead of :meth:`close` when the user may reconnect within the
+        suspension TTL.  Everything is preserved:
+        - ``AudioProcessor`` (and its LLM session history, FSM state, and
+          ``ConversationStage``) continues to exist in memory.
+        - Only the WebSocket bridge sender is stopped; the bridge object itself
+          stays so its references inside ``ResponseDelivery`` remain valid.
+        """
+        if self._closed:
+            return
+
+        # Start buffering BEFORE any await so that frames emitted by a
+        # concurrently-running LLM task are captured rather than discarded.
+        self.ws_bridge.start_replay_capture()
+
+        if self._idle_task and not self._idle_task.done():
+            self._idle_task.cancel()
+            try:
+                await self._idle_task
+            except asyncio.CancelledError:
+                pass
+
+        await self.ws_bridge.stop_sender()
+        logger.info("ChatConnectionHandler suspended: %s", self.connection_id)
+
+    async def resume(self, websocket: web.WebSocketResponse) -> None:
+        """Reattach to a new WebSocket after a background disconnect.
+
+        The ``AudioProcessor`` and all session state (LLM history, FSM,
+        ``ConversationStage``, conversation context) are untouched.  Only the
+        transport is swapped out.
+
+        Sends a ``{"type": "session-resumed"}`` control frame so the client
+        knows it has reconnected to an existing session (no greeting follows).
+        """
+        self.websocket = websocket
+        await self.ws_bridge.replace_websocket(websocket)
+
+        # Notify the client: same session, no greeting coming.
+        self.ws_bridge.send_raw({"type": "session-resumed"})
+
+        # Re-broadcast the current FSM state so the client re-syncs.
+        if self.audio_processor is not None:
+            try:
+                fsm = self.audio_processor.ai_assistant.response_orchestrator.runtime_fsm
+                self.audio_processor._emit_runtime_state(fsm.current_state)
+            except Exception as exc:
+                logger.warning(
+                    "Could not re-emit FSM state on resume for %s: %s",
+                    self.connection_id, exc,
+                )
+
+        self._reset_idle_timer()
+        logger.info("ChatConnectionHandler resumed: %s (new WS: %s)", self.connection_id, id(websocket))
+
     # ── Inbound message handling ───────────────────────────────────────────────
+
+    def handle_restore_history(self, messages: list[dict]) -> None:
+        """Replace the LLM session history with the client-provided prior conversation.
+
+        Called when the client reconnects after a background disconnect and sends
+        the preserved chat history so the LLM regains full conversation context.
+        The current history (which contains only the reconnect greeting) is
+        discarded and replaced with the provided messages.
+
+        ``messages`` is a list of ``{"role": "user"|"assistant", "text": "…"}`` dicts.
+        """
+        if self.audio_processor is None:
+            logger.warning(
+                "restore-history received before AudioProcessor ready for %s — ignoring",
+                self.connection_id,
+            )
+            return
+
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        llm_service = self.audio_processor.ai_assistant.llm_service
+        session_id = self.connection_id
+
+        # Drop whatever is in the session store (the reconnect greeting) and
+        # rebuild from the client-supplied history.
+        llm_service.session_store.pop(session_id, None)
+
+        valid = 0
+        for msg in messages:
+            role = msg.get("role", "")
+            text = (msg.get("text") or "").strip()
+            if not text:
+                continue
+            if role == "user":
+                llm_service.add_message_to_history(session_id, HumanMessage(content=text))
+                valid += 1
+            elif role == "assistant":
+                llm_service.add_message_to_history(session_id, AIMessage(content=text))
+                valid += 1
+
+        logger.info(
+            "restore-history applied for %s: %d message(s) loaded into LLM context",
+            self.connection_id,
+            valid,
+        )
 
     def handle_text_input(self, text: str) -> None:
         """Validate and dispatch an incoming text-input message.
