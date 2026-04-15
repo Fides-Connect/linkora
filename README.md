@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="connectx/assets/images/LinkoraLogoDark.png">
-    <img src="connectx/assets/images/LinkoraLogo.png" alt="Linkora" width="280">
+    <source media="(prefers-color-scheme: dark)" srcset="connectx/assets/images/LinkoraLogo.png">
+    <img src="connectx/assets/images/LinkoraLogoDark.png" alt="Linkora" width="280">
   </picture>
 </p>
 
