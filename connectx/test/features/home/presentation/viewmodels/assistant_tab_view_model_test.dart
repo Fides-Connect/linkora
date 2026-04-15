@@ -7,6 +7,8 @@ import 'package:connectx/features/home/presentation/viewmodels/assistant_tab_vie
 import '../../../../helpers/test_helpers.mocks.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late AssistantTabViewModel vm;
   late MockSpeechService mockSpeech;
 
@@ -59,18 +61,18 @@ void main() {
 
   group('startChat() mode selection', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
     test('defaults to text mode (mode=text)', () async {
       await vm.startChat();
-      verify(mockSpeech.startSpeech(mode: 'text')).called(1);
+      verify(mockSpeech.startSpeech(mode: 'text', newSession: anyNamed('newSession'))).called(1);
     });
 
     test('voice mode passes mode=voice', () async {
       await vm.startChat(voiceMode: true);
-      verify(mockSpeech.startSpeech(mode: 'voice')).called(1);
+      verify(mockSpeech.startSpeech(mode: 'voice', newSession: anyNamed('newSession'))).called(1);
     });
 
     test('isVoiceMode reflects requested mode', () async {
@@ -90,7 +92,7 @@ void main() {
 
   group('startChat() pendingText — optimistic message', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -132,7 +134,7 @@ void main() {
 
   group('startChat() history clearing', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -167,7 +169,7 @@ void main() {
 
   group('startChat() error handling', () {
     test('resets to idle and stores error when startSpeech throws', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenThrow(Exception('Mic denied'));
       await vm.startChat(voiceMode: false);
       expect(vm.error, contains('Mic denied'));
@@ -179,7 +181,7 @@ void main() {
       // Use a completer so we can fire the second startChat while the first is
       // still in-flight (i.e. _isStarting is true).
       final completer = Completer<void>();
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) => completer.future);
 
       final first = vm.startChat(voiceMode: false);
@@ -190,7 +192,7 @@ void main() {
       await first;
 
       // startSpeech must only have been called once
-      verify(mockSpeech.startSpeech(mode: anyNamed('mode'))).called(1);
+      verify(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession'))).called(1);
     });
   });
 
@@ -200,7 +202,7 @@ void main() {
 
   group('data channel readiness — pending message flush', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       when(mockSpeech.sendTextMessage(any, messageId: anyNamed('messageId')))
           .thenReturn(true);
@@ -259,7 +261,7 @@ void main() {
 
   group('data channel readiness — mic state', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -286,7 +288,7 @@ void main() {
 
   group('isInputEnabled', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -348,7 +350,7 @@ void main() {
     late Map<String, dynamic> cbs;
 
     setUp(() async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       when(mockSpeech.sendTextMessage(any,
               messageId: anyNamed('messageId')))
@@ -389,7 +391,7 @@ void main() {
 
   group('sendTextMessage() when channel not ready', () {
     test('sets error and does not send', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       init();
       // channel never opened
@@ -408,7 +410,7 @@ void main() {
     late Map<String, dynamic> cbs;
 
     setUp(() async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       when(mockSpeech.sendTextMessage(any,
               messageId: anyNamed('messageId')))
@@ -441,7 +443,7 @@ void main() {
 
   group('AI streaming chunks', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -478,7 +480,7 @@ void main() {
 
   group('switchToTextMode()', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -516,7 +518,7 @@ void main() {
 
   group('switchToVoiceMode()', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -558,7 +560,7 @@ void main() {
 
   group('stopChat() new-field reset', () {
     test('resets isVoiceMode and dataChannelReady', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       final cbs = init();
       await vm.startChat(voiceMode: true);
@@ -573,7 +575,7 @@ void main() {
     });
 
     test('preserves chat history after stop', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       final cbs = init();
       await vm.startChat(voiceMode: false);
@@ -587,7 +589,7 @@ void main() {
     });
 
     test('sets sessionEnded=true when messages exist after stop', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       final cbs = init();
       await vm.startChat(voiceMode: false);
@@ -599,7 +601,7 @@ void main() {
     });
 
     test('sets sessionEnded=false when no messages exist after stop', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       init();
       await vm.startChat(voiceMode: false);
@@ -617,7 +619,7 @@ void main() {
 
   group('sessionEnded after idle timeout', () {
     test('chat history is preserved after idle timeout fires', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       final cbs = init();
       await vm.startChat(voiceMode: false);
@@ -636,7 +638,7 @@ void main() {
     });
 
     test('sessionEnded is cleared when new session starts', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       final cbs = init();
       await vm.startChat(voiceMode: false);
@@ -658,7 +660,7 @@ void main() {
 
   group('clearError()', () {
     test('clears the error field', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenThrow(Exception('boom'));
       await vm.startChat();
       expect(vm.error, isNotNull);
@@ -738,7 +740,7 @@ void main() {
 
   group('initialize() language change', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       when(mockSpeech.stopSpeech()).thenReturn(null);
     });
@@ -757,7 +759,7 @@ void main() {
       await Future.microtask(() {});
 
       verify(mockSpeech.stopSpeech()).called(greaterThanOrEqualTo(1));
-      verify(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      verify(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .called(greaterThanOrEqualTo(1));
     });
 
@@ -772,7 +774,7 @@ void main() {
       await Future.microtask(() {});
 
       verifyNever(mockSpeech.stopSpeech());
-      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode')));
+      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')));
     });
 
     test('does not restart when session is idle', () async {
@@ -786,7 +788,7 @@ void main() {
       verifyNever(mockSpeech.stopSpeech());
       // startSpeech should not be called from initialize() itself — only from
       // startChat() which is called by the page's initState, not here.
-      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode')));
+      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')));
     });
   });
 }

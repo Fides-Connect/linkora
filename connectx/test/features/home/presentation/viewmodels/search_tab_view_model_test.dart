@@ -7,6 +7,8 @@ import 'package:connectx/features/home/presentation/viewmodels/assistant_tab_vie
 import '../../../../helpers/test_helpers.mocks.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late AssistantTabViewModel viewModel;
   late MockSpeechService mockSpeechService;
 
@@ -91,22 +93,22 @@ void main() {
   });
 
   test('startChat calls speechService.startSpeech', () async {
-    when(mockSpeechService.startSpeech(mode: anyNamed('mode')))
+    when(mockSpeechService.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
         .thenAnswer((_) async {});
 
     await viewModel.startChat();
 
-    verify(mockSpeechService.startSpeech(mode: 'text')).called(1);
+    verify(mockSpeechService.startSpeech(mode: 'text', newSession: anyNamed('newSession'))).called(1);
     expect(viewModel.error, null);
   });
   
   test('startChat handles errors', () async {
-    when(mockSpeechService.startSpeech(mode: anyNamed('mode')))
+    when(mockSpeechService.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
         .thenThrow(Exception('Mic error'));
 
     await viewModel.startChat();
 
-    verify(mockSpeechService.startSpeech(mode: 'text')).called(1);
+    verify(mockSpeechService.startSpeech(mode: 'text', newSession: anyNamed('newSession'))).called(1);
     expect(viewModel.error, contains('Mic error'));
     expect(viewModel.conversationState, ConversationState.idle);
   });
