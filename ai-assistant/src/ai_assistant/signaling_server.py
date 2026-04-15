@@ -99,32 +99,34 @@ class SignalingServer:
         Must be called before ``AppRunner.cleanup()`` to prevent it from
         blocking indefinitely on open WebSocket handlers.
         """
-        if not self.active_connections:
-            return
-        handlers = list(self.active_connections.values())
-        # Close WebSockets first so the handle_websocket message-loops exit
-        # promptly — this unblocks AppRunner.cleanup() regardless of how long
-        # handler teardown takes.  The per-connection finally blocks then call
-        # handler.close() as a safety net (idempotent).
-        await asyncio.gather(
-            *(
-                h.websocket.close()
-                for h in handlers
-                if hasattr(h, "websocket")
-                and h.websocket is not None
-                and not h.websocket.closed
-            ),
-            return_exceptions=True,
-        )
-        # Tear down audio processors and peer connections in parallel.  We do
-        # this after closing websockets so no new tasks are spawned, but we
-        # don't let slow teardown block the WS close above.
-        await asyncio.gather(*(h.close() for h in handlers), return_exceptions=True)
-        # Release all handler references now that teardown is complete.
-        # The handle_websocket() finally blocks use pop(key, None) so they
-        # are safe even if their entry has already been removed here.
-        self.active_connections.clear()
-        # Tear down any parked sessions that survived shutdown.
+        if self.active_connections:
+            handlers = list(self.active_connections.values())
+            # Close WebSockets first so the handle_websocket message-loops exit
+            # promptly — this unblocks AppRunner.cleanup() regardless of how long
+            # handler teardown takes.  The per-connection finally blocks then call
+            # handler.close() as a safety net (idempotent).
+            await asyncio.gather(
+                *(
+                    h.websocket.close()
+                    for h in handlers
+                    if hasattr(h, "websocket")
+                    and h.websocket is not None
+                    and not h.websocket.closed
+                ),
+                return_exceptions=True,
+            )
+            # Tear down audio processors and peer connections in parallel.  We do
+            # this after closing websockets so no new tasks are spawned, but we
+            # don't let slow teardown block the WS close above.
+            await asyncio.gather(*(h.close() for h in handlers), return_exceptions=True)
+            # Release all handler references now that teardown is complete.
+            # The handle_websocket() finally blocks use pop(key, None) so they
+            # are safe even if their entry has already been removed here.
+            self.active_connections.clear()
+        # Tear down any parked sessions that survived shutdown.  This must run
+        # unconditionally — suspended sessions exist independently of
+        # active_connections and would otherwise be leaked if active_connections
+        # happened to be empty at shutdown time.
         for task in self._suspension_tasks.values():
             task.cancel()
         self._suspension_tasks.clear()
@@ -508,7 +510,20 @@ class SignalingServer:
 
         Cancelled automatically when the user reconnects within the window.
         """
-        ttl_minutes = int(os.getenv("SESSION_SUSPENSION_TTL_MINUTES", "10"))
+        try:
+            ttl_minutes = int(os.getenv("SESSION_SUSPENSION_TTL_MINUTES", "10"))
+            if not 1 <= ttl_minutes <= 1440:
+                logger.warning(
+                    "SESSION_SUSPENSION_TTL_MINUTES=%d is outside the valid range "
+                    "[1, 1440]; clamping",
+                    ttl_minutes,
+                )
+                ttl_minutes = max(1, min(1440, ttl_minutes))
+        except (ValueError, TypeError):
+            logger.warning(
+                "Invalid SESSION_SUSPENSION_TTL_MINUTES value; defaulting to 10 minutes"
+            )
+            ttl_minutes = 10
         try:
             await asyncio.sleep(ttl_minutes * 60)
         except asyncio.CancelledError:

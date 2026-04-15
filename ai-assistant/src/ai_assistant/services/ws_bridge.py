@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 # Sentinel value that stops the background sender loop.
 _STOP = None
 
+# Maximum number of frames held in the replay buffer while a session is
+# suspended.  Caps memory usage when the LLM produces many tokens offline.
+_MAX_REPLAY_FRAMES = 200
+
 
 class WebSocketBridge:
     """Wraps an ``aiohttp.WebSocketResponse`` with a typed outbound-message interface.
@@ -139,7 +143,8 @@ class WebSocketBridge:
                 # WS already closed.  If we are in buffering mode, preserve
                 # replayable frames so they can be delivered on reconnect.
                 if self._buffering and self._is_replayable(item):
-                    self._replay_buffer.append(item)
+                    if len(self._replay_buffer) < _MAX_REPLAY_FRAMES:
+                        self._replay_buffer.append(item)
                 continue
             try:
                 await self._ws.send_json(item)
@@ -161,7 +166,8 @@ class WebSocketBridge:
         """
         frame = {"type": "chat", "text": text, "isUser": is_user, "isChunk": is_chunk}
         if not is_user and self._buffering:
-            self._replay_buffer.append(frame)
+            if len(self._replay_buffer) < _MAX_REPLAY_FRAMES:
+                self._replay_buffer.append(frame)
             return
         if not self.is_open:
             return
@@ -209,7 +215,8 @@ class WebSocketBridge:
             return
         frame = {"type": "provider-cards", "cards": cards}
         if self._buffering:
-            self._replay_buffer.append(frame)
+            if len(self._replay_buffer) < _MAX_REPLAY_FRAMES:
+                self._replay_buffer.append(frame)
             return
         if not self.is_open:
             return

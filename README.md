@@ -52,7 +52,7 @@ Linkora is a production-ready platform that lets users find local service provid
 
 | | |
 |---|---|
-| 🎙️ **Voice-first UX** | Real-time WebRTC audio streaming with Google STT/TTS with sub-second round-trips |
+| 🎙️ **Voice-first UX** | Real-time WebRTC audio streaming with Google STT/TTS and sub-second round-trips |
 | 🤖 **Conversational search** | Elin asks the right questions, extracts structured intent, then fires a semantic search |
 | 🔀 **Two deployment modes** | **Full** (Weaviate vector DB, onboarded providers) or **Lite** (Google Places + web enrichment, zero infra) |
 | 🔒 **Secure by design** | All API keys stay server-side; clients authenticate via Firebase |
@@ -227,7 +227,7 @@ variable:
 **Lite mode** is ideal for prototypes, demos, or regions where you don't yet have
 providers registered in Weaviate.  The assistant fetches live results from the
 Google Places API, enriches them with web crawling (skills, email, portfolio),
-reranks them with a local cross-encoder model, and presents them to the user, 
+reranks them with a local cross-encoder model, and presents them to the user,
 without any Weaviate dependency.
 
 See [Deployment Documentation](docs/deployment.md) for provisioning instructions

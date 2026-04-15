@@ -485,6 +485,9 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
 
   // ── Idle timer ────────────────────────────────────────────────────────────
   void _resetIdleTimer() {
+    // Do not restart the timer while the app is backgrounded — the lifecycle
+    // handler already cancelled it on pause/hide and will restart it on resume.
+    if (_appInBackground) return;
     _idleTimer?.cancel();
     _idleTimer = Timer(_idleTimeout, _handleIdleTimeout);
   }

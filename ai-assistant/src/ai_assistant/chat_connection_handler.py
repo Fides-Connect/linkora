@@ -206,6 +206,24 @@ class ChatConnectionHandler:
             )
             return
 
+        _MAX_MESSAGES = 100
+        _MAX_TEXT_CHARS = 10_000
+        _MAX_TOTAL_CHARS = 100_000
+
+        if not isinstance(messages, list):
+            logger.warning(
+                "restore-history from %s: 'messages' is not a list — ignoring",
+                self.connection_id,
+            )
+            return
+
+        if len(messages) > _MAX_MESSAGES:
+            logger.warning(
+                "restore-history from %s: too many messages (%d > %d) — truncating",
+                self.connection_id, len(messages), _MAX_MESSAGES,
+            )
+            messages = messages[:_MAX_MESSAGES]
+
         from langchain_core.messages import AIMessage, HumanMessage
 
         llm_service = self.audio_processor.ai_assistant.llm_service
@@ -216,15 +234,36 @@ class ChatConnectionHandler:
         llm_service.session_store.pop(session_id, None)
 
         valid = 0
+        total_chars = 0
         for msg in messages:
+            if not isinstance(msg, dict):
+                continue
             role = msg.get("role", "")
-            text = (msg.get("text") or "").strip()
+            if role not in ("user", "assistant"):
+                continue
+            text = msg.get("text")
+            if not isinstance(text, str):
+                continue
+            text = text.strip()
             if not text:
                 continue
+            if len(text) > _MAX_TEXT_CHARS:
+                logger.warning(
+                    "restore-history from %s: message text too long (%d chars) — truncating",
+                    self.connection_id, len(text),
+                )
+                text = text[:_MAX_TEXT_CHARS]
+            total_chars += len(text)
+            if total_chars > _MAX_TOTAL_CHARS:
+                logger.warning(
+                    "restore-history from %s: total payload exceeds %d chars — stopping",
+                    self.connection_id, _MAX_TOTAL_CHARS,
+                )
+                break
             if role == "user":
                 llm_service.add_message_to_history(session_id, HumanMessage(content=text))
                 valid += 1
-            elif role == "assistant":
+            else:
                 llm_service.add_message_to_history(session_id, AIMessage(content=text))
                 valid += 1
 
