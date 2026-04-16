@@ -250,7 +250,7 @@ class TestChatConnectionHandlerSuspend:
         assert handler.audio_processor is not None
 
 
-# ── resume() + restore-history ────────────────────────────────────────────────
+# ── resume() ──────────────────────────────────────────────────────────────────
 
 class TestChatConnectionHandlerResume:
 
@@ -287,91 +287,3 @@ class TestChatConnectionHandlerResume:
         # session-resumed must come first, then runtime-state, then chat.
         assert types.index("session-resumed") < types.index("chat")
         assert types.index("runtime-state") < types.index("chat")
-
-    async def test_restore_history_loads_messages_into_llm(self):
-        handler, _ = self._make_started_handler()
-
-        mock_llm = MagicMock()
-        mock_llm.session_store = {}
-        mock_llm.add_message_to_history = Mock()
-        handler.audio_processor.ai_assistant.llm_service = mock_llm
-
-        messages = [
-            {"role": "user", "text": "Hello"},
-            {"role": "assistant", "text": "Hi there"},
-        ]
-        handler.handle_restore_history(messages)
-
-        assert mock_llm.add_message_to_history.call_count == 2
-
-    async def test_restore_history_truncates_at_100_messages(self):
-        handler, _ = self._make_started_handler()
-
-        mock_llm = MagicMock()
-        mock_llm.session_store = {}
-        mock_llm.add_message_to_history = Mock()
-        handler.audio_processor.ai_assistant.llm_service = mock_llm
-
-        messages = [{"role": "user", "text": f"msg {i}"} for i in range(120)]
-        handler.handle_restore_history(messages)
-
-        assert mock_llm.add_message_to_history.call_count == 100
-
-    async def test_restore_history_rejects_non_list(self, caplog):
-        handler, _ = self._make_started_handler()
-
-        mock_llm = MagicMock()
-        mock_llm.session_store = {}
-        mock_llm.add_message_to_history = Mock()
-        handler.audio_processor.ai_assistant.llm_service = mock_llm
-
-        handler.handle_restore_history("not a list")  # type: ignore[arg-type]
-        mock_llm.add_message_to_history.assert_not_called()
-
-    async def test_restore_history_skips_invalid_roles(self):
-        handler, _ = self._make_started_handler()
-
-        mock_llm = MagicMock()
-        mock_llm.session_store = {}
-        mock_llm.add_message_to_history = Mock()
-        handler.audio_processor.ai_assistant.llm_service = mock_llm
-
-        messages = [
-            {"role": "system", "text": "injected"},
-            {"role": "user", "text": "valid"},
-        ]
-        handler.handle_restore_history(messages)
-
-        # Only the valid "user" message should be loaded.
-        assert mock_llm.add_message_to_history.call_count == 1
-
-    async def test_restore_history_truncates_oversized_text(self):
-        handler, _ = self._make_started_handler()
-
-        mock_llm = MagicMock()
-        mock_llm.session_store = {}
-        loaded_texts: list[str] = []
-
-        def _capture(session_id, msg):
-            loaded_texts.append(msg.content)
-
-        mock_llm.add_message_to_history = _capture
-        handler.audio_processor.ai_assistant.llm_service = mock_llm
-
-        messages = [{"role": "user", "text": "x" * 20_000}]
-        handler.handle_restore_history(messages)
-
-        assert len(loaded_texts) == 1
-        assert len(loaded_texts[0]) == 10_000  # capped at _MAX_TEXT_CHARS
-
-    async def test_restore_history_resets_session_store(self):
-        handler, _ = self._make_started_handler()
-
-        mock_llm = MagicMock()
-        mock_llm.session_store = {handler.connection_id: object()}
-        mock_llm.add_message_to_history = Mock()
-        handler.audio_processor.ai_assistant.llm_service = mock_llm
-
-        handler.handle_restore_history([{"role": "user", "text": "hi"}])
-
-        assert handler.connection_id not in mock_llm.session_store

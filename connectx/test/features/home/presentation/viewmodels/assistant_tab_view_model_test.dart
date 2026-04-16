@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:connectx/models/app_types.dart';
+import 'package:fake_async/fake_async.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:connectx/features/home/presentation/viewmodels/assistant_tab_view_model.dart';
@@ -789,6 +791,91 @@ void main() {
       // startSpeech should not be called from initialize() itself — only from
       // startChat() which is called by the page's initState, not here.
       verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')));
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Lifecycle reconnect — didChangeAppLifecycleState + _handleBackgroundDisconnect
+  // ══════════════════════════════════════════════════════════════════════════
+
+  group('lifecycle reconnect', () {
+    late Function() disconnectedCb;
+
+    /// Shared setup: lite mode, connected session, one chat message, then
+    /// backgrounded + disconnected so [sessionDroppedInBackground] is true.
+    void backgroundAndDisconnect() {
+      when(mockSpeech.voiceEnabled).thenReturn(false);
+      final cbs = init();
+      // Open the data channel so _dataChannelReady = true (required for the
+      // onDisconnected handler to classify the drop as a background drop).
+      (cbs['dataChannelOpen'] as Function())();
+      // Populate history so _handleBackgroundDisconnect takes the reconnect path.
+      (cbs['chat'] as OnChatMessageCallback)('Hello', true, false);
+      // Simulate app going to background.
+      vm.didChangeAppLifecycleState(AppLifecycleState.paused);
+      // Capture the onDisconnected callback registered during initialize().
+      disconnectedCb =
+          verify(mockSpeech.onDisconnected = captureAny).captured.last
+              as Function();
+      // Simulate a WS disconnect while backgrounded.
+      disconnectedCb();
+      expect(vm.sessionDroppedInBackground, isTrue);
+    }
+
+    test('background + disconnect + resumed triggers silent reconnect', () async {
+      backgroundAndDisconnect();
+      clearInteractions(mockSpeech);
+      when(mockSpeech.startSpeech(
+        mode: anyNamed('mode'),
+        newSession: anyNamed('newSession'),
+      )).thenAnswer((_) async {});
+
+      vm.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      // Let the unawaited _reconnectSession() future start.
+      await Future.microtask(() {});
+      await Future.microtask(() {});
+
+      // _reconnectSession calls startSpeech(mode: 'text') without newSession,
+      // so newSession defaults to false — distinguishing it from a regular
+      // startChat() call that always passes newSession: true.
+      verify(mockSpeech.startSpeech(mode: 'text', newSession: false)).called(1);
+    });
+
+    test('onSessionResumed clears sessionDroppedInBackground after 2 s', () {
+      fakeAsync((fake) {
+        backgroundAndDisconnect();
+        final sessionResumedCb =
+            verify(mockSpeech.onSessionResumed = captureAny).captured.last
+                as Function();
+
+        sessionResumedCb();
+
+        // Banner should still be visible immediately.
+        expect(vm.sessionDroppedInBackground, isTrue);
+
+        // Advance fake clock past the 2-second timer.
+        fake.elapse(const Duration(seconds: 3));
+
+        expect(vm.sessionDroppedInBackground, isFalse);
+      });
+    });
+
+    test('reconnect failure sets idle state and preserves sessionEnded', () async {
+      backgroundAndDisconnect();
+      when(mockSpeech.startSpeech(
+        mode: anyNamed('mode'),
+        newSession: anyNamed('newSession'),
+      )).thenThrow(Exception('connection refused'));
+
+      vm.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await Future.microtask(() {});
+      await Future.microtask(() {});
+
+      expect(vm.conversationState, ConversationState.idle);
+      // sessionEnded is true when messages exist and reconnect failed.
+      expect(vm.sessionEnded, isTrue);
+      // Banner flag cleared on failure (no reconnect to show).
+      expect(vm.sessionDroppedInBackground, isFalse);
     });
   });
 }

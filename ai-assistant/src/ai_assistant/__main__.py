@@ -212,10 +212,11 @@ async def main() -> None:
             # The shutdown-time aclose() call remains as a best-effort fallback
             # for the case where prewarm is cancelled before this callback runs.
             try:
-                loop = asyncio.get_running_loop()
+                loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
             except RuntimeError:
-                return  # loop already closed; rely on shutdown-time aclose()
-            loop.create_task(prewarm_llm.aclose())
+                loop = None  # loop already closed; rely on shutdown-time aclose()
+            if loop is not None:
+                loop.create_task(prewarm_llm.aclose())
 
     prewarm_task.add_done_callback(_on_prewarm_done)
 

@@ -447,7 +447,29 @@ class SignalingServer:
             if ttl_task and not ttl_task.done():
                 ttl_task.cancel()
             handler = parked
-            await handler.resume(ws)
+            try:
+                await handler.resume(ws)
+            except Exception as exc:
+                logger.error(
+                    "Failed to resume parked session for %s: %s",
+                    user_id, exc, exc_info=True,
+                )
+                try:
+                    await handler.close()
+                except Exception as close_exc:
+                    logger.warning(
+                        "Error closing failed-resume session for %s: %s",
+                        user_id, close_exc,
+                    )
+                parked = None
+                handler = ChatConnectionHandler(
+                    connection_id=connection_id,
+                    websocket=ws,
+                    user_id=user_id,
+                    language=language,
+                    language_fallback_from=language_fallback_from,
+                    profile=self._profile,
+                )
         else:
             handler = ChatConnectionHandler(
                 connection_id=connection_id,
@@ -470,15 +492,6 @@ class SignalingServer:
                         if data.get('type') == 'text-input':
                             text = data.get('text', '')
                             handler.handle_text_input(text)
-                        elif data.get('type') == 'restore-history':
-                            raw_messages = data.get('messages', [])
-                            if isinstance(raw_messages, list):
-                                handler.handle_restore_history(raw_messages)
-                            else:
-                                logger.warning(
-                                    "Chat WS: restore-history from %s has invalid 'messages' field",
-                                    connection_id,
-                                )
                         else:
                             logger.debug(
                                 "Chat WS: ignoring message type '%s' from %s",
