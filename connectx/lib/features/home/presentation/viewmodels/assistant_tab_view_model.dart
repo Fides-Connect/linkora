@@ -648,7 +648,9 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _idleTimer?.cancel();
     _reconnectBannerTimer?.cancel();
-    _speechService.stopSpeech();
+    // Clear all callbacks first so any events fired during/after stopSpeech()
+    // (e.g. onDisconnected, onSpeechEnd) are silently dropped rather than
+    // calling notifyListeners() on an already-disposed ChangeNotifier.
     _speechService.onSpeechStart = null;
     _speechService.onConnected = null;
     _speechService.onDataChannelOpen = null;
@@ -656,6 +658,11 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
     _speechService.onDisconnected = null;
     _speechService.onChatMessage = null;
     _speechService.onProviderCards = null;
+    _speechService.onRuntimeState = null;
+    _speechService.onToolStatus = null;
+    _speechService.onVoiceUpgradeTimeout = null;
+    _speechService.onSessionResumed = null;
+    _speechService.stopSpeech();
     super.dispose();
   }
 }
