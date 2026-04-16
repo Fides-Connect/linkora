@@ -576,7 +576,14 @@ class SignalingServer:
                 "Suspension TTL expired for user %s — tearing down session %s",
                 user_id, handler.connection_id,
             )
-            await handler.close()
+            try:
+                await handler.close()
+            except Exception:
+                logger.exception(
+                    "Failed to close suspended session %s for user %s after TTL expiry",
+                    handler.connection_id,
+                    user_id,
+                )
 
     async def health_check(self, request: web.Request) -> web.Response:
         """Health check endpoint."""
