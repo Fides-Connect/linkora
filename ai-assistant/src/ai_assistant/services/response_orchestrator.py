@@ -68,6 +68,26 @@ def _strip_tool_call_text(text: str) -> str:
     return _KNOWN_TOOL_NAMES_RE.sub("", text)
 
 
+# Matches markdown inline formatting markers: bold (**), italic (*), bold-italic (***),
+# underline-bold (__), underline-italic (_), and inline code (`).
+# Applied per-chunk on streamed output so the client receives plain text.
+_MARKDOWN_INLINE_RE = re.compile(r'\*{1,3}|_{1,2}|`+')
+# Matches markdown heading markers at the start of a line (e.g. "## Heading").
+_MARKDOWN_HEADING_RE = re.compile(r'^#{1,6}\s+', re.MULTILINE)
+
+
+def _strip_markdown_formatting(text: str) -> str:
+    """Remove common markdown formatting markers from a text chunk.
+
+    Strips heading markers (``# … ``), inline bold/italic (``**``, ``*``, ``__``, ``_``),
+    and inline code backticks so the client receives plain, readable text.
+    Because chunks are streamed individually, markers split across chunk boundaries
+    are each stripped independently — this produces clean output in all cases.
+    """
+    text = _MARKDOWN_HEADING_RE.sub("", text)
+    return _MARKDOWN_INLINE_RE.sub("", text)
+
+
 # Human-readable status labels sent to the client while a tool is executing.
 _TOOL_STATUS_LABELS: dict[str, str] = {
     "search_providers": "Searching for providers",
@@ -906,7 +926,7 @@ class ResponseOrchestrator:
                                     tool_result["signal_transition"], session_id, context, new_pending
                                 )
             elif isinstance(chunk, str):
-                filtered = _strip_tool_call_text(chunk)
+                filtered = _strip_markdown_formatting(_strip_tool_call_text(chunk))
                 if filtered.strip():
                     ai_response_parts.append(filtered)
                     yield filtered
@@ -1504,8 +1524,8 @@ class ResponseOrchestrator:
                                     "Tool %r returned error: %s", fn_name, tool_result
                                 )
                 else:
-                    # Plain text chunk — strip any leaked tool-call patterns
-                    filtered = _strip_tool_call_text(chunk) if isinstance(chunk, str) else chunk
+                    # Plain text chunk — strip any leaked tool-call patterns and markdown formatting
+                    filtered = _strip_markdown_formatting(_strip_tool_call_text(chunk)) if isinstance(chunk, str) else chunk
                     if filtered.strip() if isinstance(filtered, str) else filtered:
                         ai_response_parts.append(filtered)
                         # In TRIAGE, buffer text rather than yielding immediately.
