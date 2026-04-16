@@ -80,6 +80,30 @@ _MARKDOWN_BOLD_UNDERSCORE_RE = re.compile(r'(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)'
 _MARKDOWN_ITALIC_STAR_RE = re.compile(r'(?<!\w)\*(?=\S)(.+?)(?<=\S)\*(?!\w)')
 _MARKDOWN_ITALIC_UNDERSCORE_RE = re.compile(r'(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)')
 
+# Matches the *opening* half of any inline markdown emphasis span (bold-italic,
+# bold, italic — both star and underscore variants — and backtick code spans).
+# Used by _find_unclosed_opener_pos to detect spans that cross a whitespace
+# flush boundary and must not be split.
+_MD_OPENER_RE = re.compile(r'(?<!\w)(\*{1,3}|_{1,2}|`+)(?=\S)')
+
+
+def _find_unclosed_opener_pos(text: str) -> int:
+    """Return the index of the last unclosed markdown opener in *text*, or -1.
+
+    Scans *text* from right to left for any opener token (``***``, ``**``,
+    ``*``, ``__``, ``_``, backtick runs).  For each candidate, checks whether
+    a matching closer exists in the remaining text.  Returns the position of
+    the rightmost unclosed opener so the caller can trim the flush boundary to
+    just before it; returns -1 when every opener is properly closed.
+    """
+    for m in reversed(list(_MD_OPENER_RE.finditer(text))):
+        token = m.group(1)
+        rest = text[m.start() + len(token):]
+        closer_re = re.compile(r'(?<=\S)' + re.escape(token) + r'(?!\w)')
+        if not closer_re.search(rest):
+            return m.start()
+    return -1
+
 
 def _strip_markdown_formatting(text: str) -> str:
     """Remove common markdown formatting markers from a text chunk.
@@ -114,8 +138,21 @@ def _take_safe_markdown_stream_text(
     safe = ""
     last_ws = max(buffer.rfind(" "), buffer.rfind("\n"))
     if last_ws > 0:
-        safe, buffer = buffer[: last_ws + 1], buffer[last_ws + 1 :]
-    elif len(buffer) > tail_keep:
+        # Before committing to a whitespace flush, verify the candidate prefix
+        # doesn't end inside an unclosed markdown span (e.g. "**very " with the
+        # closing "**" still in the buffer).  If an unclosed opener is found,
+        # retreat the flush point to just before it so the span travels together.
+        candidate = buffer[: last_ws + 1]
+        unclosed = _find_unclosed_opener_pos(candidate)
+        if unclosed > 0:
+            # Flush clean text before the opener; keep the opener onward buffered.
+            safe, buffer = candidate[:unclosed], buffer[unclosed:]
+        elif unclosed == -1:
+            # No unclosed opener — safe to flush at the whitespace boundary.
+            safe, buffer = candidate, buffer[last_ws + 1:]
+        # unclosed == 0 means the very first char is an opener with no closer
+        # yet — can't flush anything here; fall through to the tail-keep branch.
+    if not safe and len(buffer) > tail_keep:
         split_at = len(buffer) - tail_keep
         safe, buffer = buffer[:split_at], buffer[split_at:]
     return safe, buffer

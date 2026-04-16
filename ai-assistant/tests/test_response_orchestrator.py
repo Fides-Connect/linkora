@@ -671,6 +671,27 @@ class TestMarkdownFormatFilter:
         assert "**" not in combined
         assert "important" in combined
 
+    async def test_bold_removed_when_delimiter_split_at_whitespace_inside_span(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """Bold markers must be stripped even when the stream chunk boundary falls at
+        a whitespace inside the emphasized span (e.g. '**very ' / 'important**')."""
+        async def whitespace_split_stream(*args, **kwargs):
+            yield "Check out **this very "
+            yield "important point** now."
+
+        mock_llm_service.generate_stream = whitespace_split_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        combined = "".join(chunks)
+        assert "**" not in combined, f"Unexpected markdown markers in: {combined!r}"
+        assert "this very important point" in combined
+
     async def test_tool_call_only_chunk_is_stripped_from_output(
         self, mock_llm_service, mock_conversation_service
     ):
