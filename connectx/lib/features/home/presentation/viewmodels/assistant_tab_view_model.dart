@@ -178,6 +178,9 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
     };
 
     _speechService.onSpeechEnd = () {
+      // Do not override state when we are mid-reconnect after a background drop
+      // — the reconnect banner and connecting state must remain visible.
+      if (_sessionDroppedInBackground) return;
       _conversationState = ConversationState.idle;
       _speechService.setMicrophoneMuted(false);
       notifyListeners();
@@ -189,6 +192,8 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
         // the resume handler can trigger a silent reconnect instead of showing
         // the session-ended banner.
         _sessionDroppedInBackground = true;
+        _sessionEnded = false;
+        _conversationState = ConversationState.connecting;
         _dataChannelReady = false;
         _greetingReceived = false;
         // Do NOT touch _chatMessages — history must be preserved.
