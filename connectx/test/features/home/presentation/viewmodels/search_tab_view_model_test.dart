@@ -11,18 +11,16 @@ void main() {
 
   late AssistantTabViewModel viewModel;
   late MockSpeechService mockSpeechService;
+  bool _viewModelDisposed = false;
 
   setUp(() {
     mockSpeechService = MockSpeechService();
     viewModel = AssistantTabViewModel(speechService: mockSpeechService);
+    _viewModelDisposed = false;
   });
 
   tearDown(() {
-    try {
-      viewModel.dispose();
-    } catch (_) {
-      // Already disposed by the test itself — nothing to do.
-    }
+    if (!_viewModelDisposed) viewModel.dispose();
   });
 
   test('initialize sets up callbacks and status', () {
@@ -134,6 +132,7 @@ void main() {
 
   test('dispose stops speech and cleans up callbacks', () {
     viewModel.dispose();
+    _viewModelDisposed = true;
 
     verify(mockSpeechService.stopSpeech()).called(1);
     verify(mockSpeechService.onSpeechStart = null);
