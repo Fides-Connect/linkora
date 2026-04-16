@@ -64,6 +64,10 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
   /// The UI shows a "reconnecting" banner instead of the session-ended banner.
   bool _sessionDroppedInBackground = false;
 
+  /// Cancellable timer used to hide the "Reconnected" banner after 2 seconds.
+  /// Cancelled in [dispose] to prevent calling [notifyListeners] after disposal.
+  Timer? _reconnectBannerTimer;
+
   /// Set to true by [_reconnectSession] so the first AI message on a fresh
   /// server connection (the greeting) is swallowed and not shown in the chat.
   /// The server always greets on connect, but after a reconnect the user should
@@ -236,7 +240,8 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
             // Show the "Reconnected" banner briefly before clearing the flag.
             _conversationState = ConversationState.listening;
             notifyListeners();
-            Future.delayed(const Duration(seconds: 2), () {
+            _reconnectBannerTimer?.cancel();
+            _reconnectBannerTimer = Timer(const Duration(seconds: 2), () {
               _sessionDroppedInBackground = false;
               notifyListeners();
             });
@@ -341,7 +346,8 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
       // Keep _sessionDroppedInBackground = true briefly so the "Reconnected"
       // banner is visible before dismissing it automatically.
       notifyListeners();
-      Future.delayed(const Duration(seconds: 2), () {
+      _reconnectBannerTimer?.cancel();
+      _reconnectBannerTimer = Timer(const Duration(seconds: 2), () {
         _sessionDroppedInBackground = false;
         notifyListeners();
       });
@@ -432,18 +438,18 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
   /// clearing chat history, and shows a lightweight status banner.
   void _handleBackgroundDisconnect() {
     if (_chatMessages.isEmpty) {
-      // Nothing to preserve — start fresh as usual.
+      // Nothing to preserve — start a fresh session in the current mode.
       _sessionDroppedInBackground = false;
-      unawaited(startChat(voiceMode: false));
+      unawaited(startChat(voiceMode: _isVoiceMode));
       return;
     }
     // Parked-session resume (suppress greeting + restore-history) is only
     // supported in lite (WebSocket) mode.  In voice/WebRTC mode sendRawMessage
     // is a no-op and the backend has no parked-session concept, so silently
-    // starting a fresh session is the correct behaviour.
+    // starting a fresh session in the current mode is the correct behaviour.
     if (_speechService.voiceEnabled) {
       _sessionDroppedInBackground = false;
-      unawaited(startChat(voiceMode: false));
+      unawaited(startChat(voiceMode: _isVoiceMode));
       return;
     }
     debugPrint('AssistantTabViewModel: connection dropped in background — reconnecting');
@@ -696,6 +702,7 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _idleTimer?.cancel();
+    _reconnectBannerTimer?.cancel();
     _speechService.stopSpeech();
     _speechService.onSpeechStart = null;
     _speechService.onConnected = null;
