@@ -201,3 +201,89 @@ class TestChatConnectionHandlerStart:
         await asyncio.sleep(0)  # allow create_task to fire
 
         mock_ap.receive_text_input.assert_called_once_with("hello after start")
+
+
+# ── is_closed property ────────────────────────────────────────────────────────
+
+class TestChatConnectionHandlerIsClosed:
+
+    async def test_is_closed_false_before_close(self):
+        handler = _make_handler()
+        assert handler.is_closed is False
+
+    async def test_is_closed_true_after_close(self):
+        handler = _make_handler()
+        await handler.close()
+        assert handler.is_closed is True
+
+    async def test_is_closed_idempotent(self):
+        handler = _make_handler()
+        await handler.close()
+        await handler.close()
+        assert handler.is_closed is True
+
+
+# ── suspend() ─────────────────────────────────────────────────────────────────
+
+class TestChatConnectionHandlerSuspend:
+
+    async def test_suspend_stops_sender_without_closing_handler(self):
+        ws, _ = _open_ws()
+        handler = _make_handler(ws)
+
+        mock_ap = MagicMock()
+        mock_ap.start = AsyncMock()
+        mock_ap.stop = AsyncMock()
+        mock_ap.set_chat_bridge = Mock()
+        mock_ap.on_activity = None
+        mock_fsm = Mock()
+        mock_ap.ai_assistant.response_orchestrator.runtime_fsm = mock_fsm
+
+        with patch("ai_assistant.chat_connection_handler.AudioProcessor", return_value=mock_ap):
+            await handler.start()
+
+        await handler.suspend()
+
+        # Handler must NOT be marked closed — it can still be resumed.
+        assert handler.is_closed is False
+        # AudioProcessor must still be present.
+        assert handler.audio_processor is not None
+
+
+# ── resume() ──────────────────────────────────────────────────────────────────
+
+class TestChatConnectionHandlerResume:
+
+    def _make_started_handler(self):
+        """Return a handler whose AudioProcessor is mocked."""
+        ws, sent = _open_ws()
+        handler = _make_handler(ws)
+
+        mock_ap = MagicMock()
+        mock_ap.stop = AsyncMock()
+        mock_ap.set_chat_bridge = Mock()
+        mock_ap.on_activity = None
+
+        mock_fsm = Mock()
+        mock_fsm.current_state.value = "listening"
+        mock_ap.ai_assistant.response_orchestrator.runtime_fsm = mock_fsm
+
+        handler.audio_processor = mock_ap
+        return handler, sent
+
+    async def test_resume_sends_preamble_before_replay(self):
+        handler, _ = self._make_started_handler()
+
+        # Simulate a suspended session with a buffered reply.
+        handler.ws_bridge.start_replay_capture()
+        handler.ws_bridge.send_chat("missed message", is_user=False)
+
+        ws2, sent2 = _open_ws()
+        await handler.ws_bridge.start_sender()
+        await handler.resume(ws2)
+        await handler.ws_bridge.stop_sender()
+
+        types = [f["type"] for f in sent2]
+        # session-resumed must come first, then runtime-state, then chat.
+        assert types.index("session-resumed") < types.index("chat")
+        assert types.index("runtime-state") < types.index("chat")

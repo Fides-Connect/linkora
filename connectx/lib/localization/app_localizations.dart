@@ -169,6 +169,20 @@ class AppLocalizations {
     return MessagesEN.newSessionButton;
   }
 
+  String get reconnectingBanner {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.reconnectingBanner;
+    }
+    return MessagesEN.reconnectingBanner;
+  }
+
+  String get reconnectedBanner {
+    if (locale.languageCode == 'de') {
+      return MessagesDE.reconnectedBanner;
+    }
+    return MessagesEN.reconnectedBanner;
+  }
+
   String get deleteAccount {
     if (locale.languageCode == 'de') {
       return MessagesDE.deleteAccount;

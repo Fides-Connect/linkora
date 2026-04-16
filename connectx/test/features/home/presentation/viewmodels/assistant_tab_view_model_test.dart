@@ -1,12 +1,16 @@
 import 'dart:async';
 
 import 'package:connectx/models/app_types.dart';
+import 'package:fake_async/fake_async.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:connectx/features/home/presentation/viewmodels/assistant_tab_view_model.dart';
 import '../../../../helpers/test_helpers.mocks.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late AssistantTabViewModel vm;
   late MockSpeechService mockSpeech;
 
@@ -59,18 +63,18 @@ void main() {
 
   group('startChat() mode selection', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: true))
           .thenAnswer((_) async {});
     });
 
     test('defaults to text mode (mode=text)', () async {
       await vm.startChat();
-      verify(mockSpeech.startSpeech(mode: 'text')).called(1);
+      verify(mockSpeech.startSpeech(mode: 'text', newSession: true)).called(1);
     });
 
     test('voice mode passes mode=voice', () async {
       await vm.startChat(voiceMode: true);
-      verify(mockSpeech.startSpeech(mode: 'voice')).called(1);
+      verify(mockSpeech.startSpeech(mode: 'voice', newSession: true)).called(1);
     });
 
     test('isVoiceMode reflects requested mode', () async {
@@ -90,7 +94,7 @@ void main() {
 
   group('startChat() pendingText — optimistic message', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -132,7 +136,7 @@ void main() {
 
   group('startChat() history clearing', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -167,7 +171,7 @@ void main() {
 
   group('startChat() error handling', () {
     test('resets to idle and stores error when startSpeech throws', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenThrow(Exception('Mic denied'));
       await vm.startChat(voiceMode: false);
       expect(vm.error, contains('Mic denied'));
@@ -179,7 +183,7 @@ void main() {
       // Use a completer so we can fire the second startChat while the first is
       // still in-flight (i.e. _isStarting is true).
       final completer = Completer<void>();
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) => completer.future);
 
       final first = vm.startChat(voiceMode: false);
@@ -190,7 +194,7 @@ void main() {
       await first;
 
       // startSpeech must only have been called once
-      verify(mockSpeech.startSpeech(mode: anyNamed('mode'))).called(1);
+      verify(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession'))).called(1);
     });
   });
 
@@ -200,7 +204,7 @@ void main() {
 
   group('data channel readiness — pending message flush', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       when(mockSpeech.sendTextMessage(any, messageId: anyNamed('messageId')))
           .thenReturn(true);
@@ -259,7 +263,7 @@ void main() {
 
   group('data channel readiness — mic state', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -286,7 +290,7 @@ void main() {
 
   group('isInputEnabled', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -348,7 +352,7 @@ void main() {
     late Map<String, dynamic> cbs;
 
     setUp(() async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       when(mockSpeech.sendTextMessage(any,
               messageId: anyNamed('messageId')))
@@ -389,7 +393,7 @@ void main() {
 
   group('sendTextMessage() when channel not ready', () {
     test('sets error and does not send', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       init();
       // channel never opened
@@ -408,7 +412,7 @@ void main() {
     late Map<String, dynamic> cbs;
 
     setUp(() async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       when(mockSpeech.sendTextMessage(any,
               messageId: anyNamed('messageId')))
@@ -441,7 +445,7 @@ void main() {
 
   group('AI streaming chunks', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -478,7 +482,7 @@ void main() {
 
   group('switchToTextMode()', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -516,7 +520,7 @@ void main() {
 
   group('switchToVoiceMode()', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
     });
 
@@ -558,7 +562,7 @@ void main() {
 
   group('stopChat() new-field reset', () {
     test('resets isVoiceMode and dataChannelReady', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       final cbs = init();
       await vm.startChat(voiceMode: true);
@@ -573,7 +577,7 @@ void main() {
     });
 
     test('preserves chat history after stop', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       final cbs = init();
       await vm.startChat(voiceMode: false);
@@ -587,7 +591,7 @@ void main() {
     });
 
     test('sets sessionEnded=true when messages exist after stop', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       final cbs = init();
       await vm.startChat(voiceMode: false);
@@ -599,7 +603,7 @@ void main() {
     });
 
     test('sets sessionEnded=false when no messages exist after stop', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       init();
       await vm.startChat(voiceMode: false);
@@ -617,7 +621,7 @@ void main() {
 
   group('sessionEnded after idle timeout', () {
     test('chat history is preserved after idle timeout fires', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       final cbs = init();
       await vm.startChat(voiceMode: false);
@@ -636,7 +640,7 @@ void main() {
     });
 
     test('sessionEnded is cleared when new session starts', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       final cbs = init();
       await vm.startChat(voiceMode: false);
@@ -658,7 +662,7 @@ void main() {
 
   group('clearError()', () {
     test('clears the error field', () async {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenThrow(Exception('boom'));
       await vm.startChat();
       expect(vm.error, isNotNull);
@@ -738,7 +742,7 @@ void main() {
 
   group('initialize() language change', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .thenAnswer((_) async {});
       when(mockSpeech.stopSpeech()).thenReturn(null);
     });
@@ -757,7 +761,7 @@ void main() {
       await Future.microtask(() {});
 
       verify(mockSpeech.stopSpeech()).called(greaterThanOrEqualTo(1));
-      verify(mockSpeech.startSpeech(mode: anyNamed('mode')))
+      verify(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
           .called(greaterThanOrEqualTo(1));
     });
 
@@ -772,7 +776,7 @@ void main() {
       await Future.microtask(() {});
 
       verifyNever(mockSpeech.stopSpeech());
-      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode')));
+      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')));
     });
 
     test('does not restart when session is idle', () async {
@@ -786,7 +790,112 @@ void main() {
       verifyNever(mockSpeech.stopSpeech());
       // startSpeech should not be called from initialize() itself — only from
       // startChat() which is called by the page's initState, not here.
-      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode')));
+      verifyNever(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')));
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Lifecycle reconnect — didChangeAppLifecycleState + _handleBackgroundDisconnect
+  // ══════════════════════════════════════════════════════════════════════════
+
+  group('lifecycle reconnect', () {
+    late Function() disconnectedCb;
+    late Function() dataChannelOpenCb;
+
+    /// Shared setup: lite mode, connected session, one chat message, then
+    /// backgrounded + disconnected so [sessionDroppedInBackground] is true.
+    void backgroundAndDisconnect() {
+      when(mockSpeech.voiceEnabled).thenReturn(false);
+      final cbs = init();
+      dataChannelOpenCb = cbs['dataChannelOpen'] as Function();
+      // Open the data channel so _dataChannelReady = true (required for the
+      // onDisconnected handler to classify the drop as a background drop).
+      (cbs['dataChannelOpen'] as Function())();
+      // Populate history so _handleBackgroundDisconnect takes the reconnect path.
+      (cbs['chat'] as OnChatMessageCallback)('Hello', true, false);
+      // Simulate app going to background.
+      vm.didChangeAppLifecycleState(AppLifecycleState.paused);
+      // Capture the onDisconnected callback registered during initialize().
+      disconnectedCb =
+          verify(mockSpeech.onDisconnected = captureAny).captured.last
+              as Function();
+      // Simulate a WS disconnect while backgrounded.
+      disconnectedCb();
+      expect(vm.sessionDroppedInBackground, isTrue);
+    }
+
+    test('background + disconnect + resumed triggers silent reconnect', () async {
+      backgroundAndDisconnect();
+      clearInteractions(mockSpeech);
+      when(mockSpeech.startSpeech(
+        mode: anyNamed('mode'),
+        newSession: anyNamed('newSession'),
+      )).thenAnswer((_) async {});
+
+      vm.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      // Let the unawaited _reconnectSession() future start.
+      await Future.microtask(() {});
+      await Future.microtask(() {});
+
+      // _reconnectSession calls startSpeech(mode: 'text') without newSession,
+      // so newSession defaults to false — distinguishing it from a regular
+      // startChat() call that always passes newSession: true.
+      verify(mockSpeech.startSpeech(mode: 'text', newSession: false)).called(1);
+    });
+
+    test('onSessionResumed clears sessionDroppedInBackground after 2 s', () {
+      fakeAsync((fake) {
+        backgroundAndDisconnect();
+        final sessionResumedCb =
+            verify(mockSpeech.onSessionResumed = captureAny).captured.last
+                as Function();
+
+        sessionResumedCb();
+
+        // Banner should still be visible immediately.
+        expect(vm.sessionDroppedInBackground, isTrue);
+
+        // Advance fake clock past the 2-second timer.
+        fake.elapse(const Duration(seconds: 3));
+
+        expect(vm.sessionDroppedInBackground, isFalse);
+      });
+    });
+
+    test('reconnect failure sets idle state and preserves sessionEnded', () async {
+      backgroundAndDisconnect();
+      when(mockSpeech.startSpeech(
+        mode: anyNamed('mode'),
+        newSession: anyNamed('newSession'),
+      )).thenThrow(Exception('connection refused'));
+
+      vm.didChangeAppLifecycleState(AppLifecycleState.resumed);
+      await Future.microtask(() {});
+      await Future.microtask(() {});
+
+      expect(vm.conversationState, ConversationState.idle);
+      // sessionEnded is true when messages exist and reconnect failed.
+      expect(vm.sessionEnded, isTrue);
+      // Banner flag cleared on failure (no reconnect to show).
+      expect(vm.sessionDroppedInBackground, isFalse);
+    });
+
+    test('new server session clears sessionDroppedInBackground after 2 s', () {
+      fakeAsync((fake) {
+        backgroundAndDisconnect();
+
+        // Server starts a fresh session — onDataChannelOpen fires, but
+        // onSessionResumed never fires (TTL expired / server restart).
+        dataChannelOpenCb();
+
+        // Banner flag still true immediately (timer armed but not elapsed).
+        expect(vm.sessionDroppedInBackground, isTrue);
+
+        // Advance fake clock past the 2-second timer.
+        fake.elapse(const Duration(seconds: 3));
+
+        expect(vm.sessionDroppedInBackground, isFalse);
+      });
     });
   });
 }

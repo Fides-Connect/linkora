@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 # Sentinel value that stops the background sender loop.
 _STOP = None
 
+# Maximum number of frames held in the replay buffer while a session is
+# suspended.  Caps memory usage when the LLM produces many tokens offline.
+_MAX_REPLAY_FRAMES = 200
+
 
 class WebSocketBridge:
     """Wraps an ``aiohttp.WebSocketResponse`` with a typed outbound-message interface.
@@ -44,8 +48,35 @@ class WebSocketBridge:
         self._ws = ws
         self._queue: asyncio.Queue[dict | None] = asyncio.Queue()
         self._sender_task: asyncio.Task[None] | None = None
+        # Replay buffer: filled while the session is suspended so that frames
+        # generated while the client is offline are delivered on reconnect.
+        self._replay_buffer: list[dict] = []
+        self._buffering: bool = False
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    def start_replay_capture(self) -> None:
+        """Begin buffering replayable outbound frames (called at session suspend).
+
+        Must be called before any ``await`` in the suspend path so that frames
+        produced by concurrently-running LLM tasks are captured rather than
+        silently discarded.  The buffer is flushed into the new socket's queue
+        inside :meth:`replace_websocket`.
+        """
+        self._buffering = True
+        self._replay_buffer = []
+
+    @staticmethod
+    def _is_replayable(frame: dict) -> bool:
+        """Return True for frames that should be buffered during suspension."""
+        t = frame.get("type")
+        # Only replay assistant chat messages and provider cards.
+        # runtime-state is re-emitted explicitly on resume; tool-status is ephemeral.
+        if t == "provider-cards":
+            return True
+        if t == "chat" and not frame.get("isUser", False):
+            return True
+        return False
 
     async def start_sender(self) -> None:
         """Start the background sender task.
@@ -69,6 +100,54 @@ class WebSocketBridge:
                 pass
             self._sender_task = None
 
+    async def replace_websocket(
+        self,
+        ws: web.WebSocketResponse,
+        preamble: list[dict] | None = None,
+    ) -> None:
+        """Swap the underlying WebSocket for a new one (session resume).
+
+        Stops the current sender (the old WS is already closed), replaces
+        the socket reference, gives the bridge a clean outbound queue, then
+        starts a fresh sender.  All existing holders of this bridge object
+        (AudioProcessor, ResponseDelivery, …) automatically start writing to
+        the new socket without any reference updates.
+
+        ``preamble`` frames are enqueued *before* any buffered replay frames so
+        that control messages (e.g. ``session-resumed``, current runtime-state)
+        reach the client before the replayed content.
+        """
+        await self.stop_sender()
+        self._ws = ws
+        self._queue = asyncio.Queue()
+        # Detach the replay buffer before iterating so concurrent producers
+        # cannot append to the list we are about to drain.
+        replay_frames = self._replay_buffer
+        self._replay_buffer = []
+        self._buffering = False
+        # Enqueue control frames first so the client knows the session state
+        # before it receives the replayed content.
+        for frame in (preamble or []):
+            self._queue.put_nowait(frame)
+        # Flush any frames buffered while the session was suspended so the
+        # client receives the missed content immediately after reconnect.
+        for frame in replay_frames:
+            self._queue.put_nowait(frame)
+        self._sender_task = asyncio.create_task(self._run_sender())
+
+    def send_raw(self, payload: dict) -> None:
+        """Enqueue a raw JSON payload frame.
+
+        Used for control frames (e.g. ``session-resumed``) that have no
+        dedicated typed helper.  No-op when the WebSocket is closed.
+        """
+        if not self.is_open:
+            return
+        try:
+            self._queue.put_nowait(payload)
+        except Exception as exc:
+            logger.error("WebSocketBridge.send_raw enqueue error: %s", exc)
+
     async def _run_sender(self) -> None:
         """Background coroutine: drain the queue and write frames to the WS."""
         while True:
@@ -76,7 +155,11 @@ class WebSocketBridge:
             if item is _STOP:
                 break
             if self._ws.closed:
-                # Connection already closed — discard remaining items.
+                # WS already closed.  If we are in buffering mode, preserve
+                # replayable frames so they can be delivered on reconnect.
+                if self._buffering and self._is_replayable(item):
+                    if len(self._replay_buffer) < _MAX_REPLAY_FRAMES:
+                        self._replay_buffer.append(item)
                 continue
             try:
                 await self._ws.send_json(item)
@@ -93,19 +176,18 @@ class WebSocketBridge:
     def send_chat(self, text: str, is_user: bool, is_chunk: bool = False) -> None:
         """Enqueue a ``{"type": "chat", …}`` frame.
 
-        No-op when the WebSocket is closed.
+        When the session is suspended, assistant chat frames are buffered for
+        replay on reconnect instead of being silently dropped.
         """
+        frame = {"type": "chat", "text": text, "isUser": is_user, "isChunk": is_chunk}
+        if not is_user and self._buffering:
+            if len(self._replay_buffer) < _MAX_REPLAY_FRAMES:
+                self._replay_buffer.append(frame)
+            return
         if not self.is_open:
             return
         try:
-            self._queue.put_nowait(
-                {
-                    "type": "chat",
-                    "text": text,
-                    "isUser": is_user,
-                    "isChunk": is_chunk,
-                }
-            )
+            self._queue.put_nowait(frame)
         except Exception as exc:
             logger.error("WebSocketBridge.send_chat enqueue error: %s", exc)
 
@@ -141,16 +223,19 @@ class WebSocketBridge:
     def send_provider_cards(self, cards: list[dict]) -> None:
         """Enqueue a ``{"type": "provider-cards", …}`` frame.
 
-        No-op when the WebSocket is closed or cards is empty.
+        When the session is suspended, provider-card frames are buffered for
+        replay on reconnect instead of being silently dropped.
         """
-        if not self.is_open or not cards:
+        if not cards:
+            return
+        frame = {"type": "provider-cards", "cards": cards}
+        if self._buffering:
+            if len(self._replay_buffer) < _MAX_REPLAY_FRAMES:
+                self._replay_buffer.append(frame)
+            return
+        if not self.is_open:
             return
         try:
-            self._queue.put_nowait(
-                {
-                    "type": "provider-cards",
-                    "cards": cards,
-                }
-            )
+            self._queue.put_nowait(frame)
         except Exception as exc:
             logger.error("WebSocketBridge.send_provider_cards enqueue error: %s", exc)
