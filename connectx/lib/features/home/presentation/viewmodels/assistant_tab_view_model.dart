@@ -1,17 +1,19 @@
 import 'dart:async';
 import 'dart:collection';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:connectx/services/speech_service.dart';
 import 'package:connectx/models/chat_message.dart';
 import 'package:connectx/models/app_types.dart';
 import 'package:connectx/models/provider_card_data.dart';
 
 
-class AssistantTabViewModel extends ChangeNotifier {
+class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
   final SpeechService _speechService;
 
   AssistantTabViewModel({SpeechService? speechService})
-    : _speechService = speechService ?? SpeechService();
+    : _speechService = speechService ?? SpeechService() {
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   // ── Conversation state ──────────────────────────────────────────────────
   ConversationState _conversationState = ConversationState.idle;
@@ -54,6 +56,17 @@ class AssistantTabViewModel extends ChangeNotifier {
   /// True after the idle timer fires so the UI can offer a "New Session" button.
   bool _sessionEnded = false;
 
+  /// True while the app is in the background (paused/hidden lifecycle state).
+  bool _appInBackground = false;
+
+  /// Set to true when the session dropped while the app was in the background.
+  /// The UI shows a "reconnecting" banner instead of the session-ended banner.
+  bool _sessionDroppedInBackground = false;
+
+  /// Cancellable timer used to hide the "Reconnected" banner after 2 seconds.
+  /// Cancelled in [dispose] to prevent calling [notifyListeners] after disposal.
+  Timer? _reconnectBannerTimer;
+
   /// Deduplication guard: tracks the language for which warmup was last
   /// triggered.  Prevents re-firing warmup on every [initialize] call (which
   /// can happen on every rebuild) while still re-firing when the UI language
@@ -80,6 +93,10 @@ class AssistantTabViewModel extends ChangeNotifier {
   bool get isInputEnabled => _dataChannelReady && _greetingReceived;
   /// True when the session ended (timeout or explicit stop) and chat history is preserved.
   bool get sessionEnded => _sessionEnded;
+
+  /// True when the connection dropped while the app was backgrounded and a
+  /// silent reconnect is in progress or pending user confirmation.
+  bool get sessionDroppedInBackground => _sessionDroppedInBackground;
 
   // ── Initialisation ───────────────────────────────────────────────────────
   /// Translates an English status label to the session language.
@@ -161,12 +178,28 @@ class AssistantTabViewModel extends ChangeNotifier {
     };
 
     _speechService.onSpeechEnd = () {
+      // Do not override state when we are mid-reconnect after a background drop
+      // — the reconnect banner and connecting state must remain visible.
+      if (_sessionDroppedInBackground) return;
       _conversationState = ConversationState.idle;
       _speechService.setMicrophoneMuted(false);
       notifyListeners();
     };
 
     _speechService.onDisconnected = () {
+      if (_appInBackground && _dataChannelReady) {
+        // Connection dropped while the app was in the background.  Mark it so
+        // the resume handler can trigger a silent reconnect instead of showing
+        // the session-ended banner.
+        _sessionDroppedInBackground = true;
+        _sessionEnded = false;
+        _conversationState = ConversationState.connecting;
+        _dataChannelReady = false;
+        _greetingReceived = false;
+        // Do NOT touch _chatMessages — history must be preserved.
+        notifyListeners();
+        return;
+      }
       _conversationState = ConversationState.idle;
       _speechService.setMicrophoneMuted(false);
       notifyListeners();
@@ -191,8 +224,8 @@ class AssistantTabViewModel extends ChangeNotifier {
         _conversationState = ConversationState.processing;
       } else {
         // Mark that the AI has sent at least one message so the input field
-      // becomes available (guarded by isInputEnabled).
-      if (!_greetingReceived) {
+        // becomes available (guarded by isInputEnabled).
+        if (!_greetingReceived) {
           _greetingReceived = true;
         }
 
@@ -276,6 +309,28 @@ class AssistantTabViewModel extends ChangeNotifier {
       _isVoiceMode = false;
       notifyListeners();
     };
+
+    // Server confirmed we reconnected to the exact same (parked) session.
+    // All state is intact on the server — no greeting will come, no history
+    // restore is needed.  Simply clear the reconnect flags and let the user
+    // continue the conversation.
+    _speechService.onSessionResumed = () {
+      _greetingReceived = true;
+      _sessionEnded = false;
+      _conversationState = ConversationState.listening;
+      _resetIdleTimer();
+      debugPrint(
+        'AssistantTabViewModel: server session resumed — full state preserved, no greeting expected',
+      );
+      // Keep _sessionDroppedInBackground = true briefly so the "Reconnected"
+      // banner is visible before dismissing it automatically.
+      notifyListeners();
+      _reconnectBannerTimer?.cancel();
+      _reconnectBannerTimer = Timer(const Duration(seconds: 2), () {
+        _sessionDroppedInBackground = false;
+        notifyListeners();
+      });
+    };
   }
 
   /// Maps a backend [AgentRuntimeState] to the UI [ConversationState].
@@ -320,11 +375,117 @@ class AssistantTabViewModel extends ChangeNotifier {
       _sendTextMessageInternal(pending);
     }
 
+    // If we're reconnecting after a background drop and no session-resumed
+    // frame arrives (TTL expired / new server session), clear the flag here
+    // so the "Reconnected" banner is not stuck indefinitely.
+    if (_sessionDroppedInBackground) {
+      _reconnectBannerTimer?.cancel();
+      _reconnectBannerTimer = Timer(const Duration(seconds: 2), () {
+        _sessionDroppedInBackground = false;
+        notifyListeners();
+      });
+    }
+
     notifyListeners();
+  }
+
+  // ── App lifecycle ─────────────────────────────────────────────────────────
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.inactive:
+      // On iOS, app-switching transitions through inactive before paused, so
+      // treat it the same way: cancel the idle timer and mark as backgrounded
+      // so that any disconnect during this window is classified correctly.
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        _appInBackground = true;
+        // Pause the idle timer so it does not expire while the user is away.
+        _idleTimer?.cancel();
+        _idleTimer = null;
+        break;
+
+      case AppLifecycleState.resumed:
+        _appInBackground = false;
+        if (_sessionDroppedInBackground) {
+          // Connection dropped while backgrounded — attempt a silent reconnect.
+          _handleBackgroundDisconnect();
+        } else if (_dataChannelReady) {
+          // Connection survived — simply restart the idle timer.
+          _resetIdleTimer();
+        }
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  /// Called when the app resumes and the WebSocket/WebRTC connection that was
+  /// active before backgrounding has been lost.  Reconnects silently without
+  /// clearing chat history, and shows a lightweight status banner.
+  void _handleBackgroundDisconnect() {
+    // Abort if a start/reconnect is already in-flight — multiple rapid
+    // background/foreground cycles must not spawn concurrent connect attempts.
+    if (_isStarting) return;
+    if (_chatMessages.isEmpty) {
+      // Nothing to preserve — start a fresh session in the current mode.
+      _sessionDroppedInBackground = false;
+      _conversationState = ConversationState.idle;
+      unawaited(startChat(voiceMode: _isVoiceMode));
+      return;
+    }
+    // Parked-session resume via the server's TTL-based parking is only
+    // supported in lite (WebSocket) mode.  In voice/WebRTC mode the backend
+    // has no parked-session concept, so preserve the visible history and
+    // mark the session as ended rather than silently starting a new session
+    // that would clear _chatMessages.
+    if (_speechService.voiceEnabled) {
+      _sessionDroppedInBackground = false;
+      _sessionEnded = true;
+      _conversationState = ConversationState.idle;
+      _dataChannelReady = false;
+      _greetingReceived = false;
+      _pendingTextMessage = null;
+      _pendingEchoTexts.clear();
+      notifyListeners();
+      return;
+    }
+    debugPrint('AssistantTabViewModel: connection dropped in background — reconnecting');
+    // Flags may already be set by onDisconnected; ensure consistent state.
+    _sessionDroppedInBackground = true;
+    _sessionEnded = false;
+    _conversationState = ConversationState.connecting;
+    _dataChannelReady = false;
+    _greetingReceived = false;
+    _pendingTextMessage = null;
+    _pendingEchoTexts.clear();
+    notifyListeners();
+    unawaited(_reconnectSession());
+  }
+
+  /// Silently re-establishes the transport without resetting chat history.
+  Future<void> _reconnectSession() async {
+    if (_isStarting) return;
+    _isStarting = true;
+    try {
+      await _speechService.startSpeech(mode: 'text');
+    } catch (e) {
+      _error = e.toString();
+      _conversationState = ConversationState.idle;
+      _sessionDroppedInBackground = false;
+      _sessionEnded = _chatMessages.isNotEmpty;
+      notifyListeners();
+    } finally {
+      _isStarting = false;
+    }
   }
 
   // ── Idle timer ────────────────────────────────────────────────────────────
   void _resetIdleTimer() {
+    // Do not restart the timer while the app is backgrounded — the lifecycle
+    // handler already cancelled it on pause/hide and will restart it on resume.
+    if (_appInBackground) return;
     _idleTimer?.cancel();
     _idleTimer = Timer(_idleTimeout, _handleIdleTimeout);
   }
@@ -392,7 +553,7 @@ class AssistantTabViewModel extends ChangeNotifier {
     }
 
     try {
-      await _speechService.startSpeech(mode: voiceMode ? 'voice' : 'text');
+      await _speechService.startSpeech(mode: voiceMode ? 'voice' : 'text', newSession: true);
     } catch (e) {
       _error = e.toString();
       _statusText = 'Error: $_error';
@@ -510,8 +671,12 @@ class AssistantTabViewModel extends ChangeNotifier {
   // ── Dispose ───────────────────────────────────────────────────────────────
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _idleTimer?.cancel();
-    _speechService.stopSpeech();
+    _reconnectBannerTimer?.cancel();
+    // Clear all callbacks first so any events fired during/after stopSpeech()
+    // (e.g. onDisconnected, onSpeechEnd) are silently dropped rather than
+    // calling notifyListeners() on an already-disposed ChangeNotifier.
     _speechService.onSpeechStart = null;
     _speechService.onConnected = null;
     _speechService.onDataChannelOpen = null;
@@ -519,6 +684,11 @@ class AssistantTabViewModel extends ChangeNotifier {
     _speechService.onDisconnected = null;
     _speechService.onChatMessage = null;
     _speechService.onProviderCards = null;
+    _speechService.onRuntimeState = null;
+    _speechService.onToolStatus = null;
+    _speechService.onVoiceUpgradeTimeout = null;
+    _speechService.onSessionResumed = null;
+    _speechService.stopSpeech();
     super.dispose();
   }
 }

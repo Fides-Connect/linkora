@@ -7,12 +7,20 @@ import 'package:connectx/features/home/presentation/viewmodels/assistant_tab_vie
 import '../../../../helpers/test_helpers.mocks.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late AssistantTabViewModel viewModel;
   late MockSpeechService mockSpeechService;
+  bool _viewModelDisposed = false;
 
   setUp(() {
     mockSpeechService = MockSpeechService();
     viewModel = AssistantTabViewModel(speechService: mockSpeechService);
+    _viewModelDisposed = false;
+  });
+
+  tearDown(() {
+    if (!_viewModelDisposed) viewModel.dispose();
   });
 
   test('initialize sets up callbacks and status', () {
@@ -91,22 +99,22 @@ void main() {
   });
 
   test('startChat calls speechService.startSpeech', () async {
-    when(mockSpeechService.startSpeech(mode: anyNamed('mode')))
+    when(mockSpeechService.startSpeech(mode: anyNamed('mode'), newSession: true))
         .thenAnswer((_) async {});
 
     await viewModel.startChat();
 
-    verify(mockSpeechService.startSpeech(mode: 'text')).called(1);
+    verify(mockSpeechService.startSpeech(mode: 'text', newSession: true)).called(1);
     expect(viewModel.error, null);
   });
   
   test('startChat handles errors', () async {
-    when(mockSpeechService.startSpeech(mode: anyNamed('mode')))
+    when(mockSpeechService.startSpeech(mode: anyNamed('mode'), newSession: true))
         .thenThrow(Exception('Mic error'));
 
     await viewModel.startChat();
 
-    verify(mockSpeechService.startSpeech(mode: 'text')).called(1);
+    verify(mockSpeechService.startSpeech(mode: 'text', newSession: true)).called(1);
     expect(viewModel.error, contains('Mic error'));
     expect(viewModel.conversationState, ConversationState.idle);
   });
@@ -124,6 +132,7 @@ void main() {
 
   test('dispose stops speech and cleans up callbacks', () {
     viewModel.dispose();
+    _viewModelDisposed = true;
 
     verify(mockSpeechService.stopSpeech()).called(1);
     verify(mockSpeechService.onSpeechStart = null);

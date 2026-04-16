@@ -65,6 +65,11 @@ class ChatConnectionHandler:
             language,
         )
 
+    @property
+    def is_closed(self) -> bool:
+        """True once :meth:`close` has been called."""
+        return self._closed
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self) -> None:
@@ -129,6 +134,66 @@ class ChatConnectionHandler:
                 logger.debug("Error closing WS for %s: %s", self.connection_id, exc)
 
         logger.info("ChatConnectionHandler closed: %s", self.connection_id)
+
+    async def suspend(self) -> None:
+        """Park the handler after a client disconnect, keeping AudioProcessor alive.
+
+        Called instead of :meth:`close` when the user may reconnect within the
+        suspension TTL.  Everything is preserved:
+        - ``AudioProcessor`` (and its LLM session history, FSM state, and
+          ``ConversationStage``) continues to exist in memory.
+        - Only the WebSocket bridge sender is stopped; the bridge object itself
+          stays so its references inside ``ResponseDelivery`` remain valid.
+        """
+        if self._closed:
+            return
+
+        # Start buffering BEFORE any await so that frames emitted by a
+        # concurrently-running LLM task are captured rather than discarded.
+        self.ws_bridge.start_replay_capture()
+
+        if self._idle_task and not self._idle_task.done():
+            self._idle_task.cancel()
+            try:
+                await self._idle_task
+            except asyncio.CancelledError:
+                pass
+
+        await self.ws_bridge.stop_sender()
+        logger.info("ChatConnectionHandler suspended: %s", self.connection_id)
+
+    async def resume(self, websocket: web.WebSocketResponse) -> None:
+        """Reattach to a new WebSocket after a background disconnect.
+
+        The ``AudioProcessor`` and all session state (LLM history, FSM,
+        ``ConversationStage``, conversation context) are untouched.  Only the
+        transport is swapped out.
+
+        Sends a ``{"type": "session-resumed"}`` control frame so the client
+        knows it has reconnected to an existing session (no greeting follows).
+        """
+        self.websocket = websocket
+
+        # Build preamble control frames that must arrive *before* any replayed
+        # chat/provider-card frames so the client transitions out of the
+        # "reconnecting" state first and then receives the missed content.
+        preamble: list[dict] = [{"type": "session-resumed"}]
+        if self.audio_processor is not None:
+            try:
+                fsm = self.audio_processor.ai_assistant.response_orchestrator.runtime_fsm
+                preamble.append(
+                    {"type": "runtime-state", "runtimeState": fsm.current_state.value}
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Could not read FSM state on resume for %s: %s",
+                    self.connection_id, exc,
+                )
+
+        await self.ws_bridge.replace_websocket(websocket, preamble=preamble)
+
+        self._reset_idle_timer()
+        logger.info("ChatConnectionHandler resumed: %s (new WS: %s)", self.connection_id, id(websocket))
 
     # ── Inbound message handling ───────────────────────────────────────────────
 

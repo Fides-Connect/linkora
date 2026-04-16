@@ -184,6 +184,12 @@ class _AssistantTabPageContentState extends State<_AssistantTabPageContent> {
                     _SessionEndedBanner(
                       onNewSession: () => viewModel.startChat(voiceMode: false),
                     ),
+                  // Reconnecting banner: shown when connection dropped while app was backgrounded
+                  if (viewModel.sessionDroppedInBackground)
+                    _ReconnectingBanner(
+                      isConnecting: viewModel.conversationState ==
+                          ConversationState.connecting,
+                    ),
                   const SizedBox(height: 20),
                   ChatInputRow(
                     state: viewModel.conversationState,
@@ -308,6 +314,48 @@ class _SessionEndedBanner extends StatelessWidget {
             child: Text(
               localizations?.newSessionButton ?? 'New Session',
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Banner shown while the app is silently reconnecting after a background drop.
+/// Shows reconnecting/reconnected status and auto-hides after a short delay.
+class _ReconnectingBanner extends StatelessWidget {
+  final bool isConnecting;
+  const _ReconnectingBanner({required this.isConnecting});
+
+  @override
+  Widget build(BuildContext context) {
+    final localizations = AppLocalizations.of(context);
+    final text = isConnecting
+        ? (localizations?.reconnectingBanner ?? 'Reconnecting to Elin...')
+        : (localizations?.reconnectedBanner ??
+            'Reconnected \u2014 you can continue the conversation');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: context.appSurface1,
+      child: Row(
+        children: [
+          if (isConnecting) ...[
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppConstants.primaryCyan,
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: context.appSecondaryColor, fontSize: 13),
             ),
           ),
         ],

@@ -162,8 +162,14 @@ class AgentToolRegistry:
         return await tool.execute(params, context)
 
     def all_schemas(self) -> list[dict[str, object]]:
-        """Return all Gemini function-calling schemas for LLMService registration."""
-        return [t.schema for t in self._tools.values()]
+        """Return Gemini function-calling schemas for allowed tools only.
+
+        When a profile allowlist is active, schemas for disallowed tools are
+        excluded so the LLM never learns they exist and cannot call them.
+        """
+        if self._allowed is None:
+            return [t.schema for t in self._tools.values()]
+        return [t.schema for name, t in self._tools.items() if name in self._allowed]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
