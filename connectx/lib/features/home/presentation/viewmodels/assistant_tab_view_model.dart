@@ -420,11 +420,13 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
   /// active before backgrounding has been lost.  Reconnects silently without
   /// clearing chat history, and shows a lightweight status banner.
   void _handleBackgroundDisconnect() {
+    // Abort if a start/reconnect is already in-flight — multiple rapid
+    // background/foreground cycles must not spawn concurrent connect attempts.
+    if (_isStarting) return;
     if (_chatMessages.isEmpty) {
       // Nothing to preserve — start a fresh session in the current mode.
       _sessionDroppedInBackground = false;
       _conversationState = ConversationState.idle;
-      _isStarting = false;
       unawaited(startChat(voiceMode: _isVoiceMode));
       return;
     }
@@ -435,7 +437,6 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
     if (_speechService.voiceEnabled) {
       _sessionDroppedInBackground = false;
       _conversationState = ConversationState.idle;
-      _isStarting = false;
       unawaited(startChat(voiceMode: _isVoiceMode));
       return;
     }
@@ -448,7 +449,6 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
     _greetingReceived = false;
     _pendingTextMessage = null;
     _pendingEchoTexts.clear();
-    _isStarting = false;
     notifyListeners();
     unawaited(_reconnectSession());
   }
