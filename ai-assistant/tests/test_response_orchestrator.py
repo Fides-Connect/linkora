@@ -651,7 +651,27 @@ class TestMarkdownFormatFilter:
         assert "**" not in combined
         assert "important" in combined
 
-    async def test_markdown_only_chunk_does_not_suppress_fallback(
+    async def test_bold_removed_in_streamed_response_with_split_delimiters(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """Bold markers split across streamed chunks must be stripped before reaching the caller."""
+        async def split_markdown_stream(*args, **kwargs):
+            yield "Here is **im"
+            yield "portant** information."
+
+        mock_llm_service.generate_stream = split_markdown_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        combined = "".join(chunks)
+        assert "**" not in combined
+        assert "important" in combined
+
+    async def test_tool_call_only_chunk_is_stripped_from_output(
         self, mock_llm_service, mock_conversation_service
     ):
         """A chunk containing only tool-call text should count as a tool-call signal
@@ -2702,7 +2722,7 @@ class TestFollowUpBoundedLoop:
             )]
 
         text_chunks = [c for c in chunks if isinstance(c, str)]
-        assert "Here is your confirmation summary." in text_chunks, (
+        assert "Here is your confirmation summary." in "".join(text_chunks), (
             f"Expected the final CONFIRMATION response in chunks but got: {text_chunks}"
         )
         assert call_count == 4, (
@@ -2743,7 +2763,7 @@ class TestFollowUpBoundedLoop:
             chunks = [c async for c in orch.generate_response_stream("I need a plumber", "sess")]
 
         text_chunks = [c for c in chunks if isinstance(c, str)]
-        assert "Here is your confirmation summary." in text_chunks
+        assert "Here is your confirmation summary." in "".join(text_chunks)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -866,6 +866,7 @@ class ResponseOrchestrator:
         if _zero_event:
             actual_input = f"{actual_input} [{_zero_event}]".strip()
 
+        _md_buf: str = ""  # rolling buffer for cross-chunk markdown stripping
         async for chunk in self.llm_service.generate_stream(
             actual_input, follow_up_template, session_id
         ):
@@ -935,10 +936,23 @@ class ResponseOrchestrator:
                                     tool_result["signal_transition"], session_id, context, new_pending
                                 )
             elif isinstance(chunk, str):
-                filtered = _strip_tool_call_text(_strip_markdown_formatting(chunk))
-                if filtered.strip():
-                    ai_response_parts.append(filtered)
-                    yield filtered
+                # Accumulate text in a rolling buffer so markdown delimiters
+                # split across consecutive chunks are still caught.
+                _md_buf += chunk
+                last_ws = max(_md_buf.rfind(' '), _md_buf.rfind('\n'))
+                if last_ws > 0:
+                    safe, _md_buf = _md_buf[:last_ws + 1], _md_buf[last_ws + 1:]
+                    filtered = _strip_tool_call_text(_strip_markdown_formatting(safe))
+                    if filtered.strip():
+                        ai_response_parts.append(filtered)
+                        yield filtered
+        # Flush any remaining markdown buffer at end of stream
+        if _md_buf:
+            filtered = _strip_tool_call_text(_strip_markdown_formatting(_md_buf))
+            if filtered.strip():
+                ai_response_parts.append(filtered)
+                yield filtered
+            _md_buf = ""
 
     async def _handle_show_next_providers(
         self,
@@ -1329,6 +1343,7 @@ class ResponseOrchestrator:
             # discard the buffer so only the follow-up stage (CONFIRMATION) speaks.
             _triage_text_buffer: list[str] = []
             _triage_transition_fired = False
+            _md_buf: str = ""  # rolling buffer for cross-chunk markdown stripping
 
             async for chunk in self.llm_service.generate_stream(
                 user_input, prompt_template, session_id
@@ -1533,27 +1548,46 @@ class ResponseOrchestrator:
                                     "Tool %r returned error: %s", fn_name, tool_result
                                 )
                 else:
-                    # Plain text chunk — strip markdown first, then leaked tool-call patterns.
-                    # Markdown is stripped first so that tool-call names wrapped in emphasis
-                    # markers (e.g. "**signal_transition(...)**") are cleaned up in one pass
-                    # rather than leaving bare delimiters behind.
-                    md_stripped = _strip_markdown_formatting(chunk) if isinstance(chunk, str) else chunk
-                    filtered = _strip_tool_call_text(md_stripped) if isinstance(md_stripped, str) else md_stripped
-                    if filtered.strip() if isinstance(filtered, str) else filtered:
-                        ai_response_parts.append(filtered)
-                        # In TRIAGE, buffer text rather than yielding immediately.
-                        # If a signal_transition fires in this same turn the buffer
-                        # is discarded above, suppressing the preamble.
-                        if current_stage == ConversationStage.TRIAGE and not _triage_transition_fired:
-                            _triage_text_buffer.append(filtered)
-                        else:
-                            yield filtered
-                    elif isinstance(chunk, str) and chunk.strip() and not (filtered.strip() if isinstance(filtered, str) else filtered) and (md_stripped.strip() if isinstance(md_stripped, str) else md_stripped):
-                        # The chunk had content but was entirely removed by tool-call
-                        # stripping (not markdown stripping).  Count it as an intentional
-                        # signal so the empty-response fallback is not triggered.
-                        tool_calls_seen = True
+                    # Plain text chunk — accumulate in a rolling buffer so markdown
+                    # delimiters split across consecutive chunks are still caught.
+                    # Yield at whitespace boundaries; the remainder stays buffered
+                    # until the next chunk or end-of-stream.
+                    if isinstance(chunk, str):
+                        _md_buf += chunk
+                        last_ws = max(_md_buf.rfind(' '), _md_buf.rfind('\n'))
+                        if last_ws > 0:
+                            safe, _md_buf = _md_buf[:last_ws + 1], _md_buf[last_ws + 1:]
+                            safe_md = _strip_markdown_formatting(safe)
+                            filtered = _strip_tool_call_text(safe_md)
+                            if filtered.strip():
+                                ai_response_parts.append(filtered)
+                                # In TRIAGE, buffer text rather than yielding immediately.
+                                # If a signal_transition fires in this same turn the buffer
+                                # is discarded above, suppressing the preamble.
+                                if current_stage == ConversationStage.TRIAGE and not _triage_transition_fired:
+                                    _triage_text_buffer.append(filtered)
+                                else:
+                                    yield filtered
+                            elif safe.strip() and safe_md.strip() and not filtered.strip():
+                                # All content was tool-call text (not just markdown markers).
+                                # Count as an intentional signal so the empty-response
+                                # fallback is not triggered.
+                                tool_calls_seen = True
 
+            # Flush any remaining markdown buffer so the last chunk's text is
+            # delivered even when it has no trailing whitespace.
+            if _md_buf:
+                _safe_md = _strip_markdown_formatting(_md_buf)
+                _filtered = _strip_tool_call_text(_safe_md)
+                if _filtered.strip():
+                    ai_response_parts.append(_filtered)
+                    if current_stage == ConversationStage.TRIAGE and not _triage_transition_fired:
+                        _triage_text_buffer.append(_filtered)
+                    else:
+                        yield _filtered
+                elif _md_buf.strip() and _safe_md.strip() and not _filtered.strip():
+                    tool_calls_seen = True
+                _md_buf = ""
             # Flush any buffered TRIAGE text — only reached when no transition fired.
             for buffered_chunk in _triage_text_buffer:
                 yield buffered_chunk
