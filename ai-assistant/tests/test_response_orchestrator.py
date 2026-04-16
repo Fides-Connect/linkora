@@ -11,7 +11,7 @@ from ai_assistant.services.agent_runtime_fsm import AgentRuntimeState, AgentRunt
 from ai_assistant.services.agent_tools import (
     AgentToolRegistry, ToolCapability, ToolPermissionError,
 )
-from ai_assistant.services.response_orchestrator import ResponseOrchestrator
+from ai_assistant.services.response_orchestrator import ResponseOrchestrator, _strip_markdown_formatting
 
 
 @pytest.fixture
@@ -584,6 +584,137 @@ class TestToolCallTextFilter:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Markdown formatting filter
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMarkdownFormatFilter:
+    """_strip_markdown_formatting must remove markdown markers, not literal chars."""
+
+    def test_bold_stars_are_unwrapped(self):
+        assert _strip_markdown_formatting("This is **bold** text") == "This is bold text"
+
+    def test_italic_stars_are_unwrapped(self):
+        assert _strip_markdown_formatting("This is *italic* text") == "This is italic text"
+
+    def test_bold_italic_stars_are_unwrapped(self):
+        assert _strip_markdown_formatting("***important***") == "important"
+
+    def test_bold_underscores_are_unwrapped(self):
+        assert _strip_markdown_formatting("This is __bold__ text") == "This is bold text"
+
+    def test_italic_underscores_are_unwrapped(self):
+        assert _strip_markdown_formatting("This is _italic_ text") == "This is italic text"
+
+    def test_inline_code_is_unwrapped(self):
+        assert _strip_markdown_formatting("Use `foo_bar()` here") == "Use foo_bar() here"
+
+    def test_heading_markers_are_removed(self):
+        assert _strip_markdown_formatting("## Section Title") == "Section Title"
+
+    def test_deep_heading_markers_are_removed(self):
+        assert _strip_markdown_formatting("### Deep heading") == "Deep heading"
+
+    def test_snake_case_underscore_preserved(self):
+        """Underscores inside identifiers must not be stripped."""
+        assert _strip_markdown_formatting("Use snake_case names") == "Use snake_case names"
+
+    def test_arithmetic_asterisk_preserved(self):
+        """Asterisk in arithmetic expressions must not be stripped."""
+        assert _strip_markdown_formatting("3*5 equals 15") == "3*5 equals 15"
+
+    def test_url_underscores_preserved(self):
+        """Underscores inside URLs must not be stripped."""
+        url = "https://example.com/my_path/resource"
+        assert _strip_markdown_formatting(url) == url
+
+    def test_plain_text_unchanged(self):
+        """Text with no markdown must pass through unchanged."""
+        text = "Hallo, ich helfe dir gerne!"
+        assert _strip_markdown_formatting(text) == text
+
+    async def test_bold_removed_in_streamed_response(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """Bold markers from the LLM stream must be stripped before reaching the caller."""
+        async def markdown_stream(*args, **kwargs):
+            yield "Here is **important** information."
+
+        mock_llm_service.generate_stream = markdown_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        combined = "".join(chunks)
+        assert "**" not in combined
+        assert "important" in combined
+
+    async def test_bold_removed_in_streamed_response_with_split_delimiters(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """Bold markers split across streamed chunks must be stripped before reaching the caller."""
+        async def split_markdown_stream(*args, **kwargs):
+            yield "Here is **im"
+            yield "portant** information."
+
+        mock_llm_service.generate_stream = split_markdown_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        combined = "".join(chunks)
+        assert "**" not in combined
+        assert "important" in combined
+
+    async def test_bold_removed_when_delimiter_split_at_whitespace_inside_span(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """Bold markers must be stripped even when the stream chunk boundary falls at
+        a whitespace inside the emphasized span (e.g. '**very ' / 'important**')."""
+        async def whitespace_split_stream(*args, **kwargs):
+            yield "Check out **this very "
+            yield "important point** now."
+
+        mock_llm_service.generate_stream = whitespace_split_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        combined = "".join(chunks)
+        assert "**" not in combined, f"Unexpected markdown markers in: {combined!r}"
+        assert "this very important point" in combined
+
+    async def test_tool_call_only_chunk_is_stripped_from_output(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """A chunk containing only tool-call text should count as a tool-call signal
+        and be stripped from the streamed output.
+        """
+        # A chunk that is only a tool-call pattern must be counted as a signal.
+        async def tool_call_stream(*args, **kwargs):
+            yield "signal_transition(triage)"
+
+        mock_llm_service.generate_stream = tool_call_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        # Tool-call text must be stripped from output
+        assert "signal_transition" not in "".join(chunks)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SIGNAL_TRANSITION_SCHEMA tool registration
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1149,6 +1280,43 @@ class TestFollowUpStreamSignalTransition:
         assert "competencies are live" in combined, (
             "Confirmation text from the follow-up stream must reach the caller"
         )
+
+    async def test_markdown_stripped_in_follow_up_stream(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Markdown markers in follow-up stream text must be stripped before reaching the caller."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.PROVIDER_ONBOARDING
+
+        call_count = 0
+
+        async def multi_stream(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "save_competence_batch",
+                       "args": {"skills": [{"title": "Gardening"}]}}
+            else:
+                # Follow-up stream yields text with bold markers
+                yield "Your **competencies** are now live!"
+
+        mock_llm_service.generate_stream = multi_stream
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"saved": [{"competence_id": "c2"}], "count": 1}
+        )
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("yes", "sess"):
+            if isinstance(chunk, str):
+                chunks.append(chunk)
+
+        combined = "".join(chunks)
+        assert "**" not in combined, f"Unexpected markdown markers in follow-up stream: {combined!r}"
+        assert "competencies" in combined
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2612,7 +2780,7 @@ class TestFollowUpBoundedLoop:
             )]
 
         text_chunks = [c for c in chunks if isinstance(c, str)]
-        assert "Here is your confirmation summary." in text_chunks, (
+        assert "Here is your confirmation summary." in "".join(text_chunks), (
             f"Expected the final CONFIRMATION response in chunks but got: {text_chunks}"
         )
         assert call_count == 4, (
@@ -2653,7 +2821,7 @@ class TestFollowUpBoundedLoop:
             chunks = [c async for c in orch.generate_response_stream("I need a plumber", "sess")]
 
         text_chunks = [c for c in chunks if isinstance(c, str)]
-        assert "Here is your confirmation summary." in text_chunks
+        assert "Here is your confirmation summary." in "".join(text_chunks)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
