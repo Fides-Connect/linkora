@@ -86,31 +86,47 @@ _MARKDOWN_ITALIC_UNDERSCORE_RE = re.compile(r'(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)'
 # flush boundary and must not be split.
 _MD_OPENER_RE = re.compile(r'(?<!\w)(\*{1,3}|_{1,2}|`+)(?=\S)')
 
-# Precompiled closer patterns keyed by opener token string.  Compiled once at
-# module load time so _find_unclosed_opener_pos doesn't recompile on every call.
+# Precompiled closer patterns keyed by opener token string.  Populated lazily
+# so arbitrary multi-backtick runs (`` `` ``, ` ``` `, etc.) are cached on
+# first encounter rather than recompiled on every call.
 _MD_CLOSER_RE: dict[str, re.Pattern[str]] = {
     token: re.compile(r'(?<=\S)' + re.escape(token) + r'(?!\w)')
-    for token in ('***', '**', '*', '__', '_', '`')
+    for token in ('***', '**', '*', '__', '_', '`', '``', '```')
 }
+
+# Maximum number of trailing characters examined by _find_unclosed_opener_pos.
+# Limits per-chunk allocation when a buffer prefix is large.
+_MD_UNCLOSED_OPENER_SCAN_LIMIT = 4096
+
+# Named tail-keep sizes passed to _take_safe_markdown_stream_text at each call
+# site.  The follow-up stream uses a larger window because its responses tend
+# to be longer and may contain multi-word spans; the main stream is tuned for
+# lower latency.
+_MD_TAIL_KEEP_FOLLOW_UP = 64
+_MD_TAIL_KEEP_MAIN = 32
 
 
 def _find_unclosed_opener_pos(text: str) -> int:
     """Return the index of the last unclosed markdown opener in *text*, or -1.
 
-    Scans *text* from right to left for any opener token (``***``, ``**``,
-    ``*``, ``__``, ``_``, backtick runs).  For each candidate, checks whether
-    a matching closer exists in the remaining text.  Returns the position of
-    the rightmost unclosed opener so the caller can trim the flush boundary to
-    just before it; returns -1 when every opener is properly closed.
+    Scans the tail of *text* (up to ``_MD_UNCLOSED_OPENER_SCAN_LIMIT`` chars)
+    from right to left for any opener token (``***``, ``**``, ``*``, ``__``,
+    ``_``, backtick runs).  For each candidate, checks whether a matching
+    closer exists in the remaining text.  Returns the position of the rightmost
+    unclosed opener so the caller can trim the flush boundary to just before it;
+    returns -1 when every opener in the scanned region is properly closed.
     """
-    for m in reversed(list(_MD_OPENER_RE.finditer(text))):
+    start = max(0, len(text) - _MD_UNCLOSED_OPENER_SCAN_LIMIT)
+    scan_text = text[start:]
+    for m in reversed(list(_MD_OPENER_RE.finditer(scan_text))):
         token = m.group(1)
-        rest = text[m.start() + len(token):]
-        closer_re = _MD_CLOSER_RE.get(token) or re.compile(
-            r'(?<=\S)' + re.escape(token) + r'(?!\w)'
-        )
+        rest = scan_text[m.start() + len(token):]
+        closer_re = _MD_CLOSER_RE.get(token)
+        if closer_re is None:
+            closer_re = re.compile(r'(?<=\S)' + re.escape(token) + r'(?!\w)')
+            _MD_CLOSER_RE[token] = closer_re
         if not closer_re.search(rest):
-            return m.start()
+            return start + m.start()
     return -1
 
 
@@ -1030,7 +1046,7 @@ class ResponseOrchestrator:
                 # Accumulate in a rolling buffer so delimiters split across
                 # chunks are caught; flush at whitespace or tail boundary.
                 safe, _md_buf = _take_safe_markdown_stream_text(
-                    _md_buf, chunk, tail_keep=64
+                    _md_buf, chunk, tail_keep=_MD_TAIL_KEEP_FOLLOW_UP
                 )
                 if safe:
                     filtered = _strip_tool_call_text(_strip_markdown_formatting(safe))
@@ -1658,7 +1674,7 @@ class ResponseOrchestrator:
                     # Flush at whitespace or tail boundary via the shared helper.
                     if isinstance(chunk, str):
                         safe, _md_buf = _take_safe_markdown_stream_text(
-                            _md_buf, chunk, tail_keep=32
+                            _md_buf, chunk, tail_keep=_MD_TAIL_KEEP_MAIN
                         )
                         if safe:
                             safe_md = _strip_markdown_formatting(safe)
