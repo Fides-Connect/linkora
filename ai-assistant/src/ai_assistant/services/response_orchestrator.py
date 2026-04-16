@@ -935,7 +935,7 @@ class ResponseOrchestrator:
                                     tool_result["signal_transition"], session_id, context, new_pending
                                 )
             elif isinstance(chunk, str):
-                filtered = _strip_markdown_formatting(_strip_tool_call_text(chunk))
+                filtered = _strip_tool_call_text(_strip_markdown_formatting(chunk))
                 if filtered.strip():
                     ai_response_parts.append(filtered)
                     yield filtered
@@ -1533,9 +1533,12 @@ class ResponseOrchestrator:
                                     "Tool %r returned error: %s", fn_name, tool_result
                                 )
                 else:
-                    # Plain text chunk — strip any leaked tool-call patterns and markdown formatting
-                    tool_call_stripped = _strip_tool_call_text(chunk) if isinstance(chunk, str) else chunk
-                    filtered = _strip_markdown_formatting(tool_call_stripped) if isinstance(tool_call_stripped, str) else tool_call_stripped
+                    # Plain text chunk — strip markdown first, then leaked tool-call patterns.
+                    # Markdown is stripped first so that tool-call names wrapped in emphasis
+                    # markers (e.g. "**signal_transition(...)**") are cleaned up in one pass
+                    # rather than leaving bare delimiters behind.
+                    md_stripped = _strip_markdown_formatting(chunk) if isinstance(chunk, str) else chunk
+                    filtered = _strip_tool_call_text(md_stripped) if isinstance(md_stripped, str) else md_stripped
                     if filtered.strip() if isinstance(filtered, str) else filtered:
                         ai_response_parts.append(filtered)
                         # In TRIAGE, buffer text rather than yielding immediately.
@@ -1545,7 +1548,7 @@ class ResponseOrchestrator:
                             _triage_text_buffer.append(filtered)
                         else:
                             yield filtered
-                    elif isinstance(chunk, str) and chunk.strip() and not (tool_call_stripped.strip() if isinstance(tool_call_stripped, str) else tool_call_stripped):
+                    elif isinstance(chunk, str) and chunk.strip() and not (filtered.strip() if isinstance(filtered, str) else filtered) and (md_stripped.strip() if isinstance(md_stripped, str) else md_stripped):
                         # The chunk had content but was entirely removed by tool-call
                         # stripping (not markdown stripping).  Count it as an intentional
                         # signal so the empty-response fallback is not triggered.

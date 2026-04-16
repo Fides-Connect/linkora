@@ -654,15 +654,8 @@ class TestMarkdownFormatFilter:
     async def test_markdown_only_chunk_does_not_suppress_fallback(
         self, mock_llm_service, mock_conversation_service
     ):
-        """A chunk containing only tool-call text sets tool_calls_seen, but a chunk
-        that becomes empty only due to markdown stripping must NOT set tool_calls_seen.
-
-        Paired-pattern regex does not strip lone unmatched markers like '**' (no
-        content between delimiters), so they pass through.  What matters is that the
-        branch that sets tool_calls_seen checks _strip_tool_call_text output, not the
-        fully-filtered output, so a chunk emptied purely by markdown is not counted.
-        This test verifies that a tool-call chunk correctly sets tool_calls_seen while
-        a plain-markdown chunk does not.
+        """A chunk containing only tool-call text should count as a tool-call signal
+        and be stripped from the streamed output.
         """
         # A chunk that is only a tool-call pattern must be counted as a signal.
         async def tool_call_stream(*args, **kwargs):
