@@ -11,7 +11,7 @@ from ai_assistant.services.agent_runtime_fsm import AgentRuntimeState, AgentRunt
 from ai_assistant.services.agent_tools import (
     AgentToolRegistry, ToolCapability, ToolPermissionError,
 )
-from ai_assistant.services.response_orchestrator import ResponseOrchestrator
+from ai_assistant.services.response_orchestrator import ResponseOrchestrator, _strip_markdown_formatting
 
 
 @pytest.fixture
@@ -581,6 +581,103 @@ class TestToolCallTextFilter:
             chunks.append(chunk)
         # Nothing should be yielded
         assert chunks == [] or all(c.strip() == "" for c in chunks)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Markdown formatting filter
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMarkdownFormatFilter:
+    """_strip_markdown_formatting must remove markdown markers, not literal chars."""
+
+    def test_bold_stars_are_unwrapped(self):
+        assert _strip_markdown_formatting("This is **bold** text") == "This is bold text"
+
+    def test_italic_stars_are_unwrapped(self):
+        assert _strip_markdown_formatting("This is *italic* text") == "This is italic text"
+
+    def test_bold_italic_stars_are_unwrapped(self):
+        assert _strip_markdown_formatting("***important***") == "important"
+
+    def test_bold_underscores_are_unwrapped(self):
+        assert _strip_markdown_formatting("This is __bold__ text") == "This is bold text"
+
+    def test_italic_underscores_are_unwrapped(self):
+        assert _strip_markdown_formatting("This is _italic_ text") == "This is italic text"
+
+    def test_inline_code_is_unwrapped(self):
+        assert _strip_markdown_formatting("Use `foo_bar()` here") == "Use foo_bar() here"
+
+    def test_heading_markers_are_removed(self):
+        assert _strip_markdown_formatting("## Section Title") == "Section Title"
+
+    def test_deep_heading_markers_are_removed(self):
+        assert _strip_markdown_formatting("### Deep heading") == "Deep heading"
+
+    def test_snake_case_underscore_preserved(self):
+        """Underscores inside identifiers must not be stripped."""
+        assert _strip_markdown_formatting("Use snake_case names") == "Use snake_case names"
+
+    def test_arithmetic_asterisk_preserved(self):
+        """Asterisk in arithmetic expressions must not be stripped."""
+        assert _strip_markdown_formatting("3*5 equals 15") == "3*5 equals 15"
+
+    def test_url_underscores_preserved(self):
+        """Underscores inside URLs must not be stripped."""
+        url = "https://example.com/my_path/resource"
+        assert _strip_markdown_formatting(url) == url
+
+    def test_plain_text_unchanged(self):
+        """Text with no markdown must pass through unchanged."""
+        text = "Hallo, ich helfe dir gerne!"
+        assert _strip_markdown_formatting(text) == text
+
+    async def test_bold_removed_in_streamed_response(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """Bold markers from the LLM stream must be stripped before reaching the caller."""
+        async def markdown_stream(*args, **kwargs):
+            yield "Here is **important** information."
+
+        mock_llm_service.generate_stream = markdown_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        combined = "".join(chunks)
+        assert "**" not in combined
+        assert "important" in combined
+
+    async def test_markdown_only_chunk_does_not_suppress_fallback(
+        self, mock_llm_service, mock_conversation_service
+    ):
+        """A chunk containing only tool-call text sets tool_calls_seen, but a chunk
+        that becomes empty only due to markdown stripping must NOT set tool_calls_seen.
+
+        Paired-pattern regex does not strip lone unmatched markers like '**' (no
+        content between delimiters), so they pass through.  What matters is that the
+        branch that sets tool_calls_seen checks _strip_tool_call_text output, not the
+        fully-filtered output, so a chunk emptied purely by markdown is not counted.
+        This test verifies that a tool-call chunk correctly sets tool_calls_seen while
+        a plain-markdown chunk does not.
+        """
+        # A chunk that is only a tool-call pattern must be counted as a signal.
+        async def tool_call_stream(*args, **kwargs):
+            yield "signal_transition(triage)"
+
+        mock_llm_service.generate_stream = tool_call_stream
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("hi", "sess"):
+            chunks.append(chunk)
+        # Tool-call text must be stripped from output
+        assert "signal_transition" not in "".join(chunks)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

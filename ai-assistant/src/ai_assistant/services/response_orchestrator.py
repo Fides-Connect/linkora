@@ -68,24 +68,33 @@ def _strip_tool_call_text(text: str) -> str:
     return _KNOWN_TOOL_NAMES_RE.sub("", text)
 
 
-# Matches markdown inline formatting markers: bold (**), italic (*), bold-italic (***),
-# underline-bold (__), underline-italic (_), and inline code (`).
-# Applied per-chunk on streamed output so the client receives plain text.
-_MARKDOWN_INLINE_RE = re.compile(r'\*{1,3}|_{1,2}|`+')
 # Matches markdown heading markers at the start of a line (e.g. "## Heading").
 _MARKDOWN_HEADING_RE = re.compile(r'^#{1,6}\s+', re.MULTILINE)
+# Matches paired inline-code spans and unwraps the enclosed text.
+_MARKDOWN_INLINE_CODE_RE = re.compile(r'(`+)([^`\n]+?)\1')
+# Matches paired emphasis markers only when they are used as delimiters rather than
+# appearing inside words or expressions such as snake_case or 3*5.
+_MARKDOWN_BOLD_ITALIC_STAR_RE = re.compile(r'(?<!\w)\*\*\*(?=\S)(.+?)(?<=\S)\*\*\*(?!\w)')
+_MARKDOWN_BOLD_STAR_RE = re.compile(r'(?<!\w)\*\*(?=\S)(.+?)(?<=\S)\*\*(?!\w)')
+_MARKDOWN_BOLD_UNDERSCORE_RE = re.compile(r'(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)')
+_MARKDOWN_ITALIC_STAR_RE = re.compile(r'(?<!\w)\*(?=\S)(.+?)(?<=\S)\*(?!\w)')
+_MARKDOWN_ITALIC_UNDERSCORE_RE = re.compile(r'(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)')
 
 
 def _strip_markdown_formatting(text: str) -> str:
     """Remove common markdown formatting markers from a text chunk.
 
-    Strips heading markers (``# … ``), inline bold/italic (``**``, ``*``, ``__``, ``_``),
-    and inline code backticks so the client receives plain, readable text.
-    Because chunks are streamed individually, markers split across chunk boundaries
-    are each stripped independently — this produces clean output in all cases.
+    Strips heading markers and unwraps paired inline markdown constructs while
+    preserving literal ``*`` and ``_`` characters that are part of normal content
+    such as identifiers, URLs, or arithmetic.
     """
     text = _MARKDOWN_HEADING_RE.sub("", text)
-    return _MARKDOWN_INLINE_RE.sub("", text)
+    text = _MARKDOWN_INLINE_CODE_RE.sub(r'\2', text)
+    text = _MARKDOWN_BOLD_ITALIC_STAR_RE.sub(r'\1', text)
+    text = _MARKDOWN_BOLD_STAR_RE.sub(r'\1', text)
+    text = _MARKDOWN_BOLD_UNDERSCORE_RE.sub(r'\1', text)
+    text = _MARKDOWN_ITALIC_STAR_RE.sub(r'\1', text)
+    return _MARKDOWN_ITALIC_UNDERSCORE_RE.sub(r'\1', text)
 
 
 # Human-readable status labels sent to the client while a tool is executing.
@@ -1525,7 +1534,8 @@ class ResponseOrchestrator:
                                 )
                 else:
                     # Plain text chunk — strip any leaked tool-call patterns and markdown formatting
-                    filtered = _strip_markdown_formatting(_strip_tool_call_text(chunk)) if isinstance(chunk, str) else chunk
+                    tool_call_stripped = _strip_tool_call_text(chunk) if isinstance(chunk, str) else chunk
+                    filtered = _strip_markdown_formatting(tool_call_stripped) if isinstance(tool_call_stripped, str) else tool_call_stripped
                     if filtered.strip() if isinstance(filtered, str) else filtered:
                         ai_response_parts.append(filtered)
                         # In TRIAGE, buffer text rather than yielding immediately.
@@ -1535,10 +1545,10 @@ class ResponseOrchestrator:
                             _triage_text_buffer.append(filtered)
                         else:
                             yield filtered
-                    elif isinstance(chunk, str) and chunk.strip() and not (filtered.strip() if isinstance(filtered, str) else filtered):
-                        # The chunk had content but was entirely stripped (leaked
-                        # tool-call text).  Count it as intentional signal so the
-                        # empty-response fallback is not triggered.
+                    elif isinstance(chunk, str) and chunk.strip() and not (tool_call_stripped.strip() if isinstance(tool_call_stripped, str) else tool_call_stripped):
+                        # The chunk had content but was entirely removed by tool-call
+                        # stripping (not markdown stripping).  Count it as an intentional
+                        # signal so the empty-response fallback is not triggered.
                         tool_calls_seen = True
 
             # Flush any buffered TRIAGE text — only reached when no transition fired.
