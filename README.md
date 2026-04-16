@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <strong>AI-powered service marketplace assistant — voice &amp; chat, end-to-end open source.</strong>
+  <strong>AI-powered service marketplace assistant. Voice &amp; chat, end-to-end open source.</strong>
 </p>
 
 <p align="center">
@@ -19,7 +19,7 @@
 
 ---
 
-Linkora is a production-ready platform that lets users find local service providers through a **natural conversation** — by voice or text. The AI assistant (named **Elin**) guides the user, collects requirements, and returns ranked, enriched provider results. Developers get a complete, deployable stack: a Flutter mobile app, a Python WebRTC server, and a vector database, all wired together and ready to customise.
+Linkora is a production-ready platform that lets users find local service providers through a **natural conversation** by voice or text. The AI assistant (named **Elin**) guides the user, collects requirements, and returns ranked, enriched provider results. Developers get a complete, deployable stack: a Flutter mobile app, a Python WebRTC server and a vector database, all wired together and ready to customise.
 
 ## 📱 App Screenshots
 
@@ -52,7 +52,7 @@ Linkora is a production-ready platform that lets users find local service provid
 
 | | |
 |---|---|
-| 🎙️ **Voice-first UX** | Real-time WebRTC audio streaming with Google STT/TTS — sub-second round-trips |
+| 🎙️ **Voice-first UX** | Real-time WebRTC audio streaming with Google STT/TTS and sub-second round-trips |
 | 🤖 **Conversational search** | Elin asks the right questions, extracts structured intent, then fires a semantic search |
 | 🔀 **Two deployment modes** | **Full** (Weaviate vector DB, onboarded providers) or **Lite** (Google Places + web enrichment, zero infra) |
 | 🔒 **Secure by design** | All API keys stay server-side; clients authenticate via Firebase |
@@ -102,7 +102,7 @@ linkora/
 │   ├── src/             # Python source code
 │   ├── scripts/         # Utility scripts (incl. download_models.py)
 │   ├── tests/           # Unit and integration tests
-│   ├── models/          # Bundled ML models (Git LFS — run `git lfs pull`)
+│   ├── models/          # Bundled ML models (Git LFS - run `git lfs pull`)
 │   ├── Dockerfile       # Container definition
 │   └── docker-compose.yml
 │
@@ -227,8 +227,8 @@ variable:
 **Lite mode** is ideal for prototypes, demos, or regions where you don't yet have
 providers registered in Weaviate.  The assistant fetches live results from the
 Google Places API, enriches them with web crawling (skills, email, portfolio),
-reranks them with a local cross-encoder model, and presents them to the user —
-all without any Weaviate dependency.
+reranks them with a local cross-encoder model, and presents them to the user,
+without any Weaviate dependency.
 
 See [Deployment Documentation](docs/deployment.md) for provisioning instructions
 for both modes.

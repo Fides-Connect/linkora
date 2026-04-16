@@ -55,6 +55,9 @@ class LiteChatService {
   /// Fires when the session is active and text messages can be sent.
   /// Mirrors [WebRTCService.onDataChannelOpen].
   Function()? onDataChannelOpen;
+  /// Fires when the server confirms the client reconnected to a parked session.
+  /// No greeting message will follow; the conversation continues immediately.
+  Function()? onSessionResumed;
   OnChatMessageCallback? onChatMessage;
   OnRuntimeStateCallback? onRuntimeState;
   OnProviderCardsCallback? onProviderCards;
@@ -105,10 +108,19 @@ class LiteChatService {
   ///
   /// If [_isSecure] → attaches ``Authorization: Bearer`` header.
   /// Otherwise → sends first-message auth.
-  Future<void> connect() async {
+  ///
+  /// Set [newSession] to ``true`` when the user explicitly starts a fresh
+  /// session (e.g. "New Session" button after idle timeout).  The server will
+  /// discard any parked session for this user and start fresh with a greeting.
+  Future<void> connect({bool newSession = false}) async {
     if (_isConnected) return;
 
-    final uri = Uri.parse('$_serverUrl?language=$_languageCode');
+    final uri = Uri.parse(_serverUrl).replace(
+      queryParameters: {
+        'language': _languageCode,
+        if (newSession) 'new_session': 'true',
+      },
+    );
     debugPrint('LiteChatService: connecting to $uri');
 
     Map<String, dynamic> headers = {};
@@ -185,6 +197,16 @@ class LiteChatService {
     _resetIdleTimer();
   }
 
+  /// Send a raw JSON payload to the server.
+  ///
+  /// Use this for non-text control payloads that should bypass the normal
+  /// text-input queue.
+  void sendRaw(Map<String, dynamic> payload) {
+    if (!_sessionReady) return;
+    _send(payload);
+    _resetIdleTimer();
+  }
+
   // ── Private ────────────────────────────────────────────────────────────────
 
   Future<void> _sendFirstMessageAuth() async {
@@ -240,6 +262,14 @@ class LiteChatService {
       case 'auth-ok':
         debugPrint('LiteChatService: auth confirmed by server');
         // Session already marked ready in _sendFirstMessageAuth; no-op here.
+        break;
+
+      case 'session-resumed':
+        // Server has reconnected us to a parked session — full state preserved.
+        // Mark the channel ready and notify the ViewModel; no greeting follows.
+        debugPrint('LiteChatService: server resumed parked session');
+        _markSessionReady();
+        onSessionResumed?.call();
         break;
 
       case 'chat':
