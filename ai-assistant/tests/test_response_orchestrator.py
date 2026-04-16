@@ -1281,6 +1281,43 @@ class TestFollowUpStreamSignalTransition:
             "Confirmation text from the follow-up stream must reach the caller"
         )
 
+    async def test_markdown_stripped_in_follow_up_stream(
+        self, mock_llm_service, mock_conversation_service, mock_tool_registry
+    ):
+        """Markdown markers in follow-up stream text must be stripped before reaching the caller."""
+        mock_conversation_service.get_current_stage.return_value = ConversationStage.PROVIDER_ONBOARDING
+
+        call_count = 0
+
+        async def multi_stream(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield {"type": "function_call", "name": "save_competence_batch",
+                       "args": {"skills": [{"title": "Gardening"}]}}
+            else:
+                # Follow-up stream yields text with bold markers
+                yield "Your **competencies** are now live!"
+
+        mock_llm_service.generate_stream = multi_stream
+        mock_tool_registry.execute = AsyncMock(
+            return_value={"saved": [{"competence_id": "c2"}], "count": 1}
+        )
+
+        orch = ResponseOrchestrator(
+            llm_service=mock_llm_service,
+            conversation_service=mock_conversation_service,
+            tool_registry=mock_tool_registry,
+        )
+        chunks = []
+        async for chunk in orch.generate_response_stream("yes", "sess"):
+            if isinstance(chunk, str):
+                chunks.append(chunk)
+
+        combined = "".join(chunks)
+        assert "**" not in combined, f"Unexpected markdown markers in follow-up stream: {combined!r}"
+        assert "competencies" in combined
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TRIAGE → PROVIDER_ONBOARDING opener

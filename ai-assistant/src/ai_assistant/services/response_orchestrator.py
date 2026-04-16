@@ -154,7 +154,18 @@ def _take_safe_markdown_stream_text(
         # yet — can't flush anything here; fall through to the tail-keep branch.
     if not safe and len(buffer) > tail_keep:
         split_at = len(buffer) - tail_keep
-        safe, buffer = buffer[:split_at], buffer[split_at:]
+        if split_at > 0:
+            candidate = buffer[:split_at]
+            unclosed = _find_unclosed_opener_pos(candidate)
+            if unclosed > 0:
+                # Retreat the cut point to before the unclosed opener.
+                safe, buffer = candidate[:unclosed], buffer[unclosed:]
+            elif unclosed == -1:
+                # No unclosed opener in the candidate — safe to emit.
+                safe, buffer = candidate, buffer[split_at:]
+            # unclosed == 0 means the opener is at position 0; the whole
+            # prefix is inside an open span.  Keep buffering — the span
+            # might close in the next chunk.
     return safe, buffer
 
 
