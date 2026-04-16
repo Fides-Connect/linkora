@@ -204,6 +204,7 @@ class LiteChatService {
   void sendRaw(Map<String, dynamic> payload) {
     if (!_sessionReady) return;
     _send(payload);
+    _resetIdleTimer();
   }
 
   // ── Private ────────────────────────────────────────────────────────────────
