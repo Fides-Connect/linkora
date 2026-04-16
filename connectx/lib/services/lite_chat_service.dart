@@ -199,8 +199,8 @@ class LiteChatService {
 
   /// Send a raw JSON payload to the server.
   ///
-  /// Used internally by the ViewModel for control messages (e.g.
-  /// ``restore-history``) that bypass the normal text-input queue.
+  /// Use this for non-text control payloads that should bypass the normal
+  /// text-input queue.
   void sendRaw(Map<String, dynamic> payload) {
     if (!_sessionReady) return;
     _send(payload);

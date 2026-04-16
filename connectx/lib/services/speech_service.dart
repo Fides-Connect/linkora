@@ -409,8 +409,8 @@ class SpeechService {
 
   /// Send a raw JSON payload to the server (lite mode only).
   ///
-  /// Used for control messages such as ``restore-history`` that are not
-  /// normal user text input and should not go through the text queue.
+  /// Use this for non-text control payloads that should bypass the normal
+  /// user text queue and be forwarded directly to the lite chat service.
   void sendRawMessage(Map<String, dynamic> payload) {
     _liteChatService?.sendRaw(payload);
   }
