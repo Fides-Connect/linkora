@@ -370,6 +370,17 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
       _sendTextMessageInternal(pending);
     }
 
+    // If we're reconnecting after a background drop and no session-resumed
+    // frame arrives (TTL expired / new server session), clear the flag here
+    // so the "Reconnected" banner is not stuck indefinitely.
+    if (_sessionDroppedInBackground) {
+      _reconnectBannerTimer?.cancel();
+      _reconnectBannerTimer = Timer(const Duration(seconds: 2), () {
+        _sessionDroppedInBackground = false;
+        notifyListeners();
+      });
+    }
+
     notifyListeners();
   }
 

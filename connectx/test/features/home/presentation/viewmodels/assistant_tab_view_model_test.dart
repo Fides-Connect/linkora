@@ -800,12 +800,14 @@ void main() {
 
   group('lifecycle reconnect', () {
     late Function() disconnectedCb;
+    late Function() dataChannelOpenCb;
 
     /// Shared setup: lite mode, connected session, one chat message, then
     /// backgrounded + disconnected so [sessionDroppedInBackground] is true.
     void backgroundAndDisconnect() {
       when(mockSpeech.voiceEnabled).thenReturn(false);
       final cbs = init();
+      dataChannelOpenCb = cbs['dataChannelOpen'] as Function();
       // Open the data channel so _dataChannelReady = true (required for the
       // onDisconnected handler to classify the drop as a background drop).
       (cbs['dataChannelOpen'] as Function())();
@@ -876,6 +878,24 @@ void main() {
       expect(vm.sessionEnded, isTrue);
       // Banner flag cleared on failure (no reconnect to show).
       expect(vm.sessionDroppedInBackground, isFalse);
+    });
+
+    test('new server session clears sessionDroppedInBackground after 2 s', () {
+      fakeAsync((fake) {
+        backgroundAndDisconnect();
+
+        // Server starts a fresh session — onDataChannelOpen fires, but
+        // onSessionResumed never fires (TTL expired / server restart).
+        dataChannelOpenCb();
+
+        // Banner flag still true immediately (timer armed but not elapsed).
+        expect(vm.sessionDroppedInBackground, isTrue);
+
+        // Advance fake clock past the 2-second timer.
+        fake.elapse(const Duration(seconds: 3));
+
+        expect(vm.sessionDroppedInBackground, isFalse);
+      });
     });
   });
 }
