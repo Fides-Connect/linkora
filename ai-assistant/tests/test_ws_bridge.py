@@ -173,3 +173,120 @@ class TestWebSocketBridgeSenderTask:
         bridge.send_chat("boom", is_user=False)
         await bridge.stop_sender()   # must not raise
         assert len(errors) == 1
+
+
+# ── replay buffer ─────────────────────────────────────────────────────────────
+
+class TestWebSocketBridgeReplayBuffer:
+
+    def test_start_replay_capture_enables_buffering(self):
+        ws, _ = _open_ws()
+        bridge = WebSocketBridge(ws)
+        bridge.start_replay_capture()
+        assert bridge._buffering is True
+        assert bridge._replay_buffer == []
+
+    def test_assistant_chat_buffered_during_suspension(self):
+        ws, _ = _open_ws()
+        bridge = WebSocketBridge(ws)
+        bridge.start_replay_capture()
+        bridge.send_chat("missed reply", is_user=False)
+        assert len(bridge._replay_buffer) == 1
+        assert bridge._queue.empty()  # not enqueued in live queue
+
+    def test_user_chat_not_buffered(self):
+        ws, _ = _open_ws()
+        bridge = WebSocketBridge(ws)
+        bridge.start_replay_capture()
+        bridge.send_chat("user msg", is_user=True)
+        assert bridge._replay_buffer == []
+
+    def test_provider_cards_buffered_during_suspension(self):
+        ws, _ = _open_ws()
+        bridge = WebSocketBridge(ws)
+        bridge.start_replay_capture()
+        bridge.send_provider_cards([{"id": "p1"}])
+        assert len(bridge._replay_buffer) == 1
+
+    def test_runtime_state_not_buffered(self):
+        ws, _ = _open_ws()
+        bridge = WebSocketBridge(ws)
+        bridge.start_replay_capture()
+        bridge.send_runtime_state(AgentRuntimeState.LISTENING)
+        # runtime-state is ephemeral — not replayable
+        assert bridge._replay_buffer == []
+
+    def test_buffer_cap_limits_frames(self):
+        from ai_assistant.services.ws_bridge import _MAX_REPLAY_FRAMES
+        ws, _ = _open_ws()
+        bridge = WebSocketBridge(ws)
+        bridge.start_replay_capture()
+        for i in range(_MAX_REPLAY_FRAMES + 10):
+            bridge.send_chat(f"chunk {i}", is_user=False)
+        assert len(bridge._replay_buffer) == _MAX_REPLAY_FRAMES
+
+    async def test_buffer_flushed_into_queue_on_replace_websocket(self):
+        ws1, _ = _open_ws()
+        bridge = WebSocketBridge(ws1)
+        await bridge.start_sender()
+
+        bridge.start_replay_capture()
+        bridge.send_chat("missed", is_user=False)
+        bridge.send_provider_cards([{"id": "p1"}])
+
+        ws2, sent2 = _open_ws()
+        await bridge.replace_websocket(ws2)
+        await bridge.stop_sender()
+
+        types = [f["type"] for f in sent2]
+        assert "chat" in types
+        assert "provider-cards" in types
+
+    async def test_replace_websocket_clears_buffer_and_buffering_flag(self):
+        ws1, _ = _open_ws()
+        bridge = WebSocketBridge(ws1)
+        await bridge.start_sender()
+
+        bridge.start_replay_capture()
+        bridge.send_chat("queued", is_user=False)
+
+        ws2, _ = _open_ws()
+        await bridge.replace_websocket(ws2)
+
+        assert bridge._buffering is False
+        assert bridge._replay_buffer == []
+        await bridge.stop_sender()
+
+
+# ── preamble ordering ─────────────────────────────────────────────────────────
+
+class TestWebSocketBridgePreamble:
+
+    async def test_preamble_frames_precede_replay_frames(self):
+        ws1, _ = _open_ws()
+        bridge = WebSocketBridge(ws1)
+        await bridge.start_sender()
+
+        bridge.start_replay_capture()
+        bridge.send_chat("reply 1", is_user=False)
+        bridge.send_chat("reply 2", is_user=False)
+
+        ws2, sent2 = _open_ws()
+        preamble = [{"type": "session-resumed"}, {"type": "runtime-state", "runtimeState": "listening"}]
+        await bridge.replace_websocket(ws2, preamble=preamble)
+        await bridge.stop_sender()
+
+        assert sent2[0]["type"] == "session-resumed"
+        assert sent2[1]["type"] == "runtime-state"
+        assert sent2[2]["type"] == "chat"
+        assert sent2[3]["type"] == "chat"
+
+    async def test_replace_websocket_without_preamble_works(self):
+        ws1, _ = _open_ws()
+        bridge = WebSocketBridge(ws1)
+        await bridge.start_sender()
+
+        ws2, sent2 = _open_ws()
+        await bridge.replace_websocket(ws2)
+        await bridge.stop_sender()
+        assert sent2 == []

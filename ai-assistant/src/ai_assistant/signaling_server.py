@@ -87,6 +87,11 @@ class SignalingServer:
         self.active_connections: dict[str, PeerConnectionHandler | ChatConnectionHandler] = {}
         self._firestore = FirestoreService()
         self._profile: AgentProfile = profile if profile is not None else FULL_PROFILE
+        # Parked sessions: user_id → handler preserved after WS disconnect.
+        # Kept alive for SESSION_SUSPENSION_TTL_MINUTES so the user can
+        # reconnect and continue the exact same LLM session.
+        self._suspended_sessions: dict[str, ChatConnectionHandler] = {}
+        self._suspension_tasks: dict[str, asyncio.Task] = {}
 
     async def close_all_connections(self) -> None:
         """Close all active WebRTC/WebSocket connections for graceful shutdown.
@@ -94,31 +99,45 @@ class SignalingServer:
         Must be called before ``AppRunner.cleanup()`` to prevent it from
         blocking indefinitely on open WebSocket handlers.
         """
-        if not self.active_connections:
-            return
-        handlers = list(self.active_connections.values())
-        # Close WebSockets first so the handle_websocket message-loops exit
-        # promptly — this unblocks AppRunner.cleanup() regardless of how long
-        # handler teardown takes.  The per-connection finally blocks then call
-        # handler.close() as a safety net (idempotent).
-        await asyncio.gather(
-            *(
-                h.websocket.close()
-                for h in handlers
-                if hasattr(h, "websocket")
-                and h.websocket is not None
-                and not h.websocket.closed
-            ),
-            return_exceptions=True,
-        )
-        # Tear down audio processors and peer connections in parallel.  We do
-        # this after closing websockets so no new tasks are spawned, but we
-        # don't let slow teardown block the WS close above.
-        await asyncio.gather(*(h.close() for h in handlers), return_exceptions=True)
-        # Release all handler references now that teardown is complete.
-        # The handle_websocket() finally blocks use pop(key, None) so they
-        # are safe even if their entry has already been removed here.
-        self.active_connections.clear()
+        if self.active_connections:
+            handlers = list(self.active_connections.values())
+            # Close WebSockets first so the handle_websocket message-loops exit
+            # promptly — this unblocks AppRunner.cleanup() regardless of how long
+            # handler teardown takes.  The per-connection finally blocks then call
+            # handler.close() as a safety net (idempotent).
+            await asyncio.gather(
+                *(
+                    h.websocket.close()
+                    for h in handlers
+                    if hasattr(h, "websocket")
+                    and h.websocket is not None
+                    and not h.websocket.closed
+                ),
+                return_exceptions=True,
+            )
+            # Tear down audio processors and peer connections in parallel.  We do
+            # this after closing websockets so no new tasks are spawned, but we
+            # don't let slow teardown block the WS close above.
+            await asyncio.gather(*(h.close() for h in handlers), return_exceptions=True)
+            # Release all handler references now that teardown is complete.
+            # The handle_websocket() finally blocks use pop(key, None) so they
+            # are safe even if their entry has already been removed here.
+            self.active_connections.clear()
+        # Tear down any parked sessions that survived shutdown.  This must run
+        # unconditionally — suspended sessions exist independently of
+        # active_connections and would otherwise be leaked if active_connections
+        # happened to be empty at shutdown time.
+        tasks = list(self._suspension_tasks.values())
+        for task in tasks:
+            task.cancel()
+        self._suspension_tasks.clear()
+        # Await cancelled tasks so the event loop doesn't log "Task was destroyed
+        # but it is pending!" warnings during teardown.
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        suspended = list(self._suspended_sessions.values())
+        self._suspended_sessions.clear()
+        await asyncio.gather(*(h.close() for h in suspended), return_exceptions=True)
     async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle WebSocket connection for signaling."""
         ws = web.WebSocketResponse()
@@ -406,18 +425,73 @@ class SignalingServer:
             connection_id, client_ip, user_id, language,
         )
 
-        handler = ChatConnectionHandler(
-            connection_id=connection_id,
-            websocket=ws,
-            user_id=user_id,
-            language=language,
-            language_fallback_from=language_fallback_from,
-            profile=self._profile,
-        )
+        # If the client explicitly requests a new session (e.g. after idle
+        # timeout), close any parked session rather than resuming it so the
+        # user gets a clean start with a fresh greeting.
+        new_session = request.query.get('new_session', '').lower() in ('1', 'true')
+
+        # Resume a parked session for this user if one exists, otherwise
+        # create a fresh handler.
+        parked = self._suspended_sessions.pop(user_id, None) if user_id else None
+        if parked is not None and new_session:
+            ttl_task = self._suspension_tasks.pop(user_id, None)
+            if ttl_task and not ttl_task.done():
+                ttl_task.cancel()
+                try:
+                    await ttl_task
+                except asyncio.CancelledError:
+                    pass
+            try:
+                await parked.close()
+            except Exception as exc:
+                logger.warning("Error closing parked session for %s: %s", user_id, exc)
+            parked = None
+        if parked is not None:
+            ttl_task = self._suspension_tasks.pop(user_id, None)
+            if ttl_task and not ttl_task.done():
+                ttl_task.cancel()
+                try:
+                    await ttl_task
+                except asyncio.CancelledError:
+                    pass
+            handler = parked
+            try:
+                await handler.resume(ws)
+            except Exception as exc:
+                logger.error(
+                    "Failed to resume parked session for %s: %s",
+                    user_id, exc, exc_info=True,
+                )
+                try:
+                    await handler.close()
+                except Exception as close_exc:
+                    logger.warning(
+                        "Error closing failed-resume session for %s: %s",
+                        user_id, close_exc,
+                    )
+                parked = None
+                handler = ChatConnectionHandler(
+                    connection_id=connection_id,
+                    websocket=ws,
+                    user_id=user_id,
+                    language=language,
+                    language_fallback_from=language_fallback_from,
+                    profile=self._profile,
+                )
+        else:
+            handler = ChatConnectionHandler(
+                connection_id=connection_id,
+                websocket=ws,
+                user_id=user_id,
+                language=language,
+                language_fallback_from=language_fallback_from,
+                profile=self._profile,
+            )
         self.active_connections[connection_id] = handler
 
         try:
-            await handler.start()
+            if parked is None:
+                await handler.start()
 
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
@@ -441,9 +515,88 @@ class SignalingServer:
                     logger.info("Chat WS client %s initiated close", connection_id)
         finally:
             logger.info("Chat WS connection closed: %s", connection_id)
-            await handler.close()
             self.active_connections.pop(connection_id, None)
+            if user_id and not handler.is_closed and handler.audio_processor is not None:
+                try:
+                    # Park the session so the user can reconnect within the TTL.
+                    await handler.suspend()
+                except Exception as exc:
+                    logger.warning(
+                        "Chat WS: failed to suspend handler for %s, closing instead: %s",
+                        connection_id, exc,
+                    )
+                    await handler.close()
+                else:
+                    # Replace any previously parked session for this user.
+                    old_parked = self._suspended_sessions.pop(user_id, None)
+                    old_ttl = self._suspension_tasks.pop(user_id, None)
+                    if old_ttl and not old_ttl.done():
+                        old_ttl.cancel()
+                        try:
+                            await old_ttl
+                        except asyncio.CancelledError:
+                            pass
+                        except Exception:
+                            logger.exception(
+                                "Chat WS: previous suspension task failed during "
+                                "cleanup for user %s",
+                                user_id,
+                            )
+                    if old_parked is not None:
+                        try:
+                            await old_parked.close()
+                        except Exception:
+                            logger.exception(
+                                "Chat WS: failed to close previously suspended "
+                                "handler for user %s while parking %s",
+                                user_id, connection_id,
+                            )
+                    self._suspended_sessions[user_id] = handler
+                    self._suspension_tasks[user_id] = asyncio.create_task(
+                        self._suspend_ttl_task(user_id)
+                    )
+            else:
+                await handler.close()
         return ws
+
+    async def _suspend_ttl_task(self, user_id: str) -> None:
+        """Tear down a parked session when the suspension TTL expires.
+
+        Cancelled automatically when the user reconnects within the window.
+        """
+        try:
+            ttl_minutes = int(os.getenv("SESSION_SUSPENSION_TTL_MINUTES", "10"))
+            if not 1 <= ttl_minutes <= 1440:
+                logger.warning(
+                    "SESSION_SUSPENSION_TTL_MINUTES=%d is outside the valid range "
+                    "[1, 1440]; clamping",
+                    ttl_minutes,
+                )
+                ttl_minutes = max(1, min(1440, ttl_minutes))
+        except (ValueError, TypeError):
+            logger.warning(
+                "Invalid SESSION_SUSPENSION_TTL_MINUTES value; defaulting to 10 minutes"
+            )
+            ttl_minutes = 10
+        try:
+            await asyncio.sleep(ttl_minutes * 60)
+        except asyncio.CancelledError:
+            return  # User reconnected — session was resumed, nothing to do.
+        handler = self._suspended_sessions.pop(user_id, None)
+        self._suspension_tasks.pop(user_id, None)
+        if handler is not None:
+            logger.info(
+                "Suspension TTL expired for user %s — tearing down session %s",
+                user_id, handler.connection_id,
+            )
+            try:
+                await handler.close()
+            except Exception:
+                logger.exception(
+                    "Failed to close suspended session %s for user %s after TTL expiry",
+                    handler.connection_id,
+                    user_id,
+                )
 
     async def health_check(self, request: web.Request) -> web.Response:
         """Health check endpoint."""

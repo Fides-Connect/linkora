@@ -138,6 +138,10 @@ class MessagesEN {
   static const String sessionEndedBanner = 'Session ended due to inactivity';
   static const String newSessionButton = 'New Session';
 
+  // Reconnecting banner (shown when connection dropped while app was in background)
+  static const String reconnectingBanner = 'Reconnecting to Elin...';
+  static const String reconnectedBanner = 'Reconnected — you can continue the conversation';
+
   // AI processing status labels — shown under the "..." animation while the assistant works.
   // Client-generated (runtime state):
   static const String aiStatusThinking = 'Thinking...';
