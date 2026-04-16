@@ -86,6 +86,13 @@ _MARKDOWN_ITALIC_UNDERSCORE_RE = re.compile(r'(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)'
 # flush boundary and must not be split.
 _MD_OPENER_RE = re.compile(r'(?<!\w)(\*{1,3}|_{1,2}|`+)(?=\S)')
 
+# Precompiled closer patterns keyed by opener token string.  Compiled once at
+# module load time so _find_unclosed_opener_pos doesn't recompile on every call.
+_MD_CLOSER_RE: dict[str, re.Pattern[str]] = {
+    token: re.compile(r'(?<=\S)' + re.escape(token) + r'(?!\w)')
+    for token in ('***', '**', '*', '__', '_', '`')
+}
+
 
 def _find_unclosed_opener_pos(text: str) -> int:
     """Return the index of the last unclosed markdown opener in *text*, or -1.
@@ -99,7 +106,9 @@ def _find_unclosed_opener_pos(text: str) -> int:
     for m in reversed(list(_MD_OPENER_RE.finditer(text))):
         token = m.group(1)
         rest = text[m.start() + len(token):]
-        closer_re = re.compile(r'(?<=\S)' + re.escape(token) + r'(?!\w)')
+        closer_re = _MD_CLOSER_RE.get(token) or re.compile(
+            r'(?<=\S)' + re.escape(token) + r'(?!\w)'
+        )
         if not closer_re.search(rest):
             return m.start()
     return -1
@@ -129,10 +138,12 @@ def _take_safe_markdown_stream_text(
 ) -> tuple[str, str]:
     """Advance the rolling markdown-strip buffer and return ``(safe_to_emit, new_buffer)``.
 
-    Flushes at the last whitespace boundary when one exists, or immediately once
+    Flushes at the last whitespace boundary when one exists, or otherwise once
     the buffer exceeds ``tail_keep`` chars, keeping only the tail for split-
-    delimiter matching.  This ensures space-free text (e.g. CJK) and long
-    tokens are never stalled until end-of-stream.
+    delimiter matching.  This generally prevents space-free text (e.g. CJK) and
+    long tokens from being delayed until end-of-stream, but the function may
+    keep buffering when emitting would split an unclosed markdown span that
+    begins at the start of the candidate prefix.
     """
     buffer += chunk_text
     safe = ""
