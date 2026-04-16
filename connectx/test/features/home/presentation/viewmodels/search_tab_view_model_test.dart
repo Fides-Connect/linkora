@@ -17,6 +17,14 @@ void main() {
     viewModel = AssistantTabViewModel(speechService: mockSpeechService);
   });
 
+  tearDown(() {
+    try {
+      viewModel.dispose();
+    } catch (_) {
+      // Already disposed by the test itself — nothing to do.
+    }
+  });
+
   test('initialize sets up callbacks and status', () {
     // Act
     viewModel.initialize('Ready', 'en');

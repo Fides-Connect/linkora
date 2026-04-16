@@ -516,7 +516,7 @@ class SignalingServer:
         finally:
             logger.info("Chat WS connection closed: %s", connection_id)
             self.active_connections.pop(connection_id, None)
-            if user_id and not handler.is_closed:
+            if user_id and not handler.is_closed and handler.audio_processor is not None:
                 try:
                     # Park the session so the user can reconnect within the TTL.
                     await handler.suspend()
