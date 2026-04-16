@@ -536,8 +536,21 @@ class SignalingServer:
                             await old_ttl
                         except asyncio.CancelledError:
                             pass
+                        except Exception:
+                            logger.exception(
+                                "Chat WS: previous suspension task failed during "
+                                "cleanup for user %s",
+                                user_id,
+                            )
                     if old_parked is not None:
-                        await old_parked.close()
+                        try:
+                            await old_parked.close()
+                        except Exception:
+                            logger.exception(
+                                "Chat WS: failed to close previously suspended "
+                                "handler for user %s while parking %s",
+                                user_id, connection_id,
+                            )
                     self._suspended_sessions[user_id] = handler
                     self._suspension_tasks[user_id] = asyncio.create_task(
                         self._suspend_ttl_task(user_id)

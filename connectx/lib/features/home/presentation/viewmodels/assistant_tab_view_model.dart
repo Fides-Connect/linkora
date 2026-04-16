@@ -432,12 +432,18 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
     }
     // Parked-session resume via the server's TTL-based parking is only
     // supported in lite (WebSocket) mode.  In voice/WebRTC mode the backend
-    // has no parked-session concept, so silently starting a fresh session
-    // in the current mode is the correct behaviour.
+    // has no parked-session concept, so preserve the visible history and
+    // mark the session as ended rather than silently starting a new session
+    // that would clear _chatMessages.
     if (_speechService.voiceEnabled) {
       _sessionDroppedInBackground = false;
+      _sessionEnded = true;
       _conversationState = ConversationState.idle;
-      unawaited(startChat(voiceMode: _isVoiceMode));
+      _dataChannelReady = false;
+      _greetingReceived = false;
+      _pendingTextMessage = null;
+      _pendingEchoTexts.clear();
+      notifyListeners();
       return;
     }
     debugPrint('AssistantTabViewModel: connection dropped in background — reconnecting');
