@@ -871,6 +871,14 @@ class ResponseOrchestrator:
             actual_input, follow_up_template, session_id
         ):
             if isinstance(chunk, dict) and chunk.get("type") == "function_call":
+                # Flush any buffered markdown text before handling the tool call so
+                # text that preceded the function_call is delivered in stream order.
+                if _md_buf:
+                    _pre_filtered = _strip_tool_call_text(_strip_markdown_formatting(_md_buf))
+                    if _pre_filtered.strip():
+                        ai_response_parts.append(_pre_filtered)
+                        yield _pre_filtered
+                    _md_buf = ""
                 fu_name = chunk.get("name", "")
                 fu_args = chunk.get("args", {})
 
@@ -938,10 +946,20 @@ class ResponseOrchestrator:
             elif isinstance(chunk, str):
                 # Accumulate text in a rolling buffer so markdown delimiters
                 # split across consecutive chunks are still caught.
+                # Prefer flushing at whitespace boundaries; fall back to a
+                # bounded-tail flush so long tokens or space-free languages
+                # (e.g. CJK) don't block streaming until end-of-stream.
+                _MD_TAIL_KEEP = 64
+                _MD_MAX_BUFFER = 512
                 _md_buf += chunk
+                safe = ""
                 last_ws = max(_md_buf.rfind(' '), _md_buf.rfind('\n'))
                 if last_ws > 0:
                     safe, _md_buf = _md_buf[:last_ws + 1], _md_buf[last_ws + 1:]
+                elif len(_md_buf) > _MD_MAX_BUFFER:
+                    split_at = len(_md_buf) - _MD_TAIL_KEEP
+                    safe, _md_buf = _md_buf[:split_at], _md_buf[split_at:]
+                if safe:
                     filtered = _strip_tool_call_text(_strip_markdown_formatting(safe))
                     if filtered.strip():
                         ai_response_parts.append(filtered)
@@ -1550,13 +1568,21 @@ class ResponseOrchestrator:
                 else:
                     # Plain text chunk — accumulate in a rolling buffer so markdown
                     # delimiters split across consecutive chunks are still caught.
-                    # Yield at whitespace boundaries; the remainder stays buffered
-                    # until the next chunk or end-of-stream.
+                    # Prefer flushing at whitespace boundaries; fall back to a
+                    # bounded-tail flush so long tokens or space-free languages
+                    # (e.g. CJK) don't block streaming until end-of-stream.
                     if isinstance(chunk, str):
+                        _MD_TAIL_KEEP = 32
+                        _MD_MAX_BUFFER = 256
                         _md_buf += chunk
+                        safe = ""
                         last_ws = max(_md_buf.rfind(' '), _md_buf.rfind('\n'))
                         if last_ws > 0:
                             safe, _md_buf = _md_buf[:last_ws + 1], _md_buf[last_ws + 1:]
+                        elif len(_md_buf) > _MD_MAX_BUFFER:
+                            split_at = len(_md_buf) - _MD_TAIL_KEEP
+                            safe, _md_buf = _md_buf[:split_at], _md_buf[split_at:]
+                        if safe:
                             safe_md = _strip_markdown_formatting(safe)
                             filtered = _strip_tool_call_text(safe_md)
                             if filtered.strip():
