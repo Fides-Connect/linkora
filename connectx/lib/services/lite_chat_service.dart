@@ -115,8 +115,12 @@ class LiteChatService {
   Future<void> connect({bool newSession = false}) async {
     if (_isConnected) return;
 
-    final queryParams = 'language=$_languageCode${newSession ? '&new_session=true' : ''}';
-    final uri = Uri.parse('$_serverUrl?$queryParams');
+    final uri = Uri.parse(_serverUrl).replace(
+      queryParameters: {
+        'language': _languageCode,
+        if (newSession) 'new_session': 'true',
+      },
+    );
     debugPrint('LiteChatService: connecting to $uri');
 
     Map<String, dynamic> headers = {};

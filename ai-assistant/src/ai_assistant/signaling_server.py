@@ -127,9 +127,14 @@ class SignalingServer:
         # unconditionally — suspended sessions exist independently of
         # active_connections and would otherwise be leaked if active_connections
         # happened to be empty at shutdown time.
-        for task in self._suspension_tasks.values():
+        tasks = list(self._suspension_tasks.values())
+        for task in tasks:
             task.cancel()
         self._suspension_tasks.clear()
+        # Await cancelled tasks so the event loop doesn't log "Task was destroyed
+        # but it is pending!" warnings during teardown.
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         suspended = list(self._suspended_sessions.values())
         self._suspended_sessions.clear()
         await asyncio.gather(*(h.close() for h in suspended), return_exceptions=True)

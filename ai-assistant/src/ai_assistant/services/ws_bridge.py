@@ -100,7 +100,11 @@ class WebSocketBridge:
                 pass
             self._sender_task = None
 
-    async def replace_websocket(self, ws: web.WebSocketResponse) -> None:
+    async def replace_websocket(
+        self,
+        ws: web.WebSocketResponse,
+        preamble: list[dict] | None = None,
+    ) -> None:
         """Swap the underlying WebSocket for a new one (session resume).
 
         Stops the current sender (the old WS is already closed), replaces
@@ -108,10 +112,18 @@ class WebSocketBridge:
         starts a fresh sender.  All existing holders of this bridge object
         (AudioProcessor, ResponseDelivery, …) automatically start writing to
         the new socket without any reference updates.
+
+        ``preamble`` frames are enqueued *before* any buffered replay frames so
+        that control messages (e.g. ``session-resumed``, current runtime-state)
+        reach the client before the replayed content.
         """
         await self.stop_sender()
         self._ws = ws
         self._queue = asyncio.Queue()
+        # Enqueue control frames first so the client knows the session state
+        # before it receives the replayed content.
+        for frame in (preamble or []):
+            self._queue.put_nowait(frame)
         # Flush any frames buffered while the session was suspended so the
         # client receives the missed content immediately after reconnect.
         for frame in self._replay_buffer:

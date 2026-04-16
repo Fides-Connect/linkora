@@ -222,8 +222,8 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
         _conversationState = ConversationState.processing;
       } else {
         // Mark that the AI has sent at least one message so the input field
-      // becomes available (guarded by isInputEnabled).
-      if (!_greetingReceived) {
+        // becomes available (guarded by isInputEnabled).
+        if (!_greetingReceived) {
           _greetingReceived = true;
           // Suppress the server's fresh greeting on a silent reconnect: the user
           // already sees the preserved history, so we don't want "Hello, I'm Elin"
@@ -421,6 +421,15 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
   void _handleBackgroundDisconnect() {
     if (_chatMessages.isEmpty) {
       // Nothing to preserve — start fresh as usual.
+      _sessionDroppedInBackground = false;
+      unawaited(startChat(voiceMode: false));
+      return;
+    }
+    // Parked-session resume (suppress greeting + restore-history) is only
+    // supported in lite (WebSocket) mode.  In voice/WebRTC mode sendRawMessage
+    // is a no-op and the backend has no parked-session concept, so silently
+    // starting a fresh session is the correct behaviour.
+    if (_speechService.voiceEnabled) {
       _sessionDroppedInBackground = false;
       unawaited(startChat(voiceMode: false));
       return;

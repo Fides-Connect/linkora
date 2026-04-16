@@ -168,21 +168,24 @@ class ChatConnectionHandler:
         knows it has reconnected to an existing session (no greeting follows).
         """
         self.websocket = websocket
-        await self.ws_bridge.replace_websocket(websocket)
 
-        # Notify the client: same session, no greeting coming.
-        self.ws_bridge.send_raw({"type": "session-resumed"})
-
-        # Re-broadcast the current FSM state so the client re-syncs.
+        # Build preamble control frames that must arrive *before* any replayed
+        # chat/provider-card frames so the client transitions out of the
+        # "reconnecting" state first and then receives the missed content.
+        preamble: list[dict] = [{"type": "session-resumed"}]
         if self.audio_processor is not None:
             try:
                 fsm = self.audio_processor.ai_assistant.response_orchestrator.runtime_fsm
-                self.audio_processor._emit_runtime_state(fsm.current_state)
+                preamble.append(
+                    {"type": "runtime-state", "runtimeState": fsm.current_state.value}
+                )
             except Exception as exc:
                 logger.warning(
-                    "Could not re-emit FSM state on resume for %s: %s",
+                    "Could not read FSM state on resume for %s: %s",
                     self.connection_id, exc,
                 )
+
+        await self.ws_bridge.replace_websocket(websocket, preamble=preamble)
 
         self._reset_idle_timer()
         logger.info("ChatConnectionHandler resumed: %s (new WS: %s)", self.connection_id, id(websocket))
