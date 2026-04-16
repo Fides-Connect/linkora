@@ -323,7 +323,7 @@ class _SessionEndedBanner extends StatelessWidget {
 }
 
 /// Banner shown while the app is silently reconnecting after a background drop.
-/// Disappears automatically once the channel reopens.
+/// Shows reconnecting/reconnected status and auto-hides after a short delay.
 class _ReconnectingBanner extends StatelessWidget {
   final bool isConnecting;
   const _ReconnectingBanner({required this.isConnecting});
