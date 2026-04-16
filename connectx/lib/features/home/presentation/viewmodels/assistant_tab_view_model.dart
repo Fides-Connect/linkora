@@ -423,6 +423,8 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
     if (_chatMessages.isEmpty) {
       // Nothing to preserve — start a fresh session in the current mode.
       _sessionDroppedInBackground = false;
+      _conversationState = ConversationState.idle;
+      _isStarting = false;
       unawaited(startChat(voiceMode: _isVoiceMode));
       return;
     }
@@ -432,6 +434,8 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
     // in the current mode is the correct behaviour.
     if (_speechService.voiceEnabled) {
       _sessionDroppedInBackground = false;
+      _conversationState = ConversationState.idle;
+      _isStarting = false;
       unawaited(startChat(voiceMode: _isVoiceMode));
       return;
     }
