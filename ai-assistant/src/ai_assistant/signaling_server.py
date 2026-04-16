@@ -437,6 +437,10 @@ class SignalingServer:
             ttl_task = self._suspension_tasks.pop(user_id, None)
             if ttl_task and not ttl_task.done():
                 ttl_task.cancel()
+                try:
+                    await ttl_task
+                except asyncio.CancelledError:
+                    pass
             try:
                 await parked.close()
             except Exception as exc:
@@ -446,6 +450,10 @@ class SignalingServer:
             ttl_task = self._suspension_tasks.pop(user_id, None)
             if ttl_task and not ttl_task.done():
                 ttl_task.cancel()
+                try:
+                    await ttl_task
+                except asyncio.CancelledError:
+                    pass
             handler = parked
             try:
                 await handler.resume(ws)
