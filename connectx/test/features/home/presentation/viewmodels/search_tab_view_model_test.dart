@@ -93,22 +93,22 @@ void main() {
   });
 
   test('startChat calls speechService.startSpeech', () async {
-    when(mockSpeechService.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
+    when(mockSpeechService.startSpeech(mode: anyNamed('mode'), newSession: true))
         .thenAnswer((_) async {});
 
     await viewModel.startChat();
 
-    verify(mockSpeechService.startSpeech(mode: 'text', newSession: anyNamed('newSession'))).called(1);
+    verify(mockSpeechService.startSpeech(mode: 'text', newSession: true)).called(1);
     expect(viewModel.error, null);
   });
   
   test('startChat handles errors', () async {
-    when(mockSpeechService.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
+    when(mockSpeechService.startSpeech(mode: anyNamed('mode'), newSession: true))
         .thenThrow(Exception('Mic error'));
 
     await viewModel.startChat();
 
-    verify(mockSpeechService.startSpeech(mode: 'text', newSession: anyNamed('newSession'))).called(1);
+    verify(mockSpeechService.startSpeech(mode: 'text', newSession: true)).called(1);
     expect(viewModel.error, contains('Mic error'));
     expect(viewModel.conversationState, ConversationState.idle);
   });

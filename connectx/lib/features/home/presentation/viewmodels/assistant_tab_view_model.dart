@@ -233,10 +233,13 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
             // Restore the prior conversation history in the server's LLM context
             // so the AI remembers what was discussed before the reconnect.
             _sendHistoryToServer();
-            // Clear the reconnecting banner now that the channel confirmed ready.
-            _sessionDroppedInBackground = false;
+            // Show the "Reconnected" banner briefly before clearing the flag.
             _conversationState = ConversationState.listening;
             notifyListeners();
+            Future.delayed(const Duration(seconds: 2), () {
+              _sessionDroppedInBackground = false;
+              notifyListeners();
+            });
             return;
           }
         }
@@ -329,14 +332,19 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
     _speechService.onSessionResumed = () {
       _suppressReconnectGreeting = false;
       _greetingReceived = true;
-      _sessionDroppedInBackground = false;
       _sessionEnded = false;
       _conversationState = ConversationState.listening;
       _resetIdleTimer();
       debugPrint(
         'AssistantTabViewModel: server session resumed — full state preserved, no greeting expected',
       );
+      // Keep _sessionDroppedInBackground = true briefly so the "Reconnected"
+      // banner is visible before dismissing it automatically.
       notifyListeners();
+      Future.delayed(const Duration(seconds: 2), () {
+        _sessionDroppedInBackground = false;
+        notifyListeners();
+      });
     };
   }
 
@@ -391,6 +399,10 @@ class AssistantTabViewModel extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
+      case AppLifecycleState.inactive:
+      // On iOS, app-switching transitions through inactive before paused, so
+      // treat it the same way: cancel the idle timer and mark as backgrounded
+      // so that any disconnect during this window is classified correctly.
       case AppLifecycleState.paused:
       case AppLifecycleState.hidden:
         _appInBackground = true;

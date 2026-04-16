@@ -437,7 +437,10 @@ class SignalingServer:
             ttl_task = self._suspension_tasks.pop(user_id, None)
             if ttl_task and not ttl_task.done():
                 ttl_task.cancel()
-            asyncio.create_task(parked.close())
+            try:
+                await parked.close()
+            except Exception as exc:
+                logger.warning("Error closing parked session for %s: %s", user_id, exc)
             parked = None
         if parked is not None:
             ttl_task = self._suspension_tasks.pop(user_id, None)
@@ -492,20 +495,28 @@ class SignalingServer:
         finally:
             logger.info("Chat WS connection closed: %s", connection_id)
             self.active_connections.pop(connection_id, None)
-            if user_id and not handler._closed:
-                # Park the session so the user can reconnect within the TTL.
-                await handler.suspend()
-                # Replace any previously parked session for this user.
-                old_parked = self._suspended_sessions.pop(user_id, None)
-                old_ttl = self._suspension_tasks.pop(user_id, None)
-                if old_ttl and not old_ttl.done():
-                    old_ttl.cancel()
-                if old_parked is not None:
-                    await old_parked.close()
-                self._suspended_sessions[user_id] = handler
-                self._suspension_tasks[user_id] = asyncio.create_task(
-                    self._suspend_ttl_task(user_id)
-                )
+            if user_id and not handler.is_closed:
+                try:
+                    # Park the session so the user can reconnect within the TTL.
+                    await handler.suspend()
+                except Exception as exc:
+                    logger.warning(
+                        "Chat WS: failed to suspend handler for %s, closing instead: %s",
+                        connection_id, exc,
+                    )
+                    await handler.close()
+                else:
+                    # Replace any previously parked session for this user.
+                    old_parked = self._suspended_sessions.pop(user_id, None)
+                    old_ttl = self._suspension_tasks.pop(user_id, None)
+                    if old_ttl and not old_ttl.done():
+                        old_ttl.cancel()
+                    if old_parked is not None:
+                        await old_parked.close()
+                    self._suspended_sessions[user_id] = handler
+                    self._suspension_tasks[user_id] = asyncio.create_task(
+                        self._suspend_ttl_task(user_id)
+                    )
             else:
                 await handler.close()
         return ws

@@ -61,18 +61,18 @@ void main() {
 
   group('startChat() mode selection', () {
     setUp(() {
-      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: anyNamed('newSession')))
+      when(mockSpeech.startSpeech(mode: anyNamed('mode'), newSession: true))
           .thenAnswer((_) async {});
     });
 
     test('defaults to text mode (mode=text)', () async {
       await vm.startChat();
-      verify(mockSpeech.startSpeech(mode: 'text', newSession: anyNamed('newSession'))).called(1);
+      verify(mockSpeech.startSpeech(mode: 'text', newSession: true)).called(1);
     });
 
     test('voice mode passes mode=voice', () async {
       await vm.startChat(voiceMode: true);
-      verify(mockSpeech.startSpeech(mode: 'voice', newSession: anyNamed('newSession'))).called(1);
+      verify(mockSpeech.startSpeech(mode: 'voice', newSession: true)).called(1);
     });
 
     test('isVoiceMode reflects requested mode', () async {

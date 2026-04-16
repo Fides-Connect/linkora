@@ -65,6 +65,11 @@ class ChatConnectionHandler:
             language,
         )
 
+    @property
+    def is_closed(self) -> bool:
+        """True once :meth:`close` has been called."""
+        return self._closed
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self) -> None:
