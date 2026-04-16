@@ -120,16 +120,19 @@ class WebSocketBridge:
         await self.stop_sender()
         self._ws = ws
         self._queue = asyncio.Queue()
+        # Detach the replay buffer before iterating so concurrent producers
+        # cannot append to the list we are about to drain.
+        replay_frames = self._replay_buffer
+        self._replay_buffer = []
+        self._buffering = False
         # Enqueue control frames first so the client knows the session state
         # before it receives the replayed content.
         for frame in (preamble or []):
             self._queue.put_nowait(frame)
         # Flush any frames buffered while the session was suspended so the
         # client receives the missed content immediately after reconnect.
-        for frame in self._replay_buffer:
+        for frame in replay_frames:
             self._queue.put_nowait(frame)
-        self._replay_buffer = []
-        self._buffering = False
         self._sender_task = asyncio.create_task(self._run_sender())
 
     def send_raw(self, payload: dict) -> None:
