@@ -524,6 +524,10 @@ class SignalingServer:
                     old_ttl = self._suspension_tasks.pop(user_id, None)
                     if old_ttl and not old_ttl.done():
                         old_ttl.cancel()
+                        try:
+                            await old_ttl
+                        except asyncio.CancelledError:
+                            pass
                     if old_parked is not None:
                         await old_parked.close()
                     self._suspended_sessions[user_id] = handler
