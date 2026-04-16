@@ -68,6 +68,134 @@ def _strip_tool_call_text(text: str) -> str:
     return _KNOWN_TOOL_NAMES_RE.sub("", text)
 
 
+# Matches markdown heading markers at the start of a line (e.g. "## Heading").
+_MARKDOWN_HEADING_RE = re.compile(r'^#{1,6}\s+', re.MULTILINE)
+# Matches paired inline-code spans and unwraps the enclosed text.
+_MARKDOWN_INLINE_CODE_RE = re.compile(r'(`+)([^`\n]+?)\1')
+# Matches paired emphasis markers only when they are used as delimiters rather than
+# appearing inside words or expressions such as snake_case or 3*5.
+_MARKDOWN_BOLD_ITALIC_STAR_RE = re.compile(r'(?<!\w)\*\*\*(?=\S)(.+?)(?<=\S)\*\*\*(?!\w)')
+_MARKDOWN_BOLD_STAR_RE = re.compile(r'(?<!\w)\*\*(?=\S)(.+?)(?<=\S)\*\*(?!\w)')
+_MARKDOWN_BOLD_UNDERSCORE_RE = re.compile(r'(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)')
+_MARKDOWN_ITALIC_STAR_RE = re.compile(r'(?<!\w)\*(?=\S)(.+?)(?<=\S)\*(?!\w)')
+_MARKDOWN_ITALIC_UNDERSCORE_RE = re.compile(r'(?<!\w)_(?=\S)(.+?)(?<=\S)_(?!\w)')
+
+# Matches the *opening* half of any inline markdown emphasis span (bold-italic,
+# bold, italic — both star and underscore variants — and backtick code spans).
+# Used by _find_unclosed_opener_pos to detect spans that cross a whitespace
+# flush boundary and must not be split.
+_MD_OPENER_RE = re.compile(r'(?<!\w)(\*{1,3}|_{1,2}|`+)(?=\S)')
+
+# Precompiled closer patterns keyed by opener token string.  Populated lazily
+# so arbitrary multi-backtick runs (`` `` ``, ` ``` `, etc.) are cached on
+# first encounter rather than recompiled on every call.
+_MD_CLOSER_RE: dict[str, re.Pattern[str]] = {
+    token: re.compile(r'(?<=\S)' + re.escape(token) + r'(?!\w)')
+    for token in ('***', '**', '*', '__', '_', '`', '``', '```')
+}
+
+# Maximum number of trailing characters examined by _find_unclosed_opener_pos.
+# Limits per-chunk allocation when a buffer prefix is large.
+_MD_UNCLOSED_OPENER_SCAN_LIMIT = 4096
+
+# Named tail-keep sizes passed to _take_safe_markdown_stream_text at each call
+# site.  The follow-up stream uses a larger window because its responses tend
+# to be longer and may contain multi-word spans; the main stream is tuned for
+# lower latency.
+_MD_TAIL_KEEP_FOLLOW_UP = 64
+_MD_TAIL_KEEP_MAIN = 32
+
+
+def _find_unclosed_opener_pos(text: str) -> int:
+    """Return the index of the last unclosed markdown opener in *text*, or -1.
+
+    Scans the tail of *text* (up to ``_MD_UNCLOSED_OPENER_SCAN_LIMIT`` chars)
+    from right to left for any opener token (``***``, ``**``, ``*``, ``__``,
+    ``_``, backtick runs).  For each candidate, checks whether a matching
+    closer exists in the remaining text.  Returns the position of the rightmost
+    unclosed opener so the caller can trim the flush boundary to just before it;
+    returns -1 when every opener in the scanned region is properly closed.
+    """
+    start = max(0, len(text) - _MD_UNCLOSED_OPENER_SCAN_LIMIT)
+    scan_text = text[start:]
+    for m in reversed(list(_MD_OPENER_RE.finditer(scan_text))):
+        token = m.group(1)
+        rest = scan_text[m.start() + len(token):]
+        closer_re = _MD_CLOSER_RE.get(token)
+        if closer_re is None:
+            closer_re = re.compile(r'(?<=\S)' + re.escape(token) + r'(?!\w)')
+            _MD_CLOSER_RE[token] = closer_re
+        if not closer_re.search(rest):
+            return start + m.start()
+    return -1
+
+
+def _strip_markdown_formatting(text: str) -> str:
+    """Remove common markdown formatting markers from a text chunk.
+
+    Strips heading markers and unwraps paired inline markdown constructs while
+    preserving literal ``*`` and ``_`` characters that are part of normal content
+    such as identifiers, URLs, or arithmetic.
+    """
+    text = _MARKDOWN_HEADING_RE.sub("", text)
+    text = _MARKDOWN_INLINE_CODE_RE.sub(r'\2', text)
+    text = _MARKDOWN_BOLD_ITALIC_STAR_RE.sub(r'\1', text)
+    text = _MARKDOWN_BOLD_STAR_RE.sub(r'\1', text)
+    text = _MARKDOWN_BOLD_UNDERSCORE_RE.sub(r'\1', text)
+    text = _MARKDOWN_ITALIC_STAR_RE.sub(r'\1', text)
+    return _MARKDOWN_ITALIC_UNDERSCORE_RE.sub(r'\1', text)
+
+
+def _take_safe_markdown_stream_text(
+    buffer: str,
+    chunk_text: str,
+    *,
+    tail_keep: int = 32,
+) -> tuple[str, str]:
+    """Advance the rolling markdown-strip buffer and return ``(safe_to_emit, new_buffer)``.
+
+    Flushes at the last whitespace boundary when one exists, or otherwise once
+    the buffer exceeds ``tail_keep`` chars, keeping only the tail for split-
+    delimiter matching.  This generally prevents space-free text (e.g. CJK) and
+    long tokens from being delayed until end-of-stream, but the function may
+    keep buffering when emitting would split an unclosed markdown span that
+    begins at the start of the candidate prefix.
+    """
+    buffer += chunk_text
+    safe = ""
+    last_ws = max(buffer.rfind(" "), buffer.rfind("\n"))
+    if last_ws > 0:
+        # Before committing to a whitespace flush, verify the candidate prefix
+        # doesn't end inside an unclosed markdown span (e.g. "**very " with the
+        # closing "**" still in the buffer).  If an unclosed opener is found,
+        # retreat the flush point to just before it so the span travels together.
+        candidate = buffer[: last_ws + 1]
+        unclosed = _find_unclosed_opener_pos(candidate)
+        if unclosed > 0:
+            # Flush clean text before the opener; keep the opener onward buffered.
+            safe, buffer = candidate[:unclosed], buffer[unclosed:]
+        elif unclosed == -1:
+            # No unclosed opener — safe to flush at the whitespace boundary.
+            safe, buffer = candidate, buffer[last_ws + 1:]
+        # unclosed == 0 means the very first char is an opener with no closer
+        # yet — can't flush anything here; fall through to the tail-keep branch.
+    if not safe and len(buffer) > tail_keep:
+        split_at = len(buffer) - tail_keep
+        if split_at > 0:
+            candidate = buffer[:split_at]
+            unclosed = _find_unclosed_opener_pos(candidate)
+            if unclosed > 0:
+                # Retreat the cut point to before the unclosed opener.
+                safe, buffer = candidate[:unclosed], buffer[unclosed:]
+            elif unclosed == -1:
+                # No unclosed opener in the candidate — safe to emit.
+                safe, buffer = candidate, buffer[split_at:]
+            # unclosed == 0 means the opener is at position 0; the whole
+            # prefix is inside an open span.  Keep buffering — the span
+            # might close in the next chunk.
+    return safe, buffer
+
+
 # Human-readable status labels sent to the client while a tool is executing.
 _TOOL_STATUS_LABELS: dict[str, str] = {
     "search_providers": "Searching for providers",
@@ -837,10 +965,19 @@ class ResponseOrchestrator:
         if _zero_event:
             actual_input = f"{actual_input} [{_zero_event}]".strip()
 
+        _md_buf: str = ""  # rolling buffer for cross-chunk markdown stripping
         async for chunk in self.llm_service.generate_stream(
             actual_input, follow_up_template, session_id
         ):
             if isinstance(chunk, dict) and chunk.get("type") == "function_call":
+                # Flush any buffered markdown text before handling the tool call so
+                # text that preceded the function_call is delivered in stream order.
+                if _md_buf:
+                    _pre_filtered = _strip_tool_call_text(_strip_markdown_formatting(_md_buf))
+                    if _pre_filtered.strip():
+                        ai_response_parts.append(_pre_filtered)
+                        yield _pre_filtered
+                    _md_buf = ""
                 fu_name = chunk.get("name", "")
                 fu_args = chunk.get("args", {})
 
@@ -906,10 +1043,23 @@ class ResponseOrchestrator:
                                     tool_result["signal_transition"], session_id, context, new_pending
                                 )
             elif isinstance(chunk, str):
-                filtered = _strip_tool_call_text(chunk)
-                if filtered.strip():
-                    ai_response_parts.append(filtered)
-                    yield filtered
+                # Accumulate in a rolling buffer so delimiters split across
+                # chunks are caught; flush at whitespace or tail boundary.
+                safe, _md_buf = _take_safe_markdown_stream_text(
+                    _md_buf, chunk, tail_keep=_MD_TAIL_KEEP_FOLLOW_UP
+                )
+                if safe:
+                    filtered = _strip_tool_call_text(_strip_markdown_formatting(safe))
+                    if filtered.strip():
+                        ai_response_parts.append(filtered)
+                        yield filtered
+        # Flush any remaining markdown buffer at end of stream
+        if _md_buf:
+            filtered = _strip_tool_call_text(_strip_markdown_formatting(_md_buf))
+            if filtered.strip():
+                ai_response_parts.append(filtered)
+                yield filtered
+            _md_buf = ""
 
     async def _handle_show_next_providers(
         self,
@@ -1300,6 +1450,7 @@ class ResponseOrchestrator:
             # discard the buffer so only the follow-up stage (CONFIRMATION) speaks.
             _triage_text_buffer: list[str] = []
             _triage_transition_fired = False
+            _md_buf: str = ""  # rolling buffer for cross-chunk markdown stripping
 
             async for chunk in self.llm_service.generate_stream(
                 user_input, prompt_template, session_id
@@ -1314,6 +1465,20 @@ class ResponseOrchestrator:
                         self.conversation_service.context.pop("is_first_message", None)
 
                 if isinstance(chunk, dict) and chunk.get("type") == "function_call":
+                    # Flush any buffered markdown text first so text that
+                    # preceded this tool call is delivered in stream order.
+                    if _md_buf:
+                        _pre_safe_md = _strip_markdown_formatting(_md_buf)
+                        _pre_filtered = _strip_tool_call_text(_pre_safe_md)
+                        if _pre_filtered.strip():
+                            ai_response_parts.append(_pre_filtered)
+                            if current_stage == ConversationStage.TRIAGE and not _triage_transition_fired:
+                                _triage_text_buffer.append(_pre_filtered)
+                            else:
+                                yield _pre_filtered
+                        elif _md_buf.strip() and _pre_safe_md.strip() and not _pre_filtered.strip():
+                            tool_calls_seen = True
+                        _md_buf = ""
                     fn_name = chunk.get("name", "")
                     fn_args = chunk.get("args", {})
 
@@ -1504,23 +1669,45 @@ class ResponseOrchestrator:
                                     "Tool %r returned error: %s", fn_name, tool_result
                                 )
                 else:
-                    # Plain text chunk — strip any leaked tool-call patterns
-                    filtered = _strip_tool_call_text(chunk) if isinstance(chunk, str) else chunk
-                    if filtered.strip() if isinstance(filtered, str) else filtered:
-                        ai_response_parts.append(filtered)
-                        # In TRIAGE, buffer text rather than yielding immediately.
-                        # If a signal_transition fires in this same turn the buffer
-                        # is discarded above, suppressing the preamble.
-                        if current_stage == ConversationStage.TRIAGE and not _triage_transition_fired:
-                            _triage_text_buffer.append(filtered)
-                        else:
-                            yield filtered
-                    elif isinstance(chunk, str) and chunk.strip() and not (filtered.strip() if isinstance(filtered, str) else filtered):
-                        # The chunk had content but was entirely stripped (leaked
-                        # tool-call text).  Count it as intentional signal so the
-                        # empty-response fallback is not triggered.
-                        tool_calls_seen = True
+                    # Plain text chunk — accumulate in a rolling buffer so markdown
+                    # delimiters split across consecutive chunks are still caught.
+                    # Flush at whitespace or tail boundary via the shared helper.
+                    if isinstance(chunk, str):
+                        safe, _md_buf = _take_safe_markdown_stream_text(
+                            _md_buf, chunk, tail_keep=_MD_TAIL_KEEP_MAIN
+                        )
+                        if safe:
+                            safe_md = _strip_markdown_formatting(safe)
+                            filtered = _strip_tool_call_text(safe_md)
+                            if filtered.strip():
+                                ai_response_parts.append(filtered)
+                                # In TRIAGE, buffer text rather than yielding immediately.
+                                # If a signal_transition fires in this same turn the buffer
+                                # is discarded above, suppressing the preamble.
+                                if current_stage == ConversationStage.TRIAGE and not _triage_transition_fired:
+                                    _triage_text_buffer.append(filtered)
+                                else:
+                                    yield filtered
+                            elif safe.strip() and safe_md.strip() and not filtered.strip():
+                                # All content was tool-call text (not just markdown markers).
+                                # Count as an intentional signal so the empty-response
+                                # fallback is not triggered.
+                                tool_calls_seen = True
 
+            # Flush any remaining markdown buffer so the last chunk's text is
+            # delivered even when it has no trailing whitespace.
+            if _md_buf:
+                _safe_md = _strip_markdown_formatting(_md_buf)
+                _filtered = _strip_tool_call_text(_safe_md)
+                if _filtered.strip():
+                    ai_response_parts.append(_filtered)
+                    if current_stage == ConversationStage.TRIAGE and not _triage_transition_fired:
+                        _triage_text_buffer.append(_filtered)
+                    else:
+                        yield _filtered
+                elif _md_buf.strip() and _safe_md.strip() and not _filtered.strip():
+                    tool_calls_seen = True
+                _md_buf = ""
             # Flush any buffered TRIAGE text — only reached when no transition fired.
             for buffered_chunk in _triage_text_buffer:
                 yield buffered_chunk
