@@ -43,7 +43,7 @@ Linkora is a production-ready platform that lets users find local service provid
     <td align="center" width="25%">
       <img src="docs/assets/Linkora-Lite-Assistant-Results.png" alt="Search Results – Lite Mode" width="180"><br>
       <sub><b>Results · Lite Mode</b></sub><br>
-      <sub>AI-curated provider cards with contact &amp; request actions</sub>
+      <sub>AI-curated provider cards with contact &amp; request actions (results anonymized)</sub>
     </td>
   </tr>
 </table>
