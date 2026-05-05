@@ -385,8 +385,8 @@ sequenceDiagram
 ### Production: Full mode (Cloud Run + Compute Engine)
 ```mermaid
 flowchart TD
-    CR["Cloud Run: ai-assistant\neuropé-west3 · 1–3 instances\nAGENT_MODE=full\nSecrets via Secret Manager"]
-    VM["Compute Engine VM: weaviate-vm\neuropé-west3-a · e2-medium\nDocker: Weaviate + text2vec-model2vec"]
+    CR["Cloud Run: ai-assistant\neurope-west3 · 1–3 instances\nAGENT_MODE=full\nSecrets via Secret Manager"]
+    VM["Compute Engine VM: weaviate-vm\neurope-west3-a · e2-medium\nDocker: Weaviate + text2vec-model2vec"]
     WI["Workload Identity\nSpeech · TTS · Firebase · Firestore"]
     CR -->|"VPC connector"| VM
     CR --- WI

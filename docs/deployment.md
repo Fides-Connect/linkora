@@ -7,13 +7,13 @@ This document describes how to provision and maintain the production infrastruct
 ```mermaid
 flowchart TD
     App["Flutter App (ConnectX)"]
-    CR["**Cloud Run: ai-assistant-dev**\neuropé-west3 · ~$20-50/mo\n1-3 instances · Min 1 (no cold start)\nWorkload Identity · Secrets via Secret Manager\nVPC egress to Weaviate VM"]
-    VM["**Compute Engine: weaviate-vm-dev**\neuropé-west3-a · ~$29/mo · e2-medium\nDocker: Weaviate 1.32.2 + text2vec-model2vec\nNo public IP (VPC only) · Persistent disk"]
+    CR["**Cloud Run: ai-assistant-dev**\neurope-west3 · ~$20-50/mo\nmin 0 / max 1 instance · scales to zero\nWorkload Identity · Secrets via Secret Manager\nVPC egress to Weaviate VM"]
+    VM["**Compute Engine: weaviate-vm-dev**\neurope-west3-a · ~$29/mo · e2-medium\nDocker: Weaviate 1.32.2 + text2vec-model2vec\nNo public IP (VPC only) · Persistent disk"]
     App -->|"WSS + Firebase ID token auth"| CR
     CR -->|"HTTP :8090 via VPC"| VM
 ```
 
-**Estimated monthly cost**: ~$50–80 (Cloud Run scales to zero when idle).  
+**Estimated monthly cost**: ~$50–80 (Cloud Run dev instance scales to zero when idle).  
 **Migration path**: change `WEAVIATE_URL` to point at Weaviate Cloud. No other changes are required.
 
 ---
@@ -27,7 +27,7 @@ crawling, and reranks with a local cross-encoder model.
 ```mermaid
 flowchart TD
     App["Flutter App (ConnectX)"]
-    CR["**Cloud Run: ai-assistant-dev**\neuropé-west3 · ~$10-20/mo\nAGENT_MODE=lite\n1-3 instances · Min 1 (no cold start)\nWorkload Identity · Secrets via Secret Manager\nNo VPC connector needed"]
+    CR["**Cloud Run: ai-assistant-dev**\neurope-west3 · ~$10-20/mo\nAGENT_MODE=lite\nmin 0 / max 1 instance · scales to zero\nWorkload Identity · Secrets via Secret Manager\nNo VPC connector needed"]
     GP["Google Places API"]
     App -->|"WSS + Firebase ID token auth"| CR
     CR -->|"HTTPS at query time"| GP
