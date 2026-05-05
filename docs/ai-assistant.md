@@ -65,6 +65,7 @@ stateDiagram-v2
     TRIAGE --> CLARIFY : needs clarification
     TRIAGE --> TOOL_EXECUTION : tool call
     TRIAGE --> CONFIRMATION : intent clear
+    TRIAGE --> PROVIDER_ONBOARDING : manage skills / profile
     TRIAGE --> RECOVERY : error
 
     CLARIFY --> TRIAGE

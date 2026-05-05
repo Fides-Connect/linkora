@@ -142,10 +142,16 @@ graph LR
     source .venv/bin/activate
     pip install -e ".[dev]"
     ```
-    Then copy and configure the environment file — the backend will not start without `GEMINI_API_KEY` and Firebase Admin credentials. Also set `AGENT_MODE` to match the app mode you plan to run (`lite` or `full`); the server defaults to `full`, and a mismatch with the app's `APP_MODE` will lead to a broken setup:
+    Then copy and configure the environment file — the backend will not start without `GEMINI_API_KEY` and Firebase Admin credentials. Also set `AGENT_MODE` to match the app mode you plan to run (`lite` or `full`); the server defaults to `full`, and a mismatch with the app's `APP_MODE` will lead to a broken setup. For Firebase Admin credentials, authenticate locally with Application Default Credentials or point to a service-account key file. If using `AGENT_MODE=lite`, also set `GOOGLE_PLACES_API_KEY` — without it the backend falls back to a no-op data provider and provider searches return no matches:
     ```sh
     cp .env.template .env
-    # Edit .env with your credentials and set AGENT_MODE=lite or AGENT_MODE=full
+    # Edit .env — set GEMINI_API_KEY, AGENT_MODE, and (for lite) GOOGLE_PLACES_API_KEY
+
+    # Firebase Admin: pick one of the two options below
+    # Option 1 — Application Default Credentials (recommended for local dev)
+    gcloud auth application-default login
+    # Option 2 — service account key file
+    export GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
     ```
     See the [AI Assistant docs](docs/ai-assistant.md) for the full list of required variables.
 
