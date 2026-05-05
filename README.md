@@ -165,7 +165,11 @@ graph LR
     cp .env.template .env
     # Edit .env — set APP_MODE (must match AGENT_MODE above), AI_ASSISTANT_SERVER_URL, GOOGLE_OAUTH_CLIENT_ID
     ```
-    The app also requires Firebase config files (not checked in). Run `flutterfire configure` from the `connectx` directory to generate `lib/firebase_options.dart`. Android and iOS each need an additional platform-specific config file downloaded from the Firebase Console — see the [ConnectX docs](docs/connectx.md) for the full setup instructions for both platforms.
+    The app also requires Firebase config files (not checked in). If you do not already have the FlutterFire CLI installed, install it first:
+    ```sh
+    dart pub global activate flutterfire_cli
+    ```
+    Then run `flutterfire configure` from the `connectx` directory to generate `lib/firebase_options.dart`. Android and iOS each need an additional platform-specific config file downloaded from the Firebase Console — see the [ConnectX docs](docs/connectx.md) for the full setup instructions for both platforms.
 
 4.  **Launch and initialize Weaviate (Full mode only):**
     ```sh
@@ -181,7 +185,7 @@ graph LR
       source .venv/bin/activate
       python -m ai_assistant
       ```
-    - In a separate terminal, launch the Flutter app with the required build flavor (Android):
+    - In a separate terminal, launch the Flutter app with the required build flavor (Android). The selected flavor must match `APP_MODE` in `connectx/.env` (`liteDev`/`liteProd` → `APP_MODE=lite`; `fullDev`/`fullProd` → `APP_MODE=full`):
       ```sh
       cd ../connectx
       flutter run --flavor liteDev   # or fullDev, liteProd, fullProd

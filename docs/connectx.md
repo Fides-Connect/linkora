@@ -188,7 +188,7 @@ Then:
 3. Download `GoogleService-Info.plist`
 4. Place it at `connectx/ios/Runner/GoogleService-Info.plist`
 
-> **Note**: Unlike Android, iOS does not use per-flavor source sets — a single `GoogleService-Info.plist` path is referenced by the Xcode project. However, **dev and prod flavors connect to different Firebase projects** (`linkora-dev` vs `linkora-prod`), so you must use the plist from the correct Firebase project for the flavor you are building. The file is not checked in; download it from the Firebase Console each time you switch environments.
+> **Note**: The iOS project uses a single shared `Runner` scheme and references one `GoogleService-Info.plist` at `connectx/ios/Runner/GoogleService-Info.plist`. When switching between environments, manually replace that file with the plist downloaded from the correct Firebase project (`linkora-dev` for dev builds, `linkora-prod` for prod builds). The file is not checked in; download and swap it each time you change environments.
 
 **Push Notifications (full mode):**
 

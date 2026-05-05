@@ -49,7 +49,7 @@ Linkora is a complete voice-based AI assistant platform that enables natural voi
 
 ```bash
 git clone <repository-url>
-cd Linkora
+cd linkora
 ```
 
 ### Step 2: Start the AI-Assistant Server
@@ -90,8 +90,9 @@ cp .env.template .env
 # AI_ASSISTANT_SERVER_URL=192.168.1.100:8080
 nano .env
 
-# Run on device
-flutter run
+# Run on device — flavor must match APP_MODE in .env
+# liteDev/liteProd for APP_MODE=lite, fullDev/fullProd for APP_MODE=full
+flutter run --flavor liteDev
 ```
 
 See [ConnectX Documentation](connectx.md) for detailed setup including Firebase configuration.
@@ -162,8 +163,9 @@ cd connectx
 # Configure Firebase
 flutterfire configure --project=<your-project-id>
 
-# Download google-services.json for Android
-# Place in: connectx/android/app/google-services.json
+# Download google-services.json for Android per flavor
+# Dev builds: place in connectx/android/app/src/dev/google-services.json
+# Prod builds: place in connectx/android/app/src/prod/google-services.json
 
 # Add SHA-1 fingerprint to Firebase Console
 keytool -list -v -alias androiddebugkey \
