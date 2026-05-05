@@ -10,9 +10,9 @@
 </p>
 
 <p align="center">
-    <img src="https://img.shields.io/github/actions/workflow/status/Fides-Connect/linkora/ci.yml?branch=main&logo=github&style=for-the-badge" alt="Build Status">
+    <img src="https://img.shields.io/github/actions/workflow/status/Fides-Connect/linkora/connectx-test.yml?branch=main&label=ConnectX%20Tests&logo=flutter&style=for-the-badge" alt="ConnectX Build Status">
+    <img src="https://img.shields.io/github/actions/workflow/status/Fides-Connect/linkora/ai-assistant-test.yml?branch=main&label=AI%20Assistant%20Tests&logo=python&style=for-the-badge" alt="AI Assistant Build Status">
     <img src="https://img.shields.io/github/license/Fides-Connect/linkora?style=for-the-badge" alt="License">
-    <img src="https://img.shields.io/github/last-commit/Fides-Connect/linkora?style=for-the-badge" alt="Last Commit">
 </p>
 
 <p align="center">
