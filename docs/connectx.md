@@ -188,17 +188,17 @@ Then:
 3. Download `GoogleService-Info.plist`
 4. Place it at `connectx/ios/Runner/GoogleService-Info.plist`
 
-> **Note**: Unlike Android, iOS does not use per-flavor config files — a single `GoogleService-Info.plist` covers both dev and prod builds. The file is not checked in; each developer downloads it directly from the Firebase Console. The Xcode project already references this path (`Runner` group → Resources build phase), so no Xcode changes are needed after placing the file.
+> **Note**: Unlike Android, iOS does not use per-flavor source sets — a single `GoogleService-Info.plist` path is referenced by the Xcode project. However, **dev and prod flavors connect to different Firebase projects** (`linkora-dev` vs `linkora-prod`), so you must use the plist from the correct Firebase project for the flavor you are building. The file is not checked in; download it from the Firebase Console each time you switch environments.
 
 **Push Notifications (full mode):**
 
-Full-mode deployments use FCM for push notifications. The `Runner.entitlements` file is already checked in and pre-configured with the `aps-environment` entitlement. To complete APNs setup:
+Full-mode deployments use FCM for push notifications. The `Runner.entitlements` file is checked in and sets `CODE_SIGN_ENTITLEMENTS` for all build configurations. It contains no hardcoded `aps-environment` value; the correct sandbox or production entitlement is supplied automatically by the provisioning profile at signing time. To complete APNs setup:
 
 1. In Xcode, select the **Runner** target → **Signing & Capabilities**
 2. Click **+ Capability** and add **Push Notifications**
 3. Upload your APNs key or certificate in Firebase Console → Project Settings → Cloud Messaging → Apple app configuration
 
-> Lite-mode deployments do not use push notifications; FCM initialization is skipped when `AGENT_MODE=lite`.
+> Lite-mode deployments do not use push notifications; FCM initialization is skipped when `APP_MODE=lite`.
 
 **Microphone Permission:**
 
