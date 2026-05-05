@@ -90,7 +90,7 @@ cp .env.template .env
 # AI_ASSISTANT_SERVER_URL=192.168.1.100:8080
 nano .env
 
-# Run on device — flavor must match APP_MODE in .env
+# Run on device: flavor must match APP_MODE in .env
 # liteDev/liteProd for APP_MODE=lite, fullDev/fullProd for APP_MODE=full
 flutter run --flavor fullDev
 ```
@@ -142,7 +142,7 @@ gcloud auth application-default login
 
 - `gcloud auth login`: Authenticates your personal Google account with the gcloud CLI.
 
-- `gcloud auth application-default login`: Sets up Application Default Credentials (ADC). Google Cloud SDKs (Speech-to-Text, TTS, Firebase Admin) automatically pick these up — no JSON key file needed.
+- `gcloud auth application-default login`: Sets up Application Default Credentials (ADC). Google Cloud SDKs (Speech-to-Text, TTS, Firebase Admin) automatically pick these up, so no JSON key file is needed.
 
 **2. Enable Required APIs:**
 ```bash

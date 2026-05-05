@@ -4,33 +4,17 @@ This document describes how to provision and maintain the production infrastruct
 
 ## Architecture
 
-```
-Flutter App (ConnectX)
-        │ WSS (WebSocket Secure) — Firebase ID token auth
-        ▼
-┌─────────────────────────────────┐
-│  Cloud Run: ai-assistant-dev    │  europe-west3  ~$20-50/mo
-│  • Scales 1–3 instances         │
-│  • Min 1 instance (no cold start)│
-│  • Workload Identity (no keys)  │
-│  • Secrets via Secret Manager   │
-│  • VPC egress → Weaviate VM     │
-└────────────────┬────────────────┘
-                 │ HTTP :8090 (via VPC)
-                 ▼
-┌─────────────────────────────────┐
-│  Compute Engine: weaviate-vm-dev│  europe-west3-a  ~$29/mo
-│  e2-medium (2 vCPU, 4 GB RAM)   │
-│  No public IP — VPC only        │
-│  Docker Compose:                │
-│  • Weaviate 1.32.2              │
-│  • text2vec-model2vec (embed.)  │
-│  Persistent disk → data safe    │
-└─────────────────────────────────┘
+```mermaid
+flowchart TD
+    App["Flutter App (ConnectX)"]
+    CR["**Cloud Run: ai-assistant-dev**\neuropé-west3 · ~$20-50/mo\n1-3 instances · Min 1 (no cold start)\nWorkload Identity · Secrets via Secret Manager\nVPC egress to Weaviate VM"]
+    VM["**Compute Engine: weaviate-vm-dev**\neuropé-west3-a · ~$29/mo · e2-medium\nDocker: Weaviate 1.32.2 + text2vec-model2vec\nNo public IP (VPC only) · Persistent disk"]
+    App -->|"WSS + Firebase ID token auth"| CR
+    CR -->|"HTTP :8090 via VPC"| VM
 ```
 
 **Estimated monthly cost**: ~$50–80 (Cloud Run scales to zero when idle).  
-**Migration path**: change `WEAVIATE_URL` to point at Weaviate Cloud — nothing else required.
+**Migration path**: change `WEAVIATE_URL` to point at Weaviate Cloud. No other changes are required.
 
 ---
 
@@ -40,23 +24,13 @@ Set `AGENT_MODE=lite` to run without Weaviate.  The assistant fetches providers
 directly from the Google Places API at query time, enriches them via web
 crawling, and reranks with a local cross-encoder model.
 
-```
-Flutter App (ConnectX)
-        │ WSS — Firebase ID token auth
-        ▼
-┌─────────────────────────────────┐
-│  Cloud Run: ai-assistant-dev    │  europe-west3  ~$10-20/mo
-│  AGENT_MODE=lite                │
-│  • Scales 1–3 instances         │
-│  • Min 1 instance (no cold start)│
-│  • Workload Identity (no keys)  │
-│  • Secrets via Secret Manager   │
-│  NO VPC connector needed        │
-└─────────────────────────────────┘
-         │
-         │ HTTPS — at query time
-         ▼
-  Google Places API
+```mermaid
+flowchart TD
+    App["Flutter App (ConnectX)"]
+    CR["**Cloud Run: ai-assistant-dev**\neuropé-west3 · ~$10-20/mo\nAGENT_MODE=lite\n1-3 instances · Min 1 (no cold start)\nWorkload Identity · Secrets via Secret Manager\nNo VPC connector needed"]
+    GP["Google Places API"]
+    App -->|"WSS + Firebase ID token auth"| CR
+    CR -->|"HTTPS at query time"| GP
 ```
 
 **Estimated monthly cost**: ~$10–20 (Cloud Run only, no VM).
@@ -159,7 +133,7 @@ gcloud iam service-accounts create linkora-rt-service-account-dev \
   --display-name="Linkora Runtime Service Account"
 ```
 
-**CI service account** (`linkora-ci-service-account-dev`) — used by GitHub Actions to deploy.
+**CI service account** (`linkora-ci-service-account-dev`): used by GitHub Actions to deploy.
 
 ```bash
 CI_SA="linkora-ci-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com"
@@ -201,7 +175,7 @@ gcloud iam service-accounts add-iam-policy-binding \
   --role="roles/iam.serviceAccountUser"
 
 # Create secrets and add new versions on every deploy.
-# No predefined role covers both — use a custom role created once below.
+# No predefined role covers both; use a custom role created once below.
 gcloud iam roles create secretManagerCiRole \
   --project=$PROJECT_ID \
   --title="Secret Manager CI Role" \
@@ -214,13 +188,13 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
   --role="projects/${PROJECT_ID}/roles/secretManagerCiRole"
 ```
 
-**Runtime service account** (`linkora-rt-service-account-dev`) — attached to Cloud Run; used at runtime.
+**Runtime service account** (`linkora-rt-service-account-dev`): attached to Cloud Run; used at runtime.
 
 ```bash
 RT_SA="linkora-rt-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com"
 
 # Speech-to-Text (STT) and Text-to-Speech (TTS)
-# Note: there is no separate roles/texttospeech.client predefined role —
+# Note: there is no separate roles/texttospeech.client predefined role.
 # TTS access is granted by Workload Identity + the enabled API.
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${RT_SA}" \
@@ -232,7 +206,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
   --role="roles/datastore.user"
 
 # Firebase Auth: verify_id_token with check_revoked=True
-# Requires a custom role — firebaseauth.users.get is not included in any
+# Requires a custom role; firebaseauth.users.get is not included in any
 # predefined role smaller than roles/firebaseauth.admin.
 gcloud iam roles create firebaseAuthTokenChecker \
   --project=$PROJECT_ID \
@@ -245,7 +219,7 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${RT_SA}" \
   --role="projects/${PROJECT_ID}/roles/firebaseAuthTokenChecker"
 
-# Firebase Auth: verify_id_token (crypto verification only — no user lookup)
+# Firebase Auth: verify_id_token (crypto verification only, no user lookup)
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member="serviceAccount:${RT_SA}" \
   --role="roles/firebaseauth.viewer"
@@ -294,17 +268,17 @@ gcloud iam workload-identity-pools providers describe "linkora-github-provider-d
 
 ### 4. Secrets in Secret Manager
 
-The CI workflow handles creation and updates automatically via the `secretManagerCiRole` custom role. No manual pre-creation needed — just set the corresponding GitHub Actions secrets and push.
+The CI workflow handles creation and updates automatically via the `secretManagerCiRole` custom role. No manual pre-creation needed. Just set the corresponding GitHub Actions secrets and push.
 
 ### 5. Harden default VPC firewall rules
 
 GCP creates broad default firewall rules. Disable the ones not needed:
 
 ```bash
-# SSH from the internet — use IAP tunnelling instead (see SSH section below)
+# SSH from the internet: use IAP tunnelling instead (see SSH section below)
 gcloud compute firewall-rules update default-allow-ssh --disabled
 
-# RDP — not used on Linux VMs
+# RDP: not used on Linux VMs
 gcloud compute firewall-rules update default-allow-rdp --disabled
 ```
 
@@ -321,7 +295,7 @@ gcloud compute firewall-rules create allow-ssh-iap \
 
 ### 6. Weaviate VM
 
-Create the VM **without a public IP** (`--no-address`). All access goes through the VPC — SSH via IAP, Weaviate via the VPC connector.
+Create the VM **without a public IP** (`--no-address`). All access goes through the VPC: SSH via IAP, Weaviate via the VPC connector.
 
 ```bash
 gcloud compute instances create weaviate-vm-dev \
@@ -336,7 +310,7 @@ gcloud compute instances create weaviate-vm-dev \
   --metadata-from-file startup-script=weaviate/startup-script.sh
 
 # Restrict Weaviate ports to internal/VPC traffic only
-# (Weaviate runs with anonymous access — never expose publicly)
+# (Weaviate runs with anonymous access; never expose publicly)
 gcloud compute firewall-rules create allow-weaviate \
   --network=default \
   --action=allow \
@@ -365,7 +339,7 @@ Wait ~3 minutes for the startup script to finish, then verify via IAP:
 # SSH via IAP (no public IP required)
 gcloud compute ssh weaviate-vm-dev --zone=europe-west3-a --tunnel-through-iap
 
-# Inside VM — check Weaviate is healthy
+# Inside VM: check Weaviate is healthy
 curl http://localhost:8090/v1/.well-known/ready
 ```
 
@@ -400,7 +374,7 @@ The connector name is referenced in `cloud-deploy.yml` via the `WEAVIATE_VPC_CON
 
 ### 9. Allow public access to Cloud Run (required for mobile clients)
 
-Cloud Run defaults to requiring Google OIDC IAM authentication, which mobile apps cannot satisfy. The application enforces its own Firebase ID token auth on every request — the Cloud Run IAM layer must be `allUsers`.
+Cloud Run defaults to requiring Google OIDC IAM authentication, which mobile apps cannot satisfy. The application enforces its own Firebase ID token auth on every request. The Cloud Run IAM layer must be `allUsers`.
 
 **Grant public invoker access:**
 
@@ -425,8 +399,8 @@ Add these in **Settings → Secrets and variables → Actions**:
 | `WIF_PROVIDER` | Output of WIF provider describe command in step 3 |
 | `WIF_CI_SERVICE_ACCOUNT` | `linkora-ci-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com` |
 | `WIF_RT_SERVICE_ACCOUNT` | `linkora-rt-service-account-dev@<PROJECT_ID>.iam.gserviceaccount.com` |
-| `GEMINI_API_KEY` | Your Gemini API key — synced to Secret Manager by the workflow |
-| `ADMIN_SECRET_KEY` | Your admin API secret — synced to Secret Manager by the workflow |
+| `GEMINI_API_KEY` | Your Gemini API key (synced to Secret Manager by the workflow) |
+| `ADMIN_SECRET_KEY` | Your admin API secret (synced to Secret Manager by the workflow) |
 
 **Additional secrets for full mode (`AGENT_MODE=full`):**
 
@@ -437,14 +411,14 @@ Add these in **Settings → Secrets and variables → Actions**:
 | `WEAVIATE_VM_IP` | Internal IP from step 6 (e.g. `10.156.0.6`) |
 | `WEAVIATE_VM_PORT` | `8090` (host port mapped in docker-compose.yml) |
 | `WEAVIATE_VPC_CONNECTOR` | `ai-assistant-connect-dev` |
-| `METERED_APP_NAME` | Your Metered.ca application name (subdomain of `metered.live`) — synced to Secret Manager by the workflow |
-| `METERED_API_KEY` | Your Metered.ca API key — synced to Secret Manager by the workflow |
+| `METERED_APP_NAME` | Your Metered.ca application name (subdomain of `metered.live`; synced to Secret Manager by the workflow) |
+| `METERED_API_KEY` | Your Metered.ca API key (synced to Secret Manager by the workflow) |
 
 **Additional secrets for lite mode (`AGENT_MODE=lite`):**
 
 | Secret | Value / where to get it |
 |---|---|
-| `GOOGLE_PLACES_API_KEY` | Your Google Places API key — synced to Secret Manager by the workflow |
+| `GOOGLE_PLACES_API_KEY` | Your Google Places API key (synced to Secret Manager by the workflow) |
 
 The workflow syncs secrets into Secret Manager on every deploy. Cloud Run injects them at runtime via `--set-secrets` (never in plain environment variables).
 
@@ -452,29 +426,17 @@ The workflow syncs secrets into Secret Manager on every deploy. Cloud Run inject
 
 ## CI/CD Pipeline
 
-```
-Push to main branch
-        │
-        ├── ai-assistant/** changed?
-        │       │
-        │       ▼
-        │  [ai-assistant-test.yml]
-        │  unit tests → integration tests
-        │       │ (on success)
-        │       ▼
-        │  [cloud-deploy.yml] deploy-ai-assistant
-        │  build image → push to Artifact Registry
-        │  if AGENT_MODE=full:
-        │    gcloud run deploy --vpc-connector=ai-assistant-connect-dev
-        │  if AGENT_MODE=lite:
-        │    gcloud run deploy (no VPC connector)
-        │
-        └── weaviate/** changed? (full mode only)
-                │
-                ▼
-           [cloud-deploy.yml] deploy-weaviate
-           gcloud compute scp docker-compose.yml (via OS Login)
-           gcloud compute ssh → docker compose up -d
+```mermaid
+flowchart TD
+    Push["Push to main branch"]
+    Push --> AIChange{"ai-assistant/**\nchanged?"}
+    Push --> WChange{"weaviate/**\nchanged?\n(full mode only)"}
+    AIChange -->|yes| Tests["ai-assistant-test.yml\nunit + integration tests"]
+    Tests -->|success| Deploy["cloud-deploy.yml\nbuild image to Artifact Registry"]
+    Deploy --> Mode{"AGENT_MODE?"}
+    Mode -->|full| RunFull["gcloud run deploy\n--vpc-connector=ai-assistant-connect-dev"]
+    Mode -->|lite| RunLite["gcloud run deploy\n(no VPC connector)"]
+    WChange -->|yes| WDeploy["cloud-deploy.yml: deploy-weaviate\nscp docker-compose.yml (OS Login)\nssh to VM: docker compose up -d"]
 ```
 
 ---
@@ -539,4 +501,4 @@ gcloud compute ssh weaviate-vm-dev --zone=europe-west3-a --tunnel-through-iap --
    gcloud compute instances delete weaviate-vm-dev --zone=europe-west3-a
    ```
 
-No application code changes are needed — only `WEAVIATE_URL` and the CI workflow need to point at the Weaviate Cloud endpoint.
+No application code changes are needed. Only `WEAVIATE_URL` and the CI workflow need to point at the Weaviate Cloud endpoint.

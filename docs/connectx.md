@@ -27,41 +27,18 @@ ConnectX is a comprehensive mobile client for the Linkora platform that:
 
 ### Architecture
 
-```
-┌─────────────────────────────────────┐
-│         ConnectX App                │
-├─────────────────────────────────────┤
-│  Presentation Layer (MVVM)          │
-│  ├── Pages (Views)                  │
-│  │   ├── Home (Requests)            │
-│  │   ├── Favorites                  │
-│  │   ├── User Profile               │
-│  │   └── Menu                       │
-│  ├── ViewModels (State Mgmt)        │
-│  └── Widgets                        │
-├─────────────────────────────────────┤
-│  Data Layer                         │
-│  ├── Repositories                   │
-│  └── Data Sources (API/Mock)        │
-├─────────────────────────────────────┤
-│  Service Layer                      │
-│  ├── ApiService                     │
-│  ├── AuthService                    │
-│  ├── WebRTCService                  │
-│  ├── SpeechService                  │
-│  ├── NotificationService            │
-│  └── UserService                    │
-├─────────────────────────────────────┤
-│  WebRTC Layer                       │
-│  └── flutter_webrtc                 │
-├─────────────────────────────────────┤
-│  Authentication Layer               │
-│  └── Firebase Auth                  │
-└─────────────────────────────────────┘
-         ↕ WebRTC Audio Stream
-┌─────────────────────────────────────┐
-│      AI-Assistant Server            │
-└─────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph ConnectX["ConnectX App"]
+        P["Presentation Layer (MVVM)\nPages: Home · Favorites · User Profile · Menu\nViewModels · Widgets"]
+        D["Data Layer\nRepositories · Data Sources (API/Mock)"]
+        S["Service Layer\nApiService · AuthService · WebRTCService\nSpeechService · NotificationService · UserService"]
+        W["WebRTC Layer\nflutter_webrtc"]
+        Auth["Authentication Layer\nFirebase Auth"]
+        P --> D --> S --> W --> Auth
+    end
+    AI["AI-Assistant Server"]
+    W <-->|"WebRTC Audio Stream"| AI
 ```
 
 ## ✨ Features
@@ -180,6 +157,8 @@ Then:
    - Prod: `connectx/android/app/src/prod/google-services.json`
 
 #### iOS Setup
+
+> **Note**: The iOS setup has not been fully tested on a physical device. The configuration described below is based on the project structure; treat it as a starting point and verify each step in your own environment.
 
 **Download GoogleService-Info.plist:**
 
@@ -338,13 +317,13 @@ The app uses two Gradle flavor dimensions to form four variants:
 
 > `--flavor` selects a full build variant combining both **mode** (`lite`/`full`) and **environment** (`dev`/`prod`):
 > - The **environment** dimension determines which Firebase project (`google-services.json`) is used.
-> - The **mode** dimension controls Android packaging — e.g. `full` includes the microphone permission; `lite` does not.
+> - The **mode** dimension controls Android packaging. For example, `full` includes the microphone permission; `lite` does not.
 >
 > `APP_MODE` and `AI_ASSISTANT_SERVER_URL` are still set via `.env` and can be changed for local development. For release builds, keep `APP_MODE` consistent with the selected mode flavor (`lite` or `full`) so runtime features match the permissions and resources bundled into the APK.
 
 The `google-services.json` is shared between `lite` and `full` variants of the same environment. Place one file per environment in the `environment` source set:
-- `android/app/src/dev/google-services.json` — used by both `liteDev` and `fullDev`
-- `android/app/src/prod/google-services.json` — used by both `liteProd` and `fullProd`
+- `android/app/src/dev/google-services.json`: used by both `liteDev` and `fullDev`
+- `android/app/src/prod/google-services.json`: used by both `liteProd` and `fullProd`
 
 Gradle resolves the environment source set (`src/dev/` or `src/prod/`) from the variant's environment dimension, and the mode source set (`src/lite/` or `src/full/`) from the mode dimension. Because dev and prod use different Firebase projects (`linkora-dev` and `linkora-prod`), do **not** place a single shared file at `android/app/google-services.json`. Re-download the file from Firebase Console whenever SHA-1 fingerprints change.
 
@@ -369,7 +348,7 @@ flutter run --flavor liteDev -d <device-id>
 # Android (flavors are Android/Gradle-only)
 flutter run --flavor liteDev -d android
 
-# iOS (no flavor required — single Firebase project per scheme)
+# iOS (no flavor required; single Firebase project per scheme)
 flutter run -d ios
 
 # Web (flavors not supported on web)
@@ -522,7 +501,7 @@ AI_ASSISTANT_SERVER_URL=https://your-full-cloud-run-url.run.app
 
 ### Android Release Signing
 
-Create `android/key.properties` (gitignored — never commit this file):
+Create `android/key.properties` (gitignored; never commit this file):
 ```properties
 storePassword=YOUR_KEYSTORE_PASSWORD
 keyPassword=YOUR_KEY_PASSWORD
@@ -535,11 +514,11 @@ Place `release.keystore` at `android/app/release.keystore`.
 ### Android Release Build
 
 ```bash
-# Lite mode — no microphone permission (text-only, Google Play)
+# Lite mode: no microphone permission (text-only, Google Play)
 flutter build appbundle --flavor liteProd --release
 # Output: build/app/outputs/bundle/liteProdRelease/app-liteProd-release.aab
 
-# Full mode — microphone permission included (voice + text, Google Play)
+# Full mode: microphone permission included (voice + text, Google Play)
 flutter build appbundle --flavor fullProd --release
 # Output: build/app/outputs/bundle/fullProdRelease/app-fullProd-release.aab
 
@@ -560,6 +539,9 @@ open ios/Runner.xcworkspace
 ```
 
 **iOS Signing:**
+
+> The iOS signing and App Store distribution flow has not been tested end-to-end. The steps below are the standard process; verify them in your own environment.
+
 - Configure signing in Xcode
 - Select appropriate provisioning profile
 - Set up App Store Connect
@@ -657,10 +639,11 @@ flutter pub global run devtools
 
 ### iOS Considerations
 
+> **Note**: iOS support has not been fully tested on a physical device. The items below reflect the current project configuration.
+
 - **Minimum Version**: iOS 12.0+
-- **Permissions**: Microphone access required
-- **Background Audio**: Requires background modes capability
-- **App Transport Security**: Configure for non-HTTPS servers in development
+- **Permissions**: Microphone access required (`NSMicrophoneUsageDescription` set in `Info.plist`)
+- **Background Audio**: Background modes capability is configured in `Info.plist`
 
 ### Android Considerations
 

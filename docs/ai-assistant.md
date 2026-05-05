@@ -249,31 +249,22 @@ The system uses a **Hybrid Database Architecture**:
 
 ### Processing Pipeline
 
-```
-Audio Stream (WebRTC)
-    ↓
-AudioProcessor
-    ├─→ STT Streaming (gRPC)
-    │       ↓
-    │   Transcript Buffer
-    │       ↓
-    └─→ ResponseOrchestrator
-            ├─→ ConversationService
-            │   ├─→ Stage Management
-            │   └─→ Context Tracking
-            │
-            ├─→ Gemini 2.5 Flash (Streaming)
-            │       ↓
-            │   AI Response Stream
-            │
-            ├─→ DataProvider (if needed)
-            │   └─→ Weaviate Search
-            │
-            └─→ TTS (Parallel)
-                    ↓
-                Audio Chunks
-                    ↓
-            WebRTC Stream → Client
+```mermaid
+flowchart TD
+    AS["Audio Stream (WebRTC)"] --> AP[AudioProcessor]
+    AP --> STT["STT Streaming (gRPC)"]
+    STT --> TB["Transcript Buffer"]
+    TB --> RO[ResponseOrchestrator]
+    RO --> CS[ConversationService]
+    CS --> SM["Stage Management"]
+    CS --> CT["Context Tracking"]
+    RO --> LLM["Gemini 2.5 Flash (Streaming)"]
+    LLM --> ARS["AI Response Stream"]
+    RO --> DP["DataProvider (if needed)"]
+    DP --> WS["Weaviate Search"]
+    RO --> TTS["TTS (Parallel)"]
+    TTS --> AC["Audio Chunks"]
+    AC --> WR["WebRTC Stream → Client"]
 ```
 
 ## 🚀 Installation
@@ -344,8 +335,8 @@ nano .env
 GEMINI_API_KEY=your_gemini_api_key_here
 
 # Agent mode: "full" (default) or "lite"
-# full  — Weaviate vector search + voice + Firestore (full platform)
-# lite  — Google Places API search + text-only (no Weaviate, no Firestore)
+# full: Weaviate vector search + voice + Firestore (full platform)
+# lite: Google Places API search + text-only (no Weaviate, no Firestore)
 AGENT_MODE=full
 
 # Firestore Database Configuration
@@ -378,7 +369,7 @@ VOICE_NAME_EN=en-US-Chirp3-HD-Sulafat
 PORT=8080
 LOG_LEVEL=INFO
 
-# Session idle timeout — close inactive connections after this many minutes
+# Session idle timeout: close inactive connections after this many minutes
 # Applies to both WebRTC (full mode) and WebSocket chat (lite mode)
 # Default: 10 minutes
 SESSION_IDLE_TIMEOUT_MINUTES=10
@@ -416,27 +407,17 @@ WEAVIATE_API_KEY=your-weaviate-cloud-api-key
 ### Lite Mode (no Weaviate)
 
 Set `AGENT_MODE=lite` to run the assistant with the Google Places API as the
-provider source instead of Weaviate. This requires only a single container — no
+provider source instead of Weaviate. This requires only a single container. No
 Weaviate VM, no VPC connector.
 
 **Pipeline:**
-```
-User query
-    │
-    ▼
-generate_query()      — LLM distils intent + location
-    │
-    ▼
-Google Places API     — returns up to 20 nearby providers
-    │
-    ▼
-WebPageCrawler        — enriches each provider (skills, email, portfolio)
-    │
-    ▼
-ms-marco cross-encoder — reranks by semantic relevance
-    │
-    ▼
-FINALIZE prompt / Flutter card renderer
+```mermaid
+flowchart TD
+    Q["User query"] --> GQ["generate_query()\nLLM: distil intent + location"]
+    GQ --> GP["Google Places API\nup to 20 nearby providers"]
+    GP --> WC["WebPageCrawler\nskills · email · portfolio"]
+    WC --> CE["ms-marco cross-encoder\nreranks by relevance"]
+    CE --> FIN["FINALIZE\nFlutter card renderer"]
 ```
 
 **Key differences from full mode:**

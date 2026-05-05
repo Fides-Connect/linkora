@@ -145,16 +145,16 @@ graph LR
     git lfs pull
     ```
     The bundled cross-encoder uses Git LFS; on a fresh clone, run the commands above so `model.safetensors` is downloaded instead of remaining an LFS pointer file.
-    
-    Then copy and configure the environment file — the backend will not start without `GEMINI_API_KEY` and Firebase Admin credentials. Also set `AGENT_MODE` to match the app mode you plan to run (`lite` or `full`); the server defaults to `full`, and a mismatch with the app's `APP_MODE` will lead to a broken setup. For Firebase Admin credentials, authenticate locally with Application Default Credentials or point to a service-account key file. If using `AGENT_MODE=lite`, also set `GOOGLE_PLACES_API_KEY` — without it the backend falls back to a no-op data provider and provider searches return no matches:
+
+    Then copy and configure the environment file. The backend will not start without `GEMINI_API_KEY` and Firebase Admin credentials. Also set `AGENT_MODE` to match the app mode you plan to run (`lite` or `full`); the server defaults to `full`, and a mismatch with the app's `APP_MODE` will lead to a broken setup. For Firebase Admin credentials, authenticate locally with Application Default Credentials or point to a service-account key file. If using `AGENT_MODE=lite`, also set `GOOGLE_PLACES_API_KEY`. Without it the backend falls back to a no-op data provider and provider searches return no matches:
     ```sh
     cp .env.template .env
-    # Edit .env — set GEMINI_API_KEY, AGENT_MODE, and (for lite) GOOGLE_PLACES_API_KEY
+    # Edit .env: set GEMINI_API_KEY, AGENT_MODE, and (for lite) GOOGLE_PLACES_API_KEY
 
     # Firebase Admin: pick one of the two options below
-    # Option 1 — Application Default Credentials (recommended for local dev)
+    # Option 1: Application Default Credentials (recommended for local dev)
     gcloud auth application-default login
-    # Option 2 — service account key file
+    # Option 2: service account key file
     export GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
     ```
     See the [AI Assistant docs](docs/ai-assistant.md) for the full list of required variables.
@@ -164,20 +164,20 @@ graph LR
     cd ../connectx
     flutter pub get
     cp .env.template .env
-    # Edit .env — set APP_MODE (must match AGENT_MODE above), AI_ASSISTANT_SERVER_URL, GOOGLE_OAUTH_CLIENT_ID
+    # Edit .env: set APP_MODE (must match AGENT_MODE above), AI_ASSISTANT_SERVER_URL, GOOGLE_OAUTH_CLIENT_ID
     ```
     The app also requires Firebase config files (not checked in). If you do not already have the FlutterFire CLI installed, install it first:
     ```sh
     dart pub global activate flutterfire_cli
     ```
-    Then run `flutterfire configure` from the `connectx` directory to generate `lib/firebase_options.dart`. Android and iOS each need an additional platform-specific config file downloaded from the Firebase Console — see the [ConnectX docs](docs/connectx.md) for the full setup instructions for both platforms.
+    Then run `flutterfire configure` from the `connectx` directory to generate `lib/firebase_options.dart`. Android and iOS each need an additional platform-specific config file downloaded from the Firebase Console. See the [ConnectX docs](docs/connectx.md) for the full setup instructions for both platforms.
 
 4.  **Launch and initialize Weaviate (Full mode only):**
     ```sh
     cd ../weaviate
     docker-compose up -d
     ```
-    > Starting the container brings up an empty database. Complete the schema and sample-data initialization from the [Getting Started Guide](docs/getting-started.md) before using Full mode — there will be nothing to search against otherwise.
+    > Starting the container brings up an empty database. Complete the schema and sample-data initialization from the [Getting Started Guide](docs/getting-started.md) before using Full mode. There will be nothing to search against otherwise.
 
 5.  **Run the application:**
     - Start the AI Assistant backend:

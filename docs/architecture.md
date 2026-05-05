@@ -161,9 +161,10 @@ services/       # core business logic
 5. Stream audio bidirectionally
 
 **Audio Pipeline:**
-```
-Microphone → AudioRecord → RTC DataChannel → Network → Server
-Server → Network → RTC DataChannel → AudioTrack → Speaker
+```mermaid
+flowchart LR
+    Mic[Microphone] --> AR[AudioRecord] --> DC1["RTC DataChannel"] --> Net1[Network] --> Srv[Server]
+    Srv --> Net2[Network] --> DC2["RTC DataChannel"] --> AT[AudioTrack] --> Spk[Speaker]
 ```
 
 ## 🤖 AI-Assistant (Backend Server)
@@ -233,48 +234,37 @@ DataProvider
 
 ### Conversation Stages
 
-```
-┌──────────┐
-│  TRIAGE  │  Intent gathering — LLM clarifies need & scope
-└────┬─────┘
-     │ intent clear
-     ▼
-┌──────────────┐
-│ CONFIRMATION │  Confirm request details before search
-└────┬─────────┘
-     │ confirmed                      │ needs more info
-     ▼                                ▼
-┌──────────┐                     ┌─────────┐
-│ FINALIZE │  Provider results   │ CLARIFY │  Follow-up questions
-└────┬─────┘  + email cards      └────┬────┘
-     │                               │ → back to TRIAGE
-     ▼
-┌──────────┐
-│COMPLETED │  Wrap-up; if eligible → PROVIDER_PITCH
-└────┬─────┘
-     │ if user not yet a provider
-     ▼
-┌────────────────┐
-│ PROVIDER_PITCH │  Invite user to list their services
-└────┬───────────┘
-     │ accepted
-     ▼
-┌─────────────────────┐
-│ PROVIDER_ONBOARDING │  Skill collection (multi-turn)
-└─────────────────────┘
-```
+> Simplified overview. See [AI Assistant docs](ai-assistant.md) for the full state machine with all transitions.
 
-Error transitions: any stage may move to `RECOVERY` on failure; `RECOVERY → TRIAGE`.
+```mermaid
+stateDiagram-v2
+    [*] --> TRIAGE
+    TRIAGE --> CONFIRMATION : intent clear
+    TRIAGE --> CLARIFY : needs clarification
+    TRIAGE --> RECOVERY : error
+    CLARIFY --> TRIAGE
+    CONFIRMATION --> FINALIZE : confirmed
+    CONFIRMATION --> TRIAGE : ambiguous
+    FINALIZE --> COMPLETED
+    FINALIZE --> RECOVERY : error
+    COMPLETED --> PROVIDER_PITCH : eligible
+    PROVIDER_PITCH --> PROVIDER_ONBOARDING : accepted
+    PROVIDER_ONBOARDING --> COMPLETED
+    RECOVERY --> TRIAGE
+```
 
 ### Streaming Pipeline
 
 **Optimized for Low Latency:**
-```
-Audio → STT Stream → Transcript Buffer → LLM Stream → Sentence Splitter
-                                                              ↓
-                                            Parallel TTS Tasks (async)
-                                                              ↓
-                                            Audio Chunks → WebRTC Stream
+```mermaid
+flowchart LR
+    Audio[Audio] --> STT["STT Stream"]
+    STT --> TB["Transcript Buffer"]
+    TB --> LLM["LLM Stream"]
+    LLM --> SS["Sentence Splitter"]
+    SS --> TTS["Parallel TTS Tasks\n(async)"]
+    TTS --> AC["Audio Chunks"]
+    AC --> WR["WebRTC Stream"]
 ```
 
 **Key Optimizations:**
@@ -291,7 +281,7 @@ Semantic search for service provider matching using:
 - Hybrid search (vector + BM25)
 - Automatic embedding generation
 
-### Schema (full mode — hub-spoke model)
+### Schema (full mode, hub-spoke model)
 
 **User hub** (one per provider):
 ```python
@@ -347,85 +337,90 @@ search_providers(query, filters)
 
 ### Complete Request Flow
 
-```
-1. User Authentication
-   ConnectX → Firebase Auth → JWT Token → AI-Assistant validates
+```mermaid
+sequenceDiagram
+    participant C as ConnectX
+    participant FB as Firebase Auth
+    participant A as AI-Assistant
+    participant STT as Google STT
+    participant G as Gemini
+    participant W as Weaviate
+    participant TTS as Google TTS
+    participant FCM as FCM
 
-2. WebRTC Connection
-   ConnectX → WebSocket Signaling → SDP Exchange → P2P Connection
-
-3. Voice Input
-   Microphone → ConnectX → WebRTC Audio → AI-Assistant
-
-4. Speech-to-Text
-   Audio Stream → Google Cloud STT (gRPC) → Text Transcript
-
-5. LLM Processing
-   Transcript → Gemini → AI Response
-
-6. Provider Search (if needed)
-   Query → Weaviate Hybrid Search → Top Providers
-
-7. Text-to-Speech
-   Response Text → Google Cloud TTS (parallel) → Audio Chunks
-
-8. Audio Response
-   Audio Chunks → WebRTC Stream → ConnectX → Speaker
-
-9. Push Notifications (async, out-of-band)
-   Service Request status change → NotificationService → FCM → ConnectX (background/foreground)
-   Each recipient's language (EN/DE) is fetched from Firestore before the notification is sent.
+    C->>FB: Google Sign-In
+    FB-->>C: JWT Token
+    C->>A: WebSocket + JWT
+    C->>A: SDP Offer (WebRTC)
+    A-->>C: SDP Answer + ICE
+    Note over C,A: P2P Connection established
+    C->>A: Audio Stream (WebRTC)
+    A->>STT: Raw audio (gRPC)
+    STT-->>A: Text transcript
+    A->>G: Transcript + context
+    G-->>A: AI response
+    opt Provider search needed
+        A->>W: Hybrid search
+        W-->>A: Top providers
+    end
+    A->>TTS: Response text (parallel)
+    TTS-->>A: Audio chunks
+    A->>C: Audio Stream (WebRTC)
+    opt Status change notification
+        A->>FCM: Push notification (EN/DE)
+        FCM-->>C: Notification
+    end
 ```
 
 ## 🚀 Deployment Architecture
 
 ### Development Environment
-```
-localhost:8080    → AI-Assistant
-localhost:8090    → Weaviate (full mode only)
-localhost:60099   → ConnectX Web (optional)
+
+| Service | URL |
+|---|---|
+| AI-Assistant | `localhost:8080` |
+| Weaviate (full mode only) | `localhost:8090` |
+| ConnectX Web (optional) | `localhost:60099` |
+
+### Production: Full mode (Cloud Run + Compute Engine)
+```mermaid
+flowchart TD
+    CR["Cloud Run: ai-assistant\neuropé-west3 · 1–3 instances\nAGENT_MODE=full\nSecrets via Secret Manager"]
+    VM["Compute Engine VM: weaviate-vm\neuropé-west3-a · e2-medium\nDocker: Weaviate + text2vec-model2vec"]
+    WI["Workload Identity\nSpeech · TTS · Firebase · Firestore"]
+    CR -->|"VPC connector"| VM
+    CR --- WI
 ```
 
-### Production — Full mode (Cloud Run + Compute Engine)
-```
-Cloud Run: ai-assistant (europe-west3, 1–3 instances)
-├── AGENT_MODE=full
-├── Secrets via Secret Manager (gemini-api-key, admin-secret-key)
-├── VPC connector → Weaviate VM
-└── Workload Identity → Speech, TTS, Firebase, Firestore
-
-Compute Engine VM: weaviate-vm (e2-medium, europe-west3-a)
-└── Docker Compose: Weaviate + text2vec-model2vec
-```
-
-### Production — Lite mode (Cloud Run only)
-```
-Cloud Run: ai-assistant (europe-west3, 1–3 instances)
-├── AGENT_MODE=lite
-├── Secrets via Secret Manager (gemini-api-key, google-places-api-key)
-├── No VPC connector
-└── Workload Identity (Firebase Auth only)
+### Production: Lite mode (Cloud Run only)
+```mermaid
+flowchart LR
+    CR["Cloud Run: ai-assistant\neuropé-west3 · 1–3 instances\nAGENT_MODE=lite\nSecrets via Secret Manager"]
+    WI["Workload Identity\n(Firebase Auth only)"]
+    CR --- WI
 ```
 
 ### CI/CD Pipeline
-```
-GitHub → Actions → Build → Test → Docker Build → Artifact Registry → Cloud Run deploy
-                                             └── weaviate/** change → SSH → docker compose up
+```mermaid
+flowchart LR
+    GH["GitHub Push"] --> GA["GitHub Actions"]
+    GA --> Build --> Test --> DB["Docker Build"]
+    DB --> AR["Artifact Registry"] --> CR["Cloud Run deploy"]
+    DB -->|"weaviate/** changed"| SSH["SSH to VM"] --> DC["docker compose up"]
 ```
 
 ## 🔐 Security Architecture
 
 ### Authentication Flow
-```
-User → Google Sign-In → Firebase Auth → JWT Token
-    ↓
-AI-Assistant validates token with Firebase Admin SDK
-    ↓
-Token contains: uid, email, name, exp
-    ↓
-Server creates User in Weaviate (if new)
-    ↓
-Session authenticated
+```mermaid
+flowchart TD
+    U[User] -->|"Google Sign-In"| FA["Firebase Auth"]
+    FA -->|"JWT Token"| C[ConnectX]
+    C -->|"JWT + request"| AV["AI-Assistant\n(Firebase Admin SDK)"]
+    AV --> TC["Token validated\nuid · email · name · exp"]
+    TC --> UC{"New user?"}
+    UC -->|yes| WC["Create User in Weaviate"] --> SA["Session authenticated"]
+    UC -->|no| SA
 ```
 
 ### API Key Management
