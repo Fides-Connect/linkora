@@ -77,26 +77,26 @@ Linkora is a production-ready platform that lets users find local service provid
 ## 🏗️ Platform Overview
 
 ```mermaid
-graph TD
-    subgraph "User's Device"
-        A[ConnectX Mobile App <br><i>Flutter</i>]
+graph LR
+    subgraph Device["User's Device"]
+        A[ConnectX Mobile App\nFlutter]
     end
 
-    subgraph "Shared Infrastructure"
-        B[AI Assistant <br><i>Python / aiohttp</i>]
-        D[Firebase <br><i>Auth & Firestore</i>]
+    subgraph Shared["Shared Infrastructure"]
+        B[AI Assistant\nPython / aiohttp]
+        D[Firebase\nAuth & Firestore]
     end
 
-    subgraph "Full Mode only"
-        C[Weaviate <br><i>Vector Database</i>]
-        E[Google Cloud <br><i>STT / TTS</i>]
+    subgraph Full["Full Mode only"]
+        C[Weaviate\nVector Database]
+        E[Google Cloud\nSTT / TTS]
     end
 
-    subgraph "Lite Mode only"
+    subgraph Lite["Lite Mode only"]
         F[Google Places API]
     end
 
-    A -- "Authentication" --> D
+    A -- "Auth" --> D
     A -- "WebRTC Audio" --> B
     A -- "Text chat" --> B
     B -- "User Data" --> D
