@@ -70,7 +70,7 @@ Linkora is a production-ready platform that lets users find local service provid
 | Category | Technologies |
 |---|---|
 | **Mobile App** | ![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white) ![Dart](https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&logo=dart&logoColor=white) |
-| **AI Backend** | ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white) ![Google Cloud](https://img.shields.io/badge/Google%20Cloud-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white) ![WebRTC](https://img.shields.io/badge/WebRTC-333333?style=for-the-badge&logo=webrtc&logoColor=white) |
+| **AI Backend** | ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white) ![aiohttp](https://img.shields.io/badge/aiohttp-2C5BB4?style=for-the-badge&logo=python&logoColor=white) ![Google Cloud](https://img.shields.io/badge/Google%20Cloud-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white) ![WebRTC](https://img.shields.io/badge/WebRTC-333333?style=for-the-badge&logo=webrtc&logoColor=white) |
 | **Database** | ![Weaviate](https://img.shields.io/badge/Weaviate-0C9E73?style=for-the-badge&logo=weaviate&logoColor=white) ![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black) |
 | **DevOps** | ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white) ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white) ![Cloud Run](https://img.shields.io/badge/Cloud%20Run-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white) |
 
@@ -82,24 +82,34 @@ graph TD
         A[ConnectX Mobile App <br><i>Flutter</i>]
     end
 
-    subgraph "Cloud Infrastructure"
-        B[AI Assistant <br><i>Python / FastAPI</i>]
-        C[Weaviate <br><i>Vector Database</i>]
+    subgraph "Shared Infrastructure"
+        B[AI Assistant <br><i>Python / aiohttp</i>]
         D[Firebase <br><i>Auth & Firestore</i>]
+    end
+
+    subgraph "Full Mode only"
+        C[Weaviate <br><i>Vector Database</i>]
         E[Google Cloud <br><i>STT / TTS</i>]
     end
 
-    A -- "WebRTC Audio & Chat" --> B
-    B -- "Semantic Search" --> C
-    B -- "User Data" --> D
-    B -- "Speech Services" --> E
+    subgraph "Lite Mode only"
+        F[Google Places API]
+    end
+
     A -- "Authentication" --> D
+    A -- "WebRTC Audio" --> B
+    A -- "Text chat" --> B
+    B -- "User Data" --> D
+    B -- "Semantic Search" --> C
+    B -- "Speech Services" --> E
+    B -- "Places Search" --> F
 
     style A fill:#02569B,stroke:#333,stroke-width:2px,color:#fff
     style B fill:#3776AB,stroke:#333,stroke-width:2px,color:#fff
     style C fill:#0C9E73,stroke:#333,stroke-width:2px,color:#fff
     style D fill:#FFCA28,stroke:#333,stroke-width:2px,color:#000
     style E fill:#4285F4,stroke:#333,stroke-width:2px,color:#fff
+    style F fill:#34A853,stroke:#333,stroke-width:2px,color:#fff
 ```
 **Read more**: [Architecture Overview](docs/architecture.md)
 
@@ -126,24 +136,37 @@ graph TD
     source .venv/bin/activate
     pip install -e ".[dev]"
     ```
+    Then copy and configure the environment file — the backend will not start without `GEMINI_API_KEY` and Firebase Admin credentials:
+    ```sh
+    cp .env.template .env
+    # Edit .env with your credentials
+    ```
+    See the [AI Assistant docs](docs/ai-assistant.md) for the full list of required variables.
 
 3.  **Setup ConnectX (Mobile App):**
     ```sh
     cd connectx
     flutter pub get
+    cp .env.template .env
+    # Edit .env — set APP_MODE, AI_ASSISTANT_SERVER_URL, GOOGLE_OAUTH_CLIENT_ID
     ```
+    The app also requires Firebase config files (not checked in). Run `flutterfire configure` from the `connectx` directory and add the generated native files (`google-services.json` for Android, `GoogleService-Info.plist` for iOS). See the [ConnectX docs](docs/connectx.md) for details.
 
-4.  **Launch Weaviate Database (Full mode only):**
+4.  **Launch and initialize Weaviate (Full mode only):**
     ```sh
     cd ../weaviate
     docker-compose up -d
     ```
+    > Starting the container brings up an empty database. Complete the schema and sample-data initialization from the [Getting Started Guide](docs/getting-started.md) before using Full mode — there will be nothing to search against otherwise.
 
 5.  **Run the application:**
     - Start the AI Assistant backend (from the `ai-assistant` directory).
-    - Launch the Flutter app on your desired emulator or device.
+    - Launch the Flutter app with the required build flavor (Android):
+      ```sh
+      flutter run --flavor liteDev   # or fullDev, liteProd, fullProd
+      ```
 
-For detailed instructions, see the [Getting Started Guide](docs/getting-started.md).
+For full setup instructions including Firebase configuration and Weaviate initialization, see the [Getting Started Guide](docs/getting-started.md).
 
 ## 📁 Repository Structure
 
@@ -151,7 +174,7 @@ For detailed instructions, see the [Getting Started Guide](docs/getting-started.
 linkora/
 ├── docs/                 # 📖 Comprehensive documentation for architecture, setup, and deployment.
 ├── connectx/             # 📱 Flutter mobile application for iOS and Android.
-├── ai-assistant/         # 🤖 Python-based AI backend with FastAPI and WebRTC.
+├── ai-assistant/         # 🤖 Python-based AI backend with aiohttp and WebRTC.
 ├── weaviate/             # 🗃️ Docker configuration for the Weaviate vector database.
 └── .github/              # ⚙️ GitHub Actions for CI/CD workflows.
 ```
