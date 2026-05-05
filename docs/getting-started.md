@@ -92,7 +92,7 @@ nano .env
 
 # Run on device — flavor must match APP_MODE in .env
 # liteDev/liteProd for APP_MODE=lite, fullDev/fullProd for APP_MODE=full
-flutter run --flavor liteDev
+flutter run --flavor fullDev
 ```
 
 See [ConnectX Documentation](connectx.md) for detailed setup including Firebase configuration.
