@@ -136,19 +136,19 @@ graph TD
     source .venv/bin/activate
     pip install -e ".[dev]"
     ```
-    Then copy and configure the environment file — the backend will not start without `GEMINI_API_KEY` and Firebase Admin credentials:
+    Then copy and configure the environment file — the backend will not start without `GEMINI_API_KEY` and Firebase Admin credentials. Also set `AGENT_MODE` to match the app mode you plan to run (`lite` or `full`); the server defaults to `full`, and a mismatch with the app's `APP_MODE` will lead to a broken setup:
     ```sh
     cp .env.template .env
-    # Edit .env with your credentials
+    # Edit .env with your credentials and set AGENT_MODE=lite or AGENT_MODE=full
     ```
     See the [AI Assistant docs](docs/ai-assistant.md) for the full list of required variables.
 
 3.  **Setup ConnectX (Mobile App):**
     ```sh
-    cd connectx
+    cd ../connectx
     flutter pub get
     cp .env.template .env
-    # Edit .env — set APP_MODE, AI_ASSISTANT_SERVER_URL, GOOGLE_OAUTH_CLIENT_ID
+    # Edit .env — set APP_MODE (must match AGENT_MODE above), AI_ASSISTANT_SERVER_URL, GOOGLE_OAUTH_CLIENT_ID
     ```
     The app also requires Firebase config files (not checked in). Run `flutterfire configure` from the `connectx` directory and add the generated native files (`google-services.json` for Android, `GoogleService-Info.plist` for iOS). See the [ConnectX docs](docs/connectx.md) for details.
 
@@ -160,13 +160,19 @@ graph TD
     > Starting the container brings up an empty database. Complete the schema and sample-data initialization from the [Getting Started Guide](docs/getting-started.md) before using Full mode — there will be nothing to search against otherwise.
 
 5.  **Run the application:**
-    - Start the AI Assistant backend (from the `ai-assistant` directory).
-    - Launch the Flutter app with the required build flavor (Android):
+    - Start the AI Assistant backend:
       ```sh
+      cd ../ai-assistant
+      source .venv/bin/activate
+      python -m ai_assistant
+      ```
+    - In a separate terminal, launch the Flutter app with the required build flavor (Android):
+      ```sh
+      cd ../connectx
       flutter run --flavor liteDev   # or fullDev, liteProd, fullProd
       ```
 
-For full setup instructions including Firebase configuration and Weaviate initialization, see the [Getting Started Guide](docs/getting-started.md).
+For full mobile-app setup instructions including Firebase configuration, see the [ConnectX docs](docs/connectx.md). For Weaviate schema and sample-data initialization, see the [Getting Started Guide](docs/getting-started.md).
 
 ## 📁 Repository Structure
 
