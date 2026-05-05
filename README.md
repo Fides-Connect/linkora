@@ -85,11 +85,12 @@ graph LR
     subgraph Shared["Shared (all modes)"]
         B[AI Assistant\nPython / aiohttp]
         G[Gemini 2.5 Flash]
+        D[Firebase Auth]
     end
 
     subgraph Full["Full Mode only"]
         C[Weaviate\nVector Database]
-        D[Firebase\nAuth & Firestore]
+        D2[Firebase Firestore]
         E[Google Cloud\nSTT / TTS]
     end
 
@@ -97,11 +98,11 @@ graph LR
         F[Google Places API]
     end
 
-    A -- "Auth (full)" --> D
+    A -- "Auth" --> D
     A -- "WebRTC Audio" --> B
     A -- "Text chat" --> B
     B -- "LLM" --> G
-    B -- "User Data (full)" --> D
+    B -- "User Data" --> D2
     B -- "Semantic Search" --> C
     B -- "Speech Services" --> E
     B -- "Places Search" --> F
@@ -110,6 +111,7 @@ graph LR
     style B fill:#3776AB,stroke:#333,stroke-width:2px,color:#fff
     style C fill:#0C9E73,stroke:#333,stroke-width:2px,color:#fff
     style D fill:#FFCA28,stroke:#333,stroke-width:2px,color:#000
+    style D2 fill:#FFCA28,stroke:#333,stroke-width:2px,color:#000
     style E fill:#4285F4,stroke:#333,stroke-width:2px,color:#fff
     style F fill:#34A853,stroke:#333,stroke-width:2px,color:#fff
     style G fill:#4285F4,stroke:#333,stroke-width:2px,color:#fff
