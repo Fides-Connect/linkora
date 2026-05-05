@@ -10,6 +10,12 @@
 </p>
 
 <p align="center">
+    <img src="https://img.shields.io/github/actions/workflow/status/Fides-Connect/linkora/connectx-test.yml?branch=main&label=ConnectX%20Tests&logo=flutter&style=for-the-badge" alt="ConnectX Build Status">
+    <img src="https://img.shields.io/github/actions/workflow/status/Fides-Connect/linkora/ai-assistant-test.yml?branch=main&label=AI%20Assistant%20Tests&logo=python&style=for-the-badge" alt="AI Assistant Build Status">
+    <img src="https://img.shields.io/github/license/Fides-Connect/linkora?style=for-the-badge" alt="License">
+</p>
+
+<p align="center">
   <a href="docs/getting-started.md">Getting Started</a> ·
   <a href="docs/architecture.md">Architecture</a> ·
   <a href="docs/connectx.md">Mobile App</a> ·
@@ -48,270 +54,169 @@ Linkora is a production-ready platform that lets users find local service provid
   </tr>
 </table>
 
-## ✨ What Makes Linkora Different
+## ✨ Features
 
-| | |
+- 🎙️ **Voice-first UX**: Real-time WebRTC audio streaming with Google STT/TTS for sub-second round-trips.
+- 🤖 **Conversational Search**: The AI assistant, Elin, asks clarifying questions, extracts structured intent, and performs a semantic search.
+- 🔀 **Two Deployment Modes**:
+    - **Full**: Utilizes a Weaviate vector database with onboarded providers for deep semantic search.
+    - **Lite**: Uses Google Places and web enrichment without the extra Weaviate/Firestore infrastructure.
+- 🔒 **Secure by Design**: All API keys are kept server-side, and clients authenticate via Firebase for enhanced security.
+- 📦 **Batteries Included**: Comes with Docker Compose, Cloud Run deployment scripts, GitHub Actions for CI/CD, and a dev container for a seamless development experience.
+- 🧪 **Well-Tested**: A comprehensive suite of over 60 backend unit tests, Flutter unit/service/viewmodel tests, and coverage reporting helps ensure reliability.
+
+## 🛠️ Tech Stack
+
+| Category | Technologies |
 |---|---|
-| 🎙️ **Voice-first UX** | Real-time WebRTC audio streaming with Google STT/TTS and sub-second round-trips |
-| 🤖 **Conversational search** | Elin asks the right questions, extracts structured intent, then fires a semantic search |
-| 🔀 **Two deployment modes** | **Full** (Weaviate vector DB, onboarded providers) or **Lite** (Google Places + web enrichment, zero infra) |
-| 🔒 **Secure by design** | All API keys stay server-side; clients authenticate via Firebase |
-| 📦 **Batteries included** | Docker Compose, Cloud Run deploy scripts, GitHub Actions CI/CD, dev container |
-| 🧪 **Well tested** | 60+ backend unit tests, Flutter widget tests, coverage reporting |
+| **Mobile App** | ![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white) ![Dart](https://img.shields.io/badge/Dart-0175C2?style=for-the-badge&logo=dart&logoColor=white) |
+| **AI Backend** | ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white) ![aiohttp](https://img.shields.io/badge/aiohttp-2C5BB4?style=for-the-badge&logo=python&logoColor=white) ![Google Cloud](https://img.shields.io/badge/Google%20Cloud-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white) ![WebRTC](https://img.shields.io/badge/WebRTC-333333?style=for-the-badge&logo=webrtc&logoColor=white) |
+| **Database** | ![Weaviate](https://img.shields.io/badge/Weaviate-0C9E73?style=for-the-badge&logo=weaviate&logoColor=white) ![Firebase](https://img.shields.io/badge/Firebase-FFCA28?style=for-the-badge&logo=firebase&logoColor=black) |
+| **DevOps** | ![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white) ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white) ![Cloud Run](https://img.shields.io/badge/Cloud%20Run-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white) |
 
 ## 🏗️ Platform Overview
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     Linkora Platform                        │
-├────────────────┬──────────────────────┬─────────────────────┤
-│  ConnectX      │   AI-Assistant       │  Weaviate           │
-│  Flutter app   │   Python / FastAPI   │  Vector DB          │
-│  iOS & Android │   WebRTC server      │  (Full mode only)   │
-│  Firebase Auth │   Gemini 3.0 LLM     │  Semantic search    │
-│                │   STT / TTS          │  Provider profiles  │
-└────────────────┴──────────┬───────────┴─────────────────────┘
-                            │ WebRTC audio stream
-                            ▼
-                     User's mobile device
-```
+```mermaid
+graph LR
+    subgraph Device["User's Device"]
+        A[ConnectX Mobile App\nFlutter]
+    end
 
+    subgraph Shared["Shared (all modes)"]
+        B[AI Assistant\nPython / aiohttp]
+        G[Gemini 2.5 Flash]
+        D[Firebase Auth]
+    end
+
+    subgraph Full["Full Mode only"]
+        C[Weaviate\nVector Database]
+        D2[Firebase Firestore]
+        E[Google Cloud\nSTT / TTS]
+    end
+
+    subgraph Lite["Lite Mode only"]
+        F[Google Places API]
+    end
+
+    A -- "Auth" --> D
+    A -. "WebRTC Audio (full only)" .-> B
+    A -- "Text chat (all modes)" --> B
+    B -- "LLM" --> G
+    B -- "User Data" --> D2
+    B -- "Semantic Search" --> C
+    B -- "Speech Services" --> E
+    B -- "Places Search" --> F
+
+    style A fill:#02569B,stroke:#333,stroke-width:2px,color:#fff
+    style B fill:#3776AB,stroke:#333,stroke-width:2px,color:#fff
+    style C fill:#0C9E73,stroke:#333,stroke-width:2px,color:#fff
+    style D fill:#FFCA28,stroke:#333,stroke-width:2px,color:#000
+    style D2 fill:#FFCA28,stroke:#333,stroke-width:2px,color:#000
+    style E fill:#4285F4,stroke:#333,stroke-width:2px,color:#fff
+    style F fill:#34A853,stroke:#333,stroke-width:2px,color:#fff
+    style G fill:#4285F4,stroke:#333,stroke-width:2px,color:#fff
+```
 **Read more**: [Architecture Overview](docs/architecture.md)
 
+## 🚀 Getting Started
+
+### Prerequisites
+- [Flutter SDK](https://flutter.dev/docs/get-started/install)
+- [Python 3.14+](https://www.python.org/downloads/)
+- [Docker](https://www.docker.com/products/docker-desktop/)
+- [Firebase Account](https://firebase.google.com/)
+- [Gemini API key](https://aistudio.google.com/app/apikey)
+- [Git LFS](https://git-lfs.com/) (required for the bundled cross-encoder model weights)
+
+### Installation & Setup
+
+1.  **Clone the repository:**
+    ```sh
+    git clone https://github.com/Fides-Connect/linkora.git
+    cd linkora
+    ```
+
+2.  **Setup AI Assistant (Backend):**
+    ```sh
+    cd ai-assistant
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -e ".[dev]"
+    git lfs pull
+    ```
+    The bundled cross-encoder uses Git LFS; on a fresh clone, run the commands above so `model.safetensors` is downloaded instead of remaining an LFS pointer file.
+
+    Then copy and configure the environment file. The backend will not start without `GEMINI_API_KEY` and Firebase Admin credentials. Also set `AGENT_MODE` to match the app mode you plan to run (`lite` or `full`); the server defaults to `full`, and a mismatch with the app's `APP_MODE` will lead to a broken setup. For Firebase Admin credentials, authenticate locally with Application Default Credentials or point to a service-account key file. If using `AGENT_MODE=lite`, also set `GOOGLE_PLACES_API_KEY`. Without it the backend falls back to a no-op data provider and provider searches return no matches:
+    ```sh
+    cp .env.template .env
+    # Edit .env: set GEMINI_API_KEY, AGENT_MODE, and (for lite) GOOGLE_PLACES_API_KEY
+
+    # Firebase Admin: pick one of the two options below
+    # Option 1: Application Default Credentials (recommended for local dev)
+    gcloud auth application-default login
+    # Option 2: service account key file
+    export GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/service-account.json
+    ```
+    See the [AI Assistant docs](docs/ai-assistant.md) for the full list of required variables.
+
+3.  **Setup ConnectX (Mobile App):**
+    ```sh
+    cd ../connectx
+    flutter pub get
+    cp .env.template .env
+    # Edit .env: set APP_MODE (must match AGENT_MODE above), AI_ASSISTANT_SERVER_URL, GOOGLE_OAUTH_CLIENT_ID
+    ```
+    The app also requires Firebase config files (not checked in). If you do not already have the FlutterFire CLI installed, install it first:
+    ```sh
+    dart pub global activate flutterfire_cli
+    ```
+    Then run `flutterfire configure` from the `connectx` directory to generate `lib/firebase_options.dart`. Android and iOS each need an additional platform-specific config file downloaded from the Firebase Console. See the [ConnectX docs](docs/connectx.md) for the full setup instructions for both platforms.
+
+4.  **Launch and initialize Weaviate (Full mode only):**
+    ```sh
+    cd ../weaviate
+    docker-compose up -d
+    ```
+    > Starting the container brings up an empty database. Complete the schema and sample-data initialization from the [Getting Started Guide](docs/getting-started.md) before using Full mode. There will be nothing to search against otherwise.
+
+5.  **Run the application:**
+    - Start the AI Assistant backend:
+      ```sh
+      cd ../ai-assistant
+      source .venv/bin/activate
+      python -m ai_assistant
+      ```
+    - In a separate terminal, launch the Flutter app with the required build flavor (Android). The selected flavor must match `APP_MODE` in `connectx/.env` (`liteDev`/`liteProd` → `APP_MODE=lite`; `fullDev`/`fullProd` → `APP_MODE=full`):
+      ```sh
+      cd ../connectx
+      flutter run --flavor liteDev   # or fullDev, liteProd, fullProd
+      ```
+
+For full mobile-app setup instructions including Firebase configuration, see the [ConnectX docs](docs/connectx.md). For Weaviate schema and sample-data initialization, see the [Getting Started Guide](docs/getting-started.md).
 
 ## 📁 Repository Structure
 
 ```
 linkora/
-├── docs/                 # 📖 Comprehensive documentation
-│   ├── README.md        # Documentation index
-│   ├── getting-started.md
-│   ├── architecture.md
-│   ├── connectx.md
-│   ├── ai-assistant.md
-│   ├── weaviate.md
-│   └── deployment.md
-│
-├── connectx/             # 📱 Flutter mobile application
-│   ├── lib/             # Dart source code
-│   ├── android/         # Android platform
-│   ├── ios/             # iOS platform
-│   └── test/            # Tests
-│
-├── ai-assistant/         # 🤖 Python WebRTC server
-│   ├── src/             # Python source code
-│   ├── scripts/         # Utility scripts (incl. download_models.py)
-│   ├── tests/           # Unit and integration tests
-│   ├── models/          # Bundled ML models (Git LFS - run `git lfs pull`)
-│   ├── Dockerfile       # Container definition
-│   └── docker-compose.yml
-│
-├── weaviate/             # 🗄️ Weaviate docker-compose + VM startup script
-│
-├── .github/              # 🔄 CI/CD workflows
-│   └── workflows/
-│       ├── connectx-test.yml
-│       ├── ai-assistant-test.yml
-│       ├── deploy-ai-assistant-dev.yml
-│       ├── deploy-ai-assistant-prod.yml
-│       ├── deploy-weaviate.yml
-│       └── _deploy-ai-assistant.yml  # Reusable deploy workflow
-│
-└── .devcontainer/        # 🐳 VS Code Dev Container
-    ├── devcontainer.json
-    ├── post-create.sh
-    └── Dockerfile
+├── docs/                 # 📖 Comprehensive documentation for architecture, setup, and deployment.
+├── connectx/             # 📱 Flutter mobile application for iOS and Android.
+├── ai-assistant/         # 🤖 Python-based AI backend with aiohttp and WebRTC.
+├── weaviate/             # 🗃️ Docker configuration for the Weaviate vector database.
+└── .github/              # ⚙️ GitHub Actions for CI/CD workflows.
 ```
 
-## 🚀 Quick Start
+## 🤝 Contributing
 
-### Prerequisites
+Contributions are welcome! Please feel free to submit a pull request or open an issue to discuss your ideas.
 
-- **For Mobile App**: Flutter SDK (^3.9.2+), iOS/Android device
-- **For Backend**: Python 3.14+, Docker, Google Cloud account, Gemini API key
-- **Git LFS**: required to pull bundled ML model weights (see below)
+1.  Fork the Project
+2.  Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3.  Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4.  Push to the Branch (`git push origin feature/AmazingFeature`)
+5.  Open a Pull Request
 
-### 0. Clone with Git LFS
+## 📄 License
 
-This repo uses [Git LFS](https://git-lfs.com) to store the cross-encoder model weights (~87 MB).
-Install LFS once and pull the files after cloning:
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-```bash
-# Install (macOS)
-brew install git-lfs
-git lfs install          # registers LFS hooks globally (run once per machine)
 
-# After cloning the repo
-git lfs pull             # downloads model.safetensors and any other LFS-tracked files
-```
-
-If you skip `git lfs pull`, the `model.safetensors` file will be a 134-byte pointer and the
-backend will fall back to downloading the model from HuggingFace Hub at first startup.
-
-> **First-time setup without LFS access**: run `python ai-assistant/scripts/download_models.py`
-> to download the model files directly from HuggingFace Hub into `ai-assistant/models/`.
-
-### 1. Start the Backend Server
-
-```bash
-cd ai-assistant
-
-# Copy and configure environment
-cp .env.template .env
-# Edit .env with your credentials
-
-# Start with Docker
-docker-compose up ai-assistant
-
-# Server starts on localhost:8080
-```
-
-**See**: [AI-Assistant Documentation](docs/ai-assistant.md) for detailed setup.
-
-### 2. Run the Mobile App
-
-```bash
-cd connectx
-
-# Install dependencies
-flutter pub get
-
-# Configure environment
-cp .env.template .env
-# Edit .env with server URL
-
-# Android: --flavor selects the Firebase project (Gradle); backend is set in .env
-flutter run --flavor liteDev
-# Other Android variants:
-# flutter run --flavor liteProd
-# flutter run --flavor fullDev
-# flutter run --flavor fullProd
-
-# iOS: --flavor requires matching Xcode schemes; omit unless configured
-flutter run -d ios
-```
-
-**See**: [ConnectX Documentation](docs/connectx.md) for detailed setup including Firebase configuration.
-
-### 3. Start Weaviate (full mode only)
-
-The default **full mode** requires Weaviate for provider vector search. Skip this step if running in [lite mode](#deployment-modes).
-
-```bash
-# Start Weaviate
-cd weaviate
-docker-compose up -d
-
-# Initialize database
-cd ../ai-assistant
-python scripts/init_database.py --load-test-data
-
-```
-
-**See**: [Weaviate Documentation](docs/weaviate.md) for detailed configuration.
-
-## 🚀 Deployment Modes
-
-Linkora ships two deployment profiles, selected via the `AGENT_MODE` environment
-variable:
-
-| | Full mode (`AGENT_MODE=full`, default) | Lite mode (`AGENT_MODE=lite`) |
-|---|---|---|
-| **Provider search** | Weaviate vector / hybrid search | Google Places API → cross-encoder |
-| **Voice** | Yes (WebRTC audio) | Text-only |
-| **Firestore** | Full read/write | Not used |
-| **Provider onboarding** | Full flow | Not available |
-| **Infrastructure** | Cloud Run + Weaviate VM | Cloud Run only |
-| **Key env vars** | `WEAVIATE_URL` | `GOOGLE_PLACES_API_KEY` |
-
-**Lite mode** is ideal for prototypes, demos, or regions where you don't yet have
-providers registered in Weaviate.  The assistant fetches live results from the
-Google Places API, enriches them with web crawling (skills, email, portfolio),
-reranks them with a local cross-encoder model, and presents them to the user,
-without any Weaviate dependency.
-
-See [Deployment Documentation](docs/deployment.md) for provisioning instructions
-for both modes.
-
-## 🧪 Testing
-
-### Backend Tests
-```bash
-cd ai-assistant
-pytest
-pytest --cov=src tests/  # With coverage
-```
-
-### Frontend Tests
-
-> **Note**: Only the **Android** version of the Flutter app has been properly tested. iOS builds are configured but have not been fully validated.
-
-```bash
-cd connectx
-flutter test
-```
-
-## 🚀 Deployment
-
-### Development
-- Docker Compose for local development
-- See [Getting Started Guide](docs/getting-started.md)
-
-### Production
-- Cloud Run (AI-Assistant) + Compute Engine VM (Weaviate)
-- GitHub Actions for CI/CD
-
-**See**: [Deployment Documentation](docs/deployment.md)
-
-## 🔧 CI/CD & DevContainer
-
-### GitHub Actions Workflows
-
-The project includes automated CI/CD pipelines:
-
-| File | Name | Purpose |
-|---|---|---|
-| `connectx-test.yml` | Flutter Tests | Builds devcontainer and runs Flutter tests |
-| `ai-assistant-test.yml` | AI Assistant Tests | Lints, type-checks, and runs Python backend tests |
-| `deploy-ai-assistant-dev.yml` | Deploy AI-Assistant (Dev) | Deploys to Cloud Run dev environment |
-| `deploy-ai-assistant-prod.yml` | Deploy AI-Assistant (Prod) | Deploys to Cloud Run prod environment |
-| `deploy-weaviate.yml` | Deploy Weaviate | Deploys Weaviate to Compute Engine VM |
-| `_deploy-ai-assistant.yml` | Deploy AI-Assistant (Reusable) | Shared reusable workflow called by dev/prod deployers |
-
-### DevContainer Cache & Rebuild
-
-To speed up CI builds, we cache the devcontainer image. Here's how to manage it:
-
-#### Normal Builds (Uses Cache)
-Automatic - no action needed. The CI will use cached layers to speed up builds (1-2 min instead of 10 min).
-
-#### Force Rebuild from Scratch
-
-**Option 1: Manual Workflow Trigger (Recommended)**
-1. Go to GitHub → Actions tab
-2. Select "Build & Test ConnectX APK" or "Build and Cache DevContainer"
-3. Click "Run workflow"
-4. Check ✅ **"Force rebuild without cache"**
-5. Click "Run workflow"
-
-**Option 2: Commit Message Trigger**
-Include `[rebuild]` or `[no-cache]` in your commit message:
-```bash
-git commit -m "Update dependencies [rebuild]"
-git push
-```
-
-**Option 3: Delete Cache via GitHub CLI**
-```bash
-gh cache delete devcontainer-cache --repo Fides-Connect/linkora
-```
-
-**Option 4: GitHub UI**
-1. Go to your repo → Settings → Actions → Caches
-2. Find and delete the devcontainer cache
-
-#### When to Force Rebuild?
-- After major Dockerfile changes
-- When cache corruption is suspected
-- After updating system dependencies (Java, Android SDK, etc.)
-- To verify a clean build without cached layers

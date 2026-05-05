@@ -6,66 +6,77 @@ This document describes the architecture, design decisions, and technical implem
 
 ### High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   Linkora Platform                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   ┌───────────────┐         ┌──────────────────┐            │
-│   │   ConnectX    │◄───────►│  AI-Assistant    │            │
-│   │  (Flutter)    │ WebRTC  │  (Python/aiohttp)│            │
-│   │               │ (full)  │                  │            │
-│   │  - iOS/Android│◄───────►│  - STT / TTS     │            │
-│   │  - UI/UX      │  WSS    │  - LLM (Gemini)  │            │
-│   │  - WebRTC     │ (lite)  │  - Stage FSM     │            │
-│   │  - Auth       │         │  - Tool registry │            │
-│   └───────────────┘         └────┬─────────────┘            │
-│                                  │                          │
-│               ┌──────────────────┴──────────────┐           │
-│               │ Full mode          Lite mode     │           │
-│               ▼                   ▼              │           │
-│   ┌──────────────────┐  ┌──────────────────┐    │           │
-│   │    Weaviate      │  │ Google Places API│    │           │
-│   │  (Vector DB)     │  │ + WebCrawler     │    │           │
-│   │  - Provider Data │  │ + CrossEncoder   │    │           │
-│   │  - Embeddings    │  │  (ephemeral)     │    │           │
-│   │  - Hybrid Search │  └──────────────────┘    │           │
-│   └──────────────────┘                          │           │
-│                                                             │
-├─────────────────────────────────────────────────────────────┤
-│               External Services                             │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   ┌────────────┐  ┌────────────┐  ┌──────────────┐          │
-│   │ Google STT │  │ Google TTS │  │Google Gemini │          │
-│   │ (full mode)│  │ (full mode)│  │ 2.5 Flash    │          │
-│   └────────────┘  └────────────┘  └──────────────┘          │
-│                                                             │
-│   ┌────────────────┐  ┌──────────────┐  ┌──────────────┐   │
-│   │ Firebase       │  │ Google Places│  │ Firebase     │   │
-│   │ Auth/Firestore │  │ Text Search  │  │ Cloud Msg.   │   │
-│   │ (full mode)    │  │ (lite mode)  │  │ (full mode)  │   │
-│   └────────────────┘  └──────────────┘  └──────────────┘   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph Device["User's Device"]
+        A["ConnectX\nFlutter · iOS/Android"]
+    end
+
+    subgraph Backend["AI-Assistant\nPython / aiohttp"]
+        B["STT / TTS · LLM\nStage FSM · CrossEncoder\nTool registry"]
+    end
+
+    subgraph Full["Full Mode"]
+        C["Weaviate\nVector DB\nHybrid Search"]
+    end
+
+    subgraph Lite["Lite Mode"]
+        D["Google Places API\n+ WebCrawler"]
+    end
+
+    subgraph External["External Services"]
+        E["Google STT\n(full only)"]
+        F["Google TTS\n(full only)"]
+        G["Gemini 2.5 Flash\n(all modes)"]
+        H["Firebase Auth\n(all modes)"]
+        H2["Firebase Firestore\n+ Cloud Msg.\n(full only)"]
+    end
+
+    A -- "WebRTC (full)" --> B
+    A -- "WS/WSS (lite)" --> B
+    A -- "Auth" --> H
+    B --> C
+    B --> D
+    B --> E
+    B --> F
+    B --> G
+    B --> H
+    B --> H2
+
+    style A fill:#02569B,stroke:#333,color:#fff
+    style B fill:#3776AB,stroke:#333,color:#fff
+    style C fill:#0C9E73,stroke:#333,color:#fff
+    style D fill:#34A853,stroke:#333,color:#fff
+    style E fill:#4285F4,stroke:#333,color:#fff
+    style F fill:#4285F4,stroke:#333,color:#fff
+    style G fill:#4285F4,stroke:#333,color:#fff
+    style H fill:#FFCA28,stroke:#333,color:#000
+    style H2 fill:#FFCA28,stroke:#333,color:#000
 ```
 
-### Component Interaction Flow
+### Full-Mode Voice Interaction Flow
 
-```
-User speaks → ConnectX captures audio → WebRTC stream → AI-Assistant
-                                                              ↓
-                                                    Google Cloud STT
-                                                              ↓
-                                                      Text transcript
-                                                              ↓
-                                                    Gemini LLM
-                                                              ↓
-                                                      AI response text
-                                                              ↓
-                                                    Google Cloud TTS
-                                                              ↓
-AI-Assistant ← WebRTC stream ← Audio response ← ConnectX plays audio
+This sequence shows the **full-mode voice path only**. Lite sessions use the `/ws/chat` text transport and do **not** call Google STT or Google TTS.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as ConnectX
+    participant A as AI-Assistant
+    participant S as Google STT
+    participant L as Gemini LLM
+    participant T as Google TTS
+
+    U->>C: Speaks
+    C->>A: WebRTC audio stream
+    A->>S: Raw audio
+    S-->>A: Text transcript
+    A->>L: Transcript + context
+    L-->>A: AI response text
+    A->>T: Response text
+    T-->>A: Audio response
+    A->>C: WebRTC audio stream
+    C->>U: Plays audio
 ```
 
 ## 🎯 Design Principles
@@ -150,9 +161,10 @@ services/       # core business logic
 5. Stream audio bidirectionally
 
 **Audio Pipeline:**
-```
-Microphone → AudioRecord → RTC DataChannel → Network → Server
-Server → Network → RTC DataChannel → AudioTrack → Speaker
+```mermaid
+flowchart LR
+    Mic[Microphone] --> AR[AudioRecord] --> MT1["WebRTC Audio Track"] --> Net1[Network] --> Srv[Server]
+    Srv --> Net2[Network] --> MT2["WebRTC Audio Track"] --> AT[AudioTrack] --> Spk[Speaker]
 ```
 
 ## 🤖 AI-Assistant (Backend Server)
@@ -222,48 +234,37 @@ DataProvider
 
 ### Conversation Stages
 
-```
-┌──────────┐
-│  TRIAGE  │  Intent gathering — LLM clarifies need & scope
-└────┬─────┘
-     │ intent clear
-     ▼
-┌──────────────┐
-│ CONFIRMATION │  Confirm request details before search
-└────┬─────────┘
-     │ confirmed                      │ needs more info
-     ▼                                ▼
-┌──────────┐                     ┌─────────┐
-│ FINALIZE │  Provider results   │ CLARIFY │  Follow-up questions
-└────┬─────┘  + email cards      └────┬────┘
-     │                               │ → back to TRIAGE
-     ▼
-┌──────────┐
-│COMPLETED │  Wrap-up; if eligible → PROVIDER_PITCH
-└────┬─────┘
-     │ if user not yet a provider
-     ▼
-┌────────────────┐
-│ PROVIDER_PITCH │  Invite user to list their services
-└────┬───────────┘
-     │ accepted
-     ▼
-┌─────────────────────┐
-│ PROVIDER_ONBOARDING │  Skill collection (multi-turn)
-└─────────────────────┘
-```
+> Simplified overview. See [AI Assistant docs](ai-assistant.md) for the full state machine with all transitions.
 
-Error transitions: any stage may move to `RECOVERY` on failure; `RECOVERY → TRIAGE`.
+```mermaid
+stateDiagram-v2
+    [*] --> TRIAGE
+    TRIAGE --> CONFIRMATION : intent clear
+    TRIAGE --> CLARIFY : needs clarification
+    TRIAGE --> RECOVERY : error
+    CLARIFY --> TRIAGE
+    CONFIRMATION --> FINALIZE : confirmed
+    CONFIRMATION --> TRIAGE : ambiguous
+    FINALIZE --> COMPLETED
+    FINALIZE --> RECOVERY : error
+    COMPLETED --> PROVIDER_PITCH : eligible
+    PROVIDER_PITCH --> PROVIDER_ONBOARDING : accepted
+    PROVIDER_ONBOARDING --> COMPLETED
+    RECOVERY --> TRIAGE
+```
 
 ### Streaming Pipeline
 
 **Optimized for Low Latency:**
-```
-Audio → STT Stream → Transcript Buffer → LLM Stream → Sentence Splitter
-                                                              ↓
-                                            Parallel TTS Tasks (async)
-                                                              ↓
-                                            Audio Chunks → WebRTC Stream
+```mermaid
+flowchart LR
+    Audio[Audio] --> STT["STT Stream"]
+    STT --> TB["Transcript Buffer"]
+    TB --> LLM["LLM Stream"]
+    LLM --> SS["Sentence Splitter"]
+    SS --> TTS["Parallel TTS Tasks\n(async)"]
+    TTS --> AC["Audio Chunks"]
+    AC --> WR["WebRTC Stream"]
 ```
 
 **Key Optimizations:**
@@ -280,7 +281,7 @@ Semantic search for service provider matching using:
 - Hybrid search (vector + BM25)
 - Automatic embedding generation
 
-### Schema (full mode — hub-spoke model)
+### Schema (full mode, hub-spoke model)
 
 **User hub** (one per provider):
 ```python
@@ -336,85 +337,94 @@ search_providers(query, filters)
 
 ### Complete Request Flow
 
-```
-1. User Authentication
-   ConnectX → Firebase Auth → JWT Token → AI-Assistant validates
+```mermaid
+sequenceDiagram
+    participant C as ConnectX
+    participant FB as Firebase Auth
+    participant A as AI-Assistant
+    participant STT as Google STT
+    participant G as Gemini
+    participant W as Weaviate
+    participant TTS as Google TTS
+    participant FCM as FCM
 
-2. WebRTC Connection
-   ConnectX → WebSocket Signaling → SDP Exchange → P2P Connection
-
-3. Voice Input
-   Microphone → ConnectX → WebRTC Audio → AI-Assistant
-
-4. Speech-to-Text
-   Audio Stream → Google Cloud STT (gRPC) → Text Transcript
-
-5. LLM Processing
-   Transcript → Gemini → AI Response
-
-6. Provider Search (if needed)
-   Query → Weaviate Hybrid Search → Top Providers
-
-7. Text-to-Speech
-   Response Text → Google Cloud TTS (parallel) → Audio Chunks
-
-8. Audio Response
-   Audio Chunks → WebRTC Stream → ConnectX → Speaker
-
-9. Push Notifications (async, out-of-band)
-   Service Request status change → NotificationService → FCM → ConnectX (background/foreground)
-   Each recipient's language (EN/DE) is fetched from Firestore before the notification is sent.
+    C->>FB: Google Sign-In
+    FB-->>C: JWT Token
+    C->>A: WebSocket + JWT
+    C->>A: SDP Offer (WebRTC)
+    A-->>C: SDP Answer + ICE
+    Note over C,A: P2P Connection established
+    C->>A: Audio Stream (WebRTC)
+    A->>STT: Raw audio (gRPC)
+    STT-->>A: Text transcript
+    A->>G: Transcript + context
+    G-->>A: AI response
+    opt Provider search needed
+        A->>W: Hybrid search
+        W-->>A: Top providers
+    end
+    A->>TTS: Response text (parallel)
+    TTS-->>A: Audio chunks
+    A->>C: Audio Stream (WebRTC)
+    opt Status change notification
+        A->>FCM: Push notification (EN/DE)
+        FCM-->>C: Notification
+    end
 ```
 
 ## 🚀 Deployment Architecture
 
 ### Development Environment
-```
-localhost:8080    → AI-Assistant
-localhost:8090    → Weaviate (full mode only)
-localhost:60099   → ConnectX Web (optional)
+
+| Service | URL |
+|---|---|
+| AI-Assistant | `localhost:8080` |
+| Weaviate (full mode only) | `localhost:8090` |
+| ConnectX Web (optional) | `localhost:60099` |
+
+### Production: Full mode (Cloud Run + Compute Engine)
+```mermaid
+flowchart TD
+    CR["Cloud Run: ai-assistant\neurope-west3 · 1–3 instances\nAGENT_MODE=full\nSecrets via Secret Manager"]
+    VM["Compute Engine VM: weaviate-vm\neurope-west3-a · e2-medium\nDocker: Weaviate + text2vec-model2vec"]
+    WI["Workload Identity\nSpeech · TTS · Firebase · Firestore"]
+    CR -->|"VPC connector"| VM
+    CR --- WI
 ```
 
-### Production — Full mode (Cloud Run + Compute Engine)
-```
-Cloud Run: ai-assistant (europe-west3, 1–3 instances)
-├── AGENT_MODE=full
-├── Secrets via Secret Manager (gemini-api-key, admin-secret-key)
-├── VPC connector → Weaviate VM
-└── Workload Identity → Speech, TTS, Firebase, Firestore
-
-Compute Engine VM: weaviate-vm (e2-medium, europe-west3-a)
-└── Docker Compose: Weaviate + text2vec-model2vec
-```
-
-### Production — Lite mode (Cloud Run only)
-```
-Cloud Run: ai-assistant (europe-west3, 1–3 instances)
-├── AGENT_MODE=lite
-├── Secrets via Secret Manager (gemini-api-key, google-places-api-key)
-├── No VPC connector
-└── Workload Identity (Firebase Auth only)
+### Production: Lite mode (Cloud Run only)
+```mermaid
+flowchart LR
+    CR["Cloud Run: ai-assistant\neurope-west3 · 1–3 instances\nAGENT_MODE=lite\nSecrets via Secret Manager"]
+    WI["Workload Identity\n(Firebase Auth only)"]
+    CR --- WI
 ```
 
 ### CI/CD Pipeline
-```
-GitHub → Actions → Build → Test → Docker Build → Artifact Registry → Cloud Run deploy
-                                             └── weaviate/** change → SSH → docker compose up
+```mermaid
+flowchart LR
+    GH["GitHub Push"] --> GA["GitHub Actions"]
+    GA --> Build --> Test --> DB["Docker Build"]
+    DB --> AR["Artifact Registry"] --> CR["Cloud Run deploy"]
+    DB -->|"weaviate/** changed"| SSH["SSH to VM"] --> DC["docker compose up"]
 ```
 
 ## 🔐 Security Architecture
 
 ### Authentication Flow
-```
-User → Google Sign-In → Firebase Auth → JWT Token
-    ↓
-AI-Assistant validates token with Firebase Admin SDK
-    ↓
-Token contains: uid, email, name, exp
-    ↓
-Server creates User in Weaviate (if new)
-    ↓
-Session authenticated
+Authentication is shared up to Firebase token validation, but post-validation behavior depends on `AGENT_MODE`: in `lite` mode the request is authenticated without any Firestore/Weaviate user sync, while in `full` mode new users may be created in Weaviate.
+
+```mermaid
+flowchart TD
+    U[User] -->|"Google Sign-In"| FA["Firebase Auth"]
+    FA -->|"JWT Token"| C[ConnectX]
+    C -->|"JWT + request"| AV["AI-Assistant\n(Firebase Admin SDK)"]
+    AV --> TC["Token validated\nuid · email · name · exp"]
+    TC --> AM{"AGENT_MODE"}
+    AM -->|lite| SA["Session authenticated\n(no Firestore/Weaviate sync)"]
+    AM -->|full| UC{"New user?"}
+    UC -->|yes| WC["Create User in Weaviate"] --> SA2["Session authenticated"]
+    UC -->|no| SA2
 ```
 
 ### API Key Management

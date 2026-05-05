@@ -53,38 +53,95 @@ The AI-Assistant server is a containerized service that:
 
 ### Conversation Stages
 
-```
-┌──────────┐
-│  TRIAGE  │  Intent gathering, scoping questions
-└────┬─────┘
-     │ intent clear
-     ▼
-┌──────────────┐
-│ CONFIRMATION │  Confirm details before provider search
-└────┬─────────┘
-     │                               │ ambiguous
-     ▼                               ▼
-┌──────────┐                     ┌─────────┐
-│ FINALIZE │  Provider results   │ CLARIFY │  Follow-up questions → TRIAGE
-└────┬─────┘  (email cards)      └─────────┘
-     │
-     ▼
-┌──────────┐
-│COMPLETED │  Wrap-up
-└────┬─────┘
-     │ (if eligible after 30 days)
-     ▼
-┌────────────────┐
-│ PROVIDER_PITCH │  Invite to join as provider
-└────┬───────────┘
-     │ accepted
-     ▼
-┌─────────────────────┐
-│ PROVIDER_ONBOARDING │  Skill collection (max 2 questions/turn)
-└─────────────────────┘
+The assistant uses a different state machine for each deployment mode.
+
+#### Full Mode
+
+```mermaid
+stateDiagram-v2
+    [*] --> GREETING
+    GREETING --> TRIAGE : welcome sent
+
+    TRIAGE --> CLARIFY : needs clarification
+    TRIAGE --> TOOL_EXECUTION : tool call
+    TRIAGE --> CONFIRMATION : intent clear
+    TRIAGE --> PROVIDER_ONBOARDING : manage skills / profile
+    TRIAGE --> RECOVERY : error
+
+    CLARIFY --> TRIAGE
+
+    TOOL_EXECUTION --> CONFIRMATION
+    TOOL_EXECUTION --> FINALIZE
+    TOOL_EXECUTION --> TRIAGE
+
+    CONFIRMATION --> FINALIZE : confirmed
+    CONFIRMATION --> TRIAGE : ambiguous
+
+    FINALIZE --> COMPLETED
+    FINALIZE --> RECOVERY : error
+    FINALIZE --> TRIAGE
+
+    RECOVERY --> TRIAGE
+    RECOVERY --> CONFIRMATION : search retry
+
+    COMPLETED --> PROVIDER_PITCH : eligible after 30 days
+    COMPLETED --> TRIAGE
+
+    PROVIDER_PITCH --> PROVIDER_ONBOARDING : accepted
+    PROVIDER_PITCH --> COMPLETED
+    PROVIDER_PITCH --> TRIAGE
+
+    PROVIDER_ONBOARDING --> COMPLETED
+    PROVIDER_ONBOARDING --> TRIAGE
+
+    note right of GREETING : Initial greeting
+    note right of TRIAGE : Intent gathering,\nscoping questions
+    note right of CLARIFY : Follow-up to\nresolve ambiguity
+    note right of TOOL_EXECUTION : Execute tool calls\n(search, favorites,\nservice requests)
+    note right of CONFIRMATION : Confirm details before\nprovider search
+    note right of FINALIZE : Provider results\n(provider cards)
+    note right of PROVIDER_ONBOARDING : Skill collection\n(max 2 questions/turn)
 ```
 
-Any stage can transition to `RECOVERY` on error. `RECOVERY → TRIAGE`.
+#### Lite Mode
+
+```mermaid
+stateDiagram-v2
+    [*] --> GREETING
+    GREETING --> TRIAGE : welcome sent
+
+    TRIAGE --> CLARIFY : needs clarification
+    TRIAGE --> CONFIRMATION : intent clear
+    TRIAGE --> RECOVERY : error
+
+    CLARIFY --> TRIAGE
+
+    CONFIRMATION --> FINALIZE : confirmed
+    CONFIRMATION --> TRIAGE : ambiguous
+
+    FINALIZE --> BROWSE : auto-advance
+    FINALIZE --> RECOVERY : error
+    FINALIZE --> TRIAGE
+
+    BROWSE --> BROWSE : load more
+    BROWSE --> CONFIRMATION : refine search
+    BROWSE --> COMPLETED
+    BROWSE --> TRIAGE
+
+    COMPLETED --> TRIAGE
+
+    RECOVERY --> TRIAGE
+    RECOVERY --> CONFIRMATION : search retry
+
+    note right of GREETING : Initial greeting
+    note right of TRIAGE : Intent gathering,\nscoping questions
+    note right of CLARIFY : Follow-up to\nresolve ambiguity
+    note right of CONFIRMATION : Confirm details before\nprovider search
+    note right of FINALIZE : Provider cards\n(auto-advances to BROWSE)
+    note right of BROWSE : Browse additional\nresults in batches
+```
+
+`TRIAGE`, `FINALIZE`, and `RECOVERY` are the primary error-recovery entry points. `RECOVERY` returns to `TRIAGE` (general retry) or `CONFIRMATION` (search retry).
 
 ### Technical Features
 
@@ -192,31 +249,22 @@ The system uses a **Hybrid Database Architecture**:
 
 ### Processing Pipeline
 
-```
-Audio Stream (WebRTC)
-    ↓
-AudioProcessor
-    ├─→ STT Streaming (gRPC)
-    │       ↓
-    │   Transcript Buffer
-    │       ↓
-    └─→ ResponseOrchestrator
-            ├─→ ConversationService
-            │   ├─→ Stage Management
-            │   └─→ Context Tracking
-            │
-            ├─→ Gemini 2.5 Flash (Streaming)
-            │       ↓
-            │   AI Response Stream
-            │
-            ├─→ DataProvider (if needed)
-            │   └─→ Weaviate Search
-            │
-            └─→ TTS (Parallel)
-                    ↓
-                Audio Chunks
-                    ↓
-            WebRTC Stream → Client
+```mermaid
+flowchart TD
+    AS["Audio Stream (WebRTC)"] --> AP[AudioProcessor]
+    AP --> STT["STT Streaming (gRPC)"]
+    STT --> TB["Transcript Buffer"]
+    TB --> RO[ResponseOrchestrator]
+    RO --> CS[ConversationService]
+    CS --> SM["Stage Management"]
+    CS --> CT["Context Tracking"]
+    RO --> LLM["Gemini 2.5 Flash (Streaming)"]
+    LLM --> ARS["AI Response Stream"]
+    RO --> DP["DataProvider (if needed)"]
+    DP --> WS["Weaviate Search"]
+    RO --> TTS["TTS (Parallel)"]
+    TTS --> AC["Audio Chunks"]
+    AC --> WR["WebRTC Stream → Client"]
 ```
 
 ## 🚀 Installation
@@ -287,8 +335,8 @@ nano .env
 GEMINI_API_KEY=your_gemini_api_key_here
 
 # Agent mode: "full" (default) or "lite"
-# full  — Weaviate vector search + voice + Firestore (full platform)
-# lite  — Google Places API search + text-only (no Weaviate, no Firestore)
+# full: Weaviate vector search + voice + Firestore (full platform)
+# lite: Google Places API search + text-only (no Weaviate, no Firestore)
 AGENT_MODE=full
 
 # Firestore Database Configuration
@@ -321,7 +369,7 @@ VOICE_NAME_EN=en-US-Chirp3-HD-Sulafat
 PORT=8080
 LOG_LEVEL=INFO
 
-# Session idle timeout — close inactive connections after this many minutes
+# Session idle timeout: close inactive connections after this many minutes
 # Applies to both WebRTC (full mode) and WebSocket chat (lite mode)
 # Default: 10 minutes
 SESSION_IDLE_TIMEOUT_MINUTES=10
@@ -359,27 +407,17 @@ WEAVIATE_API_KEY=your-weaviate-cloud-api-key
 ### Lite Mode (no Weaviate)
 
 Set `AGENT_MODE=lite` to run the assistant with the Google Places API as the
-provider source instead of Weaviate. This requires only a single container — no
+provider source instead of Weaviate. This requires only a single container. No
 Weaviate VM, no VPC connector.
 
 **Pipeline:**
-```
-User query
-    │
-    ▼
-generate_query()      — LLM distils intent + location
-    │
-    ▼
-Google Places API     — returns up to 20 nearby providers
-    │
-    ▼
-WebPageCrawler        — enriches each provider (skills, email, portfolio)
-    │
-    ▼
-ms-marco cross-encoder — reranks by semantic relevance
-    │
-    ▼
-FINALIZE prompt / Flutter card renderer
+```mermaid
+flowchart TD
+    Q["User query"] --> GQ["generate_query()\nLLM: distil intent + location"]
+    GQ --> GP["Google Places API\nup to 20 nearby providers"]
+    GP --> WC["WebPageCrawler\nskills · email · portfolio"]
+    WC --> CE["ms-marco cross-encoder\nreranks by relevance"]
+    CE --> FIN["FINALIZE\nFlutter card renderer"]
 ```
 
 **Key differences from full mode:**

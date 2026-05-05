@@ -229,7 +229,7 @@ volumes:
 The platform uses a hub-spoke schema. Vectorization is applied to the `Competence` spoke (skill description) and to the `User` hub (`search_optimized_summary`):
 
 ```python
-# Competence spoke — vectorize skill_description for semantic search
+# Competence spoke: vectorize skill_description for semantic search
 {
     "class": "Competence",
     "vectorizer": "text2vec-model2vec",
@@ -241,7 +241,7 @@ The platform uses a hub-spoke schema. Vectorization is applied to the `Competenc
     }
 }
 
-# User hub — vectorize search_optimized_summary
+# User hub: vectorize search_optimized_summary
 {
     "class": "User",
     "vectorizer": "text2vec-model2vec",
