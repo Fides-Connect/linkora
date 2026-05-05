@@ -179,6 +179,37 @@ Then:
    - Dev: `connectx/android/app/src/dev/google-services.json`
    - Prod: `connectx/android/app/src/prod/google-services.json`
 
+#### iOS Setup
+
+**Download GoogleService-Info.plist:**
+
+1. In Firebase Console → Project Settings → Your apps
+2. If no iOS app exists yet, click **Add app → Apple (iOS+)** and register bundle ID `com.linkora.connectx`
+3. Download `GoogleService-Info.plist`
+4. Place it at `connectx/ios/Runner/GoogleService-Info.plist`
+
+> **Note**: Unlike Android, iOS does not use per-flavor config files — a single `GoogleService-Info.plist` covers both dev and prod builds. The file is not checked in; each developer downloads it directly from the Firebase Console.
+
+**CocoaPods:**
+
+After placing the plist, run CocoaPods to install the native Firebase SDKs:
+
+```bash
+cd ios
+pod install
+cd ..
+```
+
+Open the workspace (not the `.xcodeproj`) in Xcode when doing native iOS development:
+
+```bash
+open ios/Runner.xcworkspace
+```
+
+**Microphone Permission:**
+
+The app requires microphone access for voice input. The usage description is already defined in `ios/Runner/Info.plist`. No additional changes are needed unless you customise the permission message.
+
 ### Step 3: Environment Configuration
 
 ```bash

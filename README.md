@@ -165,7 +165,7 @@ graph LR
     cp .env.template .env
     # Edit .env — set APP_MODE (must match AGENT_MODE above), AI_ASSISTANT_SERVER_URL, GOOGLE_OAUTH_CLIENT_ID
     ```
-    The app also requires Firebase config files (not checked in). Run `flutterfire configure` from the `connectx` directory to generate `lib/firebase_options.dart`. Because this repository uses build flavors, Android requires a separate `google-services.json` per environment — download it from the Firebase console and place it under `connectx/android/app/src/dev` and `connectx/android/app/src/prod`; `flutterfire configure` alone does not satisfy the flavored Gradle setup. For iOS, download `GoogleService-Info.plist` from the Firebase console (Project Settings → Your apps → iOS app) and place it at `connectx/ios/Runner/GoogleService-Info.plist`. See the [ConnectX docs](docs/connectx.md) for more details on Android setup.
+    The app also requires Firebase config files (not checked in). Run `flutterfire configure` from the `connectx` directory to generate `lib/firebase_options.dart`. Android and iOS each need an additional platform-specific config file downloaded from the Firebase Console — see the [ConnectX docs](docs/connectx.md) for the full setup instructions for both platforms.
 
 4.  **Launch and initialize Weaviate (Full mode only):**
     ```sh
