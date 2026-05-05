@@ -53,35 +53,28 @@ The AI-Assistant server is a containerized service that:
 
 ### Conversation Stages
 
-```
-┌──────────┐
-│  TRIAGE  │  Intent gathering, scoping questions
-└────┬─────┘
-     │ intent clear
-     ▼
-┌──────────────┐
-│ CONFIRMATION │  Confirm details before provider search
-└────┬─────────┘
-     │                               │ ambiguous
-     ▼                               ▼
-┌──────────┐                     ┌─────────┐
-│ FINALIZE │  Provider results   │ CLARIFY │  Follow-up questions → TRIAGE
-└────┬─────┘  (email cards)      └─────────┘
-     │
-     ▼
-┌──────────┐
-│COMPLETED │  Wrap-up
-└────┬─────┘
-     │ (if eligible after 30 days)
-     ▼
-┌────────────────┐
-│ PROVIDER_PITCH │  Invite to join as provider
-└────┬───────────┘
-     │ accepted
-     ▼
-┌─────────────────────┐
-│ PROVIDER_ONBOARDING │  Skill collection (max 2 questions/turn)
-└─────────────────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> TRIAGE
+    TRIAGE --> CONFIRMATION : intent clear
+    CONFIRMATION --> FINALIZE : confirmed
+    CONFIRMATION --> CLARIFY : ambiguous
+    CLARIFY --> TRIAGE : follow-up
+    FINALIZE --> COMPLETED : results sent
+    COMPLETED --> PROVIDER_PITCH : eligible after 30 days
+    PROVIDER_PITCH --> PROVIDER_ONBOARDING : accepted
+
+    TRIAGE --> RECOVERY : error
+    CONFIRMATION --> RECOVERY : error
+    CLARIFY --> RECOVERY : error
+    FINALIZE --> RECOVERY : error
+    RECOVERY --> TRIAGE : retry
+
+    note right of TRIAGE : Intent gathering,\nscoping questions
+    note right of CONFIRMATION : Confirm details before\nprovider search
+    note right of CLARIFY : Follow-up questions
+    note right of FINALIZE : Provider results\n(email cards)
+    note right of PROVIDER_ONBOARDING : Skill collection\n(max 2 questions/turn)
 ```
 
 Any stage can transition to `RECOVERY` on error. `RECOVERY → TRIAGE`.

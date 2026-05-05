@@ -6,66 +6,75 @@ This document describes the architecture, design decisions, and technical implem
 
 ### High-Level Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   Linkora Platform                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   ┌───────────────┐         ┌──────────────────┐            │
-│   │   ConnectX    │◄───────►│  AI-Assistant    │            │
-│   │  (Flutter)    │ WebRTC  │  (Python/aiohttp)│            │
-│   │               │ (full)  │                  │            │
-│   │  - iOS/Android│◄───────►│  - STT / TTS     │            │
-│   │  - UI/UX      │  WSS    │  - LLM (Gemini)  │            │
-│   │  - WebRTC     │ (lite)  │  - Stage FSM     │            │
-│   │  - Auth       │         │  - Tool registry │            │
-│   └───────────────┘         └────┬─────────────┘            │
-│                                  │                          │
-│               ┌──────────────────┴──────────────┐           │
-│               │ Full mode          Lite mode     │           │
-│               ▼                   ▼              │           │
-│   ┌──────────────────┐  ┌──────────────────┐    │           │
-│   │    Weaviate      │  │ Google Places API│    │           │
-│   │  (Vector DB)     │  │ + WebCrawler     │    │           │
-│   │  - Provider Data │  │ + CrossEncoder   │    │           │
-│   │  - Embeddings    │  │  (ephemeral)     │    │           │
-│   │  - Hybrid Search │  └──────────────────┘    │           │
-│   └──────────────────┘                          │           │
-│                                                             │
-├─────────────────────────────────────────────────────────────┤
-│               External Services                             │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   ┌────────────┐  ┌────────────┐  ┌──────────────┐          │
-│   │ Google STT │  │ Google TTS │  │Google Gemini │          │
-│   │ (full mode)│  │ (full mode)│  │ 2.5 Flash    │          │
-│   └────────────┘  └────────────┘  └──────────────┘          │
-│                                                             │
-│   ┌────────────────┐  ┌──────────────┐  ┌──────────────┐   │
-│   │ Firebase       │  │ Google Places│  │ Firebase     │   │
-│   │ Auth/Firestore │  │ Text Search  │  │ Cloud Msg.   │   │
-│   │ (full mode)    │  │ (lite mode)  │  │ (full mode)  │   │
-│   └────────────────┘  └──────────────┘  └──────────────┘   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph Device["User's Device"]
+        A["ConnectX\nFlutter · iOS/Android"]
+    end
+
+    subgraph Backend["AI-Assistant\nPython / aiohttp"]
+        B["STT / TTS\nLLM · Stage FSM\nTool registry"]
+    end
+
+    subgraph Full["Full Mode"]
+        C["Weaviate\nVector DB\nHybrid Search"]
+    end
+
+    subgraph Lite["Lite Mode"]
+        D["Google Places API\n+ WebCrawler\n+ CrossEncoder"]
+    end
+
+    subgraph External["External Services"]
+        E[Google STT]
+        F[Google TTS]
+        G["Gemini 2.5 Flash"]
+        H["Firebase\nAuth/Firestore"]
+        I["Firebase\nCloud Msg."]
+    end
+
+    A -- "WebRTC (full)" --> B
+    A -- "WSS (lite)" --> B
+    A -- "Auth" --> H
+    B --> C
+    B --> D
+    B --> E
+    B --> F
+    B --> G
+    B --> H
+    B --> I
+
+    style A fill:#02569B,stroke:#333,color:#fff
+    style B fill:#3776AB,stroke:#333,color:#fff
+    style C fill:#0C9E73,stroke:#333,color:#fff
+    style D fill:#34A853,stroke:#333,color:#fff
+    style E fill:#4285F4,stroke:#333,color:#fff
+    style F fill:#4285F4,stroke:#333,color:#fff
+    style G fill:#4285F4,stroke:#333,color:#fff
+    style H fill:#FFCA28,stroke:#333,color:#000
+    style I fill:#FFCA28,stroke:#333,color:#000
 ```
 
 ### Component Interaction Flow
 
-```
-User speaks → ConnectX captures audio → WebRTC stream → AI-Assistant
-                                                              ↓
-                                                    Google Cloud STT
-                                                              ↓
-                                                      Text transcript
-                                                              ↓
-                                                    Gemini LLM
-                                                              ↓
-                                                      AI response text
-                                                              ↓
-                                                    Google Cloud TTS
-                                                              ↓
-AI-Assistant ← WebRTC stream ← Audio response ← ConnectX plays audio
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as ConnectX
+    participant A as AI-Assistant
+    participant S as Google STT
+    participant L as Gemini LLM
+    participant T as Google TTS
+
+    U->>C: Speaks
+    C->>A: WebRTC audio stream
+    A->>S: Raw audio
+    S-->>A: Text transcript
+    A->>L: Transcript + context
+    L-->>A: AI response text
+    A->>T: Response text
+    T-->>A: Audio response
+    A->>C: WebRTC audio stream
+    C->>U: Plays audio
 ```
 
 ## 🎯 Design Principles
