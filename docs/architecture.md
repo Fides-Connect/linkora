@@ -25,16 +25,16 @@ graph LR
     end
 
     subgraph External["External Services"]
-        E[Google STT]
-        F[Google TTS]
-        G["Gemini 2.5 Flash"]
-        H["Firebase\nAuth/Firestore"]
-        I["Firebase\nCloud Msg."]
+        E["Google STT\n(full only)"]
+        F["Google TTS\n(full only)"]
+        G["Gemini 2.5 Flash\n(all modes)"]
+        H["Firebase\nAuth/Firestore\n(full only)"]
+        I["Firebase\nCloud Msg.\n(full only)"]
     end
 
     A -- "WebRTC (full)" --> B
     A -- "WSS (lite)" --> B
-    A -- "Auth" --> H
+    A -- "Auth (full)" --> H
     B --> C
     B --> D
     B --> E

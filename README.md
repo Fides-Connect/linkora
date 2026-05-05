@@ -82,13 +82,14 @@ graph LR
         A[ConnectX Mobile App\nFlutter]
     end
 
-    subgraph Shared["Shared Infrastructure"]
+    subgraph Shared["Shared (all modes)"]
         B[AI Assistant\nPython / aiohttp]
-        D[Firebase\nAuth & Firestore]
+        G[Gemini 2.5 Flash]
     end
 
     subgraph Full["Full Mode only"]
         C[Weaviate\nVector Database]
+        D[Firebase\nAuth & Firestore]
         E[Google Cloud\nSTT / TTS]
     end
 
@@ -96,10 +97,11 @@ graph LR
         F[Google Places API]
     end
 
-    A -- "Auth" --> D
+    A -- "Auth (full)" --> D
     A -- "WebRTC Audio" --> B
     A -- "Text chat" --> B
-    B -- "User Data" --> D
+    B -- "LLM" --> G
+    B -- "User Data (full)" --> D
     B -- "Semantic Search" --> C
     B -- "Speech Services" --> E
     B -- "Places Search" --> F
@@ -110,6 +112,7 @@ graph LR
     style D fill:#FFCA28,stroke:#333,stroke-width:2px,color:#000
     style E fill:#4285F4,stroke:#333,stroke-width:2px,color:#fff
     style F fill:#34A853,stroke:#333,stroke-width:2px,color:#fff
+    style G fill:#4285F4,stroke:#333,stroke-width:2px,color:#fff
 ```
 **Read more**: [Architecture Overview](docs/architecture.md)
 
@@ -150,7 +153,7 @@ graph LR
     cp .env.template .env
     # Edit .env — set APP_MODE (must match AGENT_MODE above), AI_ASSISTANT_SERVER_URL, GOOGLE_OAUTH_CLIENT_ID
     ```
-    The app also requires Firebase config files (not checked in). Run `flutterfire configure` from the `connectx` directory and add the generated native files (`google-services.json` for Android, `GoogleService-Info.plist` for iOS). See the [ConnectX docs](docs/connectx.md) for details.
+    The app also requires Firebase config files (not checked in). Run `flutterfire configure` from the `connectx` directory to generate `lib/firebase_options.dart`. Because this repository uses build flavors, Android requires a separate `google-services.json` per environment — download it from the Firebase console and place it under `connectx/android/app/src/dev` and `connectx/android/app/src/prod`; `flutterfire configure` alone does not satisfy the flavored Gradle setup. For iOS, add the required `GoogleService-Info.plist`. See the [ConnectX docs](docs/connectx.md) for details.
 
 4.  **Launch and initialize Weaviate (Full mode only):**
     ```sh

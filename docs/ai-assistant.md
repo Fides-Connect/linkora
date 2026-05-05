@@ -55,26 +55,27 @@ The AI-Assistant server is a containerized service that:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> TRIAGE
+    [*] --> GREETING
+    GREETING --> TRIAGE : welcome sent
     TRIAGE --> CONFIRMATION : intent clear
     CONFIRMATION --> FINALIZE : confirmed
-    CONFIRMATION --> CLARIFY : ambiguous
-    CLARIFY --> TRIAGE : follow-up
-    FINALIZE --> COMPLETED : results sent
+    CONFIRMATION --> TRIAGE : ambiguous
+    FINALIZE --> COMPLETED : full mode
+    FINALIZE --> BROWSE : lite mode
     COMPLETED --> PROVIDER_PITCH : eligible after 30 days
     PROVIDER_PITCH --> PROVIDER_ONBOARDING : accepted
 
     TRIAGE --> RECOVERY : error
     CONFIRMATION --> RECOVERY : error
-    CLARIFY --> RECOVERY : error
     FINALIZE --> RECOVERY : error
     RECOVERY --> TRIAGE : retry
 
+    note right of GREETING : Initial greeting
     note right of TRIAGE : Intent gathering,\nscoping questions
     note right of CONFIRMATION : Confirm details before\nprovider search
-    note right of CLARIFY : Follow-up questions
     note right of FINALIZE : Provider results\n(email cards)
-    note right of PROVIDER_ONBOARDING : Skill collection\n(max 2 questions/turn)
+    note right of BROWSE : Provider browsing\n[lite mode only]
+    note right of PROVIDER_ONBOARDING : Skill collection\n(max 2 questions/turn)\n[full mode only]
 ```
 
 Any stage can transition to `RECOVERY` on error. `RECOVERY → TRIAGE`.
