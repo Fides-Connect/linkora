@@ -171,7 +171,7 @@ Then:
 
 **Push Notifications (full mode):**
 
-Full-mode deployments use FCM for push notifications. The `Runner.entitlements` file is checked in and sets `CODE_SIGN_ENTITLEMENTS` for all build configurations. It contains no hardcoded `aps-environment` value; the correct sandbox or production entitlement is supplied automatically by the provisioning profile at signing time. To complete APNs setup:
+Full-mode deployments use FCM for push notifications. The `Runner.entitlements` file is checked in and `CODE_SIGN_ENTITLEMENTS` is set for all build configurations. The checked-in entitlements currently include a hardcoded `aps-environment` value of `development`, which is suitable for development/sandbox push testing. If you are preparing a production/TestFlight/App Store build, verify the entitlements and signing setup so the app is signed with the correct APNs environment before shipping. To complete APNs setup:
 
 1. In Xcode, select the **Runner** target → **Signing & Capabilities**
 2. Click **+ Capability** and add **Push Notifications**
@@ -185,15 +185,11 @@ The `NSMicrophoneUsageDescription` key is defined in `ios/Runner/Info.plist`. No
 
 **CocoaPods:**
 
-After placing the plist, run CocoaPods to install the native Firebase SDKs:
+Do not run `pod install` manually from `ios` in this repository state, because `ios/Podfile` is not committed here and CocoaPods will fail without it.
 
-```bash
-cd ios
-pod install
-cd ..
-```
+Instead, use Flutter tooling from the project root to regenerate or prepare the iOS project files as needed before opening the project in Xcode.
 
-Open the workspace (not the `.xcodeproj`) in Xcode when doing native iOS development:
+Open the workspace (not the `.xcodeproj`) in Xcode for native iOS development after the iOS project files have been generated:
 
 ```bash
 open ios/Runner.xcworkspace
@@ -348,7 +344,7 @@ flutter run --flavor liteDev -d <device-id>
 # Android (flavors are Android/Gradle-only)
 flutter run --flavor liteDev -d android
 
-# iOS (no flavor required; single Firebase project per scheme)
+# iOS (no flavor required; ensure the correct GoogleService-Info.plist is installed for dev/prod before running)
 flutter run -d ios
 
 # Web (flavors not supported on web)
@@ -641,9 +637,9 @@ flutter pub global run devtools
 
 > **Note**: iOS support has not been fully tested on a physical device. The items below reflect the current project configuration.
 
-- **Minimum Version**: iOS 12.0+
+- **Minimum Version**: iOS 13.0+
 - **Permissions**: Microphone access required (`NSMicrophoneUsageDescription` set in `Info.plist`)
-- **Background Audio**: Background modes capability is configured in `Info.plist`
+- **Background Modes**: `Info.plist` currently enables `remote-notification`; background audio is not configured
 
 ### Android Considerations
 

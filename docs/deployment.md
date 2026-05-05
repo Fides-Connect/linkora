@@ -432,11 +432,11 @@ flowchart TD
     Push --> AIChange{"ai-assistant/**\nchanged?"}
     Push --> WChange{"weaviate/**\nchanged?\n(full mode only)"}
     AIChange -->|yes| Tests["ai-assistant-test.yml\nunit + integration tests"]
-    Tests -->|success| Deploy["cloud-deploy.yml\nbuild image to Artifact Registry"]
+    Tests -->|success| Deploy["deploy-ai-assistant-dev.yml\nbuild image to Artifact Registry"]
     Deploy --> Mode{"AGENT_MODE?"}
     Mode -->|full| RunFull["gcloud run deploy\n--vpc-connector=ai-assistant-connect-dev"]
     Mode -->|lite| RunLite["gcloud run deploy\n(no VPC connector)"]
-    WChange -->|yes| WDeploy["cloud-deploy.yml: deploy-weaviate\nscp docker-compose.yml (OS Login)\nssh to VM: docker compose up -d"]
+    WChange -->|yes| WDeploy["deploy-weaviate.yml\nscp docker-compose.yml (OS Login)\nssh to VM: docker compose up -d"]
 ```
 
 ---

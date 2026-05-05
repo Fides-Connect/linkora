@@ -163,8 +163,8 @@ services/       # core business logic
 **Audio Pipeline:**
 ```mermaid
 flowchart LR
-    Mic[Microphone] --> AR[AudioRecord] --> DC1["RTC DataChannel"] --> Net1[Network] --> Srv[Server]
-    Srv --> Net2[Network] --> DC2["RTC DataChannel"] --> AT[AudioTrack] --> Spk[Speaker]
+    Mic[Microphone] --> AR[AudioRecord] --> MT1["WebRTC Audio Track"] --> Net1[Network] --> Srv[Server]
+    Srv --> Net2[Network] --> MT2["WebRTC Audio Track"] --> AT[AudioTrack] --> Spk[Speaker]
 ```
 
 ## 🤖 AI-Assistant (Backend Server)
@@ -395,7 +395,7 @@ flowchart TD
 ### Production: Lite mode (Cloud Run only)
 ```mermaid
 flowchart LR
-    CR["Cloud Run: ai-assistant\neuropé-west3 · 1–3 instances\nAGENT_MODE=lite\nSecrets via Secret Manager"]
+    CR["Cloud Run: ai-assistant\neurope-west3 · 1–3 instances\nAGENT_MODE=lite\nSecrets via Secret Manager"]
     WI["Workload Identity\n(Firebase Auth only)"]
     CR --- WI
 ```
@@ -412,15 +412,19 @@ flowchart LR
 ## 🔐 Security Architecture
 
 ### Authentication Flow
+Authentication is shared up to Firebase token validation, but post-validation behavior depends on `AGENT_MODE`: in `lite` mode the request is authenticated without any Firestore/Weaviate user sync, while in `full` mode new users may be created in Weaviate.
+
 ```mermaid
 flowchart TD
     U[User] -->|"Google Sign-In"| FA["Firebase Auth"]
     FA -->|"JWT Token"| C[ConnectX]
     C -->|"JWT + request"| AV["AI-Assistant\n(Firebase Admin SDK)"]
     AV --> TC["Token validated\nuid · email · name · exp"]
-    TC --> UC{"New user?"}
-    UC -->|yes| WC["Create User in Weaviate"] --> SA["Session authenticated"]
-    UC -->|no| SA
+    TC --> AM{"AGENT_MODE"}
+    AM -->|lite| SA["Session authenticated\n(no Firestore/Weaviate sync)"]
+    AM -->|full| UC{"New user?"}
+    UC -->|yes| WC["Create User in Weaviate"] --> SA2["Session authenticated"]
+    UC -->|no| SA2
 ```
 
 ### API Key Management
