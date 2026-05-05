@@ -188,7 +188,21 @@ Then:
 3. Download `GoogleService-Info.plist`
 4. Place it at `connectx/ios/Runner/GoogleService-Info.plist`
 
-> **Note**: Unlike Android, iOS does not use per-flavor config files — a single `GoogleService-Info.plist` covers both dev and prod builds. The file is not checked in; each developer downloads it directly from the Firebase Console.
+> **Note**: Unlike Android, iOS does not use per-flavor config files — a single `GoogleService-Info.plist` covers both dev and prod builds. The file is not checked in; each developer downloads it directly from the Firebase Console. The Xcode project already references this path (`Runner` group → Resources build phase), so no Xcode changes are needed after placing the file.
+
+**Push Notifications (full mode):**
+
+Full-mode deployments use FCM for push notifications. The `Runner.entitlements` file is already checked in and pre-configured with the `aps-environment` entitlement. To complete APNs setup:
+
+1. In Xcode, select the **Runner** target → **Signing & Capabilities**
+2. Click **+ Capability** and add **Push Notifications**
+3. Upload your APNs key or certificate in Firebase Console → Project Settings → Cloud Messaging → Apple app configuration
+
+> Lite-mode deployments do not use push notifications; FCM initialization is skipped when `AGENT_MODE=lite`.
+
+**Microphone Permission:**
+
+The `NSMicrophoneUsageDescription` key is defined in `ios/Runner/Info.plist`. No additional changes are needed unless you customise the permission message.
 
 **CocoaPods:**
 
@@ -205,10 +219,6 @@ Open the workspace (not the `.xcodeproj`) in Xcode when doing native iOS develop
 ```bash
 open ios/Runner.xcworkspace
 ```
-
-**Microphone Permission:**
-
-The app requires microphone access for voice input. The usage description is already defined in `ios/Runner/Info.plist`. No additional changes are needed unless you customise the permission message.
 
 ### Step 3: Environment Configuration
 

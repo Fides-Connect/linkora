@@ -45,6 +45,8 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Linkora uses your microphone to stream voice input to the AI assistant.</string>
 	<!-- url_launcher: schemes that can be queried/opened -->
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
