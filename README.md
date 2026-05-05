@@ -60,10 +60,10 @@ Linkora is a production-ready platform that lets users find local service provid
 - 🤖 **Conversational Search**: The AI assistant, Elin, asks clarifying questions, extracts structured intent, and performs a semantic search.
 - 🔀 **Two Deployment Modes**:
     - **Full**: Utilizes a Weaviate vector database with onboarded providers for deep semantic search.
-    - **Lite**: Operates with zero infrastructure using Google Places and web enrichment.
+    - **Lite**: Uses Google Places and web enrichment without the extra Weaviate/Firestore infrastructure.
 - 🔒 **Secure by Design**: All API keys are kept server-side, and clients authenticate via Firebase for enhanced security.
 - 📦 **Batteries Included**: Comes with Docker Compose, Cloud Run deployment scripts, GitHub Actions for CI/CD, and a dev container for a seamless development experience.
-- 🧪 **Well-Tested**: A comprehensive suite of over 60 backend unit tests, Flutter widget tests, and coverage reporting ensures reliability.
+- 🧪 **Well-Tested**: A comprehensive suite of over 60 backend unit tests, Flutter unit/service/viewmodel tests, and coverage reporting helps ensure reliability.
 
 ## 🛠️ Tech Stack
 
@@ -99,8 +99,8 @@ graph LR
     end
 
     A -- "Auth" --> D
-    A -- "WebRTC Audio" --> B
-    A -- "Text chat" --> B
+    A -. "WebRTC Audio (full only)" .-> B
+    A -- "Text chat (all modes)" --> B
     B -- "LLM" --> G
     B -- "User Data" --> D2
     B -- "Semantic Search" --> C

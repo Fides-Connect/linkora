@@ -13,7 +13,7 @@ graph LR
     end
 
     subgraph Backend["AI-Assistant\nPython / aiohttp"]
-        B["STT / TTS\nLLM · Stage FSM\nTool registry"]
+        B["STT / TTS · LLM\nStage FSM · CrossEncoder\nTool registry"]
     end
 
     subgraph Full["Full Mode"]
@@ -21,7 +21,7 @@ graph LR
     end
 
     subgraph Lite["Lite Mode"]
-        D["Google Places API\n+ WebCrawler\n+ CrossEncoder"]
+        D["Google Places API\n+ WebCrawler"]
     end
 
     subgraph External["External Services"]

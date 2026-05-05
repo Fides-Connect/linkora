@@ -53,38 +53,94 @@ The AI-Assistant server is a containerized service that:
 
 ### Conversation Stages
 
+The assistant uses a different state machine for each deployment mode.
+
+#### Full Mode
+
 ```mermaid
 stateDiagram-v2
     [*] --> GREETING
     GREETING --> TRIAGE : welcome sent
+
     TRIAGE --> CLARIFY : needs clarification
-    CLARIFY --> TRIAGE : clarification received
+    TRIAGE --> TOOL_EXECUTION : tool call
     TRIAGE --> CONFIRMATION : intent clear
+    TRIAGE --> RECOVERY : error
+
+    CLARIFY --> TRIAGE
+
+    TOOL_EXECUTION --> CONFIRMATION
+    TOOL_EXECUTION --> FINALIZE
+    TOOL_EXECUTION --> TRIAGE
+
     CONFIRMATION --> FINALIZE : confirmed
     CONFIRMATION --> TRIAGE : ambiguous
-    FINALIZE --> TOOL_EXECUTION : full mode
-    TOOL_EXECUTION --> COMPLETED : complete
-    FINALIZE --> BROWSE : lite mode
-    COMPLETED --> PROVIDER_PITCH : eligible after 30 days
-    PROVIDER_PITCH --> PROVIDER_ONBOARDING : accepted
 
-    TRIAGE --> RECOVERY : error
-    CONFIRMATION --> RECOVERY : error
+    FINALIZE --> COMPLETED
     FINALIZE --> RECOVERY : error
-    RECOVERY --> TRIAGE : retry
+    FINALIZE --> TRIAGE
+
+    RECOVERY --> TRIAGE
+    RECOVERY --> CONFIRMATION : search retry
+
+    COMPLETED --> PROVIDER_PITCH : eligible after 30 days
+    COMPLETED --> TRIAGE
+
+    PROVIDER_PITCH --> PROVIDER_ONBOARDING : accepted
+    PROVIDER_PITCH --> COMPLETED
+    PROVIDER_PITCH --> TRIAGE
+
+    PROVIDER_ONBOARDING --> COMPLETED
+    PROVIDER_ONBOARDING --> TRIAGE
+
+    note right of GREETING : Initial greeting
+    note right of TRIAGE : Intent gathering,\nscoping questions
+    note right of CLARIFY : Follow-up to\nresolve ambiguity
+    note right of TOOL_EXECUTION : Execute tool calls\n(search, favorites,\nservice requests)
+    note right of CONFIRMATION : Confirm details before\nprovider search
+    note right of FINALIZE : Provider results\n(provider cards)
+    note right of PROVIDER_ONBOARDING : Skill collection\n(max 2 questions/turn)
+```
+
+#### Lite Mode
+
+```mermaid
+stateDiagram-v2
+    [*] --> GREETING
+    GREETING --> TRIAGE : welcome sent
+
+    TRIAGE --> CLARIFY : needs clarification
+    TRIAGE --> CONFIRMATION : intent clear
+    TRIAGE --> RECOVERY : error
+
+    CLARIFY --> TRIAGE
+
+    CONFIRMATION --> FINALIZE : confirmed
+    CONFIRMATION --> TRIAGE : ambiguous
+
+    FINALIZE --> BROWSE : auto-advance
+    FINALIZE --> RECOVERY : error
+    FINALIZE --> TRIAGE
+
+    BROWSE --> BROWSE : load more
+    BROWSE --> CONFIRMATION : refine search
+    BROWSE --> COMPLETED
+    BROWSE --> TRIAGE
+
+    COMPLETED --> TRIAGE
+
+    RECOVERY --> TRIAGE
     RECOVERY --> CONFIRMATION : search retry
 
     note right of GREETING : Initial greeting
     note right of TRIAGE : Intent gathering,\nscoping questions
-    note right of CLARIFY : Follow-up questions to\nresolve ambiguity
+    note right of CLARIFY : Follow-up to\nresolve ambiguity
     note right of CONFIRMATION : Confirm details before\nprovider search
-    note right of FINALIZE : Provider results\n(email cards)
-    note right of TOOL_EXECUTION : Execute full-mode\npost-selection actions
-    note right of BROWSE : Provider browsing\n[lite mode only]
-    note right of PROVIDER_ONBOARDING : Skill collection\n(max 2 questions/turn)\n[full mode only]
+    note right of FINALIZE : Provider cards\n(auto-advances to BROWSE)
+    note right of BROWSE : Browse additional\nresults in batches
 ```
 
-`TRIAGE`, `CONFIRMATION`, and `FINALIZE` can transition to `RECOVERY` on error. `RECOVERY` returns to `TRIAGE`, and can also return to `CONFIRMATION` for search-retry flows.
+`TRIAGE`, `FINALIZE`, and `RECOVERY` are the primary error-recovery entry points. `RECOVERY` returns to `TRIAGE` (general retry) or `CONFIRMATION` (search retry).
 
 ### Technical Features
 
