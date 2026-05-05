@@ -57,10 +57,13 @@ The AI-Assistant server is a containerized service that:
 stateDiagram-v2
     [*] --> GREETING
     GREETING --> TRIAGE : welcome sent
+    TRIAGE --> CLARIFY : needs clarification
+    CLARIFY --> TRIAGE : clarification received
     TRIAGE --> CONFIRMATION : intent clear
     CONFIRMATION --> FINALIZE : confirmed
     CONFIRMATION --> TRIAGE : ambiguous
-    FINALIZE --> COMPLETED : full mode
+    FINALIZE --> TOOL_EXECUTION : full mode
+    TOOL_EXECUTION --> COMPLETED : complete
     FINALIZE --> BROWSE : lite mode
     COMPLETED --> PROVIDER_PITCH : eligible after 30 days
     PROVIDER_PITCH --> PROVIDER_ONBOARDING : accepted
@@ -69,16 +72,19 @@ stateDiagram-v2
     CONFIRMATION --> RECOVERY : error
     FINALIZE --> RECOVERY : error
     RECOVERY --> TRIAGE : retry
+    RECOVERY --> CONFIRMATION : search retry
 
     note right of GREETING : Initial greeting
     note right of TRIAGE : Intent gathering,\nscoping questions
+    note right of CLARIFY : Follow-up questions to\nresolve ambiguity
     note right of CONFIRMATION : Confirm details before\nprovider search
     note right of FINALIZE : Provider results\n(email cards)
+    note right of TOOL_EXECUTION : Execute full-mode\npost-selection actions
     note right of BROWSE : Provider browsing\n[lite mode only]
     note right of PROVIDER_ONBOARDING : Skill collection\n(max 2 questions/turn)\n[full mode only]
 ```
 
-Any stage can transition to `RECOVERY` on error. `RECOVERY → TRIAGE`.
+`TRIAGE`, `CONFIRMATION`, and `FINALIZE` can transition to `RECOVERY` on error. `RECOVERY` returns to `TRIAGE`, and can also return to `CONFIRMATION` for search-retry flows.
 
 ### Technical Features
 

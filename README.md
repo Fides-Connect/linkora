@@ -125,6 +125,7 @@ graph LR
 - [Python 3.14+](https://www.python.org/downloads/)
 - [Docker](https://www.docker.com/products/docker-desktop/)
 - [Firebase Account](https://firebase.google.com/)
+- [Gemini API key](https://aistudio.google.com/app/apikey)
 
 ### Installation & Setup
 

@@ -33,7 +33,7 @@ graph LR
     end
 
     A -- "WebRTC (full)" --> B
-    A -- "WSS (lite)" --> B
+    A -- "WS/WSS (lite)" --> B
     A -- "Auth" --> H
     B --> C
     B --> D
@@ -54,7 +54,9 @@ graph LR
     style H2 fill:#FFCA28,stroke:#333,color:#000
 ```
 
-### Component Interaction Flow
+### Full-Mode Voice Interaction Flow
+
+This sequence shows the **full-mode voice path only**. Lite sessions use the `/ws/chat` text transport and do **not** call Google STT or Google TTS.
 
 ```mermaid
 sequenceDiagram
