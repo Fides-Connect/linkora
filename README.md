@@ -144,7 +144,8 @@ graph LR
     pip install -e ".[dev]"
     git lfs pull
     ```
-    The bundled cross-encoder uses Git LFS; on a fresh clone, run the commands above so `model.safetensors` is downloaded instead of remaining an LFS pointer file. You do not need to run `python scripts/download_models.py` as part of the default setup when using the bundled models from this repository.
+    The bundled cross-encoder uses Git LFS; on a fresh clone, run the commands above so `model.safetensors` is downloaded instead of remaining an LFS pointer file.
+    
     Then copy and configure the environment file — the backend will not start without `GEMINI_API_KEY` and Firebase Admin credentials. Also set `AGENT_MODE` to match the app mode you plan to run (`lite` or `full`); the server defaults to `full`, and a mismatch with the app's `APP_MODE` will lead to a broken setup. For Firebase Admin credentials, authenticate locally with Application Default Credentials or point to a service-account key file. If using `AGENT_MODE=lite`, also set `GOOGLE_PLACES_API_KEY` — without it the backend falls back to a no-op data provider and provider searches return no matches:
     ```sh
     cp .env.template .env
